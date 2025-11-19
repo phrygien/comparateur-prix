@@ -1,0 +1,16 @@
+<?php
+
+use Livewire\Volt\Volt;
+
+//Volt::route('/', 'users.index');
+
+
+Volt::route('/', 'plateformes.page')->name('home');
+
+Volt::route('/articles', 'plateformes.article')->name('articles');
+
+Volt::route('/article/{id}/commparate', 'plateformes.comparateur')->name('article.comparate-prix');
+
+Volt::route('/sites', 'sites.page')->name('sites');
+
+Volt::route('/scraped_products', 'scraped_products.page')->name('scraped_products');
