@@ -19,3 +19,4 @@ Volt::route('/scraped_products', 'scraped_products.page')->name('scraped_product
 
 // Routes boutique
 Route::get('/boutique', Boutique::class)->name('boutiques');
+//Volt::route('/boutiques', 'boutiques.page')->name('boutiques');

@@ -1,9 +1,9 @@
 <?php
 
 use Livewire\Volt\Component;
-
+use Illuminate\Support\Facades\DB;
 new class extends Component {
-    //
+    
 }; ?>
 
 <div>
@@ -21,19 +21,15 @@ new class extends Component {
                     <label for="my-drawer-1" aria-label="close sidebar" class="drawer-overlay"></label>
                     <div class="bg-base-200 min-h-full w-[500px] p-8">
                         <h2 class="text-2xl font-bold mb-8">Filtres</h2>
-                        
+
                         <form method="GET" class="space-y-6">
                             <!-- Filtre par nom -->
                             <div class="form-control">
                                 <label class="label">
                                     <span class="label-text font-semibold">Nom du produit</span>
                                 </label>
-                                <input 
-                                    type="text" 
-                                    name="name" 
-                                    placeholder="Rechercher un parfum..." 
-                                    class="input input-bordered w-full"
-                                />
+                                <input type="text" name="name" placeholder="Rechercher un parfum..."
+                                    class="input input-bordered w-full" />
                             </div>
 
                             <!-- Filtre par marque -->
@@ -101,6 +97,7 @@ new class extends Component {
 
     <div class="mx-auto overflow-hidden">
         <div class="grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-4 lg:gap-x-8">
+
             <a href="{{ route('article.comparate-prix', 1) }}" class="group text-sm">
                 <img src="https://images.unsplash.com/photo-1541643600914-78b084683601?w=800&q=80"
                     alt="Elegant perfume bottle with golden cap"
@@ -110,61 +107,16 @@ new class extends Component {
                 <p class="mt-2 font-medium text-gray-900">$120</p>
             </a>
 
-            <a href="#" class="group text-sm">
-                <img src="https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800&q=80"
-                    alt="Luxury moisturizing face cream in elegant jar"
-                    class="aspect-square w-full rounded-lg bg-gray-100 object-cover group-hover:opacity-75">
-                <h3 class="mt-4 font-medium text-gray-900">Crème Visage Premium</h3>
-                <p class="text-gray-500 italic">Hydratation Intense</p>
-                <p class="mt-2 font-medium text-gray-900">$85</p>
-            </a>
-
-            <a href="#" class="group text-sm">
-                <img src="https://images.unsplash.com/photo-1615634260167-c8cdede054de?w=800&q=80"
-                    alt="Vitamin C serum bottle with dropper"
-                    class="aspect-square w-full rounded-lg bg-gray-100 object-cover group-hover:opacity-75">
-                <h3 class="mt-4 font-medium text-gray-900">Sérum Vitamine C</h3>
-                <p class="text-gray-500 italic">Anti-âge & Éclat</p>
-                <p class="mt-2 font-medium text-gray-900">$65</p>
-            </a>
-
-            <a href="#" class="group text-sm">
-                <img src="https://images.unsplash.com/photo-1585386959984-a4155224a1ad?w=800&q=80"
-                    alt="Luxury matte lipstick in elegant case"
-                    class="aspect-square w-full rounded-lg bg-gray-100 object-cover group-hover:opacity-75">
-                <h3 class="mt-4 font-medium text-gray-900">Rouge à Lèvres Mat</h3>
-                <p class="text-gray-500 italic">Rouge Passion</p>
-                <p class="mt-2 font-medium text-gray-900">$35</p>
-            </a>
-
-            <a href="#" class="group text-sm">
-                <img src="https://images.unsplash.com/photo-1596462502278-27bfdc403348?w=800&q=80"
-                    alt="Eye shadow palette with multiple shades"
-                    class="aspect-square w-full rounded-lg bg-gray-100 object-cover group-hover:opacity-75">
-                <h3 class="mt-4 font-medium text-gray-900">Palette Fards à Paupières</h3>
-                <p class="text-gray-500 italic">Nude Collection</p>
-                <p class="mt-2 font-medium text-gray-900">$48</p>
-            </a>
-
-            <a href="#" class="group text-sm">
-                <img src="https://images.unsplash.com/photo-1571875257727-256c39da42af?w=800&q=80"
-                    alt="Skincare set with multiple bottles and jars"
-                    class="aspect-square w-full rounded-lg bg-gray-100 object-cover group-hover:opacity-75">
-                <h3 class="mt-4 font-medium text-gray-900">Coffret Soin Complet</h3>
-                <p class="text-gray-500 italic">Routine Beauté</p>
-                <p class="mt-2 font-medium text-gray-900">$195</p>
-            </a>
-
         </div>
     </div>
 
     <div class="mt-5">
         <div class="join">
-  <button class="join-item btn">1</button>
-  <button class="join-item btn">2</button>
-  <button class="join-item btn btn-disabled">...</button>
-  <button class="join-item btn">99</button>
-  <button class="join-item btn">100</button>
-</div>
+            <button class="join-item btn">1</button>
+            <button class="join-item btn">2</button>
+            <button class="join-item btn btn-disabled">...</button>
+            <button class="join-item btn">99</button>
+            <button class="join-item btn">100</button>
+        </div>
     </div>
 </div>
