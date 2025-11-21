@@ -1,5 +1,6 @@
 <?php
 
+use App\Livewire\Boutiques\Boutique;
 use Livewire\Volt\Volt;
 
 //Volt::route('/', 'users.index');
@@ -15,3 +16,6 @@ Volt::route('/article/{id}/commparate', 'plateformes.comparateur')->name('articl
 Volt::route('/sites', 'sites.page')->name('sites');
 
 Volt::route('/scraped_products', 'scraped_products.page')->name('scraped_products');
+
+// Routes boutique
+Route::get('/boutique', Boutique::class)->name('boutiques');
