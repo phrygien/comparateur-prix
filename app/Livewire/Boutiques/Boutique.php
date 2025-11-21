@@ -6,6 +6,13 @@ use Livewire\Component;
 
 class Boutique extends Component
 {
+
+    // mounted
+    public function mount(): void
+    {
+        $this->getListProduct();
+    }
+
     public function render()
     {
         return view('livewire.boutiques.boutique');
