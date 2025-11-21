@@ -18,18 +18,22 @@ class Boutique extends Component
     public $filterType = "";
     public $filterCapacity = "";
 
+    // Nombre d'éléments par page
+    public $perPage = 12;
+
     protected $queryString = [
         'search' => ['except' => ''],
         'filterName' => ['except' => ''],
         'filterMarque' => ['except' => ''],
         'filterType' => ['except' => ''],
         'filterCapacity' => ['except' => ''],
+        'perPage' => ['except' => 12],
     ];
 
     public function updated($property)
     {
         // Reset à la première page quand un filtre change
-        if (in_array($property, ['search', 'filterName', 'filterMarque', 'filterType', 'filterCapacity'])) {
+        if (in_array($property, ['search', 'filterName', 'filterMarque', 'filterType', 'filterCapacity', 'perPage'])) {
             $this->resetPage();
         }
     }
@@ -51,9 +55,40 @@ class Boutique extends Component
         $this->dispatch('close-drawer');
     }
 
-    
-    public function getListProduct($search = "", $page = 1, $perPage = 12)
+    // Méthodes de pagination personnalisées
+    public function goToPage($page)
     {
+        $this->setPage($page);
+    }
+
+    public function previousPage()
+    {
+        $this->setPage(max(1, $this->getPage() - 1));
+    }
+
+    public function nextPage()
+    {
+        $currentPage = $this->getPage();
+        $productsData = $this->getListProduct($this->search, $currentPage, $this->perPage);
+        $totalPages = $productsData['total_page'];
+        
+        $this->setPage(min($totalPages, $currentPage + 1));
+    }
+
+    public function getPage()
+    {
+        return $this->paginators['page'] ?? 1;
+    }
+
+    public function setPage($page)
+    {
+        $this->paginators['page'] = $page;
+    }
+
+    public function getListProduct($search = "", $page = 1, $perPage = null)
+    {
+        $perPage = $perPage ?: $this->perPage;
+        
         try {
             $offset = ($page - 1) * $perPage;
 
@@ -218,7 +253,7 @@ class Boutique extends Component
 
     public function render()
     {
-        $productsData = $this->getListProduct($this->search, $this->getPage(), 12);
+        $productsData = $this->getListProduct($this->search, $this->getPage(), $this->perPage);
         
         return view('livewire.boutiques.boutique', [
             'products' => $productsData['data'],
@@ -227,42 +262,4 @@ class Boutique extends Component
             'currentPage' => $productsData['current_page']
         ]);
     }
-
-     /**
-     * Custom pagination methods
-     */
-    public function goToPage($page)
-    {
-        $this->setPage($page);
-    }
-
-    public function previousPage()
-    {
-        $this->setPage(max(1, $this->getPage() - 1));
-    }
-
-    public function nextPage()
-    {
-        $currentPage = $this->getPage();
-        $productsData = $this->getListProduct($this->search, $currentPage, 12);
-        $totalPages = $productsData['total_page'];
-        
-        $this->setPage(min($totalPages, $currentPage + 1));
-    }
-
-    /**
-     * Get current page number
-     */
-    public function getPage()
-    {
-        return $this->paginators['page'] ?? 1;
-    }
-
-    /**
-     * Set current page number
-     */
-    public function setPage($page)
-    {
-        $this->paginators['page'] = $page;
-    }   
 }

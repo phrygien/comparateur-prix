@@ -8,93 +8,108 @@
             />
         </x-slot:middle>
         <x-slot:actions>
-            <div class="drawer drawer-end">
-                <input id="my-drawer-1" type="checkbox" class="drawer-toggle" />
-                <div class="drawer-content">
-                    <label for="my-drawer-1" class="btn drawer-button btn-primary">Filtre avancé</label>
+            <div class="flex items-center gap-4">
+                <!-- Sélecteur d'éléments par page -->
+                <div class="form-control">
+                    <select wire:model.live="perPage" class="select select-bordered select-sm">
+                        <option value="12">12 par page</option>
+                        <option value="24">24 par page</option>
+                        <option value="48">48 par page</option>
+                        <option value="96">96 par page</option>
+                        <option value="108">108 par page</option>
+                        <option value="120">120 par page</option>
+                    </select>
                 </div>
-                <div class="drawer-side z-50">
-                    <label for="my-drawer-1" aria-label="close sidebar" class="drawer-overlay"></label>
-                    <div class="bg-base-200 min-h-full w-[500px] p-8">
-                        <h2 class="text-2xl font-bold mb-8">Filtres</h2>
 
-                        <div class="space-y-6">
-                            <!-- Filtre par nom -->
-                            <div class="form-control">
-                                <label class="label">
-                                    <span class="label-text font-semibold">Nom du produit</span>
-                                </label>
-                                <input 
-                                    type="text" 
-                                    wire:model="filterName"
-                                    placeholder="Rechercher un parfum..."
-                                    class="input input-bordered w-full" 
-                                />
-                            </div>
+                <!-- Bouton filtre avancé -->
+                <div class="drawer drawer-end">
+                    <input id="my-drawer-1" type="checkbox" class="drawer-toggle" />
+                    <div class="drawer-content">
+                        <label for="my-drawer-1" class="btn drawer-button btn-primary">Filtre avancé</label>
+                    </div>
+                    <div class="drawer-side z-50">
+                        <label for="my-drawer-1" aria-label="close sidebar" class="drawer-overlay"></label>
+                        <div class="bg-base-200 min-h-full w-[500px] p-8">
+                            <h2 class="text-2xl font-bold mb-8">Filtres</h2>
 
-                            <!-- Filtre par marque -->
-                            <div class="form-control">
-                                <label class="label">
-                                    <span class="label-text font-semibold">Marque</span>
-                                </label>
-                                <select wire:model="filterMarque" class="select select-bordered w-full">
-                                    <option value="">Toutes les marques</option>
-                                    <option value="Chanel">Chanel</option>
-                                    <option value="Dior">Dior</option>
-                                    <option value="Gucci">Gucci</option>
-                                    <option value="Hermes">Hermès</option>
-                                    <option value="Yves Saint Laurent">Yves Saint Laurent</option>
-                                    <option value="Prada">Prada</option>
-                                    <option value="Versace">Versace</option>
-                                    <option value="Armani">Armani</option>
-                                </select>
-                            </div>
+                            <div class="space-y-6">
+                                <!-- Filtre par nom -->
+                                <div class="form-control">
+                                    <label class="label">
+                                        <span class="label-text font-semibold">Nom du produit</span>
+                                    </label>
+                                    <input 
+                                        type="text" 
+                                        wire:model="filterName"
+                                        placeholder="Rechercher un parfum..."
+                                        class="input input-bordered w-full" 
+                                    />
+                                </div>
 
-                            <!-- Filtre par type de parfum -->
-                            <div class="form-control">
-                                <label class="label">
-                                    <span class="label-text font-semibold">Type de parfum</span>
-                                </label>
-                                <select wire:model="filterType" class="select select-bordered w-full">
-                                    <option value="">Tous les types</option>
-                                    <option value="eau_de_parfum">Eau de Parfum</option>
-                                    <option value="eau_de_toilette">Eau de Toilette</option>
-                                    <option value="eau_de_cologne">Eau de Cologne</option>
-                                    <option value="parfum">Parfum</option>
-                                </select>
-                            </div>
+                                <!-- Filtre par marque -->
+                                <div class="form-control">
+                                    <label class="label">
+                                        <span class="label-text font-semibold">Marque</span>
+                                    </label>
+                                    <select wire:model="filterMarque" class="select select-bordered w-full">
+                                        <option value="">Toutes les marques</option>
+                                        <option value="Chanel">Chanel</option>
+                                        <option value="Dior">Dior</option>
+                                        <option value="Gucci">Gucci</option>
+                                        <option value="Hermes">Hermès</option>
+                                        <option value="Yves Saint Laurent">Yves Saint Laurent</option>
+                                        <option value="Prada">Prada</option>
+                                        <option value="Versace">Versace</option>
+                                        <option value="Armani">Armani</option>
+                                    </select>
+                                </div>
 
-                            <!-- Filtre par capacité -->
-                            <div class="form-control">
-                                <label class="label">
-                                    <span class="label-text font-semibold">Capacité (ML)</span>
-                                </label>
-                                <select wire:model="filterCapacity" class="select select-bordered w-full">
-                                    <option value="">Toutes les capacités</option>
-                                    <option value="30">30 ML</option>
-                                    <option value="50">50 ML</option>
-                                    <option value="75">75 ML</option>
-                                    <option value="100">100 ML</option>
-                                    <option value="150">150 ML</option>
-                                </select>
-                            </div>
+                                <!-- Filtre par type de parfum -->
+                                <div class="form-control">
+                                    <label class="label">
+                                        <span class="label-text font-semibold">Type de parfum</span>
+                                    </label>
+                                    <select wire:model="filterType" class="select select-bordered w-full">
+                                        <option value="">Tous les types</option>
+                                        <option value="eau_de_parfum">Eau de Parfum</option>
+                                        <option value="eau_de_toilette">Eau de Toilette</option>
+                                        <option value="eau_de_cologne">Eau de Cologne</option>
+                                        <option value="parfum">Parfum</option>
+                                    </select>
+                                </div>
 
-                            <!-- Boutons d'action -->
-                            <div class="flex gap-2">
-                                <button 
-                                    type="button" 
-                                    wire:click="applyFilters"
-                                    class="btn btn-primary flex-1"
-                                >
-                                    Appliquer
-                                </button>
-                                <button 
-                                    type="button" 
-                                    wire:click="resetFilters"
-                                    class="btn btn-ghost flex-1"
-                                >
-                                    Réinitialiser
-                                </button>
+                                <!-- Filtre par capacité -->
+                                <div class="form-control">
+                                    <label class="label">
+                                        <span class="label-text font-semibold">Capacité (ML)</span>
+                                    </label>
+                                    <select wire:model="filterCapacity" class="select select-bordered w-full">
+                                        <option value="">Toutes les capacités</option>
+                                        <option value="30">30 ML</option>
+                                        <option value="50">50 ML</option>
+                                        <option value="75">75 ML</option>
+                                        <option value="100">100 ML</option>
+                                        <option value="150">150 ML</option>
+                                    </select>
+                                </div>
+
+                                <!-- Boutons d'action -->
+                                <div class="flex gap-2">
+                                    <button 
+                                        type="button" 
+                                        wire:click="applyFilters"
+                                        class="btn btn-primary flex-1"
+                                    >
+                                        Appliquer
+                                    </button>
+                                    <button 
+                                        type="button" 
+                                        wire:click="resetFilters"
+                                        class="btn btn-ghost flex-1"
+                                    >
+                                        Réinitialiser
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -104,12 +119,17 @@
     </x-header>
 
     <!-- Résultats et compteur -->
-    <div class="mb-4">
+    <div class="mb-4 flex justify-between items-center">
         <p class="text-sm text-gray-600">
             Affichage de {{ count($products) }} produit(s) sur {{ $totalItems }} au total
             @if($search)
                 <span class="ml-2 badge badge-primary">Recherche: "{{ $search }}"</span>
             @endif
+        </p>
+        
+        <!-- Info éléments par page -->
+        <p class="text-sm text-gray-500">
+            {{ $perPage }} éléments par page
         </p>
     </div>
 
@@ -209,7 +229,14 @@
 
     <!-- Pagination -->
     @if($totalPages > 1)
-        <div class="mt-8 flex justify-center">
+        <div class="mt-8 flex justify-between items-center">
+            <!-- Info pagination -->
+            <div class="text-sm text-gray-600">
+                Page {{ $currentPage }} sur {{ $totalPages }} - 
+                {{ $totalItems }} produit(s) au total
+            </div>
+
+            <!-- Contrôles de pagination -->
             <div class="join">
                 <!-- Bouton Précédent -->
                 <button 
@@ -265,11 +292,6 @@
                     »
                 </button>
             </div>
-        </div>
-
-        <!-- Information pagination -->
-        <div class="mt-4 text-center text-sm text-gray-600">
-            Page {{ $currentPage }} sur {{ $totalPages }}
         </div>
     @endif
 
