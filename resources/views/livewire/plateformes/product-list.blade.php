@@ -7,7 +7,7 @@ new class extends Component {
 }; ?>
 
 <div>
-    <x-header title="Nos produits" subtitle="Les produit de notre boutique a commparer" no-separator>
+    <x-header title="Nos produits" subtitle="Les produits de notre boutique à comparer" no-separator>
         <x-slot:middle class="!justify-end">
             <x-input icon="o-bolt" placeholder="Search..." />
         </x-slot:middle>
