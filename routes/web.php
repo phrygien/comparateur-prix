@@ -4,6 +4,7 @@ use Livewire\Volt\Volt;
 
 //Volt::route('/', 'users.index');
 
+Volt::route('/auth', 'auth.login')->name('login');
 
 Volt::route('/', 'plateformes.page')->name('home');
 
