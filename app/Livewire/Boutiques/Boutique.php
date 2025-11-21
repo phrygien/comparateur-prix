@@ -20,40 +20,36 @@ class Boutique extends Component
     }
     
     public function getListProduct($search = "", $page = 1, $perPage = 10){
-        try{
+        try {
 
             $offset = ($page - 1) * $perPage;
 
-            $subQuery = '';
+            $subQuery = "";
             $params = [];
 
             // 🔍 Global search
             if ($search != "") {
                 // Clean search: remove apostrophes
-                $search = str_replace("'", "", $search);
+                $searchClean = str_replace("'", "", $search);
+                $words = explode(" ", $searchClean);
 
-                // Split into words
-                $words = explode(" ", $search);
-
-                // Build SQL
-                $subQuery = "AND ( ";
-                $params = [];
-
+                $subQuery = " AND ( ";
                 $and = "";
+
                 foreach ($words as $word) {
                     $subQuery .= " $and CONCAT(product_char.name, ' ', options.attribute_value) LIKE ? ";
-                    $params[] = "%{$word}%";
-                    $and = 'AND';
+                    $params[] = "%$word%";
+                    $and = "AND";
                 }
 
-                $subQuery .= " ) OR produit.sku LIKE ? ";
-                $params[] = "%{$word}%";
+                // Search SKU as well
+                $subQuery .= " OR produit.sku LIKE ? ) ";
+                $params[] = "%$searchClean%";
             }
 
-            //Total count
-            $resultTotal = DB::connection('mysqlMagento')->selectOne(
-                "SELECT 
-                    COUNT(*) as nb
+            // Total count
+            $resultTotal = DB::connection('mysqlMagento')->selectOne("
+                SELECT COUNT(*) as nb
                 FROM catalog_product_entity as produit
                 LEFT JOIN catalog_product_relation as parent_child_table ON parent_child_table.child_id = produit.entity_id 
                 LEFT JOIN catalog_product_super_link as cpsl ON cpsl.product_id = produit.entity_id 
@@ -71,20 +67,19 @@ class Boutique extends Component
                 LEFT JOIN product_char as product_parent_char ON product_parent_char.entity_id = produit_parent.entity_id
                 LEFT JOIN product_text as product_parent_text ON product_parent_text.entity_id = produit_parent.entity_id 
                 WHERE product_int.status >= 0 $subQuery
-                ORDER BY parent_child_table.parent_id ASC"
-            , $params );
+            ", $params);
 
-            $total = $resultTotal->nb || 0;
+            $total = $resultTotal->nb ?? 0;
             $nbPage = ceil($total / $perPage);
 
             // Reset page if too big
-            if ($page > $nbPage) {
+            if ($page > $nbPage && $nbPage > 0) {
                 $page = 1;
                 $offset = 0;
             }
 
             // 📄 Paginated data
-            $dataQuery = `
+            $dataQuery = "
                 SELECT 
                     produit.entity_id as id,
                     produit.sku as sku,
@@ -116,7 +111,7 @@ class Boutique extends Component
                     product_int.product_type as product_type,
                     product_media.media_gallery as media_gallery,
                     product_categorie.name as categorie,
-                    REPLACE(product_categorie.name, " > ", ",") as tags,
+                    REPLACE(product_categorie.name, ' > ', ',') as tags,
                     stock_item.qty as quatity,
                     stock_status as quatity_status,
                     options.configurable_product_id as configurable_product_id,
@@ -140,26 +135,28 @@ class Boutique extends Component
                 LEFT JOIN product_char as product_parent_char ON product_parent_char.entity_id = produit_parent.entity_id
                 LEFT JOIN product_text as product_parent_text ON product_parent_text.entity_id = produit_parent.entity_id 
                 WHERE product_int.status >= 0 $subQuery
-                ORDER BY parent_child_table.parent_id ASC 
-                LIMIT ? OFFSET ? 
-            `;
+                ORDER BY parent_child_table.parent_id ASC
+                LIMIT ? OFFSET ?
+            ";
+
             $params[] = $perPage;
             $params[] = $offset;
 
             $result = DB::connection('mysqlMagento')->select($dataQuery, $params);
 
-            return array(
+            return [
                 "total_item" => $total,
                 "per_page" => $perPage,
                 "total_page" => $nbPage,
                 "current_page" => $page,
                 "data" => $result
-            );
+            ];
 
-        }catch(\Throwable $e ){
+        } catch (\Throwable $e) {
             throw $e;
         }
     }
+
 
     public function getOneProduit($id){
         try{
