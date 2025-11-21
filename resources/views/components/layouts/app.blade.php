@@ -52,7 +52,7 @@
 
                 <x-menu-item title="Accueil" icon="o-sparkles" link="/" />
 
-                <x-menu-item title="Nos produits" icon="o-shopping-bag" link="/articles" />
+                <x-menu-item title="Boutiques" icon="o-shopping-bag" link="/articles" />
 
                 {{-- <x-menu-sub title="Settings" icon="o-cog-6-tooth">
                     <x-menu-item title="Wifi" icon="o-wifi" link="####" />
