@@ -11,7 +11,7 @@ pipeline {
             steps {
                 sh '''
                     # Donner les droits à Jenkins AVANT d'exécuter Git
-                    sudo chown -R jenkins:jenkins /var/www/comparateur
+                    sudo chown -R jenkins:jenkins /var/www/comparateeur
                 '''
             }
         }
