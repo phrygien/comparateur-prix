@@ -50,7 +50,7 @@
                     <x-menu-separator />
                 @endif
 
-                <x-menu-item title="Welcome" icon="o-sparkles" link="/" />
+                <x-menu-item title="Accueil" icon="o-sparkles" link="/" />
 
                 <x-menu-item title="Nos produits" icon="o-shopping-bag" link="/articles" />
 
