@@ -143,7 +143,8 @@ class Boutique extends Component
                 ORDER BY parent_child_table.parent_id ASC 
                 LIMIT ? OFFSET ? 
             `;
-            array_push($params, $perPage, $offset);
+            $params[] = $perPage;
+            $params[] = $offset;
 
             $result = DB::connection('mysqlMagento')->select($dataQuery, $params);
 
