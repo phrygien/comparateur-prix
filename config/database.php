@@ -63,6 +63,15 @@ return [
             ]) : [],
         ],
 
+        
+        'mysqlMagento' => [ // second connection
+            'driver' => 'mysql',
+            'host' => env('MAGENTO_DB_HOST', '127.0.0.1'),
+            'database' => env('MAGENTO_DB', 'second_db'),
+            'username' => env('MAGENTO_DB_USER', 'root'),
+            'password' => env('MAGENTO_DB_PASSWORD', ''),
+        ],
+
         'mariadb' => [
             'driver' => 'mariadb',
             'url' => env('DB_URL'),
