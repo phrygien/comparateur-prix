@@ -20,7 +20,7 @@ pipeline {
             steps {
                 sh '''
                     git config --global --add safe.directory /var/www/comparateur || true
-                    cd /var/www/comparatgeur
+                    cd /var/www/comparateur
 
                     git reset --hard
                     git clean -fd
