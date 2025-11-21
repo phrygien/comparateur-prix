@@ -3,6 +3,7 @@
 use Mary\Traits\Toast;
 use Livewire\Attributes\Validate;
 use Livewire\Volt\Component;
+use Illuminate\Support\Facades\Hash;
 use Livewire\Attributes\{Layout, Title};
 
 new

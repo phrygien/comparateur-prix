@@ -12,6 +12,12 @@ class User extends Authenticatable
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable;
 
+
+    /**
+     * Summary of table
+     * @var string
+     */
+    protected $table = 'user';
     /**
      * The attributes that are mass assignable.
      *
