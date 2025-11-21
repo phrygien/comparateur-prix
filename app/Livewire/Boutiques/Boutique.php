@@ -11,7 +11,7 @@ class Boutique extends Component
     // mounted
     public function mount(): void
     {
-        $this->getListProduct();
+        var_dump($this->getListProduct());
     }
 
     public function render()
