@@ -3,6 +3,7 @@
 namespace App\Livewire\Boutiques;
 
 use Livewire\Component;
+use Illuminate\Support\Facades\DB;
 
 class Boutique extends Component
 {
