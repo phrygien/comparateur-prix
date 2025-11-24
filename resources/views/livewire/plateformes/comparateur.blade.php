@@ -5,13 +5,13 @@ use Livewire\Volt\Component;
 new class extends Component {
   
 
-  public function mount($name): void
+  public function mount($vendor, $name): void
   {
     //dd($name);
-     dd($this->getCompetitorPrice($name));
+     dd($this->getCompetitorPrice($vendor, $name));
   }
 
-  public function getCompetitorPrice($search){
+  public function getCompetitorPrice($vendor, $search){
     try{
 
       $subQuery = "";
@@ -27,13 +27,22 @@ new class extends Component {
 
           //dd($words);
 
-          $subQuery = " AND ( ";
-          $and = "";
+          // ajout vendor
+          $subQuery .= " AND LOWER( vendor ) LIKE ? ";
+          $params[] = "%".mb_strtolower($vendor, 'UTF-8')."%";
+
+          $subQuery .= " AND ( ";
+          $or = "";
 
           foreach ($words as $word) {
-              $subQuery .= " $and LOWER( CONCAT(vendor, ' ', name, ' ', COALESCE(type,''), ' ', COALESCE(variation, '')) ) LIKE %".mb_strtolower($word, 'UTF-8')."%";
-              $params[] = "%".mb_strtolower($word, 'UTF-8')."%";
-              $and = "AND";
+              if($or == ""){
+                $subQuery .= " $or LOWER( vendor ) LIKE ? ";
+                $params[] = "%".mb_strtolower($vendor, 'UTF-8')."%";
+              }else{
+                $subQuery .= " $or LOWER( CONCAT(name, ' ', COALESCE(type,''), ' ', COALESCE(variation, '')) ) LIKE ? ";
+                $params[] = "%".mb_strtolower($word, 'UTF-8')."%";
+              }
+              $or = "OR";
           }
 
           $subQuery .= " ) ";
@@ -47,7 +56,7 @@ new class extends Component {
         ORDER BY scrap_reference_id DESC, created_at DESC 
       ";
 
-      dd($dataQuery);
+      //dd($dataQuery);
       $result = DB::connection('mysql')->select($dataQuery, $params);
 
        return [
