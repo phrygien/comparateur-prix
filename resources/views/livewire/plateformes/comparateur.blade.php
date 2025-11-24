@@ -3,7 +3,61 @@
 use Livewire\Volt\Component;
 
 new class extends Component {
-    //
+  
+  public function getCompetitorPrice($search){
+    try{
+
+      $subQuery = "";
+      $params = [];
+
+      // Global search
+      if (!empty($search)) {
+        
+          $searchClean = str_replace("'", "", $search);
+          $searchClean = str_replace("-", "", $searchClean);
+
+          $words = explode(" ", $searchClean);
+
+          $subQuery = " AND ( ";
+          $and = "";
+
+          foreach ($words as $word) {
+              $subQuery .= " $and LOWER( CONCAT(vendor, ' ', name, ' ', COALESCE(type,''), ' ', COALESCE(variation, '')) ) LIKE ? ";
+              $params[] = "%".mb_strtolower($word, 'UTF-8')."%";
+              $and = "AND";
+          }
+
+          $subQuery .= " ) ";
+      }
+
+      // Paginated data
+      $dataQuery = "
+        SELECT * 
+        FROM scraped_product 
+        WHERE 1=1 $subQuery
+        ORDER BY scrap_reference_id DESC, created_at DESC 
+      ";
+
+      $result = DB::connection('mysql')->select($dataQuery, $params);
+
+       return [
+          "total_item" => $total,
+          "per_page" => $perPage,
+          "total_page" => $nbPage,
+          "current_page" => $page,
+          "data" => $result
+        ];
+
+    } 
+    catch (\Throwable $e) {
+      // Log l'erreur et retourne un tableau vide
+      \Log::error('Error loading products: ' . $e->getMessage());
+      return [
+        "data" => []
+      ];
+    }
+  }
+
 }; ?>
 
 <div>
