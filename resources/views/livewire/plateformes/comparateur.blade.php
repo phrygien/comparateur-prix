@@ -9,79 +9,79 @@ new class extends Component {
     dd($this->getCompetitorPrice($name));
   }
 
-  public function getCompetitorPrice($search){
+  // public function getCompetitorPrice($search){
+  //   try {
+  //     // Validation
+  //     if (empty(trim($search))) {
+  //       return ["data" => []];
+  //     }
+
+  //     // Nettoyage du nom de produit
+  //     $cleanSearch = $this->cleanSearchString($search);
+      
+  //     // Extraction des mots significatifs
+  //     $keywords = $this->extractKeywords($cleanSearch);
+      
+  //     if (empty($keywords)) {
+  //       return ["data" => [], "keywords" => []];
+  //     }
+      
+  //     // Recherche dans la base de données
+  //     $results = $this->searchByName($keywords);
+
+  //     return [
+  //       "data" => $results,
+  //       "keywords" => $keywords,
+  //       "total_results" => count($results)
+  //     ];
+
+  //   } catch (\Throwable $e) {
+  //     \Log::error('Error loading products: ' . $e->getMessage(), [
+  //       'search' => $search,
+  //       'trace' => $e->getTraceAsString()
+  //     ]);
+      
+  //     return [
+  //       "data" => [],
+  //       "error" => $e->getMessage()
+  //     ];
+  //   }
+  // }
+
+  public function getCompetitorPrice($search)
+{
     try {
-      // Validation
-      if (empty(trim($search))) {
-        return ["data" => []];
-      }
+        if (empty(trim($search))) {
+            return ["data" => []];
+        }
 
-      // Nettoyage du nom de produit
-      $cleanSearch = $this->cleanSearchString($search);
-      
-      // Extraction des mots significatifs
-      $keywords = $this->extractKeywords($cleanSearch);
-      
-      if (empty($keywords)) {
-        return ["data" => [], "keywords" => []];
-      }
-      
-      // Recherche dans la base de données
-      $results = $this->searchByName($keywords);
+        $cleanSearch = $this->cleanSearchString($search);
+        $keywords = $this->extractKeywords($cleanSearch);
 
-      return [
-        "data" => $results,
-        "keywords" => $keywords,
-        "total_results" => count($results)
-      ];
+        if (empty($keywords)) {
+            return ["data" => [], "keywords" => []];
+        }
+
+        $results = $this->searchAcrossFields($keywords);
+
+        return [
+            "data" => $results,
+            "keywords" => $keywords,
+            "total_results" => count($results)
+        ];
 
     } catch (\Throwable $e) {
-      \Log::error('Error loading products: ' . $e->getMessage(), [
-        'search' => $search,
-        'trace' => $e->getTraceAsString()
-      ]);
-      
-      return [
-        "data" => [],
-        "error" => $e->getMessage()
-      ];
+        \Log::error('Error loading products: ' . $e->getMessage(), [
+            'search' => $search,
+            'trace' => $e->getTraceAsString()
+        ]);
+
+        return [
+            "data" => [],
+            "error" => $e->getMessage()
+        ];
     }
-  }
-
-  // public function getCompetitorPrice($search)
-  // {
-  //     try {
-  //         if (empty(trim($search))) {
-  //             return ["data" => []];
-  //         }
-
-  //         $cleanSearch = $this->cleanSearchString($search);
-  //         $keywords = $this->extractKeywords($cleanSearch);
-
-  //         if (empty($keywords)) {
-  //             return ["data" => [], "keywords" => []];
-  //         }
-
-  //         $results = $this->searchAcrossFields($keywords);
-
-  //         return [
-  //             "data" => $results,
-  //             "keywords" => $keywords,
-  //             "total_results" => count($results)
-  //         ];
-
-  //     } catch (\Throwable $e) {
-  //         \Log::error('Error loading products: ' . $e->getMessage(), [
-  //             'search' => $search,
-  //             'trace' => $e->getTraceAsString()
-  //         ]);
-
-  //         return [
-  //             "data" => [],
-  //             "error" => $e->getMessage()
-  //         ];
-  //     }
-  // }
+}
 
 
   /**
@@ -116,48 +116,48 @@ new class extends Component {
   /**
    * Recherche par nom de produit uniquement
    */
-  private function searchByName(array $keywords): array
-  {
-    $conditions = [];
-    $params = [];
-    $scoreParts = [];
+  // private function searchByName(array $keywords): array
+  // {
+  //   $conditions = [];
+  //   $params = [];
+  //   $scoreParts = [];
     
-    // Pour chaque mot-clé, cherche dans le nom du produit
-    foreach ($keywords as $index => $keyword) {
-      $weight = count($keywords) - $index; // Premiers mots = plus importants
+  //   // Pour chaque mot-clé, cherche dans le nom du produit
+  //   foreach ($keywords as $index => $keyword) {
+  //     $weight = count($keywords) - $index; // Premiers mots = plus importants
       
-      $conditions[] = "LOWER(name) LIKE ?";
-      $params[] = "%" . $keyword . "%";
+  //     $conditions[] = "LOWER(name) LIKE ?";
+  //     $params[] = "%" . $keyword . "%";
       
-      $scoreParts[] = "IF(LOWER(name) LIKE ?, $weight, 0)";
-      $params[] = "%" . $keyword . "%";
-    }
+  //     $scoreParts[] = "IF(LOWER(name) LIKE ?, $weight, 0)";
+  //     $params[] = "%" . $keyword . "%";
+  //   }
     
-    if (empty($conditions)) {
-      return [];
-    }
+  //   if (empty($conditions)) {
+  //     return [];
+  //   }
     
-    // Calcul du score de pertinence
-    $scoreCalc = "(" . implode(" + ", $scoreParts) . ")";
+  //   // Calcul du score de pertinence
+  //   $scoreCalc = "(" . implode(" + ", $scoreParts) . ")";
     
-    // Minimum 30% des mots doivent correspondre
-    $minScore = max(1, (int)ceil(array_sum(range(1, count($keywords))) * 0.3));
+  //   // Minimum 30% des mots doivent correspondre
+  //   $minScore = max(1, (int)ceil(array_sum(range(1, count($keywords))) * 0.3));
     
-    $query = "
-      SELECT 
-        *,
-        $scoreCalc AS relevance_score
-      FROM scraped_product 
-      WHERE (" . implode(" OR ", $conditions) . ")
-      HAVING relevance_score >= ?
-      ORDER BY relevance_score DESC, created_at DESC 
-      LIMIT 100
-    ";
+  //   $query = "
+  //     SELECT 
+  //       *,
+  //       $scoreCalc AS relevance_score
+  //     FROM scraped_product 
+  //     WHERE (" . implode(" OR ", $conditions) . ")
+  //     HAVING relevance_score >= ?
+  //     ORDER BY relevance_score DESC, created_at DESC 
+  //     LIMIT 100
+  //   ";
     
-    $params[] = $minScore;
+  //   $params[] = $minScore;
     
-    return DB::connection('mysql')->select($query, $params);
-  }
+  //   return DB::connection('mysql')->select($query, $params);
+  // }
 
   private function searchAcrossFields(array $keywords): array
   {
