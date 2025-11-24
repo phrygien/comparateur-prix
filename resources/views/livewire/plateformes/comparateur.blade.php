@@ -159,83 +159,75 @@ new class extends Component {
   //   return DB::connection('mysql')->select($query, $params);
   // }
 
-  private function searchAcrossFields(array $keywords): array
-  {
-      if (empty($keywords)) {
-          return [];
-      }
+private function searchAcrossFieldsRaw(array $keywords)
+{
+    if (empty($keywords)) {
+        return [];
+    }
 
-      $whereParts = [];    // pour les conditions WHERE (OR sur champs)
-      $whereParams = [];   // params correspondants aux WHERE (les %keyword%)
-      $scoreParts = [];    // pour le calcul de score dans SELECT
-      $scoreParams = [];   // params correspondants au score (les mêmes %keyword%)
+    $fields = ['vendor', 'name', 'type', 'variation'];
 
-      $fields = ['vendor', 'name', 'type', 'variation'];
+    $whereParts = [];
+    $scoreParts = [];
 
-      foreach ($keywords as $index => $keyword) {
-          $weight = count($keywords) - $index;
-          $fieldConditions = [];
+    foreach ($keywords as $index => $keyword) {
+        $keyword = strtolower(addslashes($keyword)); // simple cleaning
+        $weight = count($keywords) - $index;
 
-          foreach ($fields as $field) {
-              // Condition WHERE pour ce champ
-              $fieldConditions[] = "LOWER(sp.`$field`) LIKE ?";
-              $whereParams[] = '%' . $keyword . '%';
+        $fieldConditions = [];
 
-              // Contribution au score (doit venir **avant** WHERE dans la requête)
-              $scoreParts[] = "IF(LOWER(sp.`$field`) LIKE ?, $weight, 0)";
-              $scoreParams[] = '%' . $keyword . '%';
-          }
+        foreach ($fields as $field) {
 
-          // regroupe les champs par mot-clé (OR entre champs) ; on utilisera AND entre mots-clés
-          $whereParts[] = "(" . implode(" OR ", $fieldConditions) . ")";
-      }
+            // WHERE : (vendor LIKE '%kw%')
+            $fieldConditions[] = "LOWER(sp.`$field`) LIKE '%$keyword%'";
 
-      // calcul du score et du minScore
-      $scoreCalc = "(" . implode(" + ", $scoreParts) . ")";
-      $maxScore = array_sum(range(1, count($keywords))) * count($fields); // ex: 3 mots * 4 champs
-      $minScore = max(1, (int)ceil($maxScore * 0.30));
+            // SCORE
+            $scoreParts[] = "IF(LOWER(sp.`$field`) LIKE '%$keyword%', $weight, 0)";
+        }
 
-      // Requête : on inner join sur la sous-requête qui récupère la dernière ligne par (site, vendor, name, type, variation)
-      $query = "
-          SELECT sp.*, $scoreCalc AS relevance_score
-          FROM scraped_product sp
-          INNER JOIN (
-              SELECT 
-                  web_site_id, vendor, name, type, variation,
-                  MAX(scrap_reference_id) AS latest_ref
-              FROM scraped_product
-              GROUP BY web_site_id, vendor, name, type, variation
-          ) lastver ON 
-              lastver.web_site_id = sp.web_site_id
-              AND lastver.vendor = sp.vendor
-              AND lastver.name = sp.name
-              AND lastver.type = sp.type
-              AND lastver.variation = sp.variation
-              AND lastver.latest_ref = sp.scrap_reference_id
-          WHERE " . implode(" AND ", $whereParts) . "
-          HAVING relevance_score >= ?
-          ORDER BY relevance_score DESC, sp.created_at DESC
-          LIMIT 150
-      ";
+        // regroupe par mot-clé
+        $whereParts[] = "(" . implode(" OR ", $fieldConditions) . ")";
+    }
 
-      dd($query);
+    // score total
+    $scoreCalc = "(" . implode(" + ", $scoreParts) . ")";
 
-      // IMPORTANT : l'ordre des params doit suivre l'ordre des placeholders dans la requête.
-      // Dans la requête, les placeholders du score (SELECT) apparaissent avant le WHERE,
-      // donc on doit passer d'abord $scoreParams puis $whereParams, puis $minScore.
-      $params = array_merge($scoreParams, $whereParams, [$minScore]);
+    // maxScore = somme des poids × nb champs
+    $maxScore = array_sum(range(1, count($keywords))) * count($fields);
+    $minScore = max(1, (int)ceil($maxScore * 0.30));
 
-      // DEBUG: logger la requête et nombre de params (utile en dev)
-      \Log::debug('searchAcrossFields SQL', [
-          'sql_preview' => substr(preg_replace('/\s+/', ' ', $query), 0, 1000),
-          'score_params_count' => count($scoreParams),
-          'where_params_count' => count($whereParams),
-          'total_params' => count($params),
-          'minScore' => $minScore,
-      ]);
+    // LA REQUÊTE BRUTE SANS AUCUN ?
+    $query = "
+        SELECT 
+            sp.*,
+            $scoreCalc AS relevance_score
+        FROM scraped_product sp
+        INNER JOIN (
+            SELECT 
+                web_site_id, vendor, name, type, variation,
+                MAX(scrap_reference_id) AS latest_ref
+            FROM scraped_product
+            GROUP BY web_site_id, vendor, name, type, variation
+        ) lastver ON 
+            lastver.web_site_id = sp.web_site_id
+            AND lastver.vendor = sp.vendor
+            AND lastver.name = sp.name
+            AND lastver.type = sp.type
+            AND lastver.variation = sp.variation
+            AND lastver.latest_ref = sp.scrap_reference_id
+        WHERE 
+            " . implode(" AND ", $whereParts) . "
+        HAVING relevance_score >= $minScore
+        ORDER BY relevance_score DESC, sp.created_at DESC
+        LIMIT 150
+    ";
 
-      return DB::connection('mysql')->select($query, $params);
-  }
+    \Log::debug("RAW SQL", [
+        'sql' => $query
+    ]);
+
+    return DB::connection('mysql')->select(DB::raw($query));
+}
 
 }; ?>
 <div>
