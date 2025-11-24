@@ -62,7 +62,7 @@ new class extends Component {
             return ["data" => [], "keywords" => []];
         }
 
-        $results = $this->searchAcrossFields($keywords);
+        $results = $this->searchAcrossFieldsRaw($keywords);
 
         return [
             "data" => $results,
