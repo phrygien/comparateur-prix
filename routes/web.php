@@ -3,20 +3,15 @@
 use App\Livewire\Boutiques\Boutique;
 use Livewire\Volt\Volt;
 
-//Volt::route('/', 'users.index');
+// Route publique
+Volt::route('/', 'auth.login')->name('login');
 
-Volt::route('/auth', 'auth.login')->name('login');
-
-Volt::route('/', 'plateformes.page')->name('home');
-
-Volt::route('/articles', 'plateformes.article')->name('articles');
-
-Volt::route('/article/{id}/commparate', 'plateformes.comparateur')->name('article.comparate-prix');
-
-Volt::route('/sites', 'sites.page')->name('sites');
-
-Volt::route('/scraped_products', 'scraped_products.page')->name('scraped_products');
-
-// Routes boutique
-Route::get('/boutique', Boutique::class)->name('boutiques');
-//Volt::route('/boutiques', 'boutiques.page')->name('boutiques');
+// Groupe de routes protégées
+Route::middleware(['check.auth'])->group(function () {
+    Volt::route('/home', 'plateformes.page')->name('home');
+    Volt::route('/articles', 'plateformes.article')->name('articles');
+    Volt::route('/article/{id}/commparate', 'plateformes.comparateur')->name('article.comparate-prix');
+    Volt::route('/sites', 'sites.page')->name('sites');
+    Volt::route('/scraped_products', 'scraped_products.page')->name('scraped_products');
+    Route::get('/boutique', Boutique::class)->name('boutiques');
+});
