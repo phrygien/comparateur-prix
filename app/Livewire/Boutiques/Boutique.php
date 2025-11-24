@@ -221,7 +221,7 @@ class Boutique extends Component
                 LEFT JOIN product_char as product_parent_char ON product_parent_char.entity_id = produit_parent.entity_id
                 LEFT JOIN product_text as product_parent_text ON product_parent_text.entity_id = produit_parent.entity_id 
                 WHERE product_int.status >= 0 $subQuery
-                ORDER BY product_char.name ASC
+                ORDER BY produit.entity_id DESC
                 LIMIT ? OFFSET ?
             ";
 
