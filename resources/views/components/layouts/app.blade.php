@@ -43,14 +43,15 @@
 
                     <x-list-item :item="$user" value="name" sub-value="email" no-separator no-hover class="-mx-2 !-my-2 rounded">
                         <x-slot:actions>
-                            <x-button icon="o-power" class="btn-circle btn-ghost btn-xs" tooltip-left="logoff" no-wire-navigate link="/logout" />
+                            {{-- <x-button icon="o-power" class="btn-circle btn-ghost btn-xs" tooltip-left="logoff" no-wire-navigate link="/logout" /> --}}
+                            <livewire:auth.logout />
                         </x-slot:actions>
                     </x-list-item>
 
                     <x-menu-separator />
                 @endif
 
-                <x-menu-item title="Accueil" icon="o-sparkles" link="/" />
+                <x-menu-item title="Accueil" icon="o-sparkles" link="/home" />
 
                 <x-menu-item title="Boutiques" icon="o-building-storefront" link="/boutique" />
 

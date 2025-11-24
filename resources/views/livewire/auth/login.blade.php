@@ -26,9 +26,23 @@ new
             'password' => 'required',
         ]);
 
+        $user = \App\Models\User::where('email', $this->email)->first();
+
+        if (!$user) {
+            $this->error('Ces identifiants ne correspondent pas à nos enregistrements.');
+            return;
+        }
+
+        // Check if password needs rehashing
+        if (!str_starts_with($user->password, '$2y$')) {
+            // Password is not using bcrypt, update it
+            $user->password = Hash::make($this->password);
+            $user->save();
+        }
+
         if (Auth::attempt(['email' => $this->email, 'password' => $this->password])) {
             session()->regenerate();
-            return redirect()->intended('/dashboard');
+            return redirect()->intended('/home');
         }
 
         $this->error('Ces identifiants ne correspondent pas à nos enregistrements.');
