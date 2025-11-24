@@ -4,6 +4,13 @@ use Livewire\Volt\Component;
 
 new class extends Component {
   
+
+  public function mount($name): void
+  {
+    //dd($name);
+     dd($this->getCompetitorPrice($name));
+  }
+
   public function getCompetitorPrice($search){
     try{
 
@@ -38,13 +45,10 @@ new class extends Component {
         ORDER BY scrap_reference_id DESC, created_at DESC 
       ";
 
+      dd($dataQuery);
       $result = DB::connection('mysql')->select($dataQuery, $params);
 
        return [
-          "total_item" => $total,
-          "per_page" => $perPage,
-          "total_page" => $nbPage,
-          "current_page" => $page,
           "data" => $result
         ];
 
