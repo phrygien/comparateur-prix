@@ -161,62 +161,78 @@ new class extends Component {
 
   private function searchAcrossFields(array $keywords): array
   {
-    $conditions = [];
-    $params = [];
-    $scoreParts = [];
+      if (empty($keywords)) {
+          return [];
+      }
 
-    foreach ($keywords as $index => $keyword) {
-        $weight = count($keywords) - $index;
+      $whereParts = [];    // pour les conditions WHERE (OR sur champs)
+      $whereParams = [];   // params correspondants aux WHERE (les %keyword%)
+      $scoreParts = [];    // pour le calcul de score dans SELECT
+      $scoreParams = [];   // params correspondants au score (les mêmes %keyword%)
 
-        $fields = ["vendor", "name", "type", "variation"];
+      $fields = ['vendor', 'name', 'type', 'variation'];
 
-        $fieldConditions = [];
-        foreach ($fields as $field) {
-            $fieldConditions[] = "LOWER(sp.$field) LIKE ?";
-            $params[] = "%$keyword%";
+      foreach ($keywords as $index => $keyword) {
+          $weight = count($keywords) - $index;
+          $fieldConditions = [];
 
-            $scoreParts[] = "IF(LOWER(sp.$field) LIKE ?, $weight, 0)";
-            $params[] = "%$keyword%";
-        }
+          foreach ($fields as $field) {
+              // Condition WHERE pour ce champ
+              $fieldConditions[] = "LOWER(sp.`$field`) LIKE ?";
+              $whereParams[] = '%' . $keyword . '%';
 
-        $conditions[] = "(" . implode(" OR ", $fieldConditions) . ")";
-    }
+              // Contribution au score (doit venir **avant** WHERE dans la requête)
+              $scoreParts[] = "IF(LOWER(sp.`$field`) LIKE ?, $weight, 0)";
+              $scoreParams[] = '%' . $keyword . '%';
+          }
 
-    if (empty($conditions)) {
-        return [];
-    }
+          // regroupe les champs par mot-clé (OR entre champs) ; on utilisera AND entre mots-clés
+          $whereParts[] = "(" . implode(" OR ", $fieldConditions) . ")";
+      }
 
-    // Score de pertinence
-    $scoreCalc = "(" . implode(" + ", $scoreParts) . ")";
-    $maxScore = array_sum(range(1, count($keywords))) * 4; 
-    $minScore = max(1, (int)ceil($maxScore * 0.3));
+      // calcul du score et du minScore
+      $scoreCalc = "(" . implode(" + ", $scoreParts) . ")";
+      $maxScore = array_sum(range(1, count($keywords))) * count($fields); // ex: 3 mots * 4 champs
+      $minScore = max(1, (int)ceil($maxScore * 0.30));
 
-    // Sous-requête pour prendre la dernière version DU PRODUIT (pas juste un site)
-    $query = "
-      SELECT sp.*, $scoreCalc AS relevance_score
-      FROM scraped_product sp
-      INNER JOIN (
-          SELECT 
-              web_site_id, vendor, name, type, variation,
-              MAX(scrap_reference_id) AS latest_ref
-          FROM scraped_product
-          GROUP BY web_site_id, vendor, name, type, variation
-      ) last ON 
-          last.web_site_id = sp.web_site_id
-          AND last.vendor = sp.vendor
-          AND last.name = sp.name
-          AND last.type = sp.type
-          AND last.variation = sp.variation
-          AND last.latest_ref = sp.scrap_reference_id
-      WHERE " . implode(" AND ", $conditions) . "
-      HAVING relevance_score >= ?
-      ORDER BY relevance_score DESC, sp.created_at DESC
-      LIMIT 150
-    ";
+      // Requête : on inner join sur la sous-requête qui récupère la dernière ligne par (site, vendor, name, type, variation)
+      $query = "
+          SELECT sp.*, $scoreCalc AS relevance_score
+          FROM scraped_product sp
+          INNER JOIN (
+              SELECT 
+                  web_site_id, vendor, name, type, variation,
+                  MAX(scrap_reference_id) AS latest_ref
+              FROM scraped_product
+              GROUP BY web_site_id, vendor, name, type, variation
+          ) lastver ON 
+              lastver.web_site_id = sp.web_site_id
+              AND lastver.vendor = sp.vendor
+              AND lastver.name = sp.name
+              AND lastver.type = sp.type
+              AND lastver.variation = sp.variation
+              AND lastver.latest_ref = sp.scrap_reference_id
+          WHERE " . implode(" AND ", $whereParts) . "
+          HAVING relevance_score >= ?
+          ORDER BY relevance_score DESC, sp.created_at DESC
+          LIMIT 150
+      ";
 
-    $params[] = $minScore;
+      // IMPORTANT : l'ordre des params doit suivre l'ordre des placeholders dans la requête.
+      // Dans la requête, les placeholders du score (SELECT) apparaissent avant le WHERE,
+      // donc on doit passer d'abord $scoreParams puis $whereParams, puis $minScore.
+      $params = array_merge($scoreParams, $whereParams, [$minScore]);
 
-    return DB::connection('mysql')->select($query, $params);
+      // DEBUG: logger la requête et nombre de params (utile en dev)
+      \Log::debug('searchAcrossFields SQL', [
+          'sql_preview' => substr(preg_replace('/\s+/', ' ', $query), 0, 1000),
+          'score_params_count' => count($scoreParams),
+          'where_params_count' => count($whereParams),
+          'total_params' => count($params),
+          'minScore' => $minScore,
+      ]);
+
+      return DB::connection('mysql')->select($query, $params);
   }
 
 }; ?>
