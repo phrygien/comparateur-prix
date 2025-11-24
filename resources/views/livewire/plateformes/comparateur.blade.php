@@ -25,6 +25,8 @@ new class extends Component {
 
           $words = explode(" ", $searchClean);
 
+          dd($words);
+
           $subQuery = " AND ( ";
           $and = "";
 
