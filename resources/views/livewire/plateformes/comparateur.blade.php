@@ -64,6 +64,9 @@ new class extends Component {
 
         $results = $this->searchAcrossFieldsRaw($keywords);
 
+        // Recherche dans la base de données
+        //$results = $this->searchByName($keywords);
+
         return [
             "data" => $results,
             "keywords" => $keywords,
@@ -116,48 +119,48 @@ new class extends Component {
   /**
    * Recherche par nom de produit uniquement
    */
-  // private function searchByName(array $keywords): array
-  // {
-  //   $conditions = [];
-  //   $params = [];
-  //   $scoreParts = [];
+  private function searchByName(array $keywords): array
+  {
+    $conditions = [];
+    $params = [];
+    $scoreParts = [];
     
-  //   // Pour chaque mot-clé, cherche dans le nom du produit
-  //   foreach ($keywords as $index => $keyword) {
-  //     $weight = count($keywords) - $index; // Premiers mots = plus importants
+    // Pour chaque mot-clé, cherche dans le nom du produit
+    foreach ($keywords as $index => $keyword) {
+      $weight = count($keywords) - $index; // Premiers mots = plus importants
       
-  //     $conditions[] = "LOWER(name) LIKE ?";
-  //     $params[] = "%" . $keyword . "%";
+      $conditions[] = "LOWER(name) LIKE ?";
+      $params[] = "%" . $keyword . "%";
       
-  //     $scoreParts[] = "IF(LOWER(name) LIKE ?, $weight, 0)";
-  //     $params[] = "%" . $keyword . "%";
-  //   }
+      $scoreParts[] = "IF(LOWER(name) LIKE ?, $weight, 0)";
+      $params[] = "%" . $keyword . "%";
+    }
     
-  //   if (empty($conditions)) {
-  //     return [];
-  //   }
+    if (empty($conditions)) {
+      return [];
+    }
     
-  //   // Calcul du score de pertinence
-  //   $scoreCalc = "(" . implode(" + ", $scoreParts) . ")";
+    // Calcul du score de pertinence
+    $scoreCalc = "(" . implode(" + ", $scoreParts) . ")";
     
-  //   // Minimum 30% des mots doivent correspondre
-  //   $minScore = max(1, (int)ceil(array_sum(range(1, count($keywords))) * 0.3));
+    // Minimum 30% des mots doivent correspondre
+    $minScore = max(1, (int)ceil(array_sum(range(1, count($keywords))) * 0.3));
     
-  //   $query = "
-  //     SELECT 
-  //       *,
-  //       $scoreCalc AS relevance_score
-  //     FROM scraped_product 
-  //     WHERE (" . implode(" OR ", $conditions) . ")
-  //     HAVING relevance_score >= ?
-  //     ORDER BY relevance_score DESC, created_at DESC 
-  //     LIMIT 100
-  //   ";
+    $query = "
+      SELECT 
+        *,
+        $scoreCalc AS relevance_score
+      FROM scraped_product 
+      WHERE (" . implode(" OR ", $conditions) . ")
+      HAVING relevance_score >= ?
+      ORDER BY relevance_score DESC, created_at DESC 
+      LIMIT 100
+    ";
     
-  //   $params[] = $minScore;
+    $params[] = $minScore;
     
-  //   return DB::connection('mysql')->select($query, $params);
-  // }
+    return DB::connection('mysql')->select($query, $params);
+  }
 
 private function searchAcrossFieldsRaw(array $keywords)
 {
@@ -222,11 +225,13 @@ private function searchAcrossFieldsRaw(array $keywords)
         LIMIT 150
     ";
 
+    dd($query);
+
     \Log::debug("RAW SQL", [
         'sql' => $query
     ]);
 
-    return DB::connection('mysql')->select(DB::raw($query));
+    return DB::connection('mysql')->select($query);
 }
 
 }; ?>
