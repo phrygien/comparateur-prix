@@ -31,7 +31,7 @@ new class extends Component {
           $and = "";
 
           foreach ($words as $word) {
-              $subQuery .= " $and LOWER( CONCAT(vendor, ' ', name, ' ', COALESCE(type,''), ' ', COALESCE(variation, '')) ) LIKE ? ";
+              $subQuery .= " $and LOWER( CONCAT(vendor, ' ', name, ' ', COALESCE(type,''), ' ', COALESCE(variation, '')) ) LIKE %".mb_strtolower($word, 'UTF-8')."%";
               $params[] = "%".mb_strtolower($word, 'UTF-8')."%";
               $and = "AND";
           }
