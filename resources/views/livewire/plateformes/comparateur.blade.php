@@ -21,7 +21,7 @@ new class extends Component {
       if (!empty($search)) {
         
           $searchClean = str_replace("'", "", $search);
-          $searchClean = str_replace("-", "", $searchClean);
+          $searchClean = str_replace(" - ", " ", $searchClean);
 
           $words = explode(" ", $searchClean);
 
