@@ -218,6 +218,8 @@ new class extends Component {
           LIMIT 150
       ";
 
+      dd($query);
+
       // IMPORTANT : l'ordre des params doit suivre l'ordre des placeholders dans la requête.
       // Dans la requête, les placeholders du score (SELECT) apparaissent avant le WHERE,
       // donc on doit passer d'abord $scoreParams puis $whereParams, puis $minScore.
