@@ -95,7 +95,7 @@ class Boutique extends Component
             $subQuery = "";
             $params = [];
 
-            // 🔍 Global search
+            // Global search
             if (!empty($search)) {
                 $searchClean = str_replace("'", "", $search);
                 $words = explode(" ", $searchClean);
@@ -164,7 +164,7 @@ class Boutique extends Component
                 $offset = 0;
             }
 
-            // 📄 Paginated data
+            // Paginated data
             $dataQuery = "
                 SELECT 
                     produit.entity_id as id,
