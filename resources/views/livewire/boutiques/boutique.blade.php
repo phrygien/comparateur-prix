@@ -157,11 +157,11 @@
                         </div>
                         
                         <h3 class="mt-4 font-medium text-gray-900 line-clamp-2">
-                            {{ mb_convert_encoding($product->title, 'UTF-8', 'UTF-8') }}
+                            {{ utf8_encode($product->title) }}
                         </h3>
                         
                         @if($product->vendor)
-                            <p class="text-gray-500 italic">{{ mb_convert_encoding($product->vendor, 'UTF-8', 'UTF-8') }}</p>
+                            <p class="text-gray-500 italic">{{ utf8_encode($product->vendor) }}</p>
                         @endif
                         
                         <div class="mt-2">
