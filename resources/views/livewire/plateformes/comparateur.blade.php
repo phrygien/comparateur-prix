@@ -4,77 +4,222 @@ use Livewire\Volt\Component;
 
 new class extends Component {
   
-
-  public function mount($vendor, $name): void
+  public function mount($name): void
   {
-    //dd($name);
-     dd($this->getCompetitorPrice($vendor, $name));
+    dd($this->getCompetitorPrice($name));
   }
 
-  public function getCompetitorPrice($vendor, $search){
-    try{
+  // public function getCompetitorPrice($search){
+  //   try {
+  //     // Validation
+  //     if (empty(trim($search))) {
+  //       return ["data" => []];
+  //     }
 
-      $subQuery = "";
-      $params = [];
+  //     // Nettoyage du nom de produit
+  //     $cleanSearch = $this->cleanSearchString($search);
+      
+  //     // Extraction des mots significatifs
+  //     $keywords = $this->extractKeywords($cleanSearch);
+      
+  //     if (empty($keywords)) {
+  //       return ["data" => [], "keywords" => []];
+  //     }
+      
+  //     // Recherche dans la base de données
+  //     $results = $this->searchByName($keywords);
 
-      // Global search
-      if (!empty($search)) {
-        
-          $searchClean = str_replace("'", "", $search);
-          $searchClean = str_replace(" - ", " ", $searchClean);
+  //     return [
+  //       "data" => $results,
+  //       "keywords" => $keywords,
+  //       "total_results" => count($results)
+  //     ];
 
-          $words = explode(" ", $searchClean);
+  //   } catch (\Throwable $e) {
+  //     \Log::error('Error loading products: ' . $e->getMessage(), [
+  //       'search' => $search,
+  //       'trace' => $e->getTraceAsString()
+  //     ]);
+      
+  //     return [
+  //       "data" => [],
+  //       "error" => $e->getMessage()
+  //     ];
+  //   }
+  // }
 
-          //dd($words);
+  public function getCompetitorPrice($search)
+{
+    try {
+        if (empty(trim($search))) {
+            return ["data" => []];
+        }
 
-          // ajout vendor
-          $subQuery .= " AND LOWER( vendor ) LIKE ? ";
-          $params[] = "%".mb_strtolower($vendor, 'UTF-8')."%";
+        $cleanSearch = $this->cleanSearchString($search);
+        $keywords = $this->extractKeywords($cleanSearch);
 
-          $subQuery .= " AND ( ";
-          $or = "";
+        if (empty($keywords)) {
+            return ["data" => [], "keywords" => []];
+        }
 
-          foreach ($words as $word) {
-              if($or == ""){
-                $subQuery .= " $or LOWER( vendor ) LIKE ? ";
-                $params[] = "%".mb_strtolower($vendor, 'UTF-8')."%";
-              }else{
-                $subQuery .= " $or LOWER( CONCAT(name, ' ', COALESCE(type,''), ' ', COALESCE(variation, '')) ) LIKE ? ";
-                $params[] = "%".mb_strtolower($word, 'UTF-8')."%";
-              }
-              $or = "OR";
-          }
+        $results = $this->searchAcrossFields($keywords);
 
-          $subQuery .= " ) ";
-      }
-
-      // Paginated data
-      $dataQuery = "
-        SELECT * 
-        FROM scraped_product 
-        WHERE 1=1 $subQuery
-        ORDER BY scrap_reference_id DESC, created_at DESC 
-      ";
-
-      //dd($dataQuery);
-      $result = DB::connection('mysql')->select($dataQuery, $params);
-
-       return [
-          "data" => $result
+        return [
+            "data" => $results,
+            "keywords" => $keywords,
+            "total_results" => count($results)
         ];
 
-    } 
-    catch (\Throwable $e) {
-      // Log l'erreur et retourne un tableau vide
-      \Log::error('Error loading products: ' . $e->getMessage());
-      return [
-        "data" => []
-      ];
+    } catch (\Throwable $e) {
+        \Log::error('Error loading products: ' . $e->getMessage(), [
+            'search' => $search,
+            'trace' => $e->getTraceAsString()
+        ]);
+
+        return [
+            "data" => [],
+            "error" => $e->getMessage()
+        ];
     }
+}
+
+
+  /**
+   * Nettoie la chaîne de recherche
+   */
+  private function cleanSearchString(string $search): string
+  {
+    $clean = preg_replace("/[^\p{L}\p{N}\s]/u", " ", $search);
+    $clean = preg_replace("/\s+/", " ", $clean);
+    return mb_strtolower(trim($clean), 'UTF-8');
+  }
+
+  /**
+   * Extrait les mots-clés significatifs
+   */
+  private function extractKeywords(string $cleanSearch): array
+  {
+    $stopWords = [
+      'le','la','les','de','du','des','un','une','et','ou','en',
+      'pour','avec','sans','sur','au','aux'
+    ];
+
+    $words = explode(" ", $cleanSearch);
+
+    $keywords = array_filter($words, function($word) use ($stopWords) {
+        return mb_strlen($word, 'UTF-8') >= 3 && !in_array($word, $stopWords);
+    });
+
+    return array_values($keywords);
+  }
+
+  /**
+   * Recherche par nom de produit uniquement
+   */
+  // private function searchByName(array $keywords): array
+  // {
+  //   $conditions = [];
+  //   $params = [];
+  //   $scoreParts = [];
+    
+  //   // Pour chaque mot-clé, cherche dans le nom du produit
+  //   foreach ($keywords as $index => $keyword) {
+  //     $weight = count($keywords) - $index; // Premiers mots = plus importants
+      
+  //     $conditions[] = "LOWER(name) LIKE ?";
+  //     $params[] = "%" . $keyword . "%";
+      
+  //     $scoreParts[] = "IF(LOWER(name) LIKE ?, $weight, 0)";
+  //     $params[] = "%" . $keyword . "%";
+  //   }
+    
+  //   if (empty($conditions)) {
+  //     return [];
+  //   }
+    
+  //   // Calcul du score de pertinence
+  //   $scoreCalc = "(" . implode(" + ", $scoreParts) . ")";
+    
+  //   // Minimum 30% des mots doivent correspondre
+  //   $minScore = max(1, (int)ceil(array_sum(range(1, count($keywords))) * 0.3));
+    
+  //   $query = "
+  //     SELECT 
+  //       *,
+  //       $scoreCalc AS relevance_score
+  //     FROM scraped_product 
+  //     WHERE (" . implode(" OR ", $conditions) . ")
+  //     HAVING relevance_score >= ?
+  //     ORDER BY relevance_score DESC, created_at DESC 
+  //     LIMIT 100
+  //   ";
+    
+  //   $params[] = $minScore;
+    
+  //   return DB::connection('mysql')->select($query, $params);
+  // }
+
+  private function searchAcrossFields(array $keywords): array
+  {
+    $conditions = [];
+    $params = [];
+    $scoreParts = [];
+
+    foreach ($keywords as $index => $keyword) {
+        $weight = count($keywords) - $index;
+
+        $fields = ["vendor", "name", "type", "variation"];
+
+        $fieldConditions = [];
+        foreach ($fields as $field) {
+            $fieldConditions[] = "LOWER(sp.$field) LIKE ?";
+            $params[] = "%$keyword%";
+
+            $scoreParts[] = "IF(LOWER(sp.$field) LIKE ?, $weight, 0)";
+            $params[] = "%$keyword%";
+        }
+
+        $conditions[] = "(" . implode(" OR ", $fieldConditions) . ")";
+    }
+
+    if (empty($conditions)) {
+        return [];
+    }
+
+    // Score de pertinence
+    $scoreCalc = "(" . implode(" + ", $scoreParts) . ")";
+    $maxScore = array_sum(range(1, count($keywords))) * 4; 
+    $minScore = max(1, (int)ceil($maxScore * 0.3));
+
+    // Sous-requête pour prendre la dernière version DU PRODUIT (pas juste un site)
+    $query = "
+      SELECT sp.*, $scoreCalc AS relevance_score
+      FROM scraped_product sp
+      INNER JOIN (
+          SELECT 
+              web_site_id, vendor, name, type, variation,
+              MAX(scrap_reference_id) AS latest_ref
+          FROM scraped_product
+          GROUP BY web_site_id, vendor, name, type, variation
+      ) last ON 
+          last.web_site_id = sp.web_site_id
+          AND last.vendor = sp.vendor
+          AND last.name = sp.name
+          AND last.type = sp.type
+          AND last.variation = sp.variation
+          AND last.latest_ref = sp.scrap_reference_id
+      WHERE " . implode(" AND ", $conditions) . "
+      HAVING relevance_score >= ?
+      ORDER BY relevance_score DESC, sp.created_at DESC
+      LIMIT 150
+    ";
+
+    $params[] = $minScore;
+
+    return DB::connection('mysql')->select($query, $params);
   }
 
 }; ?>
-
 <div>
 
   <div class="mx-auto max-w-2xl px-4 py-2 sm:px-2 sm:py-4 lg:grid lg:max-w-7xl lg:grid-cols-2 lg:gap-x-8 lg:px-8">
