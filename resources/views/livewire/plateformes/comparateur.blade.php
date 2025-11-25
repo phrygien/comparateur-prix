@@ -8,12 +8,96 @@ new class extends Component {
     public $hasData = false;
     public $searchTerms = [];
     public $searchVolumes = [];
-    public $searchKeywords = []; // Nouveaux mots-clés à rechercher (Coffret, Eau de Parfum, etc.)
     
     public function mount($name, $id)
     {
         $this->getCompetitorPrice($name);
         $this->getOneProductDetails($id);
+    }
+
+    public function getOneProductDetails($entity_id){
+        try{
+
+            // Paginated data
+            $dataQuery = "
+                SELECT 
+                    produit.entity_id as id,
+                    produit.sku as sku,
+                    product_char.reference as parkode,
+                    CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) as title,
+                    CAST(product_parent_char.name AS CHAR CHARACTER SET utf8mb4) as parent_title,
+                    SUBSTRING_INDEX(product_char.name, ' - ', 1) as vendor,
+                    SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) as type,
+                    product_char.thumbnail as thumbnail,
+                    product_char.swatch_image as swatch_image,
+                    product_char.reference as parkode,
+                    product_char.reference_us as reference_us,
+                    CAST(product_text.description AS CHAR CHARACTER SET utf8mb4) as description,
+                    CAST(product_text.short_description AS CHAR CHARACTER SET utf8mb4) as short_description,
+                    CAST(product_parent_text.description AS CHAR CHARACTER SET utf8mb4) as parent_description,
+                    CAST(product_parent_text.short_description AS CHAR CHARACTER SET utf8mb4) as parent_short_description,
+                    CAST(product_text.composition AS CHAR CHARACTER SET utf8mb4) as composition,
+                    CAST(product_text.olfactive_families AS CHAR CHARACTER SET utf8mb4) as olfactive_families,
+                    CAST(product_text.product_benefit AS CHAR CHARACTER SET utf8mb4) as product_benefit,
+                    ROUND(product_decimal.price, 2) as price,
+                    ROUND(product_decimal.special_price, 2) as special_price,
+                    ROUND(product_decimal.cost, 2) as cost,
+                    ROUND(product_decimal.pvc, 2) as pvc,
+                    ROUND(product_decimal.prix_achat_ht, 2) as prix_achat_ht,
+                    ROUND(product_decimal.prix_us, 2) as prix_us,
+                    product_int.status as status,
+                    product_int.color as color,
+                    product_int.capacity as capacity,
+                    product_int.product_type as product_type,
+                    product_media.media_gallery as media_gallery,
+                    CAST(product_categorie.name AS CHAR CHARACTER SET utf8mb4) as categorie,
+                    REPLACE(product_categorie.name, ' > ', ',') as tags,
+                    stock_item.qty as quatity,
+                    stock_status.stock_status as quatity_status,
+                    options.configurable_product_id as configurable_product_id,
+                    parent_child_table.parent_id as parent_id,
+                    options.attribute_code as option_name,
+                    options.attribute_value as option_value
+                FROM catalog_product_entity as produit
+                LEFT JOIN catalog_product_relation as parent_child_table ON parent_child_table.child_id = produit.entity_id 
+                LEFT JOIN catalog_product_super_link as cpsl ON cpsl.product_id = produit.entity_id 
+                LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+                LEFT JOIN product_text ON product_text.entity_id = produit.entity_id 
+                LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
+                LEFT JOIN product_int ON product_int.entity_id = produit.entity_id
+                LEFT JOIN product_media ON product_media.entity_id = produit.entity_id
+                LEFT JOIN product_categorie ON product_categorie.entity_id = produit.entity_id 
+                LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id 
+                LEFT JOIN cataloginventory_stock_status AS stock_status ON stock_item.product_id = stock_status.product_id 
+                LEFT JOIN option_super_attribut AS options ON options.simple_product_id = produit.entity_id 
+                LEFT JOIN eav_attribute_set AS eas ON produit.attribute_set_id = eas.attribute_set_id 
+                LEFT JOIN catalog_product_entity as produit_parent ON parent_child_table.parent_id = produit_parent.entity_id 
+                LEFT JOIN product_char as product_parent_char ON product_parent_char.entity_id = produit_parent.entity_id
+                LEFT JOIN product_text as product_parent_text ON product_parent_text.entity_id = produit_parent.entity_id 
+                WHERE product_int.status >= 0 AND produit.entity_id = ? 
+                ORDER BY product_char.entity_id DESC
+            ";
+
+            $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
+
+            return [
+                "data" => $result
+            ];
+
+        } catch (\Throwable $e) {
+            \Log::error('Error loading products:', [
+                'message' => $e->getMessage(),
+                'search' => $search ?? null,
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            $this->products = [];
+            $this->hasData = false;
+            
+            return [
+                'error' => $e->getMessage()
+            ];
+        }
     }
 
     public function getCompetitorPrice($search)
@@ -25,9 +109,8 @@ new class extends Component {
                 return null;
             }
             
-            // Extraire les volumes ET les mots-clés de la recherche
+            // Extraire les volumes de la recherche
             $this->extractSearchVolumes($search);
-            $this->extractSearchKeywords($search);
             
             // Préparer les termes de recherche
             $searchQuery = $this->prepareSearchTerms($search);
@@ -51,8 +134,7 @@ new class extends Component {
             \Log::info('SQL Query:', [
                 'original_search' => $search,
                 'search_query' => $searchQuery,
-                'search_volumes' => $this->searchVolumes,
-                'search_keywords' => $this->searchKeywords
+                'search_volumes' => $this->searchVolumes
             ]);
             
             // Exécution de la requête avec binding
@@ -70,8 +152,7 @@ new class extends Component {
                 'has_data' => $this->hasData,
                 'products' => $this->products,
                 'query' => $searchQuery,
-                'volumes' => $this->searchVolumes,
-                'keywords' => $this->searchKeywords
+                'volumes' => $this->searchVolumes
             ];
             
         } catch (\Throwable $e) {
@@ -90,91 +171,6 @@ new class extends Component {
         }
     }
     
-    public function getOneProductDetails($entity_id){
-    try{
-
-        // Paginated data
-        $dataQuery = "
-            SELECT 
-                produit.entity_id as id,
-                produit.sku as sku,
-                product_char.reference as parkode,
-                CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) as title,
-                CAST(product_parent_char.name AS CHAR CHARACTER SET utf8mb4) as parent_title,
-                SUBSTRING_INDEX(product_char.name, ' - ', 1) as vendor,
-                SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) as type,
-                product_char.thumbnail as thumbnail,
-                product_char.swatch_image as swatch_image,
-                product_char.reference as parkode,
-                product_char.reference_us as reference_us,
-                CAST(product_text.description AS CHAR CHARACTER SET utf8mb4) as description,
-                CAST(product_text.short_description AS CHAR CHARACTER SET utf8mb4) as short_description,
-                CAST(product_parent_text.description AS CHAR CHARACTER SET utf8mb4) as parent_description,
-                CAST(product_parent_text.short_description AS CHAR CHARACTER SET utf8mb4) as parent_short_description,
-                CAST(product_text.composition AS CHAR CHARACTER SET utf8mb4) as composition,
-                CAST(product_text.olfactive_families AS CHAR CHARACTER SET utf8mb4) as olfactive_families,
-                CAST(product_text.product_benefit AS CHAR CHARACTER SET utf8mb4) as product_benefit,
-                ROUND(product_decimal.price, 2) as price,
-                ROUND(product_decimal.special_price, 2) as special_price,
-                ROUND(product_decimal.cost, 2) as cost,
-                ROUND(product_decimal.pvc, 2) as pvc,
-                ROUND(product_decimal.prix_achat_ht, 2) as prix_achat_ht,
-                ROUND(product_decimal.prix_us, 2) as prix_us,
-                product_int.status as status,
-                product_int.color as color,
-                product_int.capacity as capacity,
-                product_int.product_type as product_type,
-                product_media.media_gallery as media_gallery,
-                CAST(product_categorie.name AS CHAR CHARACTER SET utf8mb4) as categorie,
-                REPLACE(product_categorie.name, ' > ', ',') as tags,
-                stock_item.qty as quatity,
-                stock_status.stock_status as quatity_status,
-                options.configurable_product_id as configurable_product_id,
-                parent_child_table.parent_id as parent_id,
-                options.attribute_code as option_name,
-                options.attribute_value as option_value
-            FROM catalog_product_entity as produit
-            LEFT JOIN catalog_product_relation as parent_child_table ON parent_child_table.child_id = produit.entity_id 
-            LEFT JOIN catalog_product_super_link as cpsl ON cpsl.product_id = produit.entity_id 
-            LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
-            LEFT JOIN product_text ON product_text.entity_id = produit.entity_id 
-            LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
-            LEFT JOIN product_int ON product_int.entity_id = produit.entity_id
-            LEFT JOIN product_media ON product_media.entity_id = produit.entity_id
-            LEFT JOIN product_categorie ON product_categorie.entity_id = produit.entity_id 
-            LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id 
-            LEFT JOIN cataloginventory_stock_status AS stock_status ON stock_item.product_id = stock_status.product_id 
-            LEFT JOIN option_super_attribut AS options ON options.simple_product_id = produit.entity_id 
-            LEFT JOIN eav_attribute_set AS eas ON produit.attribute_set_id = eas.attribute_set_id 
-            LEFT JOIN catalog_product_entity as produit_parent ON parent_child_table.parent_id = produit_parent.entity_id 
-            LEFT JOIN product_char as product_parent_char ON product_parent_char.entity_id = produit_parent.entity_id
-            LEFT JOIN product_text as product_parent_text ON product_parent_text.entity_id = produit_parent.entity_id 
-            WHERE product_int.status >= 0 AND produit.entity_id = ? 
-            ORDER BY product_char.entity_id DESC
-        ";
-
-        $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
-
-        return [
-            "data" => $result
-        ];
-
-    } catch (\Throwable $e) {
-        \Log::error('Error loading products:', [
-            'message' => $e->getMessage(),
-            'search' => $search ?? null,
-            'trace' => $e->getTraceAsString()
-        ]);
-        
-        $this->products = [];
-        $this->hasData = false;
-        
-        return [
-            'error' => $e->getMessage()
-        ];
-    }
-}
-
     /**
      * Extrait les volumes (ml) de la recherche
      */
@@ -194,43 +190,16 @@ new class extends Component {
     }
     
     /**
-     * Extrait les mots-clés importants de la variation (Coffret, Eau de Parfum, etc.)
-     */
-    private function extractSearchKeywords(string $search): void
-    {
-        $this->searchKeywords = [];
-        
-        // Mots-clés à rechercher (insensible à la casse)
-        $keywords = [
-            'coffret',
-            'eau de parfum',
-            'eau de toilette',
-            'parfum',
-            'toilette',
-            'spray',
-            'vaporisateur',
-            'edition',
-            'édition',
-            'limitée',
-            'rechargeable'
-        ];
-        
-        $searchLower = mb_strtolower($search);
-        
-        foreach ($keywords as $keyword) {
-            if (stripos($searchLower, $keyword) !== false) {
-                $this->searchKeywords[] = $keyword;
-            }
-        }
-        
-        \Log::info('Extracted search keywords:', [
-            'search' => $search,
-            'keywords' => $this->searchKeywords
-        ]);
-    }
-    
-    /**
      * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
+     * Extrait uniquement les 3 premiers mots significatifs (marque, gamme, type)
+     * 
+     * Format: +mot1* +mot2* +mot3*
+     * 
+     * Exemple: "Guerlain - Shalimar - Coffret Eau de Parfum 50 ml + 5 ml + 75 ml (Édition"
+     * Résultat: "+guerlain* +shalimar* +coffret*"
+     * 
+     * @param string $search
+     * @return string
      */
     private function prepareSearchTerms(string $search): string
     {
@@ -278,91 +247,6 @@ new class extends Component {
     }
 
     /**
-     * Vérifie si la variation contient TOUS les critères recherchés
-     * (au moins un volume ET au moins un mot-clé)
-     */
-    public function isVariationMatching($text)
-    {
-        if (empty($text)) {
-            return false;
-        }
-        
-        $textLower = mb_strtolower($text);
-        
-        // Vérifier si au moins un volume est présent
-        $hasVolume = false;
-        foreach ($this->searchVolumes as $volume) {
-            if (preg_match('/\b' . preg_quote($volume, '/') . '\s*ml\b/i', $text)) {
-                $hasVolume = true;
-                break;
-            }
-        }
-        
-        // Vérifier si au moins un mot-clé est présent
-        $hasKeyword = false;
-        foreach ($this->searchKeywords as $keyword) {
-            if (stripos($textLower, $keyword) !== false) {
-                $hasKeyword = true;
-                break;
-            }
-        }
-        
-        // Retourner true seulement si VOLUME ET MOT-CLÉ sont présents
-        return $hasVolume && $hasKeyword;
-    }
-
-    /**
-     * Met en évidence les volumes ET mots-clés correspondants dans un texte
-     */
-    public function highlightMatchingTerms($text)
-    {
-        if (empty($text)) {
-            return $text;
-        }
-
-        // Mettre en évidence les volumes
-        foreach ($this->searchVolumes as $volume) {
-            $pattern = '/\b' . preg_quote($volume, '/') . '\s*ml\b/i';
-            $replacement = '<span class="bg-green-200 text-green-900 font-semibold px-1 py-0.5 rounded">' . $volume . ' ml</span>';
-            $text = preg_replace($pattern, $replacement, $text);
-        }
-        
-        // Mettre en évidence les mots-clés
-        foreach ($this->searchKeywords as $keyword) {
-            $pattern = '/\b' . preg_quote($keyword, '/') . '\b/i';
-            $replacement = '<span class="bg-green-200 text-green-900 font-semibold px-1 py-0.5 rounded">$0</span>';
-            $text = preg_replace($pattern, $replacement, $text);
-        }
-
-        return $text;
-    }
-
-    /**
-     * Extrait les volumes d'un texte (nom ou variation)
-     */
-    public function extractVolumesFromText($text)
-    {
-        if (empty($text)) {
-            return [];
-        }
-        
-        $volumes = [];
-        if (preg_match_all('/(\d+)\s*ml/i', $text, $matches)) {
-            $volumes = $matches[1];
-        }
-        
-        return $volumes;
-    }
-
-    /**
-     * Vérifie si un volume correspond aux volumes recherchés
-     */
-    public function isVolumeMatching($volume)
-    {
-        return in_array($volume, $this->searchVolumes);
-    }
-
-    /**
      * Formate le prix pour l'affichage
      */
     public function formatPrice($price)
@@ -401,8 +285,73 @@ new class extends Component {
         
         return 'N/A';
     }
-};
-?>
+
+    /**
+     * Ouvre la page du produit
+     */
+    public function viewProduct($productUrl)
+    {
+        if ($productUrl) {
+            return redirect()->away($productUrl);
+        }
+    }
+
+    /**
+     * Formate la variation pour l'affichage
+     */
+    public function formatVariation($variation)
+    {
+        if (empty($variation)) {
+            return 'Standard';
+        }
+        
+        // Limiter la longueur pour l'affichage
+        return Str::limit($variation, 30);
+    }
+
+    /**
+     * Extrait les volumes d'un texte (nom ou variation)
+     */
+    public function extractVolumesFromText($text)
+    {
+        if (empty($text)) {
+            return [];
+        }
+        
+        $volumes = [];
+        if (preg_match_all('/(\d+)\s*ml/i', $text, $matches)) {
+            $volumes = $matches[1];
+        }
+        
+        return $volumes;
+    }
+
+    /**
+     * Vérifie si un volume correspond aux volumes recherchés
+     */
+    public function isVolumeMatching($volume)
+    {
+        return in_array($volume, $this->searchVolumes);
+    }
+
+    /**
+     * Met en évidence les volumes correspondants dans un texte
+     */
+    public function highlightMatchingVolumes($text)
+    {
+        if (empty($text) || empty($this->searchVolumes)) {
+            return $text;
+        }
+
+        foreach ($this->searchVolumes as $volume) {
+            $pattern = '/\b' . preg_quote($volume, '/') . '\s*ml\b/i';
+            $replacement = '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' . $volume . ' ml</span>';
+            $text = preg_replace($pattern, $replacement, $text);
+        }
+
+        return $text;
+    }
+}; ?>
 
 
 <div>
