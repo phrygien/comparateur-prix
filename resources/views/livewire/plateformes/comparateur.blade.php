@@ -105,20 +105,20 @@ new class extends Component {
     
     /**
      * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
-     * Extrait les mots significatifs (marque, gamme, type, variation)
+     * Extrait uniquement les 3 premiers mots significatifs (marque, gamme, type)
      * 
-     * Format: +mot1* +mot2* +mot3* +mot4* +mot5* +mot6*
+     * Format: +mot1* +mot2* +mot3*
      * 
      * Exemple: "Guerlain - Shalimar - Coffret Eau de Parfum 50 ml + 5 ml + 75 ml (Édition"
-     * Résultat: "+guerlain* +shalimar* +coffret* +eau* +parfum* +50* +5* +75*"
+     * Résultat: "+guerlain* +shalimar* +coffret*"
      * 
      * @param string $search
      * @return string
      */
     private function prepareSearchTerms(string $search): string
     {
-        // Nettoyage moins agressif : garder les chiffres et certains caractères spéciaux
-        $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ0-9\s\-\+\(\)]/', ' ', $search);
+        // Nettoyage agressif : supprimer tous les caractères spéciaux et chiffres
+        $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ\s]/', ' ', $search);
         
         // Normaliser les espaces multiples
         $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
@@ -129,38 +129,30 @@ new class extends Component {
         // Séparer les mots
         $words = explode(" ", $searchClean);
         
-        // Stop words français et anglais à ignorer (eau a été retiré)
+        // Stop words français et anglais à ignorer
         $stopWords = [
             'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec',
-            'the', 'a', 'an', 'and', 'or', 'ml', 'edition', 'édition'
+            'the', 'a', 'an', 'and', 'or', 'eau', 'ml', 'edition', 'édition', 'coffret'
         ];
         
-        // Mots significatifs seulement (marque, gamme, produit, variation)
+        // Mots significatifs seulement (marque, gamme, produit)
         $significantWords = [];
         
         foreach ($words as $word) {
             $word = trim($word);
             
-            // Nettoyer les caractères résiduels
-            $word = preg_replace('/^[\-\+\(\)]+|[\-\+\(\)]+$/', '', $word);
-            
-            if (empty($word)) {
-                continue;
-            }
-            
-            // Garder uniquement les mots de plus de 1 caractère, non-stop words
-            // ET les chiffres (pour les volumes comme 50, 75, etc.)
-            if ((strlen($word) > 1 && !in_array($word, $stopWords)) || is_numeric($word)) {
+            // Garder uniquement les mots de plus de 2 caractères, non-stop words
+            if (strlen($word) > 2 && !in_array($word, $stopWords)) {
                 $significantWords[] = $word;
             }
             
-            // Limiter à 8 mots maximum pour couvrir marque + gamme + type + variation + volumes
-            if (count($significantWords) >= 8) {
+            // Limiter à 3 mots maximum (marque + gamme + type) SEULEMENT
+            if (count($significantWords) >= 3) {
                 break;
             }
         }
         
-        // Construire la requête boolean
+        // Construire la requête boolean avec seulement 3 termes
         $booleanTerms = array_map(function($word) {
             return '+' . $word . '*';
         }, $significantWords);
