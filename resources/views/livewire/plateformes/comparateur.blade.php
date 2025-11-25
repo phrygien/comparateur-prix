@@ -31,10 +31,14 @@ new class extends Component {
             }
             
             // Construction de la requête SQL avec paramètres liés
-            $sql = "SELECT * 
+            // Ajout du champ price_ht et tri par prix décroissant
+            $sql = "SELECT *, 
+                           price_ht as prix_ht,
+                           image_url as image
                     FROM last_price_scraped_product 
                     WHERE MATCH (name, vendor, type, variation) 
-                    AGAINST (? IN BOOLEAN MODE)";
+                    AGAINST (? IN BOOLEAN MODE)
+                    ORDER BY price_ht DESC";
             
             \Log::info('SQL Query:', [
                 'original_search' => $search,
@@ -130,6 +134,27 @@ new class extends Component {
         }, $significantWords);
         
         return implode(' ', $booleanTerms);
+    }
+
+    /**
+     * Formate le prix pour l'affichage
+     */
+    public function formatPrice($price)
+    {
+        if (is_numeric($price)) {
+            return number_format($price, 2, ',', ' ') . ' €';
+        }
+        return 'N/A';
+    }
+
+    /**
+     * Ouvre la page du produit
+     */
+    public function viewProduct($productUrl)
+    {
+        if ($productUrl) {
+            return redirect()->away($productUrl);
+        }
     }
 }; ?>
 
@@ -235,27 +260,84 @@ new class extends Component {
             <div class="bg-white shadow-sm rounded-lg overflow-hidden">
                 <div class="px-6 py-4 border-b border-gray-200">
                     <h3 class="text-lg font-medium text-gray-900">Résultats de la recherche</h3>
-                    <p class="mt-1 text-sm text-gray-500">Termes recherchés : {{ $search ?? 'N/A' }}</p>
+                    <p class="mt-1 text-sm text-gray-500">{{ count($products) }} produit(s) trouvé(s)</p>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
                             <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Image</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vendor</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prix HT</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Variation</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
                             @foreach($products as $product)
-                                <tr>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $product->name ?? 'N/A' }}</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $product->vendor ?? 'N/A' }}</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $product->type ?? 'N/A' }}</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $product->variation ?? 'N/A' }}</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $product->created_at ?? 'N/A' }}</td>
+                                <tr class="hover:bg-gray-50">
+                                    <!-- Colonne Image -->
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        @if(!empty($product->image))
+                                            <img src="{{ $product->image }}" 
+                                                 alt="{{ $product->name ?? 'Produit' }}" 
+                                                 class="h-12 w-12 object-cover rounded-lg"
+                                                 onerror="this.src='https://via.placeholder.com/48?text=No+Image'">
+                                        @else
+                                            <div class="h-12 w-12 bg-gray-200 rounded-lg flex items-center justify-center">
+                                                <span class="text-xs text-gray-500">No Image</span>
+                                            </div>
+                                        @endif
+                                    </td>
+                                    
+                                    <!-- Colonne Nom -->
+                                    <td class="px-6 py-4">
+                                        <div class="text-sm font-medium text-gray-900 max-w-xs truncate">
+                                            {{ $product->name ?? 'N/A' }}
+                                        </div>
+                                    </td>
+                                    
+                                    <!-- Colonne Vendor -->
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                            {{ $product->vendor ?? 'N/A' }}
+                                        </span>
+                                    </td>
+                                    
+                                    <!-- Colonne Prix HT -->
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <div class="text-sm font-semibold text-green-600">
+                                            {{ $this->formatPrice($product->price_ht ?? $product->prix_ht) }}
+                                        </div>
+                                    </td>
+                                    
+                                    <!-- Colonne Type -->
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        {{ $product->type ?? 'N/A' }}
+                                    </td>
+                                    
+                                    <!-- Colonne Date -->
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        @if($product->created_at)
+                                            {{ \Carbon\Carbon::parse($product->created_at)->format('d/m/Y') }}
+                                        @else
+                                            N/A
+                                        @endif
+                                    </td>
+                                    
+                                    <!-- Colonne Actions -->
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                        @if(!empty($product->product_url))
+                                            <button wire:click="viewProduct('{{ $product->product_url }}')" 
+                                                    class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-full shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                                Voir le produit
+                                            </button>
+                                        @else
+                                            <span class="text-gray-400">Non disponible</span>
+                                        @endif
+                                    </td>
                                 </tr>
                             @endforeach
                         </tbody>
