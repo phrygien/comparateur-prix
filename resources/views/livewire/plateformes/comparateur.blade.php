@@ -460,6 +460,9 @@ public function highlightMatchingVolumes($text)
 /**
  * Met en évidence les mots clés de variation correspondants dans un texte
  */
+/**
+ * Met en évidence les mots clés de variation correspondants dans un texte
+ */
 public function highlightMatchingVariationKeywords($text)
 {
     if (empty($text) || empty($this->searchVariationKeywords)) {
@@ -750,7 +753,7 @@ public function highlightMatchingTerms($text)
                                     <!-- Colonne Variation -->
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <div class="text-sm text-gray-900 max-w-xs" title="{{ $product->variation ?? 'Standard' }}">
-                                            {!! $this->highlightMatchingTerms($product->variation ?? 'Standard') !!}
+                                            {!! $this->highlightMatchingVariationKeywords($product->variation ?? 'Standard') !!}
                                         </div>
                                     </td>
 
