@@ -2,7 +2,6 @@
 
 use Livewire\Volt\Component;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 new class extends Component {
     public $products = [];
@@ -10,7 +9,7 @@ new class extends Component {
     
     public function mount($name)
     {
-        dd($this->getCompetitorPrice($name));
+        $this->getCompetitorPrice($name);
     }
 
     public function getCompetitorPrice($search)
@@ -22,16 +21,17 @@ new class extends Component {
                 return null;
             }
             
-            // Extraire les composants de la recherche
-            $searchComponents = $this->extractSearchComponents($search);
+            // Préparer les termes de recherche
+            $searchQuery = $this->prepareSearchTerms($search);
             
-            if (empty($searchComponents['query'])) {
+            if (empty($searchQuery)) {
                 $this->products = [];
                 $this->hasData = false;
                 return null;
             }
             
             // Construction de la requête SQL avec paramètres liés
+            // Ajout du champ price_ht et tri par prix décroissant
             $sql = "SELECT *, 
                            prix_ht,
                            image_url as image,
@@ -43,15 +43,12 @@ new class extends Component {
             
             \Log::info('SQL Query:', [
                 'original_search' => $search,
-                'vendor' => $searchComponents['vendor'],
-                'name' => $searchComponents['name'],
-                'variation' => $searchComponents['variation'],
-                'search_query' => $searchComponents['query'],
-                'sql_preview' => str_replace('?', "'{$searchComponents['query']}'", $sql)
+                'search_query' => $searchQuery,
+                'sql_preview' => str_replace('?', "'{$searchQuery}'", $sql)
             ]);
             
             // Exécution de la requête avec binding
-            $result = DB::connection('mysql')->select($sql, [$searchComponents['query']]);
+            $result = DB::connection('mysql')->select($sql, [$searchQuery]);
             
             \Log::info('Query result:', [
                 'count' => count($result)
@@ -64,8 +61,7 @@ new class extends Component {
                 'count' => count($result),
                 'has_data' => $this->hasData,
                 'products' => $this->products,
-                'query' => $searchComponents['query'],
-                'components' => $searchComponents
+                'query' => $searchQuery
             ];
             
         } catch (\Throwable $e) {
@@ -85,24 +81,21 @@ new class extends Component {
     }
     
     /**
-     * Extrait les composants de recherche : vendor (sans *), name (sans *), variation (avec *)
-     * Filtre les mots indésirables comme "édition", "2024", etc.
+     * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
+     * Extrait uniquement les 3 premiers mots significatifs (marque, gamme, type)
      * 
-     * Exemple: "Guerlain - Shalimar - Coffret Eau de Parfum 50 ml + 5 ml + 75 ml (Édition 2024"
+     * Format: +mot1* +mot2* +mot3*
      * 
-     * Résultat:
-     * - vendor: "guerlain"
-     * - name: "shalimar"
-     * - variation: "coffret* eau* parfum* 50* 75*"
-     * - query: "+guerlain +shalimar +coffret* +eau* +parfum* +50* +75*"
+     * Exemple: "Guerlain - Shalimar - Coffret Eau de Parfum 50 ml"
+     * Résultat: "+guerlain* +shalimar* +coffret*"
      * 
      * @param string $search
-     * @return array
+     * @return string
      */
-    private function extractSearchComponents(string $search): array
+    private function prepareSearchTerms(string $search): string
     {
-        // Nettoyage : supprimer caractères spéciaux mais garder les chiffres
-        $searchClean = str_replace(['-', '(', ')', '+'], ' ', $search);
+        // Nettoyage agressif : supprimer tous les caractères spéciaux et chiffres
+        $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ\s]/', ' ', $search);
         
         // Normaliser les espaces multiples
         $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
@@ -113,73 +106,35 @@ new class extends Component {
         // Séparer les mots
         $words = explode(" ", $searchClean);
         
-        // Stop words et mots à ignorer (étendus)
+        // Stop words français et anglais à ignorer
         $stopWords = [
-            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'the', 'a', 'an', 'and', 'or',
-            'édition', 'edition', 'ml' // Ajout des mots spécifiques à filtrer
+            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec',
+            'the', 'a', 'an', 'and', 'or', 'eau', 'ml', 'edition', 'édition', 'coffret'
         ];
         
-        // Années à ignorer (2020-2030)
-        $yearPattern = '/^(202[0-9]|203[0-9])$/';
-        
-        // Filtrer et nettoyer les mots
-        $cleanWords = [];
-        $seenWords = []; // Pour éviter les doublons
+        // Mots significatifs seulement (marque, gamme, produit)
+        $significantWords = [];
         
         foreach ($words as $word) {
             $word = trim($word);
             
-            // Ignorer si :
-            // - trop court (< 2 caractères)
-            // - est un stop word
-            // - est une année (2020-2039)
-            // - est un doublon
-            if (
-                strlen($word) > 1 && 
-                !in_array($word, $stopWords) && 
-                !preg_match($yearPattern, $word) &&
-                !isset($seenWords[$word])
-            ) {
-                $cleanWords[] = $word;
-                $seenWords[$word] = true; // Marquer comme vu
+            // Garder uniquement les mots de plus de 2 caractères, non-stop words
+            if (strlen($word) > 2 && !in_array($word, $stopWords)) {
+                $significantWords[] = $word;
+            }
+            
+            // Limiter à 3 mots maximum (marque + gamme + type)
+            if (count($significantWords) >= 3) {
+                break;
             }
         }
-        
-        // Extraire vendor (1er mot)
-        $vendor = isset($cleanWords[0]) ? $cleanWords[0] : '';
-        
-        // Extraire name (2ème mot)
-        $name = isset($cleanWords[1]) ? $cleanWords[1] : '';
-        
-        // Extraire variation (du 3ème mot jusqu'à la fin)
-        $variationWords = array_slice($cleanWords, 2);
         
         // Construire la requête boolean
-        $booleanTerms = [];
+        $booleanTerms = array_map(function($word) {
+            return '+' . $word . '*';
+        }, $significantWords);
         
-        // Vendor sans *
-        if (!empty($vendor)) {
-            $booleanTerms[] = '+' . $vendor;
-        }
-        
-        // Name sans *
-        if (!empty($name)) {
-            $booleanTerms[] = '+' . $name;
-        }
-        
-        // Variation avec * (seulement si non vide)
-        foreach ($variationWords as $word) {
-            if (!empty($word)) {
-                $booleanTerms[] = '+' . $word . '*';
-            }
-        }
-        
-        return [
-            'vendor' => $vendor,
-            'name' => $name,
-            'variation' => implode(' ', array_map(fn($w) => $w . '*', $variationWords)),
-            'query' => implode(' ', $booleanTerms)
-        ];
+        return implode(' ', $booleanTerms);
     }
 
     /**
@@ -245,6 +200,7 @@ new class extends Component {
         return Str::limit($variation, 30);
     }
 }; ?>
+
 <div>
 <div class="w-full px-4 py-2 sm:px-2 sm:py-4 lg:grid lg:grid-cols-2 lg:gap-x-8 lg:px-8">
     <!-- Product image -->
