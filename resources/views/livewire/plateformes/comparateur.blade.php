@@ -430,9 +430,6 @@ new class extends Component {
         return $hasMatchingVolume && $hasMatchingVariationKeyword;
     }
 
-    /**
-     * Met en évidence les volumes correspondants dans un texte
-     */
 /**
  * Met en évidence les volumes correspondants dans un texte
  */
@@ -446,7 +443,7 @@ public function highlightMatchingVolumes($text)
         // Recherche le volume suivi de "ml" (avec ou sans espace)
         $pattern = '/\b' . preg_quote($volume, '/') . '\s*ml\b/i';
         
-        // Utilise $0 pour conserver le texte original (y compris "ml")
+        // Utilise '$0' avec des guillemets simples pour la backreference
         $replacement = '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">$0</span>';
         
         $text = preg_replace($pattern, $replacement, $text);
