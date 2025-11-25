@@ -623,7 +623,7 @@ public function highlightMatchingTerms($text)
 </div>
 
     <!-- Section des résultats -->
-    <div class="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">
+    <div class="mx-auto w-full sm:px-6 lg:px-8">
         @if($hasData)
             <!-- Indicateur des critères recherchés -->
             @if(!empty($searchVolumes) || !empty($searchVariationKeywords))
