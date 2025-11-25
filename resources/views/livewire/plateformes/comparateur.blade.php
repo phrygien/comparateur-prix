@@ -727,7 +727,7 @@ public function highlightMatchingTerms($text)
                                             </div>
                                         @endif
                                         <!-- Badges des volumes du produit -->
-                                        @if(!empty($productVolumes))
+                                        {{-- @if(!empty($productVolumes))
                                             <div class="mt-2 flex flex-wrap gap-1">
                                                 @foreach($productVolumes as $volume)
                                                     <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium 
@@ -745,7 +745,7 @@ public function highlightMatchingTerms($text)
                                                     </span>
                                                 @endforeach
                                             </div>
-                                        @endif
+                                        @endif --}}
                                     </td>
 
                                     <!-- Colonne Variation -->
