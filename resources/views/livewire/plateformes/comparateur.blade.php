@@ -472,7 +472,7 @@ public function highlightMatchingVariationKeywords($text)
         
         // Utilise une fonction de callback pour éviter les problèmes d'échappement
         $text = preg_replace_callback($pattern, function($matches) {
-            return '<span class="bg-green-100 mc text-green-800 font-semibold px-1 py-0.5 rounded">' 
+            return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
                    . htmlspecialchars($matches[0]) 
                    . '</span>';
         }, $text);
@@ -705,7 +705,7 @@ public function highlightMatchingVariationKeywords($text)
                                     <!-- Colonne Variation -->
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <div class="text-sm text-gray-900 max-w-xs" title="{{ $product->variation ?? 'Standard' }}">
-                                            {!! $this->highlightMatchingVariationKeywords($product->variation ?? 'Standard') !!}
+                                            @dump($this->searchVariationKeywords)
                                         </div>
                                     </td>
 
