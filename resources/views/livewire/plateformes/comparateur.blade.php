@@ -9,11 +9,16 @@ new class extends Component {
     public $searchTerms = [];
     public $searchVolumes = [];
     public $searchVariationKeywords = [];
+
+    // one product
+    public $product;
     
     public function mount($name, $id)
     {
         $this->getCompetitorPrice($name);
-        dd($this->getOneProductDetails($id));
+        $this->product = $this->getOneProductDetails($id);
+
+        dd($this->product);
 
     }
 
