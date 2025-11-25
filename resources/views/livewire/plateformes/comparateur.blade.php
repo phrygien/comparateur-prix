@@ -559,11 +559,6 @@ public function highlightMatchingTerms($text)
                         </svg>
                     </div>
                 </li>
-                <li>
-                    <div class="flex items-center text-sm">
-                        <a href="#" class="font-medium text-gray-500 hover:text-gray-900">Bags</a>
-                    </div>
-                </li>
             </ol>
         </nav>
 
@@ -575,7 +570,9 @@ public function highlightMatchingTerms($text)
             <h2 id="information-heading" class="sr-only">Product information</h2>
 
             <div class="mt-4 space-y-6">
-                <p class="text-base text-gray-500">Don&#039;t compromise on snack-carrying capacity with this lightweight and spacious bag. The drawstring top keeps all your favorite chips, crisps, fries, biscuits, crackers, and cookies secure.</p>
+                <p class="text-base text-gray-500">
+                    {{ $product->description }}
+                </p>
             </div>
 
             <div class="mt-6 flex items-center">
