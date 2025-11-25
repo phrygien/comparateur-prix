@@ -15,27 +15,12 @@ new class extends Component {
     public function getCompetitorPrice($search)
     {
         try {
-            if (empty($search)) {
-                $this->products = [];
-                $this->hasData = false;
-                return null;
-            }
+            // Test direct avec la requête hardcodée
+            $searchQuery = '+guerlain +shalimar +coffret +50ml*';
             
-            // Préparer les termes de recherche
-            $searchQuery = $this->prepareSearchTerms($search);
+            \Log::info('Testing with hardcoded query:', ['query' => $searchQuery]);
             
-            if (empty($searchQuery)) {
-                $this->products = [];
-                $this->hasData = false;
-                return null;
-            }
-            
-            \Log::info('Search query prepared:', [
-                'original' => $search,
-                'query' => $searchQuery
-            ]);
-            
-            // Exécution de la requête
+            // Test avec Query Builder
             $result = DB::connection('mysql')
                 ->table('last_price_scraped_product')
                 ->whereRaw(
@@ -45,7 +30,8 @@ new class extends Component {
                 ->get();
             
             \Log::info('Query result:', [
-                'count' => $result->count()
+                'count' => $result->count(),
+                'first' => $result->first()
             ]);
             
             $this->products = $result->toArray();
@@ -58,54 +44,15 @@ new class extends Component {
             ];
             
         } catch (\Throwable $e) {
-            \Log::error('Error loading products:', [
+            \Log::error('Error:', [
                 'message' => $e->getMessage(),
-                'search' => $search ?? null,
                 'trace' => $e->getTraceAsString()
             ]);
-            
-            $this->products = [];
-            $this->hasData = false;
             
             return [
                 'error' => $e->getMessage()
             ];
         }
-    }
-    
-    /**
-     * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
-     * 
-     * @param string $search
-     * @return string
-     */
-    private function prepareSearchTerms(string $search): string
-    {
-        // Nettoyage : supprimer caractères spéciaux
-        $charsToRemove = ["'", '"', " - ", "  "];
-        $searchClean = str_replace($charsToRemove, " ", $search);
-        
-        // Normaliser les espaces multiples
-        $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
-        
-        // Séparer les mots
-        $words = explode(" ", $searchClean);
-        $booleanTerms = [];
-        
-        // Mots à ignorer (stop words français)
-        $stopWords = ['de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec'];
-        
-        foreach ($words as $word) {
-            $word = trim($word);
-            $wordLower = mb_strtolower($word);
-            
-            // Filtrer les mots trop courts (< 3 caractères) et les stop words
-            if (strlen($word) > 2 && !in_array($wordLower, $stopWords)) {
-                $booleanTerms[] = '+' . $word . '*';
-            }
-        }
-        
-        return implode(' ', $booleanTerms);
     }
 }; ?>
 
