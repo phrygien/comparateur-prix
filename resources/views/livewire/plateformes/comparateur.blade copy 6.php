@@ -298,15 +298,20 @@ new class extends Component {
     }
 
     /**
+     * Vérifie si le produit contient AU MOINS UN volume recherché
+     */
+    public function hasMatchingVolume($product)
+    {
+        $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
+        return !empty(array_intersect($this->searchVolumes, $productVolumes));
+    }
+
+    /**
      * Vérifie si le produit correspond parfaitement (volumes ET type)
      */
     public function isPerfectMatch($product)
     {
-        $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
-        $hasMatchingVolume = !empty(array_intersect($this->searchVolumes, $productVolumes));
-        $hasMatchingType = $this->isTypeMatching($product->type);
-        
-        return $hasMatchingVolume && $hasMatchingType;
+        return $this->hasMatchingVolume($product) && $this->isTypeMatching($product->type);
     }
 
     /**
@@ -468,6 +473,12 @@ new class extends Component {
                                 </div>
                             @endif
                         </div>
+                        <div class="text-xs text-blue-600 mt-1">
+                            <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                            Les produits en vert correspondent aux volumes ET au type recherchés
+                        </div>
                     </div>
                 </div>
             @endif
@@ -495,11 +506,11 @@ new class extends Component {
                             @foreach($products as $product)
                                 @php
                                     $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
-                                    $hasMatchingVolume = !empty(array_intersect($this->searchVolumes, $productVolumes));
+                                    $hasMatchingVolume = $this->hasMatchingVolume($product);
                                     $hasMatchingType = $this->isTypeMatching($product->type);
                                     $isPerfectMatch = $this->isPerfectMatch($product);
                                 @endphp
-                                <tr class="hover:bg-gray-50 @if($isPerfectMatch) bg-green-50 border-l-4 border-green-500 @elseif($hasMatchingVolume || $hasMatchingType) bg-yellow-50 @endif">
+                                <tr class="hover:bg-gray-50 @if($isPerfectMatch) bg-green-50 border-l-4 border-green-500 @endif">
                                     <!-- Colonne Image -->
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         @if(!empty($product->image))
@@ -510,6 +521,16 @@ new class extends Component {
                                         @else
                                             <div class="h-12 w-12 bg-gray-200 rounded-lg flex items-center justify-center">
                                                 <span class="text-xs text-gray-500">No Image</span>
+                                            </div>
+                                        @endif
+                                        @if($isPerfectMatch)
+                                            <div class="mt-1 text-center">
+                                                <span class="inline-flex items-center px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">
+                                                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                                    </svg>
+                                                    Match
+                                                </span>
                                             </div>
                                         @endif
                                     </td>
