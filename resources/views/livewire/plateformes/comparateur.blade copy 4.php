@@ -82,20 +82,20 @@ new class extends Component {
     
     /**
      * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
-     * Extrait les mots significatifs (marque, gamme, type, variation)
+     * Extrait uniquement les 3 premiers mots significatifs (marque, gamme, type)
      * 
-     * Format: +mot1* +mot2* +mot3* +mot4* +mot5* +mot6*
+     * Format: +mot1* +mot2* +mot3*
      * 
-     * Exemple: "Guerlain - Shalimar - Coffret Eau de Parfum 50 ml + 5 ml + 75 ml (Édition"
-     * Résultat: "+guerlain* +shalimar* +coffret* +eau* +parfum* +50* +ml*"
+     * Exemple: "Guerlain - Shalimar - Coffret Eau de Parfum 50 ml"
+     * Résultat: "+guerlain* +shalimar* +coffret*"
      * 
      * @param string $search
      * @return string
      */
     private function prepareSearchTerms(string $search): string
     {
-        // Nettoyage moins agressif : garder les chiffres et certains caractères spéciaux
-        $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ0-9\s\-\+\(\)]/', ' ', $search);
+        // Nettoyage agressif : supprimer tous les caractères spéciaux et chiffres
+        $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ\s]/', ' ', $search);
         
         // Normaliser les espaces multiples
         $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
@@ -106,33 +106,25 @@ new class extends Component {
         // Séparer les mots
         $words = explode(" ", $searchClean);
         
-        // Stop words français et anglais à ignorer (eau a été retiré)
+        // Stop words français et anglais à ignorer
         $stopWords = [
             'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec',
-            'the', 'a', 'an', 'and', 'or', 'ml', 'edition', 'édition', 'coffret'
+            'the', 'a', 'an', 'and', 'or', 'eau', 'ml', 'edition', 'édition', 'coffret'
         ];
         
-        // Mots significatifs seulement (marque, gamme, produit, variation)
+        // Mots significatifs seulement (marque, gamme, produit)
         $significantWords = [];
         
         foreach ($words as $word) {
             $word = trim($word);
             
-            // Nettoyer les caractères résiduels
-            $word = preg_replace('/^[\-\+\(\)]+|[\-\+\(\)]+$/', '', $word);
-            
-            if (empty($word)) {
-                continue;
-            }
-            
-            // Garder uniquement les mots de plus de 1 caractère, non-stop words
-            // ET les chiffres (pour les volumes comme 50, 75, etc.)
-            if ((strlen($word) > 1 && !in_array($word, $stopWords)) || is_numeric($word)) {
+            // Garder uniquement les mots de plus de 2 caractères, non-stop words
+            if (strlen($word) > 2 && !in_array($word, $stopWords)) {
                 $significantWords[] = $word;
             }
             
-            // Limiter à 6 mots maximum pour couvrir marque + gamme + type + variation
-            if (count($significantWords) >= 6) {
+            // Limiter à 3 mots maximum (marque + gamme + type)
+            if (count($significantWords) >= 3) {
                 break;
             }
         }
@@ -207,39 +199,10 @@ new class extends Component {
         // Limiter la longueur pour l'affichage
         return Str::limit($variation, 30);
     }
-
-    /**
-     * Extrait les informations de variation du nom du produit
-     */
-    public function extractVariationInfo($productName)
-    {
-        if (empty($productName)) {
-            return [];
-        }
-        
-        $variationInfo = [];
-        
-        // Recherche de volumes (50 ml, 75 ml, 100 ml, etc.)
-        if (preg_match_all('/(\d+)\s*ml/i', $productName, $matches)) {
-            $variationInfo['volumes'] = $matches[1];
-        }
-        
-        // Recherche de types (Eau de Parfum, Eau de Toilette, etc.)
-        if (preg_match('/(eau\s*de\s*parfum|eau\s*de\s*toilette|parfum|extrait)/i', $productName, $matches)) {
-            $variationInfo['type_parfum'] = ucfirst(strtolower($matches[1]));
-        }
-        
-        // Recherche d'éditions limitées
-        if (preg_match('/(édition\s*limitée|limited\s*edition|coffret|set)/i', $productName, $matches)) {
-            $variationInfo['edition'] = ucfirst(strtolower($matches[1]));
-        }
-        
-        return $variationInfo;
-    }
 }; ?>
 
 <div>
-    <div class="mx-auto max-w-2xl px-4 py-2 sm:px-2 sm:py-4 lg:grid lg:max-w-7xl lg:grid-cols-2 lg:gap-x-8 lg:px-8">
+    <div class="mx-auto max-w-2xl px-4 py-2 sm:px-2 sm:py-4 lg:grid lg:max-w-9xl lg:grid-cols-2 lg:gap-x-8 lg:px-8">
         <!-- Product details -->
         <div class="lg:max-w-lg lg:self-end">
             <nav aria-label="Breadcrumb">
@@ -334,7 +297,7 @@ new class extends Component {
     </div>
 
     <!-- Section des résultats -->
-    <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+    <div class="mx-auto max-w-9xl px-4 py-6 sm:px-6 lg:px-8">
         @if($hasData)
             <!-- Tableau des résultats -->
             <div class="bg-white shadow-sm rounded-lg overflow-hidden">
@@ -348,18 +311,15 @@ new class extends Component {
                             <tr>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Image</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Variation</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Site Source</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prix HT</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Variation</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
                             @foreach($products as $product)
-                                @php
-                                    $variationInfo = $this->extractVariationInfo($product->name ?? '');
-                                @endphp
                                 <tr class="hover:bg-gray-50">
                                     <!-- Colonne Image -->
                                     <td class="px-6 py-4 whitespace-nowrap">
@@ -385,29 +345,15 @@ new class extends Component {
                                                 {{ $product->vendor }}
                                             </div>
                                         @endif
-                                        @if(!empty($variationInfo))
-                                            <div class="mt-1 flex flex-wrap gap-1">
-                                                @if(!empty($variationInfo['volumes']))
-                                                    @foreach($variationInfo['volumes'] as $volume)
-                                                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-blue-100 text-blue-800">
-                                                            {{ $volume }}ml
-                                                        </span>
-                                                    @endforeach
-                                                @endif
-                                                @if(!empty($variationInfo['type_parfum']))
-                                                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-green-100 text-green-800">
-                                                        {{ $variationInfo['type_parfum'] }}
-                                                    </span>
-                                                @endif
-                                                @if(!empty($variationInfo['edition']))
-                                                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-purple-100 text-purple-800">
-                                                        {{ $variationInfo['edition'] }}
-                                                    </span>
-                                                @endif
-                                            </div>
-                                        @endif
                                     </td>
-                                    
+
+                                    <!-- Colonne Variation -->
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <div class="text-sm text-gray-900 max-w-xs" title="{{ $product->variation ?? 'Standard' }}">
+                                            {{ $this->formatVariation($product->variation) }}
+                                        </div>
+                                    </td>
+
                                     <!-- Colonne Site Source -->
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <div class="flex items-center">
@@ -439,13 +385,6 @@ new class extends Component {
                                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
                                             {{ $product->type ?? 'N/A' }}
                                         </span>
-                                    </td>
-
-                                    <!-- Colonne Variation -->
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm text-gray-900 max-w-xs" title="{{ $product->variation ?? 'Standard' }}">
-                                            {{ $this->formatVariation($product->variation) }}
-                                        </div>
                                     </td>
                                     
                                     <!-- Colonne Actions -->
