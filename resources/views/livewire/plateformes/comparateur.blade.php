@@ -186,6 +186,19 @@ new class extends Component {
             return redirect()->away($productUrl);
         }
     }
+
+    /**
+     * Formate la variation pour l'affichage
+     */
+    public function formatVariation($variation)
+    {
+        if (empty($variation)) {
+            return 'Standard';
+        }
+        
+        // Limiter la longueur pour l'affichage
+        return Str::limit($variation, 30);
+    }
 }; ?>
 
 <div>
@@ -301,6 +314,7 @@ new class extends Component {
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Site Source</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prix HT</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Variation</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                             </tr>
                         </thead>
@@ -326,6 +340,11 @@ new class extends Component {
                                         <div class="text-sm font-medium text-gray-900 max-w-xs truncate" title="{{ $product->name ?? 'N/A' }}">
                                             {{ $product->name ?? 'N/A' }}
                                         </div>
+                                        @if(!empty($product->vendor))
+                                            <div class="text-xs text-gray-500 mt-1">
+                                                {{ $product->vendor }}
+                                            </div>
+                                        @endif
                                     </td>
                                     
                                     <!-- Colonne Site Source -->
@@ -359,6 +378,13 @@ new class extends Component {
                                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
                                             {{ $product->type ?? 'N/A' }}
                                         </span>
+                                    </td>
+
+                                    <!-- Colonne Variation -->
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <div class="text-sm text-gray-900 max-w-xs" title="{{ $product->variation ?? 'Standard' }}">
+                                            {{ $this->formatVariation($product->variation) }}
+                                        </div>
                                     </td>
                                     
                                     <!-- Colonne Actions -->
