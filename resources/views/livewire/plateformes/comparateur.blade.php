@@ -18,6 +18,9 @@ new class extends Component {
     public function mount($name, $id)
     {
         $this->getCompetitorPrice($name);
+
+        // get one product
+        $this->getOneProductDetails($id);
         $this->id = $id;
         $this->name = $name;
     }
