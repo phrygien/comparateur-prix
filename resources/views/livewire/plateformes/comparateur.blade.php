@@ -442,6 +442,7 @@ new class extends Component {
         foreach ($this->searchVolumes as $volume) {
             $pattern = '/\b' . preg_quote($volume, '/') . '\s*ml\b/i';
             $replacement = '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' . $volume . ' ml</span>';
+
             $text = preg_replace($pattern, $replacement, $text);
         }
 
