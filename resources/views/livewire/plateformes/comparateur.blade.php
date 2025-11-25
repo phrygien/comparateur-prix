@@ -548,11 +548,11 @@ public function with()
     // Récupérer le premier élément du tableau "data"
     $product = null;
     if (!empty($productData['data']) && is_array($productData['data'])) {
-        $product = $productData['data'][0];
+        $this->product = $productData['data'][0];
     }
 
     return [
-        'product' => $product,
+        'product' => $this->product,
     ];
 }
 
