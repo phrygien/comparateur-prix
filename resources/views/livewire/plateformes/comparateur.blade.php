@@ -480,6 +480,51 @@ public function highlightMatchingVariationKeywords($text)
 
     return $text;
 }
+
+
+/**
+ * Met en évidence les volumes et mots clés correspondants dans un texte
+ */
+public function highlightMatchingTerms($text)
+{
+    if (empty($text)) {
+        return $text;
+    }
+
+    $patterns = [];
+    
+    // Ajouter les patterns pour les volumes (priorité aux volumes complets "X ml")
+    if (!empty($this->searchVolumes)) {
+        foreach ($this->searchVolumes as $volume) {
+            $patterns[] = '\b' . preg_quote($volume, '/') . '\s*ml\b';
+        }
+    }
+    
+    // Ajouter les patterns pour les mots-clés de variation (sauf les chiffres seuls)
+    if (!empty($this->searchVariationKeywords)) {
+        foreach ($this->searchVariationKeywords as $keyword) {
+            if (empty($keyword) || is_numeric($keyword)) {
+                continue; // Ignorer les chiffres seuls
+            }
+            $patterns[] = '\b' . preg_quote(trim($keyword), '/') . '\b';
+        }
+    }
+    
+    if (empty($patterns)) {
+        return $text;
+    }
+    
+    // Combiner tous les patterns
+    $pattern = '/(' . implode('|', $patterns) . ')/iu';
+    
+    $text = preg_replace_callback($pattern, function($matches) {
+        return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
+               . $matches[0] 
+               . '</span>';
+    }, $text);
+    
+    return $text;
+}
 }; ?>
 
 <div>
@@ -705,7 +750,7 @@ public function highlightMatchingVariationKeywords($text)
                                     <!-- Colonne Variation -->
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <div class="text-sm text-gray-900 max-w-xs" title="{{ $product->variation ?? 'Standard' }}">
-                                            @dump($this->searchVariationKeywords)
+                                            {!! $this->highlightMatchingTerms($product->variation ?? 'Standard') !!}
                                         </div>
                                     </td>
 
