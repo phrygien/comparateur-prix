@@ -589,7 +589,7 @@ public function with()
 
             <div class="mt-4 space-y-6">
                 <p class="text-base text-gray-500">
-                    {{ $product->description }}
+                    {{ utf8_encode($product->description) }}
                 </p>
             </div>
 
