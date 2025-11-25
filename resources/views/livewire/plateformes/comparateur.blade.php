@@ -8,8 +8,6 @@ new class extends Component {
     public $hasData = false;
     public $searchTerms = [];
     public $searchVolumes = [];
-    public $searchType = '';
-    public $searchVariation = '';
     
     public function mount($name)
     {
@@ -25,10 +23,8 @@ new class extends Component {
                 return null;
             }
             
-            // Extraire les volumes, le type et la variation de la recherche
+            // Extraire les volumes de la recherche
             $this->extractSearchVolumes($search);
-            $this->extractSearchType($search);
-            $this->extractSearchVariation($search);
             
             // Préparer les termes de recherche
             $searchQuery = $this->prepareSearchTerms($search);
@@ -52,9 +48,7 @@ new class extends Component {
             \Log::info('SQL Query:', [
                 'original_search' => $search,
                 'search_query' => $searchQuery,
-                'search_volumes' => $this->searchVolumes,
-                'search_type' => $this->searchType,
-                'search_variation' => $this->searchVariation
+                'search_volumes' => $this->searchVolumes
             ]);
             
             // Exécution de la requête avec binding
@@ -72,9 +66,7 @@ new class extends Component {
                 'has_data' => $this->hasData,
                 'products' => $this->products,
                 'query' => $searchQuery,
-                'volumes' => $this->searchVolumes,
-                'type' => $this->searchType,
-                'variation' => $this->searchVariation
+                'volumes' => $this->searchVolumes
             ];
             
         } catch (\Throwable $e) {
@@ -110,64 +102,6 @@ new class extends Component {
             'volumes' => $this->searchVolumes
         ]);
     }
-
-    /**
-     * Extrait le type de parfum de la recherche
-     */
-    private function extractSearchType(string $search): void
-    {
-        $this->searchType = '';
-        
-        // Recherche des types de parfum courants - ordre d'importance
-        $types = [
-            'eau de parfum' => '/eau\s*de\s*parfum/i',
-            'eau de toilette' => '/eau\s*de\s*toilette/i',
-            'parfum' => '/\bparfum\b/i',
-            'extrait' => '/\bextrait\b/i',
-            'coffret' => '/\bcoffret\b/i',
-            'set' => '/\bset\b/i'
-        ];
-        
-        foreach ($types as $type => $pattern) {
-            if (preg_match($pattern, $search)) {
-                $this->searchType = $type;
-                break;
-            }
-        }
-        
-        \Log::info('Extracted search type:', [
-            'search' => $search,
-            'type' => $this->searchType
-        ]);
-    }
-
-    /**
-     * Extrait la variation de la recherche
-     * Exemple: "Guerlain - Shalimar - Coffret Eau de Parfum 50 ml + 5 ml + 75 ml"
-     * Variation: "Coffret Eau de Parfum 50 ml + 5 ml + 75 ml"
-     */
-    private function extractSearchVariation(string $search): void
-    {
-        $this->searchVariation = '';
-        
-        // Supprimer la marque et le nom du produit pour isoler la variation
-        // Pattern pour enlever "Marque - Nom - " au début
-        $pattern = '/^[^-]+\s*-\s*[^-]+\s*-\s*/i';
-        $variation = preg_replace($pattern, '', $search);
-        
-        // Nettoyer les espaces en début et fin
-        $variation = trim($variation);
-        
-        // Si la variation est significative (plus de 3 caractères), on la garde
-        if (strlen($variation) > 3 && $variation !== $search) {
-            $this->searchVariation = $variation;
-        }
-        
-        \Log::info('Extracted search variation:', [
-            'search' => $search,
-            'variation' => $this->searchVariation
-        ]);
-    }
     
     /**
      * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
@@ -198,7 +132,7 @@ new class extends Component {
         // Stop words français et anglais à ignorer
         $stopWords = [
             'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec',
-            'the', 'a', 'an', 'and', 'or', 'eau', 'ml', 'edition', 'édition'
+            'the', 'a', 'an', 'and', 'or', 'eau', 'ml', 'edition', 'édition', 'coffret'
         ];
         
         // Mots significatifs seulement (marque, gamme, produit)
@@ -315,74 +249,6 @@ new class extends Component {
     }
 
     /**
-     * Vérifie si le produit contient AU MOINS UN volume recherché
-     */
-    public function hasMatchingVolume($product)
-    {
-        if (empty($this->searchVolumes)) {
-            return false;
-        }
-        
-        $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
-        return !empty(array_intersect($this->searchVolumes, $productVolumes));
-    }
-
-    /**
-     * Vérifie si le type correspond au type recherché
-     */
-    public function isTypeMatching($productType)
-    {
-        if (empty($this->searchType) || empty($productType)) {
-            return false;
-        }
-        
-        $productTypeLower = mb_strtolower($productType);
-        $searchTypeLower = mb_strtolower($this->searchType);
-        
-        // Pour "eau de parfum", accepter aussi "parfum" et "coffret eau de parfum"
-        if ($searchTypeLower === 'eau de parfum') {
-            return str_contains($productTypeLower, 'parfum') || 
-                   str_contains($productTypeLower, 'eau de parfum');
-        }
-        
-        // Pour "coffret", accepter aussi "coffret eau de parfum"
-        if ($searchTypeLower === 'coffret') {
-            return str_contains($productTypeLower, 'coffret');
-        }
-        
-        // Correspondance normale
-        return str_contains($productTypeLower, $searchTypeLower) || 
-               str_contains($searchTypeLower, $productTypeLower);
-    }
-
-    /**
-     * Vérifie si la variation du produit correspond à la variation recherchée
-     */
-    public function isVariationMatching($productVariation)
-    {
-        if (empty($this->searchVariation) || empty($productVariation)) {
-            return false;
-        }
-        
-        $productVariationLower = mb_strtolower($productVariation);
-        $searchVariationLower = mb_strtolower($this->searchVariation);
-        
-        // Vérifier si la variation du produit contient la variation recherchée
-        // ou si la variation recherchée contient la variation du produit
-        return str_contains($productVariationLower, $searchVariationLower) || 
-               str_contains($searchVariationLower, $productVariationLower);
-    }
-
-    /**
-     * Vérifie si le produit correspond parfaitement (variation)
-     */
-    public function isPerfectMatch($product)
-    {
-        // UNIQUEMENT si la variation correspond
-        return $this->isVariationMatching($product->variation);
-    }
-
-    /**
      * Met en évidence les volumes correspondants dans un texte
      */
     public function highlightMatchingVolumes($text)
@@ -396,22 +262,6 @@ new class extends Component {
             $replacement = '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' . $volume . ' ml</span>';
             $text = preg_replace($pattern, $replacement, $text);
         }
-
-        return $text;
-    }
-
-    /**
-     * Met en évidence la variation correspondante dans un texte
-     */
-    public function highlightMatchingVariation($text)
-    {
-        if (empty($text) || empty($this->searchVariation)) {
-            return $text;
-        }
-
-        $pattern = '/' . preg_quote($this->searchVariation, '/') . '/i';
-        $replacement = '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">$0</span>';
-        $text = preg_replace($pattern, $replacement, $text);
 
         return $text;
     }
@@ -515,30 +365,19 @@ new class extends Component {
     <!-- Section des résultats -->
     <div class="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">
         @if($hasData)
-            <!-- Indicateur des critères recherchés -->
-            @if(!empty($searchVariation))
+            <!-- Indicateur des volumes recherchés -->
+            @if(!empty($searchVolumes))
                 <div class="mb-4 p-4 bg-blue-50 rounded-lg">
-                    <div class="flex flex-col space-y-2">
-                        <div class="flex items-center">
-                            <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg>
-                            <span class="text-sm font-medium text-blue-800">Critère de correspondance parfaite :</span>
-                        </div>
-                        <div class="flex flex-wrap gap-2">
-                            <div class="flex items-center">
-                                <span class="text-xs text-blue-700 mr-1">Variation :</span>
-                                <span class="bg-green-100 text-green-800 font-semibold px-2 py-1 rounded text-xs max-w-lg truncate" title="{{ $searchVariation }}">
-                                    {{ $searchVariation }}
-                                </span>
-                            </div>
-                        </div>
-                        <div class="text-xs text-blue-600 mt-1">
-                            <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Les produits en vert correspondent à la variation recherchée
-                        </div>
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <span class="text-sm font-medium text-blue-800">
+                            Volumes recherchés : 
+                            @foreach($searchVolumes as $volume)
+                                <span class="bg-green-100 text-green-800 font-semibold px-2 py-1 rounded ml-2">{{ $volume }} ml</span>
+                            @endforeach
+                        </span>
                     </div>
                 </div>
             @endif
@@ -566,12 +405,9 @@ new class extends Component {
                             @foreach($products as $product)
                                 @php
                                     $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
-                                    $hasMatchingVolume = $this->hasMatchingVolume($product);
-                                    $hasMatchingType = $this->isTypeMatching($product->type);
-                                    $hasMatchingVariation = $this->isVariationMatching($product->variation);
-                                    $isPerfectMatch = $this->isPerfectMatch($product);
+                                    $hasMatchingVolume = !empty(array_intersect($this->searchVolumes, $productVolumes));
                                 @endphp
-                                <tr class="hover:bg-gray-50 @if($isPerfectMatch) bg-green-50 border-l-4 border-green-500 @endif">
+                                <tr class="hover:bg-gray-50 @if($hasMatchingVolume) bg-green-50 @endif">
                                     <!-- Colonne Image -->
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         @if(!empty($product->image))
@@ -584,26 +420,36 @@ new class extends Component {
                                                 <span class="text-xs text-gray-500">No Image</span>
                                             </div>
                                         @endif
-                                        @if($isPerfectMatch)
-                                            <div class="mt-1 text-center">
-                                                <span class="inline-flex items-center px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">
-                                                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
-                                                    </svg>
-                                                    Variation correspondante
-                                                </span>
-                                            </div>
-                                        @endif
                                     </td>
                                     
                                     <!-- Colonne Nom -->
                                     <td class="px-6 py-4">
                                         <div class="text-sm font-medium text-gray-900 max-w-xs" title="{{ $product->name ?? 'N/A' }}">
-                                            {{ $product->name ?? 'N/A' }}
+                                            {!! $this->highlightMatchingVolumes($product->name ?? 'N/A') !!}
                                         </div>
                                         @if(!empty($product->vendor))
                                             <div class="text-xs text-gray-500 mt-1">
                                                 {{ $product->vendor }}
+                                            </div>
+                                        @endif
+                                        <!-- Badges des volumes du produit -->
+                                        @if(!empty($productVolumes))
+                                            <div class="mt-2 flex flex-wrap gap-1">
+                                                @foreach($productVolumes as $volume)
+                                                    <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium 
+                                                        @if($this->isVolumeMatching($volume))
+                                                            bg-green-100 text-green-800 border border-green-300
+                                                        @else
+                                                            bg-gray-100 text-gray-800
+                                                        @endif">
+                                                        {{ $volume }} ml
+                                                        @if($this->isVolumeMatching($volume))
+                                                            <svg class="w-3 h-3 ml-1 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                                                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                                            </svg>
+                                                        @endif
+                                                    </span>
+                                                @endforeach
                                             </div>
                                         @endif
                                     </td>
@@ -611,7 +457,7 @@ new class extends Component {
                                     <!-- Colonne Variation -->
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <div class="text-sm text-gray-900 max-w-xs" title="{{ $product->variation ?? 'Standard' }}">
-                                            {!! $this->highlightMatchingVariation($product->variation ?? 'Standard') !!}
+                                            {!! $this->highlightMatchingVolumes($product->variation ?? 'Standard') !!}
                                         </div>
                                     </td>
 
