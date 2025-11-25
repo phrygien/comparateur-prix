@@ -568,7 +568,7 @@ public function highlightMatchingTerms($text)
         </nav>
 
         <div class="mt-4">
-            <h1 class="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">{{ $product->title }}  </h1>
+            <h1 class="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">{{ utf8_encode($product->title) }}</h1>
         </div>
 
         <section aria-labelledby="information-heading" class="mt-4">
