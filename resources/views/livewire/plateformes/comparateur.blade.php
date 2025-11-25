@@ -472,7 +472,7 @@ public function highlightMatchingVariationKeywords($text)
         
         // Utilise une fonction de callback pour éviter les problèmes d'échappement
         $text = preg_replace_callback($pattern, function($matches) {
-            return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
+            return '<span class="bg-green-100 mc text-green-800 font-semibold px-1 py-0.5 rounded">' 
                    . htmlspecialchars($matches[0]) 
                    . '</span>';
         }, $text);
