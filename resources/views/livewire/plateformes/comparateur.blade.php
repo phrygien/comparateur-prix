@@ -623,7 +623,7 @@ public function highlightMatchingTerms($text)
 </div>
 
     <!-- Section des résultats -->
-    <div class="mx-auto w-full sm:px-6 lg:px-8">
+    <div class="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">
         @if($hasData)
             <!-- Indicateur des critères recherchés -->
             @if(!empty($searchVolumes) || !empty($searchVariationKeywords))
@@ -718,8 +718,8 @@ public function highlightMatchingTerms($text)
                                     <!-- Colonne Nom -->
                                     <td class="px-6 py-4">
                                         <div class="text-sm font-medium text-gray-900 max-w-xs" title="{{ $product->name ?? 'N/A' }}">
-                                            {{-- {!! $this->highlightMatchingVolumes($product->name ?? 'N/A') !!} --}}
-                                            {!! $this->highlightMatchingTerms($product->name ?? 'N/A') !!}
+                                            {!! $this->highlightMatchingVolumes($product->name ?? 'N/A') !!}
+                                            {{ $product->name }}
                                         </div>
                                         @if(!empty($product->vendor))
                                             <div class="text-xs text-gray-500 mt-1">
