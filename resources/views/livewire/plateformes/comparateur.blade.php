@@ -16,14 +16,14 @@ new class extends Component {
     public function mount($name, $id)
     {
         $this->getCompetitorPrice($name);
-        $productData = $this->getOneProductDetails($id);
+        // $productData = $this->getOneProductDetails($id);
         
-        // Récupérer le premier élément du tableau "data"
-        if (!empty($productData['data']) && is_array($productData['data'])) {
-            $this->product = $productData['data'][0];
-        } else {
-            $this->product = null;
-        }
+        // // Récupérer le premier élément du tableau "data"
+        // if (!empty($productData['data']) && is_array($productData['data'])) {
+        //     $this->product = $productData['data'][0];
+        // } else {
+        //     $this->product = null;
+        // }
         
         //dd($this->product);
     }
@@ -538,6 +538,22 @@ public function highlightMatchingTerms($text)
     
     return $text;
 }
+
+public function with()
+{
+    $productData = $this->getOneProductDetails($this->id);
+    
+    // Récupérer le premier élément du tableau "data"
+    $product = null;
+    if (!empty($productData['data']) && is_array($productData['data'])) {
+        $product = $productData['data'][0];
+    }
+    
+    return [
+        'product' => $product,
+    ];
+}
+
 }; ?>
 
 <div>
