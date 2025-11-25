@@ -10,7 +10,7 @@ new class extends Component {
     
     public function mount($name)
     {
-        $this->getCompetitorPrice($name);
+        dd($this->getCompetitorPrice($name));
     }
 
     public function getCompetitorPrice($search)
