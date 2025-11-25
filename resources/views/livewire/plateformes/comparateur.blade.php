@@ -12,7 +12,7 @@ new class extends Component {
 
     // one product
     public $id;
-    public $product;
+    //public $product;
     
     public function mount($name, $id)
     {
@@ -551,7 +551,6 @@ public function with()
         $product = $productData['data'][0];
     }
     
-    dd($product);
     return [
         'product' => $product,
     ];
