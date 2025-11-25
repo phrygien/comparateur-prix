@@ -202,7 +202,7 @@ new class extends Component {
 }; ?>
 
 <div>
-    <div class="mx-auto max-w-2xl px-4 py-2 sm:px-2 sm:py-4 lg:grid lg:max-w-7xl lg:grid-cols-2 lg:gap-x-8 lg:px-8">
+    <div class="mx-auto max-w-2xl px-4 py-2 sm:px-2 sm:py-4 lg:grid lg:max-w-9xl lg:grid-cols-2 lg:gap-x-8 lg:px-8">
         <!-- Product details -->
         <div class="lg:max-w-lg lg:self-end">
             <nav aria-label="Breadcrumb">
@@ -297,7 +297,7 @@ new class extends Component {
     </div>
 
     <!-- Section des résultats -->
-    <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+    <div class="mx-auto max-w-9xl px-4 py-6 sm:px-6 lg:px-8">
         @if($hasData)
             <!-- Tableau des résultats -->
             <div class="bg-white shadow-sm rounded-lg overflow-hidden">
@@ -353,7 +353,7 @@ new class extends Component {
                                             {{ $this->formatVariation($product->variation) }}
                                         </div>
                                     </td>
-                                                                        
+
                                     <!-- Colonne Site Source -->
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <div class="flex items-center">
