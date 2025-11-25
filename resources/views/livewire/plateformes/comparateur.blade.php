@@ -433,21 +433,27 @@ new class extends Component {
     /**
      * Met en évidence les volumes correspondants dans un texte
      */
-    public function highlightMatchingVolumes($text)
-    {
-        if (empty($text) || empty($this->searchVolumes)) {
-            return $text;
-        }
-
-        foreach ($this->searchVolumes as $volume) {
-            $pattern = '/\b' . preg_quote($volume, '/') . '\s*ml\b/i';
-            $replacement = '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' . $volume . ' ml</span>';
-
-            $text = preg_replace($pattern, $replacement, $text);
-        }
-
+/**
+ * Met en évidence les volumes correspondants dans un texte
+ */
+public function highlightMatchingVolumes($text)
+{
+    if (empty($text) || empty($this->searchVolumes)) {
         return $text;
     }
+
+    foreach ($this->searchVolumes as $volume) {
+        // Recherche le volume suivi de "ml" (avec ou sans espace)
+        $pattern = '/\b' . preg_quote($volume, '/') . '\s*ml\b/i';
+        
+        // Utilise $0 pour conserver le texte original (y compris "ml")
+        $replacement = '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">$0</span>';
+        
+        $text = preg_replace($pattern, $replacement, $text);
+    }
+
+    return $text;
+}
 
     /**
      * Met en évidence les mots clés de variation correspondants dans un texte
