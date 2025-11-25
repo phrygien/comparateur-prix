@@ -16,10 +16,16 @@ new class extends Component {
     public function mount($name, $id)
     {
         $this->getCompetitorPrice($name);
-        $this->product = $this->getOneProductDetails($id);
-
-        dd($this->product);
-
+        $productData = $this->getOneProductDetails($id);
+        
+        // Récupérer le premier élément du tableau "data"
+        if (!empty($productData['data']) && is_array($productData['data'])) {
+            $this->product = $productData['data'][0];
+        } else {
+            $this->product = null;
+        }
+        
+        //dd($this->product);
     }
 
     public function getOneProductDetails($entity_id){
@@ -538,7 +544,7 @@ public function highlightMatchingTerms($text)
 <div class="w-full px-4 py-2 sm:px-2 sm:py-4 lg:grid lg:grid-cols-2 lg:gap-x-8 lg:px-8">
     <!-- Product image -->
     <div class="mt-10 lg:col-start-1 lg:row-span-2 lg:mt-0 lg:self-center">
-        <img src="https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800&q=80" alt="Model wearing light green backpack with black canvas straps and front zipper pouch." class="aspect-square w-full rounded-lg object-cover">
+        <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $product->thumbnail) }}" alt="Model wearing light green backpack with black canvas straps and front zipper pouch." class="aspect-square w-full rounded-lg object-cover">
     </div>
 
     <!-- Product details -->
@@ -547,7 +553,7 @@ public function highlightMatchingTerms($text)
             <ol role="list" class="flex items-center space-x-2">
                 <li>
                     <div class="flex items-center text-sm">
-                        <a href="#" class="font-medium text-gray-500 hover:text-gray-900">CHANEL</a>
+                        <a href="#" class="font-medium text-gray-500 hover:text-gray-900">{{ $product->vendor }} </a>
                         <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" class="ml-2 size-5 shrink-0 text-gray-300">
                             <path d="M5.555 17.776l8-16 .894.448-8 16-.894-.448z" />
                         </svg>
@@ -562,7 +568,7 @@ public function highlightMatchingTerms($text)
         </nav>
 
         <div class="mt-4">
-            <h1 class="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">Crème Visage Premium</h1>
+            <h1 class="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">{{ $product->title }}  </h1>
         </div>
 
         <section aria-labelledby="information-heading" class="mt-4">
