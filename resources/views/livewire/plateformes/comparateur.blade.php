@@ -8,11 +8,11 @@ new class extends Component {
     public $hasData = false;
     public $searchTerms = [];
     public $searchVolumes = [];
+    public $searchVariationKeywords = [];
     
-    public function mount($name, $id)
+    public function mount($name)
     {
         $this->getCompetitorPrice($name);
-        dd($this->getOneProductDetails($id));
     }
 
     public function getOneProductDetails($entity_id){
@@ -109,8 +109,9 @@ new class extends Component {
                 return null;
             }
             
-            // Extraire les volumes de la recherche
+            // Extraire les volumes et les mots clés de la variation
             $this->extractSearchVolumes($search);
+            $this->extractSearchVariationKeywords($search);
             
             // Préparer les termes de recherche
             $searchQuery = $this->prepareSearchTerms($search);
@@ -134,7 +135,8 @@ new class extends Component {
             \Log::info('SQL Query:', [
                 'original_search' => $search,
                 'search_query' => $searchQuery,
-                'search_volumes' => $this->searchVolumes
+                'search_volumes' => $this->searchVolumes,
+                'search_variation_keywords' => $this->searchVariationKeywords
             ]);
             
             // Exécution de la requête avec binding
@@ -152,7 +154,8 @@ new class extends Component {
                 'has_data' => $this->hasData,
                 'products' => $this->products,
                 'query' => $searchQuery,
-                'volumes' => $this->searchVolumes
+                'volumes' => $this->searchVolumes,
+                'variation_keywords' => $this->searchVariationKeywords
             ];
             
         } catch (\Throwable $e) {
@@ -186,6 +189,54 @@ new class extends Component {
         \Log::info('Extracted search volumes:', [
             'search' => $search,
             'volumes' => $this->searchVolumes
+        ]);
+    }
+
+    /**
+     * Extrait les mots clés de la variation de la recherche
+     * Exemple: "Guerlain - Shalimar - Coffret Eau de Parfum 50 ml + 5 ml + 75 ml"
+     * Mots clés: ["coffret", "eau", "parfum", "50", "5", "75"]
+     */
+    private function extractSearchVariationKeywords(string $search): void
+    {
+        $this->searchVariationKeywords = [];
+        
+        // Supprimer la marque et le nom du produit pour isoler la variation
+        $pattern = '/^[^-]+\s*-\s*[^-]+\s*-\s*/i';
+        $variation = preg_replace($pattern, '', $search);
+        
+        // Nettoyer les caractères spéciaux et garder lettres, chiffres et espaces
+        $variationClean = preg_replace('/[^a-zA-ZÀ-ÿ0-9\s]/', ' ', $variation);
+        
+        // Normaliser les espaces multiples
+        $variationClean = trim(preg_replace('/\s+/', ' ', $variationClean));
+        
+        // Convertir en minuscules
+        $variationClean = mb_strtolower($variationClean);
+        
+        // Séparer les mots
+        $words = explode(" ", $variationClean);
+        
+        // Stop words à ignorer
+        $stopWords = [
+            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec',
+            'the', 'a', 'an', 'and', 'or', 'ml', 'edition', 'édition'
+        ];
+        
+        // Garder les mots significatifs
+        foreach ($words as $word) {
+            $word = trim($word);
+            
+            // Garder les mots de plus de 1 caractère, non-stop words, et les chiffres
+            if ((strlen($word) > 1 && !in_array($word, $stopWords)) || is_numeric($word)) {
+                $this->searchVariationKeywords[] = $word;
+            }
+        }
+        
+        \Log::info('Extracted search variation keywords:', [
+            'search' => $search,
+            'variation' => $variation,
+            'keywords' => $this->searchVariationKeywords
         ]);
     }
     
@@ -335,6 +386,51 @@ new class extends Component {
     }
 
     /**
+     * Vérifie si le produit contient AU MOINS UN volume recherché
+     */
+    public function hasMatchingVolume($product)
+    {
+        if (empty($this->searchVolumes)) {
+            return false;
+        }
+        
+        $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
+        return !empty(array_intersect($this->searchVolumes, $productVolumes));
+    }
+
+    /**
+     * Vérifie si la variation du produit contient AU MOINS UN mot clé de la variation recherchée
+     */
+    public function hasMatchingVariationKeyword($product)
+    {
+        if (empty($this->searchVariationKeywords) || empty($product->variation)) {
+            return false;
+        }
+        
+        $productVariationLower = mb_strtolower($product->variation);
+        
+        foreach ($this->searchVariationKeywords as $keyword) {
+            if (str_contains($productVariationLower, $keyword)) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
+    /**
+     * Vérifie si le produit correspond parfaitement (volumes ET mots clés de variation)
+     */
+    public function isPerfectMatch($product)
+    {
+        $hasMatchingVolume = $this->hasMatchingVolume($product);
+        $hasMatchingVariationKeyword = $this->hasMatchingVariationKeyword($product);
+        
+        // Correspondance parfaite si contient AU MOINS un volume ET AU MOINS un mot clé de variation
+        return $hasMatchingVolume && $hasMatchingVariationKeyword;
+    }
+
+    /**
      * Met en évidence les volumes correspondants dans un texte
      */
     public function highlightMatchingVolumes($text)
@@ -351,8 +447,25 @@ new class extends Component {
 
         return $text;
     }
-}; ?>
 
+    /**
+     * Met en évidence les mots clés de variation correspondants dans un texte
+     */
+    public function highlightMatchingVariationKeywords($text)
+    {
+        if (empty($text) || empty($this->searchVariationKeywords)) {
+            return $text;
+        }
+
+        foreach ($this->searchVariationKeywords as $keyword) {
+            $pattern = '/\b' . preg_quote($keyword, '/') . '\b/i';
+            $replacement = '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">$0</span>';
+            $text = preg_replace($pattern, $replacement, $text);
+        }
+
+        return $text;
+    }
+}; ?>
 
 <div>
 <div class="w-full px-4 py-2 sm:px-2 sm:py-4 lg:grid lg:grid-cols-2 lg:gap-x-8 lg:px-8">
@@ -452,19 +565,40 @@ new class extends Component {
     <!-- Section des résultats -->
     <div class="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">
         @if($hasData)
-            <!-- Indicateur des volumes recherchés -->
-            @if(!empty($searchVolumes))
+            <!-- Indicateur des critères recherchés -->
+            @if(!empty($searchVolumes) || !empty($searchVariationKeywords))
                 <div class="mb-4 p-4 bg-blue-50 rounded-lg">
-                    <div class="flex items-center">
-                        <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                        <span class="text-sm font-medium text-blue-800">
-                            Volumes recherchés : 
-                            @foreach($searchVolumes as $volume)
-                                <span class="bg-green-100 text-green-800 font-semibold px-2 py-1 rounded ml-2">{{ $volume }} ml</span>
-                            @endforeach
-                        </span>
+                    <div class="flex flex-col space-y-2">
+                        <div class="flex items-center">
+                            <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <span class="text-sm font-medium text-blue-800">Critères de correspondance parfaite :</span>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            @if(!empty($searchVolumes))
+                                <div class="flex items-center">
+                                    <span class="text-xs text-blue-700 mr-1">Volumes :</span>
+                                    @foreach($searchVolumes as $volume)
+                                        <span class="bg-green-100 text-green-800 font-semibold px-2 py-1 rounded text-xs">{{ $volume }} ml</span>
+                                    @endforeach
+                                </div>
+                            @endif
+                            @if(!empty($searchVariationKeywords))
+                                <div class="flex items-center">
+                                    <span class="text-xs text-blue-700 mr-1">Mots clés variation :</span>
+                                    @foreach($searchVariationKeywords as $keyword)
+                                        <span class="bg-green-100 text-green-800 font-semibold px-2 py-1 rounded text-xs">{{ $keyword }}</span>
+                                    @endforeach
+                                </div>
+                            @endif
+                        </div>
+                        <div class="text-xs text-blue-600 mt-1">
+                            <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                            Les produits en vert contiennent AU MOINS un volume ET AU MOINS un mot clé de la variation recherchée
+                        </div>
                     </div>
                 </div>
             @endif
@@ -492,9 +626,11 @@ new class extends Component {
                             @foreach($products as $product)
                                 @php
                                     $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
-                                    $hasMatchingVolume = !empty(array_intersect($this->searchVolumes, $productVolumes));
+                                    $hasMatchingVolume = $this->hasMatchingVolume($product);
+                                    $hasMatchingVariationKeyword = $this->hasMatchingVariationKeyword($product);
+                                    $isPerfectMatch = $this->isPerfectMatch($product);
                                 @endphp
-                                <tr class="hover:bg-gray-50 @if($hasMatchingVolume) bg-green-50 @endif">
+                                <tr class="hover:bg-gray-50 @if($isPerfectMatch) bg-green-50 border-l-4 border-green-500 @endif">
                                     <!-- Colonne Image -->
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         @if(!empty($product->image))
@@ -505,6 +641,16 @@ new class extends Component {
                                         @else
                                             <div class="h-12 w-12 bg-gray-200 rounded-lg flex items-center justify-center">
                                                 <span class="text-xs text-gray-500">No Image</span>
+                                            </div>
+                                        @endif
+                                        @if($isPerfectMatch)
+                                            <div class="mt-1 text-center">
+                                                <span class="inline-flex items-center px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">
+                                                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                                    </svg>
+                                                    Correspondance parfaite
+                                                </span>
                                             </div>
                                         @endif
                                     </td>
@@ -544,7 +690,7 @@ new class extends Component {
                                     <!-- Colonne Variation -->
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <div class="text-sm text-gray-900 max-w-xs" title="{{ $product->variation ?? 'Standard' }}">
-                                            {!! $this->highlightMatchingVolumes($product->variation ?? 'Standard') !!}
+                                            {!! $this->highlightMatchingVariationKeywords($product->variation ?? 'Standard') !!}
                                         </div>
                                     </td>
 
