@@ -30,24 +30,23 @@ new class extends Component {
                 return null;
             }
             
-            // Construction de la requête SQL exacte
+            // Construction de la requête SQL avec paramètres liés
             $sql = "SELECT * 
                     FROM last_price_scraped_product 
                     WHERE MATCH (name, vendor, type, variation) 
-                    AGAINST ('{$searchQuery}' IN BOOLEAN MODE)";
+                    AGAINST (? IN BOOLEAN MODE)";
             
             \Log::info('SQL Query:', [
                 'original_search' => $search,
                 'search_query' => $searchQuery,
-                'sql' => $sql
+                'sql_preview' => str_replace('?', "'{$searchQuery}'", $sql)
             ]);
             
-            // Exécution de la requête
-            $result = DB::connection('mysql')->select($sql);
+            // Exécution de la requête avec binding
+            $result = DB::connection('mysql')->select($sql, [$searchQuery]);
             
             \Log::info('Query result:', [
-                'count' => count($result),
-                'first' => $result[0] ?? null
+                'count' => count($result)
             ]);
             
             $this->products = $result;
@@ -78,39 +77,58 @@ new class extends Component {
     
     /**
      * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
+     * Extrait uniquement les 3 premiers mots significatifs (marque, gamme, type)
+     * 
      * Format: +mot1* +mot2* +mot3*
+     * 
+     * Exemple: "Guerlain - Shalimar - Coffret Eau de Parfum 50 ml"
+     * Résultat: "+guerlain* +shalimar* +coffret*"
      * 
      * @param string $search
      * @return string
      */
     private function prepareSearchTerms(string $search): string
     {
-        // Nettoyage : supprimer caractères spéciaux et apostrophes
-        $searchClean = str_replace(["'", '"', " - ", "-"], " ", $search);
+        // Nettoyage agressif : supprimer tous les caractères spéciaux et chiffres
+        $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ\s]/', ' ', $search);
         
         // Normaliser les espaces multiples
         $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
         
-        // Convertir en minuscules pour uniformité
-        $searchClean = strtolower($searchClean);
+        // Convertir en minuscules
+        $searchClean = mb_strtolower($searchClean);
         
         // Séparer les mots
         $words = explode(" ", $searchClean);
-        $booleanTerms = [];
         
-        // Mots à ignorer (stop words français et anglais)
-        $stopWords = ['de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec', 'the', 'a', 'an', 'and', 'or'];
+        // Stop words français et anglais à ignorer
+        $stopWords = [
+            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec',
+            'the', 'a', 'an', 'and', 'or', 'eau', 'ml', 'edition', 'édition', 'coffret'
+        ];
+        
+        // Mots significatifs seulement (marque, gamme, produit)
+        $significantWords = [];
         
         foreach ($words as $word) {
             $word = trim($word);
             
-            // Filtrer les mots trop courts (< 3 caractères) et les stop words
+            // Garder uniquement les mots de plus de 2 caractères, non-stop words
             if (strlen($word) > 2 && !in_array($word, $stopWords)) {
-                $booleanTerms[] = '+' . $word . '*';
+                $significantWords[] = $word;
+            }
+            
+            // Limiter à 3 mots maximum (marque + gamme + type)
+            if (count($significantWords) >= 3) {
+                break;
             }
         }
         
-        // Retourner au format: +mot1* +mot2* +mot3*
+        // Construire la requête boolean
+        $booleanTerms = array_map(function($word) {
+            return '+' . $word . '*';
+        }, $significantWords);
+        
         return implode(' ', $booleanTerms);
     }
 }; ?>
