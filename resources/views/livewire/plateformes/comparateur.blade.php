@@ -17,7 +17,7 @@ new class extends Component {
     
     public function mount($name, $id)
     {
-        //$this->getCompetitorPrice($name);
+        $this->getCompetitorPrice($name);
         $this->id = $id;
         $this->name = $name;
     }
@@ -533,26 +533,28 @@ public function highlightMatchingTerms($text)
     return $text;
 }
 
-    public function with()
-    {
-        $productData = $this->getOneProductDetails($this->id);
-        $products = $this->getCompetitorPrice($this->name);
-        // Récupérer le premier élément du tableau "data"
-        if (!empty($productData['data']) && is_array($productData['data'])) {
-            $this->product = $productData['data'][0];
-        } else {
-            $this->product = null;
-        }
+    // public function with()
+    // {
+    //     $productData = $this->getOneProductDetails($this->id);
+    //     $products = $this->getCompetitorPrice($this->name);
+    //     // Récupérer le premier élément du tableau "data"
+    //     if (!empty($productData['data']) && is_array($productData['data'])) {
+    //         $this->product = $productData['data'][0];
+    //     } else {
+    //         $this->product = null;
+    //     }
 
-        return [
-            'product' => $this->product,
-            'products' => $products,
-        ];
-    }
-}; ?>
+    //     return [
+    //         'product' => $this->product,
+    //         'products' => $products,
+    //     ];
+    // }
+}; 
+
+?>
 
 <div>
-<div class="w-full px-4 py-2 sm:px-2 sm:py-4 lg:grid lg:grid-cols-2 lg:gap-x-8 lg:px-8">
+{{-- <div class="w-full px-4 py-2 sm:px-2 sm:py-4 lg:grid lg:grid-cols-2 lg:gap-x-8 lg:px-8">
     <!-- Product image -->
     <div class="mt-10 lg:col-start-1 lg:row-span-2 lg:mt-0 lg:self-center">
         <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $product->thumbnail ) }}" 
@@ -643,7 +645,7 @@ public function highlightMatchingTerms($text)
             </form>
         </section>
     </div>
-</div>
+</div> --}}
 
     <!-- Section des résultats -->
     <div class="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">
