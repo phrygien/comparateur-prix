@@ -34,7 +34,8 @@ new class extends Component {
             // Ajout du champ price_ht et tri par prix décroissant
             $sql = "SELECT *, 
                            prix_ht,
-                           image_url as image
+                           image_url as image,
+                           product_url
                     FROM last_price_scraped_product 
                     WHERE MATCH (name, vendor, type, variation) 
                     AGAINST (? IN BOOLEAN MODE)
@@ -144,6 +145,35 @@ new class extends Component {
         if (is_numeric($price)) {
             return number_format($price, 2, ',', ' ') . ' €';
         }
+        return 'N/A';
+    }
+
+    /**
+     * Extrait le domaine d'une URL
+     */
+    public function extractDomain($url)
+    {
+        if (empty($url)) {
+            return 'N/A';
+        }
+        
+        try {
+            $parsedUrl = parse_url($url);
+            if (isset($parsedUrl['host'])) {
+                $domain = $parsedUrl['host'];
+                // Retirer www. si présent
+                if (strpos($domain, 'www.') === 0) {
+                    $domain = substr($domain, 4);
+                }
+                return $domain;
+            }
+        } catch (\Exception $e) {
+            \Log::error('Error extracting domain:', [
+                'url' => $url,
+                'error' => $e->getMessage()
+            ]);
+        }
+        
         return 'N/A';
     }
 
@@ -268,10 +298,9 @@ new class extends Component {
                             <tr>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Image</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vendor</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Site Source</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prix HT</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                             </tr>
                         </thead>
@@ -294,16 +323,28 @@ new class extends Component {
                                     
                                     <!-- Colonne Nom -->
                                     <td class="px-6 py-4">
-                                        <div class="text-sm font-medium text-gray-900 max-w-xs truncate">
+                                        <div class="text-sm font-medium text-gray-900 max-w-xs truncate" title="{{ $product->name ?? 'N/A' }}">
                                             {{ $product->name ?? 'N/A' }}
                                         </div>
                                     </td>
                                     
-                                    <!-- Colonne Vendor -->
+                                    <!-- Colonne Site Source -->
                                     <td class="px-6 py-4 whitespace-nowrap">
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                            {{ $product->vendor ?? 'N/A' }}
-                                        </span>
+                                        <div class="flex items-center">
+                                            <div class="flex-shrink-0 h-8 w-8 bg-gray-100 rounded-full flex items-center justify-center mr-3">
+                                                <span class="text-xs font-medium text-gray-600">
+                                                    {{ strtoupper(substr($this->extractDomain($product->product_url), 0, 2)) }}
+                                                </span>
+                                            </div>
+                                            <div>
+                                                <div class="text-sm font-medium text-gray-900">
+                                                    {{ $this->extractDomain($product->product_url) }}
+                                                </div>
+                                                <div class="text-xs text-gray-500 truncate max-w-xs" title="{{ $product->product_url ?? 'N/A' }}">
+                                                    {{ Str::limit($product->product_url, 40) }}
+                                                </div>
+                                            </div>
+                                        </div>
                                     </td>
                                     
                                     <!-- Colonne Prix HT -->
@@ -314,29 +355,32 @@ new class extends Component {
                                     </td>
                                     
                                     <!-- Colonne Type -->
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                        {{ $product->type ?? 'N/A' }}
-                                    </td>
-                                    
-                                    <!-- Colonne Date -->
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                        @if($product->created_at)
-                                            {{ \Carbon\Carbon::parse($product->created_at)->format('d/m/Y') }}
-                                        @else
-                                            N/A
-                                        @endif
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                            {{ $product->type ?? 'N/A' }}
+                                        </span>
                                     </td>
                                     
                                     <!-- Colonne Actions -->
                                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                        @if(!empty($product->product_url))
-                                            <button wire:click="viewProduct('{{ $product->product_url }}')" 
-                                                    class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-full shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                                                Voir le produit
-                                            </button>
-                                        @else
-                                            <span class="text-gray-400">Non disponible</span>
-                                        @endif
+                                        <div class="flex space-x-2">
+                                            @if(!empty($product->product_url))
+                                                <button wire:click="viewProduct('{{ $product->product_url }}')" 
+                                                        class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-full shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200">
+                                                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                                                    </svg>
+                                                    Voir
+                                                </button>
+                                            @else
+                                                <span class="inline-flex items-center px-2 py-1 text-xs text-gray-400 bg-gray-100 rounded-full">
+                                                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                                                    </svg>
+                                                    Indisponible
+                                                </span>
+                                            @endif
+                                        </div>
                                     </td>
                                 </tr>
                             @endforeach
