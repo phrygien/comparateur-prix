@@ -591,7 +591,7 @@ public function highlightMatchingTerms($text)
 
             <div class="mt-4 space-y-6">
                 <p class="text-base text-gray-500">
-                    {{ utf8_encode($product->description) }}
+                   {{ strip_tags(html_entity_decode(utf8_encode($product->description))) }}
                 </p>
             </div>
 
