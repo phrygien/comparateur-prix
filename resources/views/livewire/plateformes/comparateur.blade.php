@@ -9,7 +9,7 @@ new class extends Component {
     
     public function mount($name)
     {
-        $this->getCompetitorPrice($name);
+        dd($this->getCompetitorPrice($name));
     }
 
     public function getCompetitorPrice($search)
@@ -33,7 +33,7 @@ new class extends Component {
             // Construction de la requête SQL avec paramètres liés
             // Ajout du champ price_ht et tri par prix décroissant
             $sql = "SELECT *, 
-                           price_ht as prix_ht,
+                           prix_ht,
                            image_url as image
                     FROM last_price_scraped_product 
                     WHERE MATCH (name, vendor, type, variation) 
