@@ -20,16 +20,6 @@ new class extends Component {
         //$this->getCompetitorPrice($name);
         $this->id = $id;
         $this->name = $name;
-        // $productData = $this->getOneProductDetails($id);
-        
-        // // Récupérer le premier élément du tableau "data"
-        // if (!empty($productData['data']) && is_array($productData['data'])) {
-        //     $this->product = $productData['data'][0];
-        // } else {
-        //     $this->product = null;
-        // }
-        
-        //dd($this->product);
     }
 
     public function getOneProductDetails($entity_id){
@@ -556,7 +546,7 @@ public function highlightMatchingTerms($text)
 
         return [
             'product' => $this->product,
-            'products' => $this->products,
+            'products' => $products,
         ];
     }
 }; ?>
