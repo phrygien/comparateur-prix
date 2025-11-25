@@ -454,24 +454,30 @@ public function highlightMatchingVolumes($text)
 
     return $text;
 }
-
     /**
      * Met en évidence les mots clés de variation correspondants dans un texte
      */
-    public function highlightMatchingVariationKeywords($text)
-    {
-        if (empty($text) || empty($this->searchVariationKeywords)) {
-            return $text;
-        }
-
-        foreach ($this->searchVariationKeywords as $keyword) {
-            $pattern = '/\b' . preg_quote($keyword, '/') . '\b/i';
-            $replacement = '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">$0</span>';
-            $text = preg_replace($pattern, $replacement, $text);
-        }
-
+/**
+ * Met en évidence les mots clés de variation correspondants dans un texte
+ */
+public function highlightMatchingVariationKeywords($text)
+{
+    if (empty($text) || empty($this->searchVariationKeywords)) {
         return $text;
     }
+
+    foreach ($this->searchVariationKeywords as $keyword) {
+        // Recherche le mot clé exact (avec limites de mots)
+        $pattern = '/\b' . preg_quote($keyword, '/') . '\b/i';
+        
+        // Utilise $0 pour conserver le texte original
+        $replacement = '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">$0</span>';
+        
+        $text = preg_replace($pattern, $replacement, $text);
+    }
+
+    return $text;
+}
 }; ?>
 
 <div>
