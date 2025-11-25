@@ -12,7 +12,7 @@ new class extends Component {
 
     // one product
     public $id;
-    //public $product;
+    public $product;
     
     public function mount($name, $id)
     {
@@ -548,12 +548,12 @@ public function with()
     // Récupérer le premier élément du tableau "data"
     $product = null;
     if (!empty($productData['data']) && is_array($productData['data'])) {
-        $product = $productData['data'][0];
+        $this->product = $productData['data'][0];
     }
     
-    dd($product['thumbnail']);
+    //dd($product['thumbnail']);
     return [
-        'product' => $product,
+        'product' => $this->product,
     ];
 }
 
