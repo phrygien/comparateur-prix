@@ -551,6 +551,7 @@ public function with()
         $product = $productData['data'][0];
     }
     
+    dd($product);
     return [
         'product' => $product,
     ];
