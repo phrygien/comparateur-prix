@@ -119,7 +119,9 @@ new class extends Component {
             'eau de parfum' => '/eau\s*de\s*parfum/i',
             'eau de toilette' => '/eau\s*de\s*toilette/i',
             'parfum' => '/\bparfum\b/i',
-            'extrait' => '/\bextrait\b/i'
+            'extrait' => '/\bextrait\b/i',
+            'coffret' => '/\bcoffret\b/i',
+            'set' => '/\bset\b/i'
         ];
         
         foreach ($types as $type => $pattern) {
@@ -127,11 +129,6 @@ new class extends Component {
                 $this->searchType = $type;
                 break;
             }
-        }
-        
-        // Si pas de type spécifique trouvé, chercher "coffret"
-        if (empty($this->searchType) && preg_match('/\bcoffret\b/i', $search)) {
-            $this->searchType = 'coffret';
         }
         
         \Log::info('Extracted search type:', [
@@ -290,6 +287,10 @@ new class extends Component {
      */
     public function hasMatchingVolume($product)
     {
+        if (empty($this->searchVolumes)) {
+            return false;
+        }
+        
         $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
         return !empty(array_intersect($this->searchVolumes, $productVolumes));
     }
@@ -327,6 +328,11 @@ new class extends Component {
      */
     public function isPerfectMatch($product)
     {
+        // Si aucun critère de volume ou type n'est défini, pas de correspondance parfaite
+        if (empty($this->searchVolumes) || empty($this->searchType)) {
+            return false;
+        }
+        
         $hasMatchingVolume = $this->hasMatchingVolume($product);
         $hasMatchingType = $this->isTypeMatching($product->type);
         
@@ -340,6 +346,7 @@ new class extends Component {
             'is_perfect_match' => $hasMatchingVolume && $hasMatchingType
         ]);
         
+        // UNIQUEMENT si les DEUX critères sont remplis
         return $hasMatchingVolume && $hasMatchingType;
     }
 
@@ -477,30 +484,26 @@ new class extends Component {
     <div class="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">
         @if($hasData)
             <!-- Indicateur des critères recherchés -->
-            @if(!empty($searchVolumes) || !empty($searchType))
+            @if(!empty($searchVolumes) && !empty($searchType))
                 <div class="mb-4 p-4 bg-blue-50 rounded-lg">
                     <div class="flex flex-col space-y-2">
                         <div class="flex items-center">
                             <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                             </svg>
-                            <span class="text-sm font-medium text-blue-800">Critères recherchés :</span>
+                            <span class="text-sm font-medium text-blue-800">Critères de correspondance parfaite :</span>
                         </div>
                         <div class="flex flex-wrap gap-2">
-                            @if(!empty($searchVolumes))
-                                <div class="flex items-center">
-                                    <span class="text-xs text-blue-700 mr-1">Volumes :</span>
-                                    @foreach($searchVolumes as $volume)
-                                        <span class="bg-green-100 text-green-800 font-semibold px-2 py-1 rounded text-xs">{{ $volume }} ml</span>
-                                    @endforeach
-                                </div>
-                            @endif
-                            @if(!empty($searchType))
-                                <div class="flex items-center">
-                                    <span class="text-xs text-blue-700 mr-1">Type :</span>
-                                    <span class="bg-green-100 text-green-800 font-semibold px-2 py-1 rounded text-xs">{{ ucfirst($searchType) }}</span>
-                                </div>
-                            @endif
+                            <div class="flex items-center">
+                                <span class="text-xs text-blue-700 mr-1">Volumes :</span>
+                                @foreach($searchVolumes as $volume)
+                                    <span class="bg-green-100 text-green-800 font-semibold px-2 py-1 rounded text-xs">{{ $volume }} ml</span>
+                                @endforeach
+                            </div>
+                            <div class="flex items-center">
+                                <span class="text-xs text-blue-700 mr-1">Type :</span>
+                                <span class="bg-green-100 text-green-800 font-semibold px-2 py-1 rounded text-xs">{{ ucfirst($searchType) }}</span>
+                            </div>
                         </div>
                         <div class="text-xs text-blue-600 mt-1">
                             <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -558,7 +561,7 @@ new class extends Component {
                                                     <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
                                                         <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
                                                     </svg>
-                                                    Match parfait
+                                                    Correspondance parfaite
                                                 </span>
                                             </div>
                                         @endif
