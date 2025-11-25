@@ -15,43 +15,85 @@ new class extends Component {
     public function getCompetitorPrice($search)
     {
         try {
-            if (!empty($search)) {
-                // Préparer les termes pour la recherche boolean mode
-                $searchClean = str_replace("'", "", $search);
-                $searchClean = str_replace(" - ", "", $searchClean);
-                
-                $words = explode(" ", $searchClean);
-                $booleanTerms = [];
-                
-                foreach ($words as $word) {
-                    if (strlen($word) > 2) { // Éviter les mots trop courts
-                        $booleanTerms[] = '+' . $word . '*';
-                    }
-                }
-                
-                $searchQuery = implode(' ', $booleanTerms);
-                
-                $dataQuery = "SELECT *
-                FROM last_price_scraped_product
-                WHERE MATCH (name, vendor, type, variation)
-                AGAINST ('+guerlain +shalimar +coffret +50ml*' IN BOOLEAN MODE)
-                ORDER BY created_at DESC";
-                //dd($dataQuery);
-                $result = DB::connection('mysql')->select($dataQuery);
-                
-                $this->products = $result;
-                $this->hasData = !empty($result);
-                
-            } else {
+            if (empty($search)) {
                 $this->products = [];
                 $this->hasData = false;
+                return null;
             }
             
+            // Nettoyage et préparation de la recherche
+            $booleanTerms = $this->prepareSearchTerms($search);
+            
+            if (empty($booleanTerms)) {
+                $this->products = [];
+                $this->hasData = false;
+                return null;
+            }
+            
+            $searchQuery = implode(' ', $booleanTerms);
+            
+            // Exécution de la requête avec Query Builder
+            $result = DB::connection('mysql')
+                ->table('last_price_scraped_product')
+                ->whereRaw(
+                    'MATCH (name, vendor, type, variation) AGAINST (? IN BOOLEAN MODE)',
+                    [$searchQuery]
+                )
+                ->orderByDesc('created_at')
+                ->get();
+            
+            $this->products = $result->toArray();
+            $this->hasData = $result->isNotEmpty();
+            
+            return $this->products;
+            
         } catch (\Throwable $e) {
-            \Log::error('Error loading products: ' . $e->getMessage());
+            \Log::error('Error loading products from view:', [
+                'message' => $e->getMessage(),
+                'search' => $search ?? null,
+                'trace' => $e->getTraceAsString()
+            ]);
+            
             $this->products = [];
             $this->hasData = false;
+            
+            return null;
         }
+    }
+    
+    /**
+     * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
+     * 
+     * @param string $search
+     * @return array
+     */
+    private function prepareSearchTerms(string $search): array
+    {
+        // Caractères à supprimer
+        $charsToRemove = ["'", '"', " - ", "  "];
+        $searchClean = str_replace($charsToRemove, " ", $search);
+        
+        // Trim et normalisation
+        $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
+        
+        // Séparer les mots
+        $words = explode(" ", $searchClean);
+        $booleanTerms = [];
+        
+        // Mots à ignorer (stop words)
+        $stopWords = ['de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou'];
+        
+        foreach ($words as $word) {
+            $word = trim($word);
+            $wordLower = mb_strtolower($word);
+            
+            // Filtrer les mots trop courts et les stop words
+            if (strlen($word) > 2 && !in_array($wordLower, $stopWords)) {
+                $booleanTerms[] = '+' . $word . '*';
+            }
+        }
+        
+        return $booleanTerms;
     }
 }; ?>
 
