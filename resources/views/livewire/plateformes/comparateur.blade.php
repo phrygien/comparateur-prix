@@ -433,6 +433,9 @@ new class extends Component {
 /**
  * Met en évidence les volumes correspondants dans un texte
  */
+/**
+ * Met en évidence les volumes correspondants dans un texte
+ */
 public function highlightMatchingVolumes($text)
 {
     if (empty($text) || empty($this->searchVolumes)) {
@@ -452,8 +455,7 @@ public function highlightMatchingVolumes($text)
     }
 
     return $text;
-}  return $text;
-    }
+}
     /**
      * Met en évidence les mots clés de variation correspondants dans un texte
      */
