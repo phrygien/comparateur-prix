@@ -30,31 +30,34 @@ new class extends Component {
                 return null;
             }
             
-            \Log::info('Search query prepared:', [
-                'original' => $search,
-                'query' => $searchQuery
+            // Construction de la requête SQL exacte
+            $sql = "SELECT * 
+                    FROM last_price_scraped_product 
+                    WHERE MATCH (name, vendor, type, variation) 
+                    AGAINST ('{$searchQuery}' IN BOOLEAN MODE)";
+            
+            \Log::info('SQL Query:', [
+                'original_search' => $search,
+                'search_query' => $searchQuery,
+                'sql' => $sql
             ]);
             
             // Exécution de la requête
-            $result = DB::connection('mysql')
-                ->table('last_price_scraped_product')
-                ->whereRaw(
-                    'MATCH (name, vendor, type, variation) AGAINST (? IN BOOLEAN MODE)',
-                    [$searchQuery]
-                )
-                ->get();
+            $result = DB::connection('mysql')->select($sql);
             
             \Log::info('Query result:', [
-                'count' => $result->count()
+                'count' => count($result),
+                'first' => $result[0] ?? null
             ]);
             
-            $this->products = $result->toArray();
-            $this->hasData = $result->isNotEmpty();
+            $this->products = $result;
+            $this->hasData = !empty($result);
             
             return [
-                'count' => $result->count(),
+                'count' => count($result),
                 'has_data' => $this->hasData,
-                'products' => $this->products
+                'products' => $this->products,
+                'query' => $searchQuery
             ];
             
         } catch (\Throwable $e) {
@@ -75,36 +78,39 @@ new class extends Component {
     
     /**
      * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
+     * Format: +mot1* +mot2* +mot3*
      * 
      * @param string $search
      * @return string
      */
     private function prepareSearchTerms(string $search): string
     {
-        // Nettoyage : supprimer caractères spéciaux
-        $charsToRemove = ["'", '"', " - ", "  "];
-        $searchClean = str_replace($charsToRemove, " ", $search);
+        // Nettoyage : supprimer caractères spéciaux et apostrophes
+        $searchClean = str_replace(["'", '"', " - ", "-"], " ", $search);
         
         // Normaliser les espaces multiples
         $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
+        
+        // Convertir en minuscules pour uniformité
+        $searchClean = strtolower($searchClean);
         
         // Séparer les mots
         $words = explode(" ", $searchClean);
         $booleanTerms = [];
         
-        // Mots à ignorer (stop words français)
-        $stopWords = ['de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec'];
+        // Mots à ignorer (stop words français et anglais)
+        $stopWords = ['de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec', 'the', 'a', 'an', 'and', 'or'];
         
         foreach ($words as $word) {
             $word = trim($word);
-            $wordLower = mb_strtolower($word);
             
             // Filtrer les mots trop courts (< 3 caractères) et les stop words
-            if (strlen($word) > 2 && !in_array($wordLower, $stopWords)) {
+            if (strlen($word) > 2 && !in_array($word, $stopWords)) {
                 $booleanTerms[] = '+' . $word . '*';
             }
         }
         
+        // Retourner au format: +mot1* +mot2* +mot3*
         return implode(' ', $booleanTerms);
     }
 }; ?>
