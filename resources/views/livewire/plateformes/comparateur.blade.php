@@ -563,7 +563,7 @@ public function with()
     <!-- Product image -->
     <div class="mt-10 lg:col-start-1 lg:row-span-2 lg:mt-0 lg:self-center">
         <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $product->thumbnail ) }}" 
-     alt="{{ $product['title'] ?? 'Product image' }}" 
+     alt="{{ $product->title ?? 'Product image' }}" 
      class="aspect-square w-full rounded-lg object-cover">
     </div>
 
