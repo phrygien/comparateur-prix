@@ -12,12 +12,14 @@ new class extends Component {
 
     // one product
     public $id;
+    public $name;
     public $product;
     
     public function mount($name, $id)
     {
-        $this->getCompetitorPrice($name);
+        //$this->getCompetitorPrice($name);
         $this->id = $id;
+        $this->name = $name;
         // $productData = $this->getOneProductDetails($id);
         
         // // Récupérer le premier élément du tableau "data"
@@ -544,7 +546,7 @@ public function highlightMatchingTerms($text)
     public function with()
     {
         $productData = $this->getOneProductDetails($this->id);
-        
+        $products = $this->getCompetitorPrice($this->name);
         // Récupérer le premier élément du tableau "data"
         if (!empty($productData['data']) && is_array($productData['data'])) {
             $this->product = $productData['data'][0];
@@ -554,6 +556,7 @@ public function highlightMatchingTerms($text)
 
         return [
             'product' => $this->product,
+            'products' => $this->products,
         ];
     }
 }; ?>
