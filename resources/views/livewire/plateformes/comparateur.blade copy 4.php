@@ -6,8 +6,6 @@ use Illuminate\Support\Facades\DB;
 new class extends Component {
     public $products = [];
     public $hasData = false;
-    public $searchTerms = [];
-    public $searchVolumes = [];
     
     public function mount($name)
     {
@@ -23,9 +21,6 @@ new class extends Component {
                 return null;
             }
             
-            // Extraire les volumes de la recherche
-            $this->extractSearchVolumes($search);
-            
             // Préparer les termes de recherche
             $searchQuery = $this->prepareSearchTerms($search);
             
@@ -36,6 +31,7 @@ new class extends Component {
             }
             
             // Construction de la requête SQL avec paramètres liés
+            // Ajout du champ price_ht et tri par prix décroissant
             $sql = "SELECT *, 
                            prix_ht,
                            image_url as image,
@@ -48,7 +44,7 @@ new class extends Component {
             \Log::info('SQL Query:', [
                 'original_search' => $search,
                 'search_query' => $searchQuery,
-                'search_volumes' => $this->searchVolumes
+                'sql_preview' => str_replace('?', "'{$searchQuery}'", $sql)
             ]);
             
             // Exécution de la requête avec binding
@@ -65,8 +61,7 @@ new class extends Component {
                 'count' => count($result),
                 'has_data' => $this->hasData,
                 'products' => $this->products,
-                'query' => $searchQuery,
-                'volumes' => $this->searchVolumes
+                'query' => $searchQuery
             ];
             
         } catch (\Throwable $e) {
@@ -86,30 +81,12 @@ new class extends Component {
     }
     
     /**
-     * Extrait les volumes (ml) de la recherche
-     */
-    private function extractSearchVolumes(string $search): void
-    {
-        $this->searchVolumes = [];
-        
-        // Recherche de motifs comme "50 ml", "75ml", "100 ml", etc.
-        if (preg_match_all('/(\d+)\s*ml/i', $search, $matches)) {
-            $this->searchVolumes = $matches[1];
-        }
-        
-        \Log::info('Extracted search volumes:', [
-            'search' => $search,
-            'volumes' => $this->searchVolumes
-        ]);
-    }
-    
-    /**
      * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
      * Extrait uniquement les 3 premiers mots significatifs (marque, gamme, type)
      * 
      * Format: +mot1* +mot2* +mot3*
      * 
-     * Exemple: "Guerlain - Shalimar - Coffret Eau de Parfum 50 ml + 5 ml + 75 ml (Édition"
+     * Exemple: "Guerlain - Shalimar - Coffret Eau de Parfum 50 ml"
      * Résultat: "+guerlain* +shalimar* +coffret*"
      * 
      * @param string $search
@@ -146,13 +123,13 @@ new class extends Component {
                 $significantWords[] = $word;
             }
             
-            // Limiter à 3 mots maximum (marque + gamme + type) SEULEMENT
+            // Limiter à 3 mots maximum (marque + gamme + type)
             if (count($significantWords) >= 3) {
                 break;
             }
         }
         
-        // Construire la requête boolean avec seulement 3 termes
+        // Construire la requête boolean
         $booleanTerms = array_map(function($word) {
             return '+' . $word . '*';
         }, $significantWords);
@@ -222,166 +199,106 @@ new class extends Component {
         // Limiter la longueur pour l'affichage
         return Str::limit($variation, 30);
     }
-
-    /**
-     * Extrait les volumes d'un texte (nom ou variation)
-     */
-    public function extractVolumesFromText($text)
-    {
-        if (empty($text)) {
-            return [];
-        }
-        
-        $volumes = [];
-        if (preg_match_all('/(\d+)\s*ml/i', $text, $matches)) {
-            $volumes = $matches[1];
-        }
-        
-        return $volumes;
-    }
-
-    /**
-     * Vérifie si un volume correspond aux volumes recherchés
-     */
-    public function isVolumeMatching($volume)
-    {
-        return in_array($volume, $this->searchVolumes);
-    }
-
-    /**
-     * Met en évidence les volumes correspondants dans un texte
-     */
-    public function highlightMatchingVolumes($text)
-    {
-        if (empty($text) || empty($this->searchVolumes)) {
-            return $text;
-        }
-
-        foreach ($this->searchVolumes as $volume) {
-            $pattern = '/\b' . preg_quote($volume, '/') . '\s*ml\b/i';
-            $replacement = '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' . $volume . ' ml</span>';
-            $text = preg_replace($pattern, $replacement, $text);
-        }
-
-        return $text;
-    }
 }; ?>
 
 <div>
-<div class="w-full px-4 py-2 sm:px-2 sm:py-4 lg:grid lg:grid-cols-2 lg:gap-x-8 lg:px-8">
-    <!-- Product image -->
-    <div class="mt-10 lg:col-start-1 lg:row-span-2 lg:mt-0 lg:self-center">
-        <img src="https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800&q=80" alt="Model wearing light green backpack with black canvas straps and front zipper pouch." class="aspect-square w-full rounded-lg object-cover">
-    </div>
+    <div class="mx-auto max-w-2xl px-4 py-2 sm:px-2 sm:py-4 lg:grid lg:max-w-9xl lg:grid-cols-2 lg:gap-x-8 lg:px-8">
+        <!-- Product details -->
+        <div class="lg:max-w-lg lg:self-end">
+            <nav aria-label="Breadcrumb">
+                <ol role="list" class="flex items-center space-x-2">
+                    <li>
+                        <div class="flex items-center text-sm">
+                            <a href="#" class="font-medium text-gray-500 hover:text-gray-900">CHANEL</a>
+                            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" class="ml-2 size-5 shrink-0 text-gray-300">
+                                <path d="M5.555 17.776l8-16 .894.448-8 16-.894-.448z" />
+                            </svg>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="flex items-center text-sm">
+                            <a href="#" class="font-medium text-gray-500 hover:text-gray-900">Bags</a>
+                        </div>
+                    </li>
+                </ol>
+            </nav>
 
-    <!-- Product details -->
-    <div class="lg:max-w-lg lg:self-end lg:col-start-2">
-        <nav aria-label="Breadcrumb">
-            <ol role="list" class="flex items-center space-x-2">
-                <li>
-                    <div class="flex items-center text-sm">
-                        <a href="#" class="font-medium text-gray-500 hover:text-gray-900">CHANEL</a>
-                        <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" class="ml-2 size-5 shrink-0 text-gray-300">
-                            <path d="M5.555 17.776l8-16 .894.448-8 16-.894-.448z" />
-                        </svg>
-                    </div>
-                </li>
-                <li>
-                    <div class="flex items-center text-sm">
-                        <a href="#" class="font-medium text-gray-500 hover:text-gray-900">Bags</a>
-                    </div>
-                </li>
-            </ol>
-        </nav>
+            <div class="mt-4">
+                <h1 class="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">Crème Visage Premium</h1>
+            </div>
 
-        <div class="mt-4">
-            <h1 class="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">Crème Visage Premium</h1>
+            <section aria-labelledby="information-heading" class="mt-4">
+                <h2 id="information-heading" class="sr-only">Product information</h2>
+
+                <div class="mt-4 space-y-6">
+                    <p class="text-base text-gray-500">Don&#039;t compromise on snack-carrying capacity with this lightweight and spacious bag. The drawstring top keeps all your favorite chips, crisps, fries, biscuits, crackers, and cookies secure.</p>
+                </div>
+
+                <div class="mt-6 flex items-center">
+                    <svg class="size-5 shrink-0 text-green-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon">
+                        <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" />
+                    </svg>
+                    <p class="ml-2 text-sm text-gray-500">In stock and ready to ship</p>
+                </div>
+            </section>
         </div>
 
-        <section aria-labelledby="information-heading" class="mt-4">
-            <h2 id="information-heading" class="sr-only">Product information</h2>
+        <!-- Product image -->
+        <div class="mt-10 lg:col-start-2 lg:row-span-2 lg:mt-0 lg:self-center">
+            <img src="https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800&q=80" alt="Model wearing light green backpack with black canvas straps and front zipper pouch." class="aspect-square w-full rounded-lg object-cover">
+        </div>
 
-            <div class="mt-4 space-y-6">
-                <p class="text-base text-gray-500">Don&#039;t compromise on snack-carrying capacity with this lightweight and spacious bag. The drawstring top keeps all your favorite chips, crisps, fries, biscuits, crackers, and cookies secure.</p>
-            </div>
+        <!-- Product form -->
+        <div class="mt-10 lg:col-start-1 lg:row-start-2 lg:max-w-lg lg:self-start">
+            <section aria-labelledby="options-heading">
+                <h2 id="options-heading" class="sr-only">Product options</h2>
 
-            <div class="mt-6 flex items-center">
-                <svg class="size-5 shrink-0 text-green-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon">
-                    <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" />
-                </svg>
-                <p class="ml-2 text-sm text-gray-500">In stock and ready to ship</p>
-            </div>
-        </section>
-    </div>
-
-    <!-- Product form -->
-    <div class="mt-10 lg:col-start-2 lg:row-start-2 lg:max-w-lg lg:self-start">
-        <section aria-labelledby="options-heading">
-            <h2 id="options-heading" class="sr-only">Product options</h2>
-
-            <form>
-                <div class="sm:flex sm:justify-between">
-                    <!-- Size selector -->
-                    <fieldset>
-                        <legend class="block text-sm font-medium text-gray-700">Variant (s)</legend>
-                        <div class="mt-1 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                            <!-- Active: "ring-2 ring-indigo-500" -->
-                            <div aria-label="18L" aria-description="Perfect for a reasonable amount of snacks." class="relative block cursor-pointer rounded-lg border border-gray-300 p-4 focus:outline-hidden">
-                                <input type="radio" name="size-choice" value="18L" class="sr-only">
-                                <div class="flex justify-between items-start">
-                                    <p class="text-base font-medium text-gray-900">18 ML</p>
-                                    <p class="text-base font-semibold text-gray-900">$65</p>
+                <form>
+                    <div class="sm:flex sm:justify-between">
+                        <!-- Size selector -->
+                        <fieldset>
+                            <legend class="block text-sm font-medium text-gray-700">Variant (s)</legend>
+                            <div class="mt-1 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                <!-- Active: "ring-2 ring-indigo-500" -->
+                                <div aria-label="18L" aria-description="Perfect for a reasonable amount of snacks." class="relative block cursor-pointer rounded-lg border border-gray-300 p-4 focus:outline-hidden">
+                                    <input type="radio" name="size-choice" value="18L" class="sr-only">
+                                    <div class="flex justify-between items-start">
+                                        <p class="text-base font-medium text-gray-900">18 ML</p>
+                                        <p class="text-base font-semibold text-gray-900">$65</p>
+                                    </div>
+                                    <p class="mt-1 text-sm text-gray-500">Perfect for a reasonable amount of snacks.</p>
+                                    <div class="pointer-events-none absolute -inset-px rounded-lg border-2" aria-hidden="true"></div>
                                 </div>
-                                <p class="mt-1 text-sm text-gray-500">Perfect for a reasonable amount of snacks.</p>
-                                <div class="pointer-events-none absolute -inset-px rounded-lg border-2" aria-hidden="true"></div>
-                            </div>
-                            
-                            <!-- Active: "ring-2 ring-indigo-500" -->
-                            <div aria-label="20L" aria-description="Enough room for a serious amount of snacks." class="relative block cursor-pointer rounded-lg border border-gray-300 p-4 focus:outline-hidden">
-                                <input type="radio" name="size-choice" value="20L" class="sr-only">
-                                <div class="flex justify-between items-start">
-                                    <p class="text-base font-medium text-gray-900">20 ML</p>
-                                    <p class="text-base font-semibold text-gray-900">$85</p>
+                                
+                                <!-- Active: "ring-2 ring-indigo-500" -->
+                                <div aria-label="20L" aria-description="Enough room for a serious amount of snacks." class="relative block cursor-pointer rounded-lg border border-gray-300 p-4 focus:outline-hidden">
+                                    <input type="radio" name="size-choice" value="20L" class="sr-only">
+                                    <div class="flex justify-between items-start">
+                                        <p class="text-base font-medium text-gray-900">20 ML</p>
+                                        <p class="text-base font-semibold text-gray-900">$85</p>
+                                    </div>
+                                    <p class="mt-1 text-sm text-gray-500">Enough room for a serious amount of snacks.</p>
+                                    <div class="pointer-events-none absolute -inset-px rounded-lg border-2" aria-hidden="true"></div>
                                 </div>
-                                <p class="mt-1 text-sm text-gray-500">Enough room for a serious amount of snacks.</p>
-                                <div class="pointer-events-none absolute -inset-px rounded-lg border-2" aria-hidden="true"></div>
                             </div>
-                        </div>
-                    </fieldset>
-                </div>
-                <div class="mt-4">
-                    <a href="#" class="group inline-flex text-sm text-gray-500 hover:text-gray-700">
-                        <span>Nos produits</span>
-                        <svg class="ml-2 size-5 shrink-0 text-gray-400 group-hover:text-gray-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon">
-                            <path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0ZM8.94 6.94a.75.75 0 1 1-1.061-1.061 3 3 0 1 1 2.871 5.026v.345a.75.75 0 0 1-1.5 0v-.5c0-.72.57-1.172 1.081-1.287A1.5 1.5 0 1 0 8.94 6.94ZM10 15a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
-                        </svg>
-                    </a>
-                </div>
-            </form>
-        </section>
+                        </fieldset>
+                    </div>
+                    <div class="mt-4">
+                        <a href="#" class="group inline-flex text-sm text-gray-500 hover:text-gray-700">
+                            <span>Nos produits</span>
+                            <svg class="ml-2 size-5 shrink-0 text-gray-400 group-hover:text-gray-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon">
+                                <path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0ZM8.94 6.94a.75.75 0 1 1-1.061-1.061 3 3 0 1 1 2.871 5.026v.345a.75.75 0 0 1-1.5 0v-.5c0-.72.57-1.172 1.081-1.287A1.5 1.5 0 1 0 8.94 6.94ZM10 15a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
+                            </svg>
+                        </a>
+                    </div>
+                </form>
+            </section>
+        </div>
     </div>
-</div>
 
     <!-- Section des résultats -->
-    <div class="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">
+    <div class="mx-auto max-w-9xl px-4 py-6 sm:px-6 lg:px-8">
         @if($hasData)
-            <!-- Indicateur des volumes recherchés -->
-            @if(!empty($searchVolumes))
-                <div class="mb-4 p-4 bg-blue-50 rounded-lg">
-                    <div class="flex items-center">
-                        <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                        <span class="text-sm font-medium text-blue-800">
-                            Volumes recherchés : 
-                            @foreach($searchVolumes as $volume)
-                                <span class="bg-green-100 text-green-800 font-semibold px-2 py-1 rounded ml-2">{{ $volume }} ml</span>
-                            @endforeach
-                        </span>
-                    </div>
-                </div>
-            @endif
-
             <!-- Tableau des résultats -->
             <div class="bg-white shadow-sm rounded-lg overflow-hidden">
                 <div class="px-6 py-4 border-b border-gray-200">
@@ -403,11 +320,7 @@ new class extends Component {
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
                             @foreach($products as $product)
-                                @php
-                                    $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
-                                    $hasMatchingVolume = !empty(array_intersect($this->searchVolumes, $productVolumes));
-                                @endphp
-                                <tr class="hover:bg-gray-50 @if($hasMatchingVolume) bg-green-50 @endif">
+                                <tr class="hover:bg-gray-50">
                                     <!-- Colonne Image -->
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         @if(!empty($product->image))
@@ -424,32 +337,12 @@ new class extends Component {
                                     
                                     <!-- Colonne Nom -->
                                     <td class="px-6 py-4">
-                                        <div class="text-sm font-medium text-gray-900 max-w-xs" title="{{ $product->name ?? 'N/A' }}">
-                                            {!! $this->highlightMatchingVolumes($product->name ?? 'N/A') !!}
+                                        <div class="text-sm font-medium text-gray-900 max-w-xs truncate" title="{{ $product->name ?? 'N/A' }}">
+                                            {{ $product->name ?? 'N/A' }}
                                         </div>
                                         @if(!empty($product->vendor))
                                             <div class="text-xs text-gray-500 mt-1">
                                                 {{ $product->vendor }}
-                                            </div>
-                                        @endif
-                                        <!-- Badges des volumes du produit -->
-                                        @if(!empty($productVolumes))
-                                            <div class="mt-2 flex flex-wrap gap-1">
-                                                @foreach($productVolumes as $volume)
-                                                    <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium 
-                                                        @if($this->isVolumeMatching($volume))
-                                                            bg-green-100 text-green-800 border border-green-300
-                                                        @else
-                                                            bg-gray-100 text-gray-800
-                                                        @endif">
-                                                        {{ $volume }} ml
-                                                        @if($this->isVolumeMatching($volume))
-                                                            <svg class="w-3 h-3 ml-1 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                                                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
-                                                            </svg>
-                                                        @endif
-                                                    </span>
-                                                @endforeach
                                             </div>
                                         @endif
                                     </td>
@@ -457,7 +350,7 @@ new class extends Component {
                                     <!-- Colonne Variation -->
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <div class="text-sm text-gray-900 max-w-xs" title="{{ $product->variation ?? 'Standard' }}">
-                                            {!! $this->highlightMatchingVolumes($product->variation ?? 'Standard') !!}
+                                            {{ $this->formatVariation($product->variation) }}
                                         </div>
                                     </td>
 

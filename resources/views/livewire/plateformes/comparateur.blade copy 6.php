@@ -8,6 +8,7 @@ new class extends Component {
     public $hasData = false;
     public $searchTerms = [];
     public $searchVolumes = [];
+    public $searchType = '';
     
     public function mount($name)
     {
@@ -23,8 +24,9 @@ new class extends Component {
                 return null;
             }
             
-            // Extraire les volumes de la recherche
+            // Extraire les volumes et le type de la recherche
             $this->extractSearchVolumes($search);
+            $this->extractSearchType($search);
             
             // Préparer les termes de recherche
             $searchQuery = $this->prepareSearchTerms($search);
@@ -48,7 +50,8 @@ new class extends Component {
             \Log::info('SQL Query:', [
                 'original_search' => $search,
                 'search_query' => $searchQuery,
-                'search_volumes' => $this->searchVolumes
+                'search_volumes' => $this->searchVolumes,
+                'search_type' => $this->searchType
             ]);
             
             // Exécution de la requête avec binding
@@ -66,7 +69,8 @@ new class extends Component {
                 'has_data' => $this->hasData,
                 'products' => $this->products,
                 'query' => $searchQuery,
-                'volumes' => $this->searchVolumes
+                'volumes' => $this->searchVolumes,
+                'type' => $this->searchType
             ];
             
         } catch (\Throwable $e) {
@@ -102,6 +106,39 @@ new class extends Component {
             'volumes' => $this->searchVolumes
         ]);
     }
+
+    /**
+     * Extrait le type de parfum de la recherche
+     */
+    private function extractSearchType(string $search): void
+    {
+        $this->searchType = '';
+        
+        // Recherche des types de parfum courants - ordre d'importance
+        $types = [
+            'eau de parfum' => '/eau\s*de\s*parfum/i',
+            'eau de toilette' => '/eau\s*de\s*toilette/i',
+            'parfum' => '/\bparfum\b/i',
+            'extrait' => '/\bextrait\b/i'
+        ];
+        
+        foreach ($types as $type => $pattern) {
+            if (preg_match($pattern, $search)) {
+                $this->searchType = $type;
+                break;
+            }
+        }
+        
+        // Si pas de type spécifique trouvé, chercher "coffret"
+        if (empty($this->searchType) && preg_match('/\bcoffret\b/i', $search)) {
+            $this->searchType = 'coffret';
+        }
+        
+        \Log::info('Extracted search type:', [
+            'search' => $search,
+            'type' => $this->searchType
+        ]);
+    }
     
     /**
      * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
@@ -132,7 +169,7 @@ new class extends Component {
         // Stop words français et anglais à ignorer
         $stopWords = [
             'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec',
-            'the', 'a', 'an', 'and', 'or', 'eau', 'ml', 'edition', 'édition', 'coffret'
+            'the', 'a', 'an', 'and', 'or', 'eau', 'ml', 'edition', 'édition'
         ];
         
         // Mots significatifs seulement (marque, gamme, produit)
@@ -249,6 +286,64 @@ new class extends Component {
     }
 
     /**
+     * Vérifie si le produit contient AU MOINS UN volume recherché
+     */
+    public function hasMatchingVolume($product)
+    {
+        $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
+        return !empty(array_intersect($this->searchVolumes, $productVolumes));
+    }
+
+    /**
+     * Vérifie si le type correspond au type recherché
+     */
+    public function isTypeMatching($productType)
+    {
+        if (empty($this->searchType) || empty($productType)) {
+            return false;
+        }
+        
+        $productTypeLower = mb_strtolower($productType);
+        $searchTypeLower = mb_strtolower($this->searchType);
+        
+        // Pour "eau de parfum", accepter aussi "parfum" et "coffret eau de parfum"
+        if ($searchTypeLower === 'eau de parfum') {
+            return str_contains($productTypeLower, 'parfum') || 
+                   str_contains($productTypeLower, 'eau de parfum');
+        }
+        
+        // Pour "coffret", accepter aussi "coffret eau de parfum"
+        if ($searchTypeLower === 'coffret') {
+            return str_contains($productTypeLower, 'coffret');
+        }
+        
+        // Correspondance normale
+        return str_contains($productTypeLower, $searchTypeLower) || 
+               str_contains($searchTypeLower, $productTypeLower);
+    }
+
+    /**
+     * Vérifie si le produit correspond parfaitement (volumes ET type)
+     */
+    public function isPerfectMatch($product)
+    {
+        $hasMatchingVolume = $this->hasMatchingVolume($product);
+        $hasMatchingType = $this->isTypeMatching($product->type);
+        
+        \Log::info('Perfect match check:', [
+            'product_name' => $product->name,
+            'product_type' => $product->type,
+            'has_matching_volume' => $hasMatchingVolume,
+            'has_matching_type' => $hasMatchingType,
+            'search_volumes' => $this->searchVolumes,
+            'search_type' => $this->searchType,
+            'is_perfect_match' => $hasMatchingVolume && $hasMatchingType
+        ]);
+        
+        return $hasMatchingVolume && $hasMatchingType;
+    }
+
+    /**
      * Met en évidence les volumes correspondants dans un texte
      */
     public function highlightMatchingVolumes($text)
@@ -262,6 +357,22 @@ new class extends Component {
             $replacement = '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' . $volume . ' ml</span>';
             $text = preg_replace($pattern, $replacement, $text);
         }
+
+        return $text;
+    }
+
+    /**
+     * Met en évidence le type correspondant dans un texte
+     */
+    public function highlightMatchingType($text)
+    {
+        if (empty($text) || empty($this->searchType)) {
+            return $text;
+        }
+
+        $pattern = '/\b' . preg_quote($this->searchType, '/') . '\b/i';
+        $replacement = '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">$0</span>';
+        $text = preg_replace($pattern, $replacement, $text);
 
         return $text;
     }
@@ -365,19 +476,38 @@ new class extends Component {
     <!-- Section des résultats -->
     <div class="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">
         @if($hasData)
-            <!-- Indicateur des volumes recherchés -->
-            @if(!empty($searchVolumes))
+            <!-- Indicateur des critères recherchés -->
+            @if(!empty($searchVolumes) || !empty($searchType))
                 <div class="mb-4 p-4 bg-blue-50 rounded-lg">
-                    <div class="flex items-center">
-                        <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                        <span class="text-sm font-medium text-blue-800">
-                            Volumes recherchés : 
-                            @foreach($searchVolumes as $volume)
-                                <span class="bg-green-100 text-green-800 font-semibold px-2 py-1 rounded ml-2">{{ $volume }} ml</span>
-                            @endforeach
-                        </span>
+                    <div class="flex flex-col space-y-2">
+                        <div class="flex items-center">
+                            <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <span class="text-sm font-medium text-blue-800">Critères recherchés :</span>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            @if(!empty($searchVolumes))
+                                <div class="flex items-center">
+                                    <span class="text-xs text-blue-700 mr-1">Volumes :</span>
+                                    @foreach($searchVolumes as $volume)
+                                        <span class="bg-green-100 text-green-800 font-semibold px-2 py-1 rounded text-xs">{{ $volume }} ml</span>
+                                    @endforeach
+                                </div>
+                            @endif
+                            @if(!empty($searchType))
+                                <div class="flex items-center">
+                                    <span class="text-xs text-blue-700 mr-1">Type :</span>
+                                    <span class="bg-green-100 text-green-800 font-semibold px-2 py-1 rounded text-xs">{{ ucfirst($searchType) }}</span>
+                                </div>
+                            @endif
+                        </div>
+                        <div class="text-xs text-blue-600 mt-1">
+                            <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                            Les produits en vert correspondent aux volumes ET au type recherchés
+                        </div>
                     </div>
                 </div>
             @endif
@@ -405,9 +535,11 @@ new class extends Component {
                             @foreach($products as $product)
                                 @php
                                     $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
-                                    $hasMatchingVolume = !empty(array_intersect($this->searchVolumes, $productVolumes));
+                                    $hasMatchingVolume = $this->hasMatchingVolume($product);
+                                    $hasMatchingType = $this->isTypeMatching($product->type);
+                                    $isPerfectMatch = $this->isPerfectMatch($product);
                                 @endphp
-                                <tr class="hover:bg-gray-50 @if($hasMatchingVolume) bg-green-50 @endif">
+                                <tr class="hover:bg-gray-50 @if($isPerfectMatch) bg-green-50 border-l-4 border-green-500 @endif">
                                     <!-- Colonne Image -->
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         @if(!empty($product->image))
@@ -418,6 +550,16 @@ new class extends Component {
                                         @else
                                             <div class="h-12 w-12 bg-gray-200 rounded-lg flex items-center justify-center">
                                                 <span class="text-xs text-gray-500">No Image</span>
+                                            </div>
+                                        @endif
+                                        @if($isPerfectMatch)
+                                            <div class="mt-1 text-center">
+                                                <span class="inline-flex items-center px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">
+                                                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                                    </svg>
+                                                    Match parfait
+                                                </span>
                                             </div>
                                         @endif
                                     </td>
@@ -489,8 +631,15 @@ new class extends Component {
                                     
                                     <!-- Colonne Type -->
                                     <td class="px-6 py-4 whitespace-nowrap">
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                            {{ $product->type ?? 'N/A' }}
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium 
+                                            @if($hasMatchingType) bg-green-100 text-green-800 border border-green-300
+                                            @else bg-purple-100 text-purple-800 @endif">
+                                            {!! $this->highlightMatchingType($product->type ?? 'N/A') !!}
+                                            @if($hasMatchingType)
+                                                <svg class="w-3 h-3 ml-1 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                                </svg>
+                                            @endif
                                         </span>
                                     </td>
                                     
