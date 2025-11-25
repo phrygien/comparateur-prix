@@ -402,6 +402,7 @@ new class extends Component {
         return 'N/A';
     }
 };
+?>
 
 
 <div>
