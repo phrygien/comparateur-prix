@@ -551,7 +551,7 @@ public function with()
         $this->product = $productData['data'][0];
     }
     
-    //dd($product['thumbnail']);
+    dd($this->product);
     return [
         'product' => $this->product,
     ];
