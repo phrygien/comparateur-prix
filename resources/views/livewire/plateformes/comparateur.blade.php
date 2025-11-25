@@ -10,7 +10,7 @@ new class extends Component {
     
     public function mount($name)
     {
-        dd($this->getCompetitorPrice($name));
+        $this->getCompetitorPrice($name);
     }
 
     public function getCompetitorPrice($search)
@@ -86,22 +86,23 @@ new class extends Component {
     
     /**
      * Extrait les composants de recherche : vendor (sans *), name (sans *), variation (avec *)
+     * Filtre les mots indésirables comme "édition", "2024", etc.
      * 
-     * Exemple: "Guerlain - Shalimar - Coffret Eau de Parfum 50 ml + 5 ml + 75 ml (Édition"
+     * Exemple: "Guerlain - Shalimar - Coffret Eau de Parfum 50 ml + 5 ml + 75 ml (Édition 2024"
      * 
      * Résultat:
-     * - vendor: "guerlain" (1er mot significatif)
-     * - name: "shalimar" (2ème mot significatif)
-     * - variation: "coffret* eau* parfum* 50* ml* 5* ml* 75* ml*" (reste avec *)
-     * - query: "+guerlain +shalimar +coffret* +eau* +parfum* +50* +ml* +5* +ml* +75* +ml*"
+     * - vendor: "guerlain"
+     * - name: "shalimar"
+     * - variation: "coffret* eau* parfum* 50* 75*"
+     * - query: "+guerlain +shalimar +coffret* +eau* +parfum* +50* +75*"
      * 
      * @param string $search
      * @return array
      */
     private function extractSearchComponents(string $search): array
     {
-        // Nettoyage léger : garder les chiffres cette fois
-        $searchClean = str_replace(['-', '(', ')'], ' ', $search);
+        // Nettoyage : supprimer caractères spéciaux mais garder les chiffres
+        $searchClean = str_replace(['-', '(', ')', '+'], ' ', $search);
         
         // Normaliser les espaces multiples
         $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
@@ -109,19 +110,38 @@ new class extends Component {
         // Convertir en minuscules
         $searchClean = mb_strtolower($searchClean);
         
-        // Séparer les mots (en gardant les chiffres)
+        // Séparer les mots
         $words = explode(" ", $searchClean);
         
-        // Stop words à ignorer
-        $stopWords = ['de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'the', 'a', 'an', 'and', 'or'];
+        // Stop words et mots à ignorer (étendus)
+        $stopWords = [
+            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'the', 'a', 'an', 'and', 'or',
+            'édition', 'edition', 'ml' // Ajout des mots spécifiques à filtrer
+        ];
+        
+        // Années à ignorer (2020-2030)
+        $yearPattern = '/^(202[0-9]|203[0-9])$/';
         
         // Filtrer et nettoyer les mots
         $cleanWords = [];
+        $seenWords = []; // Pour éviter les doublons
+        
         foreach ($words as $word) {
             $word = trim($word);
-            // Garder les mots de plus de 1 caractère qui ne sont pas des stop words
-            if (strlen($word) > 1 && !in_array($word, $stopWords)) {
+            
+            // Ignorer si :
+            // - trop court (< 2 caractères)
+            // - est un stop word
+            // - est une année (2020-2039)
+            // - est un doublon
+            if (
+                strlen($word) > 1 && 
+                !in_array($word, $stopWords) && 
+                !preg_match($yearPattern, $word) &&
+                !isset($seenWords[$word])
+            ) {
                 $cleanWords[] = $word;
+                $seenWords[$word] = true; // Marquer comme vu
             }
         }
         
@@ -147,9 +167,11 @@ new class extends Component {
             $booleanTerms[] = '+' . $name;
         }
         
-        // Variation avec *
+        // Variation avec * (seulement si non vide)
         foreach ($variationWords as $word) {
-            $booleanTerms[] = '+' . $word . '*';
+            if (!empty($word)) {
+                $booleanTerms[] = '+' . $word . '*';
+            }
         }
         
         return [
@@ -223,7 +245,6 @@ new class extends Component {
         return Str::limit($variation, 30);
     }
 }; ?>
-
 <div>
 <div class="w-full px-4 py-2 sm:px-2 sm:py-4 lg:grid lg:grid-cols-2 lg:gap-x-8 lg:px-8">
     <!-- Product image -->
