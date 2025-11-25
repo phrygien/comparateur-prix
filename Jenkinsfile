@@ -16,15 +16,27 @@ pipeline {
             }
         }
 
+        // stage('Mise à jour du code') {
+        //     steps {
+        //         sh '''
+        //             git config --global --add safe.directory /var/www/comparateur || true
+        //             cd /var/www/comparateur
+
+        //             git reset --hard
+        //             git clean -fd
+        //             git pull origin main
+        //         '''
+        //     }
+        // }
         stage('Mise à jour du code') {
             steps {
                 sh '''
                     git config --global --add safe.directory /var/www/comparateur || true
                     cd /var/www/comparateur
 
-                    git reset --hard
+                    git fetch origin main
+                    git reset --hard origin/main
                     git clean -fd
-                    git pull origin main
                 '''
             }
         }
