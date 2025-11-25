@@ -12,7 +12,7 @@ new class extends Component {
     public function mount($name, $id)
     {
         $this->getCompetitorPrice($name);
-        dd($this->getOneProductDetails($id));
+        $this->getOneProductDetails($id);
     }
 
     public function getOneProductDetails($entity_id){
