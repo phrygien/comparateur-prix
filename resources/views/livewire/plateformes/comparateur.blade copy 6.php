@@ -114,14 +114,12 @@ new class extends Component {
     {
         $this->searchType = '';
         
-        // Recherche des types de parfum courants
+        // Recherche des types de parfum courants - ordre d'importance
         $types = [
             'eau de parfum' => '/eau\s*de\s*parfum/i',
             'eau de toilette' => '/eau\s*de\s*toilette/i',
             'parfum' => '/\bparfum\b/i',
-            'extrait' => '/\bextrait\b/i',
-            'coffret' => '/\bcoffret\b/i',
-            'set' => '/\bset\b/i'
+            'extrait' => '/\bextrait\b/i'
         ];
         
         foreach ($types as $type => $pattern) {
@@ -129,6 +127,11 @@ new class extends Component {
                 $this->searchType = $type;
                 break;
             }
+        }
+        
+        // Si pas de type spécifique trouvé, chercher "coffret"
+        if (empty($this->searchType) && preg_match('/\bcoffret\b/i', $search)) {
+            $this->searchType = 'coffret';
         }
         
         \Log::info('Extracted search type:', [
@@ -166,7 +169,7 @@ new class extends Component {
         // Stop words français et anglais à ignorer
         $stopWords = [
             'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec',
-            'the', 'a', 'an', 'and', 'or', 'eau', 'ml', 'edition', 'édition', 'coffret'
+            'the', 'a', 'an', 'and', 'or', 'eau', 'ml', 'edition', 'édition'
         ];
         
         // Mots significatifs seulement (marque, gamme, produit)
@@ -283,21 +286,6 @@ new class extends Component {
     }
 
     /**
-     * Vérifie si le type correspond au type recherché
-     */
-    public function isTypeMatching($type)
-    {
-        if (empty($this->searchType) || empty($type)) {
-            return false;
-        }
-        
-        $typeLower = mb_strtolower($type);
-        $searchTypeLower = mb_strtolower($this->searchType);
-        
-        return str_contains($typeLower, $searchTypeLower) || str_contains($searchTypeLower, $typeLower);
-    }
-
-    /**
      * Vérifie si le produit contient AU MOINS UN volume recherché
      */
     public function hasMatchingVolume($product)
@@ -307,11 +295,52 @@ new class extends Component {
     }
 
     /**
+     * Vérifie si le type correspond au type recherché
+     */
+    public function isTypeMatching($productType)
+    {
+        if (empty($this->searchType) || empty($productType)) {
+            return false;
+        }
+        
+        $productTypeLower = mb_strtolower($productType);
+        $searchTypeLower = mb_strtolower($this->searchType);
+        
+        // Pour "eau de parfum", accepter aussi "parfum" et "coffret eau de parfum"
+        if ($searchTypeLower === 'eau de parfum') {
+            return str_contains($productTypeLower, 'parfum') || 
+                   str_contains($productTypeLower, 'eau de parfum');
+        }
+        
+        // Pour "coffret", accepter aussi "coffret eau de parfum"
+        if ($searchTypeLower === 'coffret') {
+            return str_contains($productTypeLower, 'coffret');
+        }
+        
+        // Correspondance normale
+        return str_contains($productTypeLower, $searchTypeLower) || 
+               str_contains($searchTypeLower, $productTypeLower);
+    }
+
+    /**
      * Vérifie si le produit correspond parfaitement (volumes ET type)
      */
     public function isPerfectMatch($product)
     {
-        return $this->hasMatchingVolume($product) && $this->isTypeMatching($product->type);
+        $hasMatchingVolume = $this->hasMatchingVolume($product);
+        $hasMatchingType = $this->isTypeMatching($product->type);
+        
+        \Log::info('Perfect match check:', [
+            'product_name' => $product->name,
+            'product_type' => $product->type,
+            'has_matching_volume' => $hasMatchingVolume,
+            'has_matching_type' => $hasMatchingType,
+            'search_volumes' => $this->searchVolumes,
+            'search_type' => $this->searchType,
+            'is_perfect_match' => $hasMatchingVolume && $hasMatchingType
+        ]);
+        
+        return $hasMatchingVolume && $hasMatchingType;
     }
 
     /**
@@ -529,7 +558,7 @@ new class extends Component {
                                                     <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
                                                         <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
                                                     </svg>
-                                                    Match
+                                                    Match parfait
                                                 </span>
                                             </div>
                                         @endif
