@@ -2,6 +2,7 @@
 
 use Livewire\Volt\Component;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 new class extends Component {
     public $products = [];
@@ -21,17 +22,16 @@ new class extends Component {
                 return null;
             }
             
-            // Préparer les termes de recherche
-            $searchQuery = $this->prepareSearchTerms($search);
+            // Extraire les composants de la recherche
+            $searchComponents = $this->extractSearchComponents($search);
             
-            if (empty($searchQuery)) {
+            if (empty($searchComponents['query'])) {
                 $this->products = [];
                 $this->hasData = false;
                 return null;
             }
             
             // Construction de la requête SQL avec paramètres liés
-            // Ajout du champ price_ht et tri par prix décroissant
             $sql = "SELECT *, 
                            prix_ht,
                            image_url as image,
@@ -43,12 +43,15 @@ new class extends Component {
             
             \Log::info('SQL Query:', [
                 'original_search' => $search,
-                'search_query' => $searchQuery,
-                'sql_preview' => str_replace('?', "'{$searchQuery}'", $sql)
+                'vendor' => $searchComponents['vendor'],
+                'name' => $searchComponents['name'],
+                'variation' => $searchComponents['variation'],
+                'search_query' => $searchComponents['query'],
+                'sql_preview' => str_replace('?', "'{$searchComponents['query']}'", $sql)
             ]);
             
             // Exécution de la requête avec binding
-            $result = DB::connection('mysql')->select($sql, [$searchQuery]);
+            $result = DB::connection('mysql')->select($sql, [$searchComponents['query']]);
             
             \Log::info('Query result:', [
                 'count' => count($result)
@@ -61,7 +64,8 @@ new class extends Component {
                 'count' => count($result),
                 'has_data' => $this->hasData,
                 'products' => $this->products,
-                'query' => $searchQuery
+                'query' => $searchComponents['query'],
+                'components' => $searchComponents
             ];
             
         } catch (\Throwable $e) {
@@ -81,21 +85,23 @@ new class extends Component {
     }
     
     /**
-     * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
-     * Extrait uniquement les 3 premiers mots significatifs (marque, gamme, type)
+     * Extrait les composants de recherche : vendor (sans *), name (sans *), variation (avec *)
      * 
-     * Format: +mot1* +mot2* +mot3*
+     * Exemple: "Guerlain - Shalimar - Coffret Eau de Parfum 50 ml + 5 ml + 75 ml (Édition"
      * 
-     * Exemple: "Guerlain - Shalimar - Coffret Eau de Parfum 50 ml"
-     * Résultat: "+guerlain* +shalimar* +coffret*"
+     * Résultat:
+     * - vendor: "guerlain" (1er mot significatif)
+     * - name: "shalimar" (2ème mot significatif)
+     * - variation: "coffret* eau* parfum* 50* ml* 5* ml* 75* ml*" (reste avec *)
+     * - query: "+guerlain +shalimar +coffret* +eau* +parfum* +50* +ml* +5* +ml* +75* +ml*"
      * 
      * @param string $search
-     * @return string
+     * @return array
      */
-    private function prepareSearchTerms(string $search): string
+    private function extractSearchComponents(string $search): array
     {
-        // Nettoyage agressif : supprimer tous les caractères spéciaux et chiffres
-        $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ\s]/', ' ', $search);
+        // Nettoyage léger : garder les chiffres cette fois
+        $searchClean = str_replace(['-', '(', ')'], ' ', $search);
         
         // Normaliser les espaces multiples
         $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
@@ -103,38 +109,55 @@ new class extends Component {
         // Convertir en minuscules
         $searchClean = mb_strtolower($searchClean);
         
-        // Séparer les mots
+        // Séparer les mots (en gardant les chiffres)
         $words = explode(" ", $searchClean);
         
-        // Stop words français et anglais à ignorer
-        $stopWords = [
-            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec',
-            'the', 'a', 'an', 'and', 'or', 'eau', 'ml', 'edition', 'édition', 'coffret'
-        ];
+        // Stop words à ignorer
+        $stopWords = ['de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'the', 'a', 'an', 'and', 'or'];
         
-        // Mots significatifs seulement (marque, gamme, produit)
-        $significantWords = [];
-        
+        // Filtrer et nettoyer les mots
+        $cleanWords = [];
         foreach ($words as $word) {
             $word = trim($word);
-            
-            // Garder uniquement les mots de plus de 2 caractères, non-stop words
-            if (strlen($word) > 2 && !in_array($word, $stopWords)) {
-                $significantWords[] = $word;
-            }
-            
-            // Limiter à 3 mots maximum (marque + gamme + type)
-            if (count($significantWords) >= 3) {
-                break;
+            // Garder les mots de plus de 1 caractère qui ne sont pas des stop words
+            if (strlen($word) > 1 && !in_array($word, $stopWords)) {
+                $cleanWords[] = $word;
             }
         }
         
-        // Construire la requête boolean
-        $booleanTerms = array_map(function($word) {
-            return '+' . $word . '*';
-        }, $significantWords);
+        // Extraire vendor (1er mot)
+        $vendor = isset($cleanWords[0]) ? $cleanWords[0] : '';
         
-        return implode(' ', $booleanTerms);
+        // Extraire name (2ème mot)
+        $name = isset($cleanWords[1]) ? $cleanWords[1] : '';
+        
+        // Extraire variation (du 3ème mot jusqu'à la fin)
+        $variationWords = array_slice($cleanWords, 2);
+        
+        // Construire la requête boolean
+        $booleanTerms = [];
+        
+        // Vendor sans *
+        if (!empty($vendor)) {
+            $booleanTerms[] = '+' . $vendor;
+        }
+        
+        // Name sans *
+        if (!empty($name)) {
+            $booleanTerms[] = '+' . $name;
+        }
+        
+        // Variation avec *
+        foreach ($variationWords as $word) {
+            $booleanTerms[] = '+' . $word . '*';
+        }
+        
+        return [
+            'vendor' => $vendor,
+            'name' => $name,
+            'variation' => implode(' ', array_map(fn($w) => $w . '*', $variationWords)),
+            'query' => implode(' ', $booleanTerms)
+        ];
     }
 
     /**
