@@ -35,7 +35,7 @@ new class extends Component {
             $sql = "SELECT *, 
                            prix_ht,
                            image_url as image,
-                           product_url
+                           url as product_url
                     FROM last_price_scraped_product 
                     WHERE MATCH (name, vendor, type, variation) 
                     AGAINST (? IN BOOLEAN MODE)
