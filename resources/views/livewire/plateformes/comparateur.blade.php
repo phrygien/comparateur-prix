@@ -443,14 +443,17 @@ public function highlightMatchingVolumes($text)
         // Recherche le volume suivi de "ml" (avec ou sans espace)
         $pattern = '/\b' . preg_quote($volume, '/') . '\s*ml\b/i';
         
-        // Utilise '$0' avec des guillemets simples pour la backreference
-        $replacement = '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">$0</span>';
-        
-        $text = preg_replace($pattern, $replacement, $text);
+        // Utilise une fonction de callback pour éviter les problèmes d'échappement
+        $text = preg_replace_callback($pattern, function($matches) {
+            return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
+                   . htmlspecialchars($matches[0]) 
+                   . '</span>';
+        }, $text);
     }
 
     return $text;
-}
+}  return $text;
+    }
     /**
      * Met en évidence les mots clés de variation correspondants dans un texte
      */
