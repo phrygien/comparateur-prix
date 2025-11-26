@@ -80,18 +80,19 @@ new class extends Component {
 
             $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
 
-            dd($result);
+            $this->product = json_decode(json_encode($result[0]), true);
+            //dd($result);
 
-            // CORRECTION: Convertir l'objet stdClass en array pour Livewire
-            if (!empty($result)) {
-                // Méthode 1: Via json_decode/encode (recommandée)
-                $this->product = json_decode(json_encode($result[0]), true);
+            // // CORRECTION: Convertir l'objet stdClass en array pour Livewire
+            // if (!empty($result)) {
+            //     // Méthode 1: Via json_decode/encode (recommandée)
+            //     $this->product = json_decode(json_encode($result[0]), true);
                 
-                // OU Méthode 2: Via cast (alternative)
-                // $this->product = (array) $result[0];
-            } else {
-                $this->product = null;
-            }
+            //     // OU Méthode 2: Via cast (alternative)
+            //     // $this->product = (array) $result[0];
+            // } else {
+            //     $this->product = null;
+            // }
 
         } catch (\Throwable $e) {
             \Log::error('Error loading product:', [
