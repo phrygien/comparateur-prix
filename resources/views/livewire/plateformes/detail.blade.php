@@ -78,12 +78,12 @@ new class extends Component {
 
             $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
 
-            // ✅ CORRECTION: Convertir l'objet stdClass en array pour Livewire
+            // CORRECTION: Convertir l'objet stdClass en array pour Livewire
             if (!empty($result)) {
                 // Méthode 1: Via json_decode/encode (recommandée)
                 $this->product = json_decode(json_encode($result[0]), true);
                 
-                // ✅ OU Méthode 2: Via cast (alternative)
+                // OU Méthode 2: Via cast (alternative)
                 // $this->product = (array) $result[0];
             } else {
                 $this->product = null;
@@ -118,7 +118,7 @@ new class extends Component {
                 <li>
                     <div class="flex items-center text-sm">
                         <a href="#" class="font-medium text-gray-500 hover:text-gray-900">
-                            Vendor
+                           {{ $product->vendor }}
                         </a>
                         <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" class="ml-2 size-5 shrink-0 text-gray-300">
                             <path d="M5.555 17.776l8-16 .894.448-8 16-.894-.448z" />
