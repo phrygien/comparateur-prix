@@ -15,7 +15,7 @@ new class extends Component {
 
     public function mount($name, $id)
     {
-        dd($this->getCompetitorPrice($name));
+        $this->getCompetitorPrice($name);
         //$this->getOneProductDetails($id);
         
         //$this->getOneProductDetails($id);
@@ -539,6 +539,8 @@ public function highlightMatchingTerms($text)
 }; ?>
 
 <div>
+
+
 <div class="w-full px-4 py-2 sm:px-2 sm:py-4 lg:grid lg:grid-cols-2 lg:gap-x-8 lg:px-8">
     <!-- Product image -->
     <div class="mt-10 lg:col-start-1 lg:row-span-2 lg:mt-0 lg:self-center">
@@ -551,7 +553,7 @@ public function highlightMatchingTerms($text)
             <ol role="list" class="flex items-center space-x-2">
                 <li>
                     <div class="flex items-center text-sm">
-                        <a href="#" class="font-medium text-gray-500 hover:text-gray-900">CHANEL</a>
+                        <a href="#" class="font-medium text-gray-500 hover:text-gray-900">{{ $product['data'][0]->vendor }}</a>
                         <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" class="ml-2 size-5 shrink-0 text-gray-300">
                             <path d="M5.555 17.776l8-16 .894.448-8 16-.894-.448z" />
                         </svg>
