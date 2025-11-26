@@ -18,6 +18,7 @@ new class extends Component {
         $this->getCompetitorPrice($name);
         //$this->getOneProductDetails($id);
         
+        dd($this->products);
         //$this->getOneProductDetails($id);
     
         $this->id = $id;
