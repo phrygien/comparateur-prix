@@ -78,24 +78,30 @@ new class extends Component {
 
             $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
 
-            $this->product = $result;
+            // ✅ CORRECTION: Convertir l'objet stdClass en array pour Livewire
+            if (!empty($result)) {
+                // Méthode 1: Via json_decode/encode (recommandée)
+                $this->product = json_decode(json_encode($result[0]), true);
+                
+                // ✅ OU Méthode 2: Via cast (alternative)
+                // $this->product = (array) $result[0];
+            } else {
+                $this->product = null;
+            }
 
         } catch (\Throwable $e) {
-            \Log::error('Error loading products:', [
+            \Log::error('Error loading product:', [
                 'message' => $e->getMessage(),
-                'search' => $search ?? null,
+                'entity_id' => $entity_id ?? null,
                 'trace' => $e->getTraceAsString()
             ]);
             
-            $this->products = [];
-            $this->hasData = false;
+            $this->product = null;
             
-            return [
-                'error' => $e->getMessage()
-            ];
+            // Optionnel: afficher l'erreur à l'utilisateur
+            session()->flash('error', 'Une erreur est survenue lors du chargement du produit.');
         }
     }
-
 
 }; ?>
 
