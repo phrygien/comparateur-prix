@@ -245,62 +245,291 @@ new class extends Component {
             'keywords' => $this->searchVariationKeywords
         ]);
     }
-    
+
     /**
      * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
-     * Extrait uniquement les 3 premiers mots significatifs (marque, gamme, type)
+     * Amélioration du morcelage avec gestion des marques, produits et variations
      * 
-     * Format: +mot1* +mot2* +mot3*
+     * Format: +mot1* +mot2* +mot3* +"phrase exacte"*
      * 
-     * Exemple: "Guerlain - Shalimar - Coffret Eau de Parfum 50 ml + 5 ml + 75 ml (Édition"
-     * Résultat: "+guerlain* +shalimar* +coffret*"
+     * Exemple: "Burberry - Burberry pour Femme - Eau de Parfum Vaporisateur 100 ml"
+     * Résultat: +burberry* +"burberry pour femme"* +"eau de parfum"* +vaporisateur*
      * 
      * @param string $search
      * @return string
      */
     private function prepareSearchTerms(string $search): string
     {
-        // Nettoyage agressif : supprimer tous les caractères spéciaux et chiffres
-        $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ\s]/', ' ', $search);
+        if (empty($search)) {
+            return '';
+        }
+
+        // Nettoyage de base : garder lettres, chiffres, espaces et traits d'union
+        $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ0-9\s\-]/', ' ', $search);
         
         // Normaliser les espaces multiples
         $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
         
-        // Convertir en minuscules
-        $searchClean = mb_strtolower($searchClean);
+        // Convertir en minuscules pour le traitement
+        $searchLower = mb_strtolower($searchClean);
+        
+        // Extraire les parties séparées par " - " (marque, produit, variation)
+        $parts = explode(' - ', $searchLower);
+        
+        $booleanTerms = [];
+        
+        // Traiter chaque partie séparément
+        foreach ($parts as $partIndex => $part) {
+            $part = trim($part);
+            if (empty($part)) {
+                continue;
+            }
+            
+            // Pour la première partie (marque) - traitement agressif
+            if ($partIndex === 0) {
+                $brandTerms = $this->extractBrandTerms($part);
+                $booleanTerms = array_merge($booleanTerms, $brandTerms);
+            }
+            // Pour la deuxième partie (nom du produit) - traitement modéré
+            elseif ($partIndex === 1) {
+                $productTerms = $this->extractProductTerms($part);
+                $booleanTerms = array_merge($booleanTerms, $productTerms);
+            }
+            // Pour la troisième partie (variation) - traitement conservateur
+            else {
+                $variationTerms = $this->extractVariationTerms($part);
+                $booleanTerms = array_merge($booleanTerms, $variationTerms);
+            }
+        }
+        
+        // Si pas de parties séparées par " - ", traiter comme un texte simple
+        if (empty($booleanTerms) && !empty($searchLower)) {
+            $booleanTerms = $this->extractGenericTerms($searchLower);
+        }
+        
+        // Limiter le nombre total de termes pour éviter les requêtes trop lourdes
+        $booleanTerms = array_slice($booleanTerms, 0, 8);
+        
+        // Supprimer les doublons
+        $booleanTerms = array_unique($booleanTerms);
+        
+        \Log::info('Search terms prepared:', [
+            'original' => $search,
+            'clean' => $searchClean,
+            'terms' => $booleanTerms
+        ]);
+        
+        return implode(' ', $booleanTerms);
+    }
+
+    /**
+     * Extrait les termes pour la marque (traitement agressif)
+     */
+    private function extractBrandTerms(string $brandText): array
+    {
+        $terms = [];
+        
+        // Stop words spécifiques aux marques
+        $brandStopWords = ['the', 'le', 'la', 'les', 'de'];
         
         // Séparer les mots
-        $words = explode(" ", $searchClean);
-        
-        // Stop words français et anglais à ignorer
-        $stopWords = [
-            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec',
-            'the', 'a', 'an', 'and', 'or', 'eau', 'ml', 'edition', 'édition', 'coffret'
-        ];
-        
-        // Mots significatifs seulement (marque, gamme, produit)
+        $words = explode(' ', $brandText);
         $significantWords = [];
         
         foreach ($words as $word) {
             $word = trim($word);
-            
-            // Garder uniquement les mots de plus de 2 caractères, non-stop words
-            if (strlen($word) > 2 && !in_array($word, $stopWords)) {
+            if (strlen($word) > 2 && !in_array($word, $brandStopWords)) {
                 $significantWords[] = $word;
-            }
-            
-            // Limiter à 3 mots maximum (marque + gamme + type) SEULEMENT
-            if (count($significantWords) >= 3) {
-                break;
             }
         }
         
-        // Construire la requête boolean avec seulement 3 termes
-        $booleanTerms = array_map(function($word) {
-            return '+' . $word . '*';
-        }, $significantWords);
+        // Ajouter chaque mot significatif individuellement
+        foreach ($significantWords as $word) {
+            $terms[] = '+' . $word . '*';
+        }
         
-        return implode(' ', $booleanTerms);
+        // Ajouter la marque complète comme phrase exacte si elle a au moins 2 mots
+        if (count($significantWords) >= 2) {
+            $fullBrand = '"' . implode(' ', $significantWords) . '"*';
+            $terms[] = '+' . $fullBrand;
+        }
+        
+        return $terms;
+    }
+
+    /**
+     * Extrait les termes pour le nom du produit (traitement modéré)
+     */
+    private function extractProductTerms(string $productText): array
+    {
+        $terms = [];
+        
+        // Stop words pour les noms de produits
+        $productStopWords = [
+            'pour', 'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou',
+            'the', 'a', 'an', 'and', 'or', 'with', 'by'
+        ];
+        
+        // Phrases courantes dans les parfums à garder ensemble
+        $commonPhrases = [
+            'eau de parfum', 'eau de toilette', 'eau fraiche', 'parfum', 
+            'extrait de parfum', 'body lotion', 'body spray', 'hair mist',
+            'after shave', 'body cream', 'shower gel', 'body wash'
+        ];
+        
+        // Vérifier les phrases courantes d'abord
+        foreach ($commonPhrases as $phrase) {
+            if (str_contains($productText, $phrase)) {
+                $terms[] = '+"' . $phrase . '"*';
+                // Retirer la phrase du texte pour éviter les doublons
+                $productText = str_replace($phrase, '', $productText);
+            }
+        }
+        
+        // Traiter les mots restants
+        $words = explode(' ', trim($productText));
+        $significantWords = [];
+        
+        foreach ($words as $word) {
+            $word = trim($word);
+            if (strlen($word) > 2 && !in_array($word, $productStopWords)) {
+                $significantWords[] = $word;
+            }
+        }
+        
+        // Ajouter chaque mot significatif individuellement
+        foreach ($significantWords as $word) {
+            $terms[] = '+' . $word . '*';
+        }
+        
+        // Ajouter le nom complet du produit comme phrase si assez de mots
+        if (count($significantWords) >= 2) {
+            $fullProduct = '"' . implode(' ', $significantWords) . '"*';
+            $terms[] = '+' . $fullProduct;
+        }
+        
+        return $terms;
+    }
+
+    /**
+     * Extrait les termes pour la variation (traitement conservateur)
+     */
+    private function extractVariationTerms(string $variationText): array
+    {
+        $terms = [];
+        
+        // Types de variations courants
+        $variationTypes = [
+            'vaporisateur', 'spray', 'coffret', 'set', 'pack', 'collection',
+            'travel', 'voyage', 'miniature', 'sample', 'flacon', 'bottle',
+            'roller', 'roll-on', 'stick', 'solid', 'cream', 'creme',
+            'oil', 'huile', 'gel', 'lotion', 'milk', 'lait'
+        ];
+        
+        // Unités de volume et tailles
+        $volumeUnits = ['ml', 'l', 'oz', 'fl', 'g', 'kg'];
+        
+        // Extraire les volumes (pour les exclure du texte)
+        $variationWithoutVolume = preg_replace('/\d+\s*(' . implode('|', $volumeUnits) . ')/i', '', $variationText);
+        
+        // Vérifier les types de variations
+        foreach ($variationTypes as $type) {
+            if (str_contains($variationWithoutVolume, $type)) {
+                $terms[] = '+' . $type . '*';
+            }
+        }
+        
+        // Phrases spécifiques aux variations
+        $variationPhrases = [
+            'eau de parfum', 'eau de toilette', 'body spray', 'hair mist',
+            'shower gel', 'body lotion', 'after shave', 'body cream'
+        ];
+        
+        foreach ($variationPhrases as $phrase) {
+            if (str_contains($variationWithoutVolume, $phrase)) {
+                $terms[] = '+"' . $phrase . '"*';
+            }
+        }
+        
+        // Ajouter des termes génériques significatifs de la variation
+        $words = explode(' ', trim($variationWithoutVolume));
+        $significantWords = [];
+        
+        foreach ($words as $word) {
+            $word = trim($word);
+            // Garder les mots de plus de 3 caractères qui ne sont pas des stop words
+            if (strlen($word) > 3) {
+                $significantWords[] = $word;
+            }
+        }
+        
+        // Limiter à 3 mots maximum pour la variation
+        $significantWords = array_slice($significantWords, 0, 3);
+        
+        foreach ($significantWords as $word) {
+            $terms[] = '+' . $word . '*';
+        }
+        
+        return $terms;
+    }
+
+    /**
+     * Extraction générique quand le format n'est pas standard
+     */
+    private function extractGenericTerms(string $text): array
+    {
+        $terms = [];
+        
+        // Stop words complets
+        $stopWords = [
+            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec', 'sur', 'sous',
+            'the', 'a', 'an', 'and', 'or', 'with', 'by', 'in', 'on', 'at', 'to', 'for', 'of'
+        ];
+        
+        // Phrases courantes à garder ensemble
+        $commonPhrases = [
+            'eau de parfum', 'eau de toilette', 'body spray', 'hair mist',
+            'shower gel', 'body lotion', 'after shave', 'body cream',
+            'roll on', 'roll-on', 'travel size', 'mini size'
+        ];
+        
+        // Vérifier les phrases courantes d'abord
+        foreach ($commonPhrases as $phrase) {
+            if (str_contains($text, $phrase)) {
+                $terms[] = '+"' . $phrase . '"*';
+                $text = str_replace($phrase, '', $text);
+            }
+        }
+        
+        // Traiter les mots individuels
+        $words = explode(' ', trim($text));
+        $significantWords = [];
+        
+        foreach ($words as $word) {
+            $word = trim($word);
+            if (strlen($word) > 2 && !in_array($word, $stopWords) && !is_numeric($word)) {
+                $significantWords[] = $word;
+            }
+        }
+        
+        // Limiter à 6 mots maximum
+        $significantWords = array_slice($significantWords, 0, 6);
+        
+        // Ajouter les mots individuels
+        foreach ($significantWords as $word) {
+            $terms[] = '+' . $word . '*';
+        }
+        
+        // Ajouter des combinaisons de 2 mots si possible
+        for ($i = 0; $i < count($significantWords) - 1; $i++) {
+            $twoWordPhrase = $significantWords[$i] . ' ' . $significantWords[$i + 1];
+            $terms[] = '+"' . $twoWordPhrase . '"*';
+            
+            // Limiter à 3 phrases de 2 mots
+            if ($i >= 2) break;
+        }
+        
+        return $terms;
     }
 
     /**
@@ -493,101 +722,97 @@ new class extends Component {
         return $hasMatchingVolume && $hasExactVariation;
     }
 
-/**
- * Met en évidence les volumes correspondants dans un texte
- */
-/**
- * Met en évidence les volumes correspondants dans un texte
- */
-public function highlightMatchingVolumes($text)
-{
-    if (empty($text) || empty($this->searchVolumes)) {
-        return $text;
-    }
+    /**
+     * Met en évidence les volumes correspondants dans un texte
+     */
+    public function highlightMatchingVolumes($text)
+    {
+        if (empty($text) || empty($this->searchVolumes)) {
+            return $text;
+        }
 
-    foreach ($this->searchVolumes as $volume) {
-        // Recherche le volume suivi de "ml" (avec ou sans espace)
-        $pattern = '/\b' . preg_quote($volume, '/') . '\s*ml\b/i';
-        
-        // Utilise une fonction de callback pour éviter les problèmes d'échappement
-        $text = preg_replace_callback($pattern, function($matches) {
-            return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
-                   . htmlspecialchars($matches[0]) 
-                   . '</span>';
-        }, $text);
-    }
-
-    return $text;
-}
-
-/**
- * Met en évidence les mots clés de variation correspondants dans un texte
- */
-public function highlightMatchingVariationKeywords($text)
-{
-    if (empty($text) || empty($this->searchVariationKeywords)) {
-        return $text;
-    }
-
-    foreach ($this->searchVariationKeywords as $keyword) {
-        // Recherche le mot clé exact (avec limites de mots)
-        $pattern = '/\b' . preg_quote($keyword, '/') . '\b/i';
-        
-        // Utilise une fonction de callback pour éviter les problèmes d'échappement
-        $text = preg_replace_callback($pattern, function($matches) {
-            return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
-                   . htmlspecialchars($matches[0]) 
-                   . '</span>';
-        }, $text);
-    }
-
-    return $text;
-}
-
-
-/**
- * Met en évidence les volumes et mots clés correspondants dans un texte
- */
-public function highlightMatchingTerms($text)
-{
-    if (empty($text)) {
-        return $text;
-    }
-
-    $patterns = [];
-    
-    // Ajouter les patterns pour les volumes (priorité aux volumes complets "X ml")
-    if (!empty($this->searchVolumes)) {
         foreach ($this->searchVolumes as $volume) {
-            $patterns[] = '\b' . preg_quote($volume, '/') . '\s*ml\b';
+            // Recherche le volume suivi de "ml" (avec ou sans espace)
+            $pattern = '/\b' . preg_quote($volume, '/') . '\s*ml\b/i';
+            
+            // Utilise une fonction de callback pour éviter les problèmes d'échappement
+            $text = preg_replace_callback($pattern, function($matches) {
+                return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
+                       . htmlspecialchars($matches[0]) 
+                       . '</span>';
+            }, $text);
         }
-    }
-    
-    // Ajouter les patterns pour les mots-clés de variation (sauf les chiffres seuls)
-    if (!empty($this->searchVariationKeywords)) {
-        foreach ($this->searchVariationKeywords as $keyword) {
-            if (empty($keyword) || is_numeric($keyword)) {
-                continue; // Ignorer les chiffres seuls
-            }
-            $patterns[] = '\b' . preg_quote(trim($keyword), '/') . '\b';
-        }
-    }
-    
-    if (empty($patterns)) {
+
         return $text;
     }
-    
-    // Combiner tous les patterns
-    $pattern = '/(' . implode('|', $patterns) . ')/iu';
-    
-    $text = preg_replace_callback($pattern, function($matches) {
-        return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
-               . $matches[0] 
-               . '</span>';
-    }, $text);
-    
-    return $text;
-}
+
+    /**
+     * Met en évidence les mots clés de variation correspondants dans un texte
+     */
+    public function highlightMatchingVariationKeywords($text)
+    {
+        if (empty($text) || empty($this->searchVariationKeywords)) {
+            return $text;
+        }
+
+        foreach ($this->searchVariationKeywords as $keyword) {
+            // Recherche le mot clé exact (avec limites de mots)
+            $pattern = '/\b' . preg_quote($keyword, '/') . '\b/i';
+            
+            // Utilise une fonction de callback pour éviter les problèmes d'échappement
+            $text = preg_replace_callback($pattern, function($matches) {
+                return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
+                       . htmlspecialchars($matches[0]) 
+                       . '</span>';
+            }, $text);
+        }
+
+        return $text;
+    }
+
+    /**
+     * Met en évidence les volumes et mots clés correspondants dans un texte
+     */
+    public function highlightMatchingTerms($text)
+    {
+        if (empty($text)) {
+            return $text;
+        }
+
+        $patterns = [];
+        
+        // Ajouter les patterns pour les volumes (priorité aux volumes complets "X ml")
+        if (!empty($this->searchVolumes)) {
+            foreach ($this->searchVolumes as $volume) {
+                $patterns[] = '\b' . preg_quote($volume, '/') . '\s*ml\b';
+            }
+        }
+        
+        // Ajouter les patterns pour les mots-clés de variation (sauf les chiffres seuls)
+        if (!empty($this->searchVariationKeywords)) {
+            foreach ($this->searchVariationKeywords as $keyword) {
+                if (empty($keyword) || is_numeric($keyword)) {
+                    continue; // Ignorer les chiffres seuls
+                }
+                $patterns[] = '\b' . preg_quote(trim($keyword), '/') . '\b';
+            }
+        }
+        
+        if (empty($patterns)) {
+            return $text;
+        }
+        
+        // Combiner tous les patterns
+        $pattern = '/(' . implode('|', $patterns) . ')/iu';
+        
+        $text = preg_replace_callback($pattern, function($matches) {
+            return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
+                   . $matches[0] 
+                   . '</span>';
+        }, $text);
+        
+        return $text;
+    }
 }; ?>
 
 <div>
@@ -650,7 +875,7 @@ public function highlightMatchingTerms($text)
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Image</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Variation</th>
-                                <th class="px-6py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Site Source</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Site Source</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prix HT</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
