@@ -2,6 +2,7 @@
 
 use Livewire\Volt\Component;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 new class extends Component {
     public $products = [];
@@ -17,18 +18,22 @@ new class extends Component {
     
     public function mount($name, $id)
     {
-        $this->getCompetitorPrice($name);
-
-        // get one product
-        dd($this->getOneProductDetails($id));
         $this->id = $id;
         $this->name = $name;
+        
+        // Charger le produit principal
+        $this->getOneProductDetails($id);
+        
+        // Charger les prix des concurrents
+        $this->getCompetitorPrice($name);
     }
 
-    public function getOneProductDetails($entity_id){
-        try{
-
-            // Paginated data
+    /**
+     * Récupère les détails d'un produit spécifique
+     */
+    public function getOneProductDetails($entity_id)
+    {
+        try {
             $dataQuery = "
                 SELECT 
                     produit.entity_id as id,
@@ -90,28 +95,25 @@ new class extends Component {
 
             $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
 
-            $this->oneProduct = $result;
+            $this->oneProduct = !empty($result) ? $result[0] : null;
 
-            return [
-                "product" => $this->oneProduct
-            ];
+            return $this->oneProduct;
 
         } catch (\Throwable $e) {
-            \Log::error('Error loading products:', [
+            \Log::error('Error loading product details:', [
+                'entity_id' => $entity_id,
                 'message' => $e->getMessage(),
-                'search' => $search ?? null,
                 'trace' => $e->getTraceAsString()
             ]);
             
-            $this->products = [];
-            $this->hasData = false;
-            
-            return [
-                'error' => $e->getMessage()
-            ];
+            $this->oneProduct = null;
+            return null;
         }
     }
 
+    /**
+     * Récupère les prix des concurrents
+     */
     public function getCompetitorPrice($search)
     {
         try {
@@ -142,9 +144,10 @@ new class extends Component {
                     FROM last_price_scraped_product 
                     WHERE MATCH (name, vendor, type, variation) 
                     AGAINST (? IN BOOLEAN MODE)
-                    ORDER BY prix_ht DESC";
+                    ORDER BY prix_ht ASC
+                    LIMIT 50";
             
-            \Log::info('SQL Query:', [
+            \Log::info('Competitor search:', [
                 'original_search' => $search,
                 'search_query' => $searchQuery,
                 'search_volumes' => $this->searchVolumes,
@@ -154,24 +157,13 @@ new class extends Component {
             // Exécution de la requête avec binding
             $result = DB::connection('mysql')->select($sql, [$searchQuery]);
             
-            \Log::info('Query result:', [
-                'count' => count($result)
-            ]);
-            
             $this->products = $result;
             $this->hasData = !empty($result);
             
-            return [
-                'count' => count($result),
-                'has_data' => $this->hasData,
-                'products' => $this->products,
-                'query' => $searchQuery,
-                'volumes' => $this->searchVolumes,
-                'variation_keywords' => $this->searchVariationKeywords
-            ];
+            return $this->products;
             
         } catch (\Throwable $e) {
-            \Log::error('Error loading products:', [
+            \Log::error('Error loading competitor prices:', [
                 'message' => $e->getMessage(),
                 'search' => $search ?? null,
                 'trace' => $e->getTraceAsString()
@@ -180,9 +172,7 @@ new class extends Component {
             $this->products = [];
             $this->hasData = false;
             
-            return [
-                'error' => $e->getMessage()
-            ];
+            return null;
         }
     }
     
@@ -195,19 +185,12 @@ new class extends Component {
         
         // Recherche de motifs comme "50 ml", "75ml", "100 ml", etc.
         if (preg_match_all('/(\d+)\s*ml/i', $search, $matches)) {
-            $this->searchVolumes = $matches[1];
+            $this->searchVolumes = array_unique($matches[1]);
         }
-        
-        \Log::info('Extracted search volumes:', [
-            'search' => $search,
-            'volumes' => $this->searchVolumes
-        ]);
     }
 
     /**
      * Extrait les mots clés de la variation de la recherche
-     * Exemple: "Guerlain - Shalimar - Coffret Eau de Parfum 50 ml + 5 ml + 75 ml"
-     * Mots clés: ["coffret", "eau", "parfum", "50", "5", "75"]
      */
     private function extractSearchVariationKeywords(string $search): void
     {
@@ -244,25 +227,10 @@ new class extends Component {
                 $this->searchVariationKeywords[] = $word;
             }
         }
-        
-        \Log::info('Extracted search variation keywords:', [
-            'search' => $search,
-            'variation' => $variation,
-            'keywords' => $this->searchVariationKeywords
-        ]);
     }
     
     /**
      * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
-     * Extrait uniquement les 3 premiers mots significatifs (marque, gamme, type)
-     * 
-     * Format: +mot1* +mot2* +mot3*
-     * 
-     * Exemple: "Guerlain - Shalimar - Coffret Eau de Parfum 50 ml + 5 ml + 75 ml (Édition"
-     * Résultat: "+guerlain* +shalimar* +coffret*"
-     * 
-     * @param string $search
-     * @return string
      */
     private function prepareSearchTerms(string $search): string
     {
@@ -295,13 +263,13 @@ new class extends Component {
                 $significantWords[] = $word;
             }
             
-            // Limiter à 3 mots maximum (marque + gamme + type) SEULEMENT
+            // Limiter à 3 mots maximum (marque + gamme + type)
             if (count($significantWords) >= 3) {
                 break;
             }
         }
         
-        // Construire la requête boolean avec seulement 3 termes
+        // Construire la requête boolean
         $booleanTerms = array_map(function($word) {
             return '+' . $word . '*';
         }, $significantWords);
@@ -350,16 +318,6 @@ new class extends Component {
     }
 
     /**
-     * Ouvre la page du produit
-     */
-    public function viewProduct($productUrl)
-    {
-        if ($productUrl) {
-            return redirect()->away($productUrl);
-        }
-    }
-
-    /**
      * Formate la variation pour l'affichage
      */
     public function formatVariation($variation)
@@ -369,7 +327,7 @@ new class extends Component {
         }
         
         // Limiter la longueur pour l'affichage
-        return Str::limit($variation, 30);
+        return Str::limit($variation, 50);
     }
 
     /**
@@ -383,18 +341,10 @@ new class extends Component {
         
         $volumes = [];
         if (preg_match_all('/(\d+)\s*ml/i', $text, $matches)) {
-            $volumes = $matches[1];
+            $volumes = array_unique($matches[1]);
         }
         
         return $volumes;
-    }
-
-    /**
-     * Vérifie si un volume correspond aux volumes recherchés
-     */
-    public function isVolumeMatching($volume)
-    {
-        return in_array($volume, $this->searchVolumes);
     }
 
     /**
@@ -442,118 +392,82 @@ new class extends Component {
         return $hasMatchingVolume && $hasMatchingVariationKeyword;
     }
 
-/**
- * Met en évidence les volumes correspondants dans un texte
- */
-/**
- * Met en évidence les volumes correspondants dans un texte
- */
-public function highlightMatchingVolumes($text)
-{
-    if (empty($text) || empty($this->searchVolumes)) {
-        return $text;
-    }
-
-    foreach ($this->searchVolumes as $volume) {
-        // Recherche le volume suivi de "ml" (avec ou sans espace)
-        $pattern = '/\b' . preg_quote($volume, '/') . '\s*ml\b/i';
-        
-        // Utilise une fonction de callback pour éviter les problèmes d'échappement
-        $text = preg_replace_callback($pattern, function($matches) {
-            return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
-                   . htmlspecialchars($matches[0]) 
-                   . '</span>';
-        }, $text);
-    }
-
-    return $text;
-}
-
-/**
- * Met en évidence les mots clés de variation correspondants dans un texte
- */
-public function highlightMatchingVariationKeywords($text)
-{
-    if (empty($text) || empty($this->searchVariationKeywords)) {
-        return $text;
-    }
-
-    foreach ($this->searchVariationKeywords as $keyword) {
-        // Recherche le mot clé exact (avec limites de mots)
-        $pattern = '/\b' . preg_quote($keyword, '/') . '\b/i';
-        
-        // Utilise une fonction de callback pour éviter les problèmes d'échappement
-        $text = preg_replace_callback($pattern, function($matches) {
-            return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
-                   . htmlspecialchars($matches[0]) 
-                   . '</span>';
-        }, $text);
-    }
-
-    return $text;
-}
-
-
-/**
- * Met en évidence les volumes et mots clés correspondants dans un texte
- */
-public function highlightMatchingTerms($text)
-{
-    if (empty($text)) {
-        return $text;
-    }
-
-    $patterns = [];
-    
-    // Ajouter les patterns pour les volumes (priorité aux volumes complets "X ml")
-    if (!empty($this->searchVolumes)) {
-        foreach ($this->searchVolumes as $volume) {
-            $patterns[] = '\b' . preg_quote($volume, '/') . '\s*ml\b';
+    /**
+     * Met en évidence les volumes et mots clés correspondants dans un texte
+     */
+    public function highlightMatchingTerms($text)
+    {
+        if (empty($text)) {
+            return $text;
         }
-    }
-    
-    // Ajouter les patterns pour les mots-clés de variation (sauf les chiffres seuls)
-    if (!empty($this->searchVariationKeywords)) {
-        foreach ($this->searchVariationKeywords as $keyword) {
-            if (empty($keyword) || is_numeric($keyword)) {
-                continue; // Ignorer les chiffres seuls
+
+        $patterns = [];
+        
+        // Ajouter les patterns pour les volumes (priorité aux volumes complets "X ml")
+        if (!empty($this->searchVolumes)) {
+            foreach ($this->searchVolumes as $volume) {
+                $patterns[] = '\b' . preg_quote($volume, '/') . '\s*ml\b';
             }
-            $patterns[] = '\b' . preg_quote(trim($keyword), '/') . '\b';
         }
-    }
-    
-    if (empty($patterns)) {
+        
+        // Ajouter les patterns pour les mots-clés de variation (sauf les chiffres seuls)
+        if (!empty($this->searchVariationKeywords)) {
+            foreach ($this->searchVariationKeywords as $keyword) {
+                if (empty($keyword) || is_numeric($keyword)) {
+                    continue;
+                }
+                $patterns[] = '\b' . preg_quote(trim($keyword), '/') . '\b';
+            }
+        }
+        
+        if (empty($patterns)) {
+            return $text;
+        }
+        
+        // Combiner tous les patterns
+        $pattern = '/(' . implode('|', $patterns) . ')/iu';
+        
+        $text = preg_replace_callback($pattern, function($matches) {
+            return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
+                   . htmlspecialchars($matches[0]) 
+                   . '</span>';
+        }, $text);
+        
         return $text;
     }
-    
-    // Combiner tous les patterns
-    $pattern = '/(' . implode('|', $patterns) . ')/iu';
-    
-    $text = preg_replace_callback($pattern, function($matches) {
-        return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
-               . $matches[0] 
-               . '</span>';
-    }, $text);
-    
-    return $text;
-}
 
-    // public function with()
-    // {
-    //     $productData = $this->getOneProductDetails($this->id);
-    //     $products = $this->getCompetitorPrice($this->name);
-    //     // Récupérer le premier élément du tableau "data"
-    //     if (!empty($productData['data']) && is_array($productData['data'])) {
-    //         $this->product = $productData['data'][0];
-    //     } else {
-    //         $this->product = null;
-    //     }
+    /**
+     * Calcule la différence de prix en pourcentage
+     */
+    public function calculatePriceDifference($competitorPrice, $ourPrice)
+    {
+        if (!is_numeric($competitorPrice) || !is_numeric($ourPrice) || $ourPrice == 0) {
+            return null;
+        }
+        
+        $difference = (($competitorPrice - $ourPrice) / $ourPrice) * 100;
+        return round($difference, 1);
+    }
 
-    //     return [
-    //         'product' => $this->product,
-    //         'products' => $products,
-    //     ];
-    // }
+    /**
+     * Détermine la classe CSS selon la différence de prix
+     */
+    public function getPriceDifferenceClass($difference)
+    {
+        if ($difference === null) {
+            return 'text-gray-500';
+        }
+        
+        if ($difference < -10) {
+            return 'text-green-600'; // Beaucoup moins cher
+        } elseif ($difference < 0) {
+            return 'text-green-500'; // Moins cher
+        } elseif ($difference < 10) {
+            return 'text-orange-500'; // Légèrement plus cher
+        } else {
+            return 'text-red-600'; // Beaucoup plus cher
+        }
+    }
 }; 
 
 ?>
