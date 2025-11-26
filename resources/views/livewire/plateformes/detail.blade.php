@@ -146,7 +146,7 @@ new class extends Component {
     </div>
 
     <!-- Product form -->
-    <div class="mt-10 lg:col-start-2 lg:row-start-2 lg:max-w-lg lg:self-start">
+    {{-- <div class="mt-10 lg:col-start-2 lg:row-start-2 lg:max-w-lg lg:self-start">
         <section aria-labelledby="options-heading">
             <h2 id="options-heading" class="sr-only">Product options</h2>
 
@@ -190,5 +190,5 @@ new class extends Component {
                 </div>
             </form>
         </section>
-    </div>
+    </div> --}}
 </div>
