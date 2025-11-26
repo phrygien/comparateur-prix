@@ -19,7 +19,7 @@ new class extends Component {
         $this->myadata = $this->getCompetitorPrice($name);
         //$this->getOneProductDetails($id);
     
-        dd($this->myadata['product']);
+        dd($this->myadata['product'][0]->vendor);
         //$this->getOneProductDetails($id);
     
         $this->id = $id;
