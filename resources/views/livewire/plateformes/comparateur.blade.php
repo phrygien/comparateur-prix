@@ -12,13 +12,13 @@ new class extends Component {
     public $searchVariationKeywords = [];
     
     public $id;
+    public $mydata;
 
     public function mount($name, $id)
     {
-        $myadata = $this->getCompetitorPrice($name);
+        $this->myadata = $this->getCompetitorPrice($name);
         //$this->getOneProductDetails($id);
-        
-        dd($myadata);
+    
         //$this->getOneProductDetails($id);
     
         $this->id = $id;
