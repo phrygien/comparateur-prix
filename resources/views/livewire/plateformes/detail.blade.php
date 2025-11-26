@@ -98,7 +98,7 @@ new class extends Component {
 <div class="w-full px-4 py-2 sm:px-2 sm:py-4 lg:grid lg:grid-cols-2 lg:gap-x-8 lg:px-8">
     <!-- Product image -->
     <div class="mt-10 lg:col-start-1 lg:row-span-2 lg:mt-0 lg:self-center">
-        <img src="https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800&q=80" alt="Model wearing light green backpack with black canvas straps and front zipper pouch." class="aspect-square w-full rounded-lg object-cover">
+        <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $this->product->thumbnail) }}" alt="Model wearing light green backpack with black canvas straps and front zipper pouch." class="aspect-square w-full rounded-lg object-cover">
     </div>
 
     <!-- Product details -->
@@ -124,14 +124,16 @@ new class extends Component {
         </nav>
 
         <div class="mt-4">
-            <h1 class="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">Crème Visage Premium</h1>
+            <h1 class="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">{{ $this->product->title ?? 'N/A' }}</h1>
         </div>
 
         <section aria-labelledby="information-heading" class="mt-4">
             <h2 id="information-heading" class="sr-only">Product information</h2>
 
             <div class="mt-4 space-y-6">
-                <p class="text-base text-gray-500">Don&#039;t compromise on snack-carrying capacity with this lightweight and spacious bag. The drawstring top keeps all your favorite chips, crisps, fries, biscuits, crackers, and cookies secure.</p>
+                <p class="text-base text-gray-500">
+                    {{ $this->product->description ?? 'N/A' }}
+                </p>
             </div>
 
             <div class="mt-6 flex items-center">
