@@ -15,7 +15,7 @@ new class extends Component {
 
     public function mount($name, $id)
     {
-        $this->getCompetitorPrice($name);
+        dd($this->getCompetitorPrice($name));
         //$this->getOneProductDetails($id);
         
         //$this->getOneProductDetails($id);
@@ -158,13 +158,12 @@ new class extends Component {
             $this->hasData = !empty($result);
 
             // one product
-            $this->product = $this->getOneProductDetails($this->id);
             
             return [
                 'count' => count($result),
                 'has_data' => $this->hasData,
                 'products' => $this->products,
-                'product' => $this->product,
+                'product' => $this->getOneProductDetails($this->id),
                 'query' => $searchQuery,
                 'volumes' => $this->searchVolumes,
                 'variation_keywords' => $this->searchVariationKeywords
@@ -540,7 +539,6 @@ public function highlightMatchingTerms($text)
 }; ?>
 
 <div>
-
 <div class="w-full px-4 py-2 sm:px-2 sm:py-4 lg:grid lg:grid-cols-2 lg:gap-x-8 lg:px-8">
     <!-- Product image -->
     <div class="mt-10 lg:col-start-1 lg:row-span-2 lg:mt-0 lg:self-center">
