@@ -2,7 +2,6 @@
 
 use Livewire\Volt\Component;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 new class extends Component {
     public $products = [];
@@ -10,28 +9,17 @@ new class extends Component {
     public $searchTerms = [];
     public $searchVolumes = [];
     public $searchVariationKeywords = [];
-
-    // one product
-    public $id;
-    public $name;
-    public $oneProduct;
     
-    public function mount($name, $id)
+    public function mount($name)
     {
-        
-        // Charger le produit principal
-        //$this->getOneProductDetails($id);
-        
-        // Charger les prix des concurrents
         $this->getCompetitorPrice($name);
+        
     }
 
-    /**
-     * Récupère les détails d'un produit spécifique
-     */
-    public function getOneProductDetails($entity_id)
-    {
-        try {
+    public function getOneProductDetails($entity_id){
+        try{
+
+            // Paginated data
             $dataQuery = "
                 SELECT 
                     produit.entity_id as id,
@@ -93,29 +81,26 @@ new class extends Component {
 
             $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
 
-            $this->oneProduct = !empty($result) ? $result[0] : null;
-
             return [
-                "oneProduct" => $this->oneProduct
+                "data" => $result
             ];
 
         } catch (\Throwable $e) {
-            \Log::error('Error loading product details:', [
-                'entity_id' => $entity_id,
+            \Log::error('Error loading products:', [
                 'message' => $e->getMessage(),
+                'search' => $search ?? null,
                 'trace' => $e->getTraceAsString()
             ]);
             
-            $this->oneProduct = null;
+            $this->products = [];
+            $this->hasData = false;
+            
             return [
                 'error' => $e->getMessage()
             ];
         }
     }
 
-    /**
-     * Récupère les prix des concurrents
-     */
     public function getCompetitorPrice($search)
     {
         try {
@@ -146,10 +131,9 @@ new class extends Component {
                     FROM last_price_scraped_product 
                     WHERE MATCH (name, vendor, type, variation) 
                     AGAINST (? IN BOOLEAN MODE)
-                    ORDER BY prix_ht ASC
-                    LIMIT 50";
+                    ORDER BY prix_ht DESC";
             
-            \Log::info('Competitor search:', [
+            \Log::info('SQL Query:', [
                 'original_search' => $search,
                 'search_query' => $searchQuery,
                 'search_volumes' => $this->searchVolumes,
@@ -159,13 +143,24 @@ new class extends Component {
             // Exécution de la requête avec binding
             $result = DB::connection('mysql')->select($sql, [$searchQuery]);
             
+            \Log::info('Query result:', [
+                'count' => count($result)
+            ]);
+            
             $this->products = $result;
             $this->hasData = !empty($result);
             
-            return $this->products;
+            return [
+                'count' => count($result),
+                'has_data' => $this->hasData,
+                'products' => $this->products,
+                'query' => $searchQuery,
+                'volumes' => $this->searchVolumes,
+                'variation_keywords' => $this->searchVariationKeywords
+            ];
             
         } catch (\Throwable $e) {
-            \Log::error('Error loading competitor prices:', [
+            \Log::error('Error loading products:', [
                 'message' => $e->getMessage(),
                 'search' => $search ?? null,
                 'trace' => $e->getTraceAsString()
@@ -174,7 +169,9 @@ new class extends Component {
             $this->products = [];
             $this->hasData = false;
             
-            return null;
+            return [
+                'error' => $e->getMessage()
+            ];
         }
     }
     
@@ -187,12 +184,19 @@ new class extends Component {
         
         // Recherche de motifs comme "50 ml", "75ml", "100 ml", etc.
         if (preg_match_all('/(\d+)\s*ml/i', $search, $matches)) {
-            $this->searchVolumes = array_unique($matches[1]);
+            $this->searchVolumes = $matches[1];
         }
+        
+        \Log::info('Extracted search volumes:', [
+            'search' => $search,
+            'volumes' => $this->searchVolumes
+        ]);
     }
 
     /**
      * Extrait les mots clés de la variation de la recherche
+     * Exemple: "Guerlain - Shalimar - Coffret Eau de Parfum 50 ml + 5 ml + 75 ml"
+     * Mots clés: ["coffret", "eau", "parfum", "50", "5", "75"]
      */
     private function extractSearchVariationKeywords(string $search): void
     {
@@ -229,10 +233,25 @@ new class extends Component {
                 $this->searchVariationKeywords[] = $word;
             }
         }
+        
+        \Log::info('Extracted search variation keywords:', [
+            'search' => $search,
+            'variation' => $variation,
+            'keywords' => $this->searchVariationKeywords
+        ]);
     }
     
     /**
      * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
+     * Extrait uniquement les 3 premiers mots significatifs (marque, gamme, type)
+     * 
+     * Format: +mot1* +mot2* +mot3*
+     * 
+     * Exemple: "Guerlain - Shalimar - Coffret Eau de Parfum 50 ml + 5 ml + 75 ml (Édition"
+     * Résultat: "+guerlain* +shalimar* +coffret*"
+     * 
+     * @param string $search
+     * @return string
      */
     private function prepareSearchTerms(string $search): string
     {
@@ -265,13 +284,13 @@ new class extends Component {
                 $significantWords[] = $word;
             }
             
-            // Limiter à 3 mots maximum (marque + gamme + type)
+            // Limiter à 3 mots maximum (marque + gamme + type) SEULEMENT
             if (count($significantWords) >= 3) {
                 break;
             }
         }
         
-        // Construire la requête boolean
+        // Construire la requête boolean avec seulement 3 termes
         $booleanTerms = array_map(function($word) {
             return '+' . $word . '*';
         }, $significantWords);
@@ -320,6 +339,16 @@ new class extends Component {
     }
 
     /**
+     * Ouvre la page du produit
+     */
+    public function viewProduct($productUrl)
+    {
+        if ($productUrl) {
+            return redirect()->away($productUrl);
+        }
+    }
+
+    /**
      * Formate la variation pour l'affichage
      */
     public function formatVariation($variation)
@@ -329,7 +358,7 @@ new class extends Component {
         }
         
         // Limiter la longueur pour l'affichage
-        return Str::limit($variation, 50);
+        return Str::limit($variation, 30);
     }
 
     /**
@@ -343,10 +372,18 @@ new class extends Component {
         
         $volumes = [];
         if (preg_match_all('/(\d+)\s*ml/i', $text, $matches)) {
-            $volumes = array_unique($matches[1]);
+            $volumes = $matches[1];
         }
         
         return $volumes;
+    }
+
+    /**
+     * Vérifie si un volume correspond aux volumes recherchés
+     */
+    public function isVolumeMatching($volume)
+    {
+        return in_array($volume, $this->searchVolumes);
     }
 
     /**
@@ -394,201 +431,197 @@ new class extends Component {
         return $hasMatchingVolume && $hasMatchingVariationKeyword;
     }
 
-    /**
-     * Met en évidence les volumes et mots clés correspondants dans un texte
-     */
-    public function highlightMatchingTerms($text)
-    {
-        if (empty($text)) {
-            return $text;
-        }
+/**
+ * Met en évidence les volumes correspondants dans un texte
+ */
+/**
+ * Met en évidence les volumes correspondants dans un texte
+ */
+public function highlightMatchingVolumes($text)
+{
+    if (empty($text) || empty($this->searchVolumes)) {
+        return $text;
+    }
 
-        $patterns = [];
+    foreach ($this->searchVolumes as $volume) {
+        // Recherche le volume suivi de "ml" (avec ou sans espace)
+        $pattern = '/\b' . preg_quote($volume, '/') . '\s*ml\b/i';
         
-        // Ajouter les patterns pour les volumes (priorité aux volumes complets "X ml")
-        if (!empty($this->searchVolumes)) {
-            foreach ($this->searchVolumes as $volume) {
-                $patterns[] = '\b' . preg_quote($volume, '/') . '\s*ml\b';
-            }
-        }
-        
-        // Ajouter les patterns pour les mots-clés de variation (sauf les chiffres seuls)
-        if (!empty($this->searchVariationKeywords)) {
-            foreach ($this->searchVariationKeywords as $keyword) {
-                if (empty($keyword) || is_numeric($keyword)) {
-                    continue;
-                }
-                $patterns[] = '\b' . preg_quote(trim($keyword), '/') . '\b';
-            }
-        }
-        
-        if (empty($patterns)) {
-            return $text;
-        }
-        
-        // Combiner tous les patterns
-        $pattern = '/(' . implode('|', $patterns) . ')/iu';
-        
+        // Utilise une fonction de callback pour éviter les problèmes d'échappement
         $text = preg_replace_callback($pattern, function($matches) {
             return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
                    . htmlspecialchars($matches[0]) 
                    . '</span>';
         }, $text);
-        
+    }
+
+    return $text;
+}
+
+/**
+ * Met en évidence les mots clés de variation correspondants dans un texte
+ */
+public function highlightMatchingVariationKeywords($text)
+{
+    if (empty($text) || empty($this->searchVariationKeywords)) {
         return $text;
     }
 
-    /**
-     * Calcule la différence de prix en pourcentage
-     */
-    public function calculatePriceDifference($competitorPrice, $ourPrice)
-    {
-        if (!is_numeric($competitorPrice) || !is_numeric($ourPrice) || $ourPrice == 0) {
-            return null;
-        }
+    foreach ($this->searchVariationKeywords as $keyword) {
+        // Recherche le mot clé exact (avec limites de mots)
+        $pattern = '/\b' . preg_quote($keyword, '/') . '\b/i';
         
-        $difference = (($competitorPrice - $ourPrice) / $ourPrice) * 100;
-        return round($difference, 1);
+        // Utilise une fonction de callback pour éviter les problèmes d'échappement
+        $text = preg_replace_callback($pattern, function($matches) {
+            return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
+                   . htmlspecialchars($matches[0]) 
+                   . '</span>';
+        }, $text);
     }
 
-    /**
-     * Détermine la classe CSS selon la différence de prix
-     */
-    public function getPriceDifferenceClass($difference)
-    {
-        if ($difference === null) {
-            return 'text-gray-500';
-        }
-        
-        if ($difference < -10) {
-            return 'text-green-600'; // Beaucoup moins cher
-        } elseif ($difference < 0) {
-            return 'text-green-500'; // Moins cher
-        } elseif ($difference < 10) {
-            return 'text-orange-500'; // Légèrement plus cher
-        } else {
-            return 'text-red-600'; // Beaucoup plus cher
-        }
+    return $text;
+}
+
+
+/**
+ * Met en évidence les volumes et mots clés correspondants dans un texte
+ */
+public function highlightMatchingTerms($text)
+{
+    if (empty($text)) {
+        return $text;
     }
 
-     /**
-     * Méthode with() pour passer les données à la vue
-     */
-    public function with(): array
-    {
-        // Récupérer les données du produit
-        $oneProduct = $this->getOneProductDetails($this->id);
-        
-        // Récupérer les prix des concurrents
-        $products = $this->getCompetitorPrice($this->name);
-        
-        return [
-            'oneProduct' => $oneProduct,
-            'products' => $products,
-            'hasData' => $this->hasData,
-            'searchVolumes' => $this->searchVolumes,
-            'searchVariationKeywords' => $this->searchVariationKeywords,
-        ];
+    $patterns = [];
+    
+    // Ajouter les patterns pour les volumes (priorité aux volumes complets "X ml")
+    if (!empty($this->searchVolumes)) {
+        foreach ($this->searchVolumes as $volume) {
+            $patterns[] = '\b' . preg_quote($volume, '/') . '\s*ml\b';
+        }
     }
     
+    // Ajouter les patterns pour les mots-clés de variation (sauf les chiffres seuls)
+    if (!empty($this->searchVariationKeywords)) {
+        foreach ($this->searchVariationKeywords as $keyword) {
+            if (empty($keyword) || is_numeric($keyword)) {
+                continue; // Ignorer les chiffres seuls
+            }
+            $patterns[] = '\b' . preg_quote(trim($keyword), '/') . '\b';
+        }
+    }
     
-}; 
-
-?>
+    if (empty($patterns)) {
+        return $text;
+    }
+    
+    // Combiner tous les patterns
+    $pattern = '/(' . implode('|', $patterns) . ')/iu';
+    
+    $text = preg_replace_callback($pattern, function($matches) {
+        return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
+               . $matches[0] 
+               . '</span>';
+    }, $text);
+    
+    return $text;
+}
+}; ?>
 
 <div>
-    {{-- <div class="w-full px-4 py-2 sm:px-2 sm:py-4 lg:grid lg:grid-cols-2 lg:gap-x-8 lg:px-8">
-        <!-- Product image -->
-        <div class="mt-10 lg:col-start-1 lg:row-span-2 lg:mt-0 lg:self-center">
-            <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $product->thumbnail ) }}" 
-        alt="{{ $product->title ?? 'Product image' }}" 
-        class="aspect-square w-full rounded-lg object-cover">
+<div class="w-full px-4 py-2 sm:px-2 sm:py-4 lg:grid lg:grid-cols-2 lg:gap-x-8 lg:px-8">
+    <!-- Product image -->
+    <div class="mt-10 lg:col-start-1 lg:row-span-2 lg:mt-0 lg:self-center">
+        <img src="https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800&q=80" alt="Model wearing light green backpack with black canvas straps and front zipper pouch." class="aspect-square w-full rounded-lg object-cover">
+    </div>
+
+    <!-- Product details -->
+    <div class="lg:max-w-lg lg:self-end lg:col-start-2">
+        <nav aria-label="Breadcrumb">
+            <ol role="list" class="flex items-center space-x-2">
+                <li>
+                    <div class="flex items-center text-sm">
+                        <a href="#" class="font-medium text-gray-500 hover:text-gray-900">CHANEL</a>
+                        <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" class="ml-2 size-5 shrink-0 text-gray-300">
+                            <path d="M5.555 17.776l8-16 .894.448-8 16-.894-.448z" />
+                        </svg>
+                    </div>
+                </li>
+                <li>
+                    <div class="flex items-center text-sm">
+                        <a href="#" class="font-medium text-gray-500 hover:text-gray-900">Bags</a>
+                    </div>
+                </li>
+            </ol>
+        </nav>
+
+        <div class="mt-4">
+            <h1 class="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">Crème Visage Premium</h1>
         </div>
 
-        <!-- Product details -->
-        <div class="lg:max-w-lg lg:self-end lg:col-start-2">
-            <nav aria-label="Breadcrumb">
-                <ol role="list" class="flex items-center space-x-2">
-                    <li>
-                        <div class="flex items-center text-sm">
-                            <a href="#" class="font-medium text-gray-500 hover:text-gray-900">{{ utf8_encode($product->vendor) }}</a>
-                            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" class="ml-2 size-5 shrink-0 text-gray-300">
-                                <path d="M5.555 17.776l8-16 .894.448-8 16-.894-.448z" />
-                            </svg>
-                        </div>
-                    </li>
-                </ol>
-            </nav>
+        <section aria-labelledby="information-heading" class="mt-4">
+            <h2 id="information-heading" class="sr-only">Product information</h2>
 
-            <div class="mt-4">
-                <h1 class="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">{{ utf8_encode($product->title) }}</h1>
+            <div class="mt-4 space-y-6">
+                <p class="text-base text-gray-500">Don&#039;t compromise on snack-carrying capacity with this lightweight and spacious bag. The drawstring top keeps all your favorite chips, crisps, fries, biscuits, crackers, and cookies secure.</p>
             </div>
 
-            <section aria-labelledby="information-heading" class="mt-4">
-                <h2 id="information-heading" class="sr-only">Product information</h2>
+            <div class="mt-6 flex items-center">
+                <svg class="size-5 shrink-0 text-green-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon">
+                    <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" />
+                </svg>
+                <p class="ml-2 text-sm text-gray-500">In stock and ready to ship</p>
+            </div>
+        </section>
+    </div>
 
-                <div class="mt-4 space-y-6">
-                    <p class="text-base text-gray-500">
-                    {{ strip_tags(html_entity_decode(utf8_encode($product->description))) }}
-                    </p>
-                </div>
+    <!-- Product form -->
+    <div class="mt-10 lg:col-start-2 lg:row-start-2 lg:max-w-lg lg:self-start">
+        <section aria-labelledby="options-heading">
+            <h2 id="options-heading" class="sr-only">Product options</h2>
 
-                <div class="mt-6 flex items-center">
-                    <svg class="size-5 shrink-0 text-green-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon">
-                        <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" />
-                    </svg>
-                    <p class="ml-2 text-sm text-gray-500">In stock and ready to ship</p>
-                </div>
-            </section>
-        </div>
-
-        <!-- Product form -->
-        <div class="mt-10 lg:col-start-2 lg:row-start-2 lg:max-w-lg lg:self-start">
-            <section aria-labelledby="options-heading">
-                <h2 id="options-heading" class="sr-only">Product options</h2>
-
-                <form>
-                    <div class="sm:flex sm:justify-between">
-                        <!-- Size selector -->
-                        <fieldset>
-                            <legend class="block text-sm font-medium text-gray-700">Variant (s)</legend>
-                            <div class="mt-1 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                                <!-- Active: "ring-2 ring-indigo-500" -->
-                                <div aria-label="18L" aria-description="Perfect for a reasonable amount of snacks." class="relative block cursor-pointer rounded-lg border border-gray-300 p-4 focus:outline-hidden">
-                                    <input type="radio" name="size-choice" value="18L" class="sr-only">
-                                    <div class="flex justify-between items-start">
-                                        <p class="text-base font-medium text-gray-900">18 ML</p>
-                                        <p class="text-base font-semibold text-gray-900">$65</p>
-                                    </div>
-                                    <p class="mt-1 text-sm text-gray-500">Perfect for a reasonable amount of snacks.</p>
-                                    <div class="pointer-events-none absolute -inset-px rounded-lg border-2" aria-hidden="true"></div>
+            <form>
+                <div class="sm:flex sm:justify-between">
+                    <!-- Size selector -->
+                    <fieldset>
+                        <legend class="block text-sm font-medium text-gray-700">Variant (s)</legend>
+                        <div class="mt-1 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <!-- Active: "ring-2 ring-indigo-500" -->
+                            <div aria-label="18L" aria-description="Perfect for a reasonable amount of snacks." class="relative block cursor-pointer rounded-lg border border-gray-300 p-4 focus:outline-hidden">
+                                <input type="radio" name="size-choice" value="18L" class="sr-only">
+                                <div class="flex justify-between items-start">
+                                    <p class="text-base font-medium text-gray-900">18 ML</p>
+                                    <p class="text-base font-semibold text-gray-900">$65</p>
                                 </div>
-                                
-                                <!-- Active: "ring-2 ring-indigo-500" -->
-                                <div aria-label="20L" aria-description="Enough room for a serious amount of snacks." class="relative block cursor-pointer rounded-lg border border-gray-300 p-4 focus:outline-hidden">
-                                    <input type="radio" name="size-choice" value="20L" class="sr-only">
-                                    <div class="flex justify-between items-start">
-                                        <p class="text-base font-medium text-gray-900">20 ML</p>
-                                        <p class="text-base font-semibold text-gray-900">$85</p>
-                                    </div>
-                                    <p class="mt-1 text-sm text-gray-500">Enough room for a serious amount of snacks.</p>
-                                    <div class="pointer-events-none absolute -inset-px rounded-lg border-2" aria-hidden="true"></div>
-                                </div>
+                                <p class="mt-1 text-sm text-gray-500">Perfect for a reasonable amount of snacks.</p>
+                                <div class="pointer-events-none absolute -inset-px rounded-lg border-2" aria-hidden="true"></div>
                             </div>
-                        </fieldset>
-                    </div>
-                    <div class="mt-4">
-                        <a href="#" class="group inline-flex text-sm text-gray-500 hover:text-gray-700">
-                            <span>Nos produits</span>
-                            <svg class="ml-2 size-5 shrink-0 text-gray-400 group-hover:text-gray-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon">
-                                <path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0ZM8.94 6.94a.75.75 0 1 1-1.061-1.061 3 3 0 1 1 2.871 5.026v.345a.75.75 0 0 1-1.5 0v-.5c0-.72.57-1.172 1.081-1.287A1.5 1.5 0 1 0 8.94 6.94ZM10 15a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
-                            </svg>
-                        </a>
-                    </div>
-                </form>
-            </section>
-        </div>
-    </div> --}}
+                            
+                            <!-- Active: "ring-2 ring-indigo-500" -->
+                            <div aria-label="20L" aria-description="Enough room for a serious amount of snacks." class="relative block cursor-pointer rounded-lg border border-gray-300 p-4 focus:outline-hidden">
+                                <input type="radio" name="size-choice" value="20L" class="sr-only">
+                                <div class="flex justify-between items-start">
+                                    <p class="text-base font-medium text-gray-900">20 ML</p>
+                                    <p class="text-base font-semibold text-gray-900">$85</p>
+                                </div>
+                                <p class="mt-1 text-sm text-gray-500">Enough room for a serious amount of snacks.</p>
+                                <div class="pointer-events-none absolute -inset-px rounded-lg border-2" aria-hidden="true"></div>
+                            </div>
+                        </div>
+                    </fieldset>
+                </div>
+                <div class="mt-4">
+                    <a href="#" class="group inline-flex text-sm text-gray-500 hover:text-gray-700">
+                        <span>Nos produits</span>
+                        <svg class="ml-2 size-5 shrink-0 text-gray-400 group-hover:text-gray-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon">
+                            <path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0ZM8.94 6.94a.75.75 0 1 1-1.061-1.061 3 3 0 1 1 2.871 5.026v.345a.75.75 0 0 1-1.5 0v-.5c0-.72.57-1.172 1.081-1.287A1.5 1.5 0 1 0 8.94 6.94ZM10 15a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
+                        </svg>
+                    </a>
+                </div>
+            </form>
+        </section>
+    </div>
+</div>
 
     <!-- Section des résultats -->
     <div class="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">
