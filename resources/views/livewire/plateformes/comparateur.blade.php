@@ -463,6 +463,7 @@ new class extends Component {
         // Récupérer les prix des concurrents
         $products = $this->getCompetitorPrice($this->name);
         
+        dd($products);
         return [
             'oneProduct' => $oneProduct,
             'products' => $products,
