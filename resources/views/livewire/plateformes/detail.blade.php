@@ -95,34 +95,33 @@ new class extends Component {
 
 }; ?>
 
-<div class="w-full px-4 py-6 sm:px-6 sm:py-8 lg:grid lg:grid-cols-2 lg:gap-x-12 lg:px-12 bg-white rounded-xl shadow-sm">
+<div class="w-full px-4 py-4 sm:px-6 lg:grid lg:grid-cols-2 lg:gap-x-10 lg:px-10">
     <!-- Product image -->
     <div class="lg:col-start-1 lg:row-span-2 lg:self-center">
-        <div class="relative overflow-hidden rounded-2xl shadow-lg group">
+        <div class="relative overflow-hidden rounded-xl group">
             <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $this->product->thumbnail) }}" 
                  alt="{{ utf8_encode($this->product->title) ?? 'Product image' }}" 
                  class="aspect-square w-full object-cover transition-transform duration-300 group-hover:scale-105">
-            <div class="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
         </div>
     </div>
 
     <!-- Product details -->
-    <div class="lg:max-w-lg lg:self-center lg:col-start-2 mt-8 lg:mt-0">
-        <nav aria-label="Breadcrumb" class="mb-6">
-            <ol role="list" class="flex items-center space-x-3">
+    <div class="lg:max-w-lg lg:self-center lg:col-start-2 mt-6 lg:mt-0">
+        <nav aria-label="Breadcrumb" class="mb-4">
+            <ol role="list" class="flex items-center space-x-2">
                 <li>
                     <div class="flex items-center">
-                        <a href="#" class="text-sm font-medium text-indigo-600 hover:text-indigo-800 transition-colors duration-200 bg-indigo-50 px-3 py-1 rounded-full">
+                        <a href="#" class="text-sm font-medium text-indigo-600 hover:text-indigo-800 transition-colors duration-200">
                            {{ utf8_encode($this->product->vendor) ?? 'N/A' }}
                         </a>
-                        <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" class="ml-3 size-4 shrink-0 text-gray-400">
+                        <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" class="ml-2 size-4 shrink-0 text-gray-400">
                             <path d="M5.555 17.776l8-16 .894.448-8 16-.894-.448z" />
                         </svg>
                     </div>
                 </li>
                 <li>
                     <div class="flex items-center">
-                        <a href="#" class="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors duration-200 bg-gray-100 px-3 py-1 rounded-full">
+                        <a href="#" class="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors duration-200">
                             {{ utf8_encode($this->product->type) ?? 'N/A' }}
                         </a>
                     </div>
@@ -130,71 +129,60 @@ new class extends Component {
             </ol>
         </nav>
 
-        <div class="mb-6">
-            <h1 class="text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl leading-tight">
+        <div class="mb-4">
+            <h1 class="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl leading-tight">
                 {{ utf8_encode($this->product->title) ?? 'N/A' }}
             </h1>
         </div>
 
-        <section aria-labelledby="information-heading" class="mb-8">
+        <section aria-labelledby="information-heading" class="mb-6">
             <h2 id="information-heading" class="sr-only">Product information</h2>
 
             <div class="space-y-4">
-                <p class="text-lg leading-relaxed text-gray-700 bg-gray-50 p-6 rounded-xl border border-gray-100">
+                <p class="text-base leading-relaxed text-gray-700">
                     {{ strip_tags(utf8_encode($this->product->description)) ?? 'N/A' }}
                 </p>
             </div>
-
-            {{-- <div class="mt-6 flex items-center bg-green-50 px-4 py-3 rounded-lg border border-green-200">
-                <svg class="size-5 shrink-0 text-green-600" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon">
-                    <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" />
-                </svg>
-                <p class="ml-2 text-sm font-medium text-green-700">En stock et prêt à être expédié</p>
-            </div> --}}
         </section>
     </div>
 
     <!-- Product form -->
-    {{-- <div class="mt-10 lg:col-start-2 lg:row-start-2 lg:max-w-lg lg:self-start">
-        <section aria-labelledby="options-heading" class="bg-gray-50 p-6 rounded-2xl border border-gray-200">
+    {{-- <div class="mt-8 lg:col-start-2 lg:row-start-2 lg:max-w-lg lg:self-start">
+        <section aria-labelledby="options-heading" class="p-4 rounded-lg border border-gray-200">
             <h2 id="options-heading" class="sr-only">Product options</h2>
 
             <form>
                 <div class="sm:flex sm:justify-between">
                     <!-- Size selector -->
                     <fieldset>
-                        <legend class="block text-sm font-semibold text-gray-900 mb-4">Variantes disponibles</legend>
-                        <div class="mt-1 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                            <!-- Active: "ring-2 ring-indigo-500" -->
+                        <legend class="block text-sm font-semibold text-gray-900 mb-3">Variantes disponibles</legend>
+                        <div class="mt-1 grid grid-cols-1 gap-3 sm:grid-cols-2">
                             <div aria-label="18L" aria-description="Perfect for a reasonable amount of snacks." 
-                                 class="relative block cursor-pointer rounded-xl border-2 border-gray-200 p-4 focus:outline-hidden transition-all duration-200 hover:border-indigo-300 hover:shadow-md hover:scale-105">
+                                 class="relative block cursor-pointer rounded-lg border border-gray-200 p-3 focus:outline-hidden transition-all duration-200 hover:border-indigo-300">
                                 <input type="radio" name="size-choice" value="18L" class="sr-only">
                                 <div class="flex justify-between items-start">
-                                    <p class="text-base font-semibold text-gray-900">18 ML</p>
-                                    <p class="text-lg font-bold text-indigo-600">65€</p>
+                                    <p class="text-base font-medium text-gray-900">18 ML</p>
+                                    <p class="text-base font-semibold text-indigo-600">65€</p>
                                 </div>
-                                <p class="mt-2 text-sm text-gray-600">Parfait pour une quantité raisonnable.</p>
-                                <div class="pointer-events-none absolute -inset-px rounded-xl border-2 border-transparent" aria-hidden="true"></div>
+                                <p class="mt-1 text-sm text-gray-600">Parfait pour une quantité raisonnable.</p>
                             </div>
                             
-                            <!-- Active: "ring-2 ring-indigo-500" -->
                             <div aria-label="20L" aria-description="Enough room for a serious amount of snacks." 
-                                 class="relative block cursor-pointer rounded-xl border-2 border-gray-200 p-4 focus:outline-hidden transition-all duration-200 hover:border-indigo-300 hover:shadow-md hover:scale-105">
+                                 class="relative block cursor-pointer rounded-lg border border-gray-200 p-3 focus:outline-hidden transition-all duration-200 hover:border-indigo-300">
                                 <input type="radio" name="size-choice" value="20L" class="sr-only">
                                 <div class="flex justify-between items-start">
-                                    <p class="text-base font-semibold text-gray-900">20 ML</p>
-                                    <p class="text-lg font-bold text-indigo-600">85€</p>
+                                    <p class="text-base font-medium text-gray-900">20 ML</p>
+                                    <p class="text-base font-semibold text-indigo-600">85€</p>
                                 </div>
-                                <p class="mt-2 text-sm text-gray-600">Assez d'espace pour une quantité importante.</p>
-                                <div class="pointer-events-none absolute -inset-px rounded-xl border-2 border-transparent" aria-hidden="true"></div>
+                                <p class="mt-1 text-sm text-gray-600">Assez d'espace pour une quantité importante.</p>
                             </div>
                         </div>
                     </fieldset>
                 </div>
-                <div class="mt-6 pt-6 border-t border-gray-200">
+                <div class="mt-4 pt-4 border-t border-gray-200">
                     <a href="#" class="group inline-flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-800 transition-colors duration-200">
                         <span>Voir tous nos produits</span>
-                        <svg class="ml-2 size-5 shrink-0 text-indigo-400 group-hover:text-indigo-600 transition-colors duration-200" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon">
+                        <svg class="ml-1 size-4 shrink-0 text-indigo-400 group-hover:text-indigo-600 transition-colors duration-200" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon">
                             <path fill-rule="evenodd" d="M5.22 14.78a.75.75 0 001.06 0l7.22-7.22v5.69a.75.75 0 001.5 0v-7.5a.75.75 0 00-.75-.75h-7.5a.75.75 0 000 1.5h5.69l-7.22 7.22a.75.75 0 000 1.06z" clip-rule="evenodd" />
                         </svg>
                     </a>
