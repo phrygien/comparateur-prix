@@ -13,7 +13,7 @@ new class extends Component {
     // one product
     public $id;
     public $name;
-    public $product;
+    public $oneProduct;
     
     public function mount($name, $id)
     {
@@ -90,8 +90,9 @@ new class extends Component {
 
             $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
 
+            $this->oneProduct = $result;
             return [
-                "data" => $result
+                "product" => $this->oneProduct
             ];
 
         } catch (\Throwable $e) {
