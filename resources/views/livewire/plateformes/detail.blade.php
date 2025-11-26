@@ -101,7 +101,7 @@ new class extends Component {
         <div class="relative overflow-hidden rounded-xl group">
             <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $this->product->thumbnail) }}" 
                  alt="{{ utf8_encode($this->product->title) ?? 'Product image' }}" 
-                 class="aspect-square w-full object-cover transition-transform duration-300 group-hover:scale-105">
+                 class="aspect-[4/3] w-full object-cover transition-transform duration-300 group-hover:scale-105">
         </div>
     </div>
 
