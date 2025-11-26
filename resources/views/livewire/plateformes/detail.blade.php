@@ -11,8 +11,6 @@ new class extends Component {
     public function mount($id)
     {
         $this->getOneProductDetails($id);
-
-        //dd($this->product);
     }
 
     public function getOneProductDetails($entity_id){
@@ -80,16 +78,16 @@ new class extends Component {
 
             $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
 
-            $this->product = (array) $result[0];
-            //dd($result);
+            // ✅ SOLUTION 1: Conversion complète en array (recommandé pour tableau)
+            if (!empty($result)) {
+                $this->product = json_decode(json_encode($result[0]), true);
+            } else {
+                $this->product = null;
+            }
 
-            // // CORRECTION: Convertir l'objet stdClass en array pour Livewire
+            // ✅ OU SOLUTION 2: Conversion en objet (si vous voulez garder $product->vendor)
             // if (!empty($result)) {
-            //     // Méthode 1: Via json_decode/encode (recommandée)
-            //     $this->product = json_decode(json_encode($result[0]), true);
-                
-            //     // OU Méthode 2: Via cast (alternative)
-            //     // $this->product = (array) $result[0];
+            //     $this->product = json_decode(json_encode($result[0]));
             // } else {
             //     $this->product = null;
             // }
@@ -103,7 +101,6 @@ new class extends Component {
             
             $this->product = null;
             
-            // Optionnel: afficher l'erreur à l'utilisateur
             session()->flash('error', 'Une erreur est survenue lors du chargement du produit.');
         }
     }
