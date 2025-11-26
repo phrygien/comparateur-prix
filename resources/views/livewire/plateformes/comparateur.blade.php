@@ -20,7 +20,7 @@ new class extends Component {
     {
         
         // Charger le produit principal
-        $this->getOneProductDetails($id);
+        //$this->getOneProductDetails($id);
         
         // Charger les prix des concurrents
         $this->getCompetitorPrice($name);
