@@ -457,13 +457,14 @@ new class extends Component {
      */
     public function with(): array
     {
-        dd($this->name);
+        //dd($this->name);
         // Récupérer les données du produit
         $oneProduct = $this->getOneProductDetails($this->id);
         
         // Récupérer les prix des concurrents
         $products = $this->getCompetitorPrice($this->name);
         
+        dd($products);
         return [
             'oneProduct' => $oneProduct,
             'products' => $products,
