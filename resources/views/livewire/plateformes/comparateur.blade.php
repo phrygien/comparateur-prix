@@ -159,7 +159,7 @@ new class extends Component {
 
             // one product
             $productData = $this->getOneProductDetails($this->id);
-            $detailsP = $productData['data'];
+            $detailsP = $productData['data'][0];
             return [
                 'count' => count($result),
                 'has_data' => $this->hasData,
