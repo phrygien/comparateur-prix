@@ -80,7 +80,7 @@ new class extends Component {
 
             $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
 
-            $this->product = json_decode(json_encode($result[0]), true);
+            $this->product = (array) $result[0];
             //dd($result);
 
             // // CORRECTION: Convertir l'objet stdClass en array pour Livewire
