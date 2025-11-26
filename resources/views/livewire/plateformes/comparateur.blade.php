@@ -20,7 +20,7 @@ new class extends Component {
         $this->getCompetitorPrice($name);
 
         // get one product
-        $this->getOneProductDetails($id);
+        dd($this->getOneProductDetails($id));
         $this->id = $id;
         $this->name = $name;
     }
@@ -91,6 +91,7 @@ new class extends Component {
             $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
 
             $this->oneProduct = $result;
+
             return [
                 "product" => $this->oneProduct
             ];
