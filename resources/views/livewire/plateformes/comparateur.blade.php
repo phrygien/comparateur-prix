@@ -158,12 +158,13 @@ new class extends Component {
             $this->hasData = !empty($result);
 
             // one product
-            
+            $productData = $this->getOneProductDetails($this->id);
+            $detailsP = $productData['data'];
             return [
                 'count' => count($result),
                 'has_data' => $this->hasData,
                 'products' => $this->products,
-                'product' => $this->getOneProductDetails($this->id),
+                'product' => $detailsP,
                 'query' => $searchQuery,
                 'volumes' => $this->searchVolumes,
                 'variation_keywords' => $this->searchVariationKeywords
