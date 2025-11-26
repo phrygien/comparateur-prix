@@ -10,24 +10,25 @@ new class extends Component {
     public $searchTerms = [];
     public $searchVolumes = [];
     public $searchVariationKeywords = [];
+    
+    public $id;
 
     public function mount($name, $id)
     {
         $this->getCompetitorPrice($name);
         //$this->getOneProductDetails($id);
-
-        $this->getOneProductDetails($id);
-
-
+        
+        //$this->getOneProductDetails($id);
+    
+        $this->id = $id;
     }
 
-    public function getOneProductDetails($entity_id)
-    {
+    public function getOneProductDetails($entity_id){
         try{
 
             // Paginated data
             $dataQuery = "
-                SELECT
+                SELECT 
                     produit.entity_id as id,
                     produit.sku as sku,
                     product_char.reference as parkode,
@@ -66,31 +67,30 @@ new class extends Component {
                     options.attribute_code as option_name,
                     options.attribute_value as option_value
                 FROM catalog_product_entity as produit
-                LEFT JOIN catalog_product_relation as parent_child_table ON parent_child_table.child_id = produit.entity_id
-                LEFT JOIN catalog_product_super_link as cpsl ON cpsl.product_id = produit.entity_id
+                LEFT JOIN catalog_product_relation as parent_child_table ON parent_child_table.child_id = produit.entity_id 
+                LEFT JOIN catalog_product_super_link as cpsl ON cpsl.product_id = produit.entity_id 
                 LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
-                LEFT JOIN product_text ON product_text.entity_id = produit.entity_id
+                LEFT JOIN product_text ON product_text.entity_id = produit.entity_id 
                 LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
                 LEFT JOIN product_int ON product_int.entity_id = produit.entity_id
                 LEFT JOIN product_media ON product_media.entity_id = produit.entity_id
-                LEFT JOIN product_categorie ON product_categorie.entity_id = produit.entity_id
-                LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id
-                LEFT JOIN cataloginventory_stock_status AS stock_status ON stock_item.product_id = stock_status.product_id
-                LEFT JOIN option_super_attribut AS options ON options.simple_product_id = produit.entity_id
-                LEFT JOIN eav_attribute_set AS eas ON produit.attribute_set_id = eas.attribute_set_id
-                LEFT JOIN catalog_product_entity as produit_parent ON parent_child_table.parent_id = produit_parent.entity_id
+                LEFT JOIN product_categorie ON product_categorie.entity_id = produit.entity_id 
+                LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id 
+                LEFT JOIN cataloginventory_stock_status AS stock_status ON stock_item.product_id = stock_status.product_id 
+                LEFT JOIN option_super_attribut AS options ON options.simple_product_id = produit.entity_id 
+                LEFT JOIN eav_attribute_set AS eas ON produit.attribute_set_id = eas.attribute_set_id 
+                LEFT JOIN catalog_product_entity as produit_parent ON parent_child_table.parent_id = produit_parent.entity_id 
                 LEFT JOIN product_char as product_parent_char ON product_parent_char.entity_id = produit_parent.entity_id
-                LEFT JOIN product_text as product_parent_text ON product_parent_text.entity_id = produit_parent.entity_id
-                WHERE product_int.status >= 0 AND produit.entity_id = ?
+                LEFT JOIN product_text as product_parent_text ON product_parent_text.entity_id = produit_parent.entity_id 
+                WHERE product_int.status >= 0 AND produit.entity_id = ? 
                 ORDER BY product_char.entity_id DESC
             ";
 
             $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
 
-            $this->product = $result;
-            // return [
-            //     "data" => $result
-            // ];
+            return [
+                "data" => $result
+            ];
 
         } catch (\Throwable $e) {
             \Log::error('Error loading products:', [
@@ -98,13 +98,13 @@ new class extends Component {
                 'search' => $search ?? null,
                 'trace' => $e->getTraceAsString()
             ]);
-
+            
             $this->products = [];
             $this->hasData = false;
-
-            // return [
-            //     'error' => $e->getMessage()
-            // ];
+            
+            return [
+                'error' => $e->getMessage()
+            ];
         }
     }
 
@@ -116,84 +116,85 @@ new class extends Component {
                 $this->hasData = false;
                 return null;
             }
-
+            
             // Extraire les volumes et les mots clés de la variation
             $this->extractSearchVolumes($search);
             $this->extractSearchVariationKeywords($search);
-
+            
             // Préparer les termes de recherche
             $searchQuery = $this->prepareSearchTerms($search);
-
+            
             if (empty($searchQuery)) {
                 $this->products = [];
                 $this->hasData = false;
                 return null;
             }
-
+            
             // Construction de la requête SQL avec paramètres liés
-            $sql = "SELECT *,
+            $sql = "SELECT *, 
                            prix_ht,
                            image_url as image,
                            url as product_url
-                    FROM last_price_scraped_product
-                    WHERE MATCH (name, vendor, type, variation)
+                    FROM last_price_scraped_product 
+                    WHERE MATCH (name, vendor, type, variation) 
                     AGAINST (? IN BOOLEAN MODE)
                     ORDER BY prix_ht DESC";
-
+            
             \Log::info('SQL Query:', [
                 'original_search' => $search,
                 'search_query' => $searchQuery,
                 'search_volumes' => $this->searchVolumes,
                 'search_variation_keywords' => $this->searchVariationKeywords
             ]);
-
+            
             // Exécution de la requête avec binding
             $result = DB::connection('mysql')->select($sql, [$searchQuery]);
-
+            
             \Log::info('Query result:', [
                 'count' => count($result)
             ]);
-
+            
             $this->products = $result;
             $this->hasData = !empty($result);
-
+            
             return [
                 'count' => count($result),
                 'has_data' => $this->hasData,
                 'products' => $this->products,
+                'product' => $this->getOneProductDetails($this->id),
                 'query' => $searchQuery,
                 'volumes' => $this->searchVolumes,
                 'variation_keywords' => $this->searchVariationKeywords
             ];
-
+            
         } catch (\Throwable $e) {
             \Log::error('Error loading products:', [
                 'message' => $e->getMessage(),
                 'search' => $search ?? null,
                 'trace' => $e->getTraceAsString()
             ]);
-
+            
             $this->products = [];
             $this->hasData = false;
-
+            
             return [
                 'error' => $e->getMessage()
             ];
         }
     }
-
+    
     /**
      * Extrait les volumes (ml) de la recherche
      */
     private function extractSearchVolumes(string $search): void
     {
         $this->searchVolumes = [];
-
+        
         // Recherche de motifs comme "50 ml", "75ml", "100 ml", etc.
         if (preg_match_all('/(\d+)\s*ml/i', $search, $matches)) {
             $this->searchVolumes = $matches[1];
         }
-
+        
         \Log::info('Extracted search volumes:', [
             'search' => $search,
             'volumes' => $this->searchVolumes
@@ -208,55 +209,55 @@ new class extends Component {
     private function extractSearchVariationKeywords(string $search): void
     {
         $this->searchVariationKeywords = [];
-
+        
         // Supprimer la marque et le nom du produit pour isoler la variation
         $pattern = '/^[^-]+\s*-\s*[^-]+\s*-\s*/i';
         $variation = preg_replace($pattern, '', $search);
-
+        
         // Nettoyer les caractères spéciaux et garder lettres, chiffres et espaces
         $variationClean = preg_replace('/[^a-zA-ZÀ-ÿ0-9\s]/', ' ', $variation);
-
+        
         // Normaliser les espaces multiples
         $variationClean = trim(preg_replace('/\s+/', ' ', $variationClean));
-
+        
         // Convertir en minuscules
         $variationClean = mb_strtolower($variationClean);
-
+        
         // Séparer les mots
         $words = explode(" ", $variationClean);
-
+        
         // Stop words à ignorer
         $stopWords = [
             'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec',
             'the', 'a', 'an', 'and', 'or', 'ml', 'edition', 'édition'
         ];
-
+        
         // Garder les mots significatifs
         foreach ($words as $word) {
             $word = trim($word);
-
+            
             // Garder les mots de plus de 1 caractère, non-stop words, et les chiffres
             if ((strlen($word) > 1 && !in_array($word, $stopWords)) || is_numeric($word)) {
                 $this->searchVariationKeywords[] = $word;
             }
         }
-
+        
         \Log::info('Extracted search variation keywords:', [
             'search' => $search,
             'variation' => $variation,
             'keywords' => $this->searchVariationKeywords
         ]);
     }
-
+    
     /**
      * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
      * Extrait uniquement les 3 premiers mots significatifs (marque, gamme, type)
-     *
+     * 
      * Format: +mot1* +mot2* +mot3*
-     *
+     * 
      * Exemple: "Guerlain - Shalimar - Coffret Eau de Parfum 50 ml + 5 ml + 75 ml (Édition"
      * Résultat: "+guerlain* +shalimar* +coffret*"
-     *
+     * 
      * @param string $search
      * @return string
      */
@@ -264,44 +265,44 @@ new class extends Component {
     {
         // Nettoyage agressif : supprimer tous les caractères spéciaux et chiffres
         $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ\s]/', ' ', $search);
-
+        
         // Normaliser les espaces multiples
         $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
-
+        
         // Convertir en minuscules
         $searchClean = mb_strtolower($searchClean);
-
+        
         // Séparer les mots
         $words = explode(" ", $searchClean);
-
+        
         // Stop words français et anglais à ignorer
         $stopWords = [
             'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec',
             'the', 'a', 'an', 'and', 'or', 'eau', 'ml', 'edition', 'édition', 'coffret'
         ];
-
+        
         // Mots significatifs seulement (marque, gamme, produit)
         $significantWords = [];
-
+        
         foreach ($words as $word) {
             $word = trim($word);
-
+            
             // Garder uniquement les mots de plus de 2 caractères, non-stop words
             if (strlen($word) > 2 && !in_array($word, $stopWords)) {
                 $significantWords[] = $word;
             }
-
+            
             // Limiter à 3 mots maximum (marque + gamme + type) SEULEMENT
             if (count($significantWords) >= 3) {
                 break;
             }
         }
-
+        
         // Construire la requête boolean avec seulement 3 termes
         $booleanTerms = array_map(function($word) {
             return '+' . $word . '*';
         }, $significantWords);
-
+        
         return implode(' ', $booleanTerms);
     }
 
@@ -324,7 +325,7 @@ new class extends Component {
         if (empty($url)) {
             return 'N/A';
         }
-
+        
         try {
             $parsedUrl = parse_url($url);
             if (isset($parsedUrl['host'])) {
@@ -341,7 +342,7 @@ new class extends Component {
                 'error' => $e->getMessage()
             ]);
         }
-
+        
         return 'N/A';
     }
 
@@ -363,7 +364,7 @@ new class extends Component {
         if (empty($variation)) {
             return 'Standard';
         }
-
+        
         // Limiter la longueur pour l'affichage
         return Str::limit($variation, 30);
     }
@@ -376,12 +377,12 @@ new class extends Component {
         if (empty($text)) {
             return [];
         }
-
+        
         $volumes = [];
         if (preg_match_all('/(\d+)\s*ml/i', $text, $matches)) {
             $volumes = $matches[1];
         }
-
+        
         return $volumes;
     }
 
@@ -401,7 +402,7 @@ new class extends Component {
         if (empty($this->searchVolumes)) {
             return false;
         }
-
+        
         $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
         return !empty(array_intersect($this->searchVolumes, $productVolumes));
     }
@@ -414,15 +415,15 @@ new class extends Component {
         if (empty($this->searchVariationKeywords) || empty($product->variation)) {
             return false;
         }
-
+        
         $productVariationLower = mb_strtolower($product->variation);
-
+        
         foreach ($this->searchVariationKeywords as $keyword) {
             if (str_contains($productVariationLower, $keyword)) {
                 return true;
             }
         }
-
+        
         return false;
     }
 
@@ -433,7 +434,7 @@ new class extends Component {
     {
         $hasMatchingVolume = $this->hasMatchingVolume($product);
         $hasMatchingVariationKeyword = $this->hasMatchingVariationKeyword($product);
-
+        
         // Correspondance parfaite si contient AU MOINS un volume ET AU MOINS un mot clé de variation
         return $hasMatchingVolume && $hasMatchingVariationKeyword;
     }
@@ -453,11 +454,11 @@ public function highlightMatchingVolumes($text)
     foreach ($this->searchVolumes as $volume) {
         // Recherche le volume suivi de "ml" (avec ou sans espace)
         $pattern = '/\b' . preg_quote($volume, '/') . '\s*ml\b/i';
-
+        
         // Utilise une fonction de callback pour éviter les problèmes d'échappement
         $text = preg_replace_callback($pattern, function($matches) {
-            return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">'
-                   . htmlspecialchars($matches[0])
+            return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
+                   . htmlspecialchars($matches[0]) 
                    . '</span>';
         }, $text);
     }
@@ -477,11 +478,11 @@ public function highlightMatchingVariationKeywords($text)
     foreach ($this->searchVariationKeywords as $keyword) {
         // Recherche le mot clé exact (avec limites de mots)
         $pattern = '/\b' . preg_quote($keyword, '/') . '\b/i';
-
+        
         // Utilise une fonction de callback pour éviter les problèmes d'échappement
         $text = preg_replace_callback($pattern, function($matches) {
-            return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">'
-                   . htmlspecialchars($matches[0])
+            return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
+                   . htmlspecialchars($matches[0]) 
                    . '</span>';
         }, $text);
     }
@@ -500,14 +501,14 @@ public function highlightMatchingTerms($text)
     }
 
     $patterns = [];
-
+    
     // Ajouter les patterns pour les volumes (priorité aux volumes complets "X ml")
     if (!empty($this->searchVolumes)) {
         foreach ($this->searchVolumes as $volume) {
             $patterns[] = '\b' . preg_quote($volume, '/') . '\s*ml\b';
         }
     }
-
+    
     // Ajouter les patterns pour les mots-clés de variation (sauf les chiffres seuls)
     if (!empty($this->searchVariationKeywords)) {
         foreach ($this->searchVariationKeywords as $keyword) {
@@ -517,20 +518,20 @@ public function highlightMatchingTerms($text)
             $patterns[] = '\b' . preg_quote(trim($keyword), '/') . '\b';
         }
     }
-
+    
     if (empty($patterns)) {
         return $text;
     }
-
+    
     // Combiner tous les patterns
     $pattern = '/(' . implode('|', $patterns) . ')/iu';
-
+    
     $text = preg_replace_callback($pattern, function($matches) {
-        return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">'
-               . $matches[0]
+        return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
+               . $matches[0] 
                . '</span>';
     }, $text);
-
+    
     return $text;
 }
 }; ?>
@@ -603,7 +604,7 @@ public function highlightMatchingTerms($text)
                                 <p class="mt-1 text-sm text-gray-500">Perfect for a reasonable amount of snacks.</p>
                                 <div class="pointer-events-none absolute -inset-px rounded-lg border-2" aria-hidden="true"></div>
                             </div>
-
+                            
                             <!-- Active: "ring-2 ring-indigo-500" -->
                             <div aria-label="20L" aria-description="Enough room for a serious amount of snacks." class="relative block cursor-pointer rounded-lg border border-gray-300 p-4 focus:outline-hidden">
                                 <input type="radio" name="size-choice" value="20L" class="sr-only">
@@ -702,8 +703,8 @@ public function highlightMatchingTerms($text)
                                     <!-- Colonne Image -->
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         @if(!empty($product->image))
-                                            <img src="{{ $product->image }}"
-                                                 alt="{{ $product->name ?? 'Produit' }}"
+                                            <img src="{{ $product->image }}" 
+                                                 alt="{{ $product->name ?? 'Produit' }}" 
                                                  class="h-12 w-12 object-cover rounded-lg"
                                                  onerror="this.src='https://via.placeholder.com/48?text=No+Image'">
                                         @else
@@ -722,7 +723,7 @@ public function highlightMatchingTerms($text)
                                             </div>
                                         @endif
                                     </td>
-
+                                    
                                     <!-- Colonne Nom -->
                                     <td class="px-6 py-4">
                                         <div class="text-sm font-medium text-gray-900 max-w-xs" title="{{ $product->name ?? 'N/A' }}">
@@ -738,7 +739,7 @@ public function highlightMatchingTerms($text)
                                         {{-- @if(!empty($productVolumes))
                                             <div class="mt-2 flex flex-wrap gap-1">
                                                 @foreach($productVolumes as $volume)
-                                                    <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium
+                                                    <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium 
                                                         @if($this->isVolumeMatching($volume))
                                                             bg-green-100 text-green-800 border border-green-300
                                                         @else
@@ -782,26 +783,26 @@ public function highlightMatchingTerms($text)
                                             </div>
                                         </div>
                                     </td>
-
+                                    
                                     <!-- Colonne Prix HT -->
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <div class="text-sm font-semibold text-green-600">
                                             {{ $this->formatPrice($product->price_ht ?? $product->prix_ht) }}
                                         </div>
                                     </td>
-
+                                    
                                     <!-- Colonne Type -->
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
                                             {{ $product->type ?? 'N/A' }}
                                         </span>
                                     </td>
-
+                                    
                                     <!-- Colonne Actions -->
                                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                         <div class="flex space-x-2">
                                             @if(!empty($product->product_url))
-                                                <button wire:click="viewProduct('{{ $product->product_url }}')"
+                                                <button wire:click="viewProduct('{{ $product->product_url }}')" 
                                                         class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-full shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200">
                                                     <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
