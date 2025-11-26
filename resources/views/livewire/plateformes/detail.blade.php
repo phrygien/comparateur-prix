@@ -2,19 +2,21 @@
 
 use Livewire\Volt\Component;
 use Illuminate\Support\Facades\DB;
+use Livewire\Attributes\Computed;
 
 new class extends Component {
 
-    // product details
-    public $product = null;
+    public $productId = null;
 
     public function mount($id)
     {
-        $this->getOneProductDetails($id);
+        $this->productId = $id;
     }
 
-    public function getOneProductDetails($entity_id){
-        try{
+    #[Computed]
+    public function product()
+    {
+        try {
             $result = DB::connection('mysqlMagento')
                 ->table('catalog_product_entity as produit')
                 ->select([
@@ -70,7 +72,7 @@ new class extends Component {
                 ->leftJoin('catalog_product_entity as produit_parent', 'parent_child_table.parent_id', '=', 'produit_parent.entity_id')
                 ->leftJoin('product_char as product_parent_char', 'product_parent_char.entity_id', '=', 'produit_parent.entity_id')
                 ->leftJoin('product_text as product_parent_text', 'product_parent_text.entity_id', '=', 'produit_parent.entity_id')
-                ->where('produit.entity_id', $entity_id)
+                ->where('produit.entity_id', $this->productId)
                 ->where(function($query) {
                     $query->whereNull('product_int.status')
                           ->orWhere('product_int.status', '>=', 0);
@@ -78,23 +80,16 @@ new class extends Component {
                 ->orderBy('product_char.entity_id', 'DESC')
                 ->first();
 
-            if ($result) {
-                // Convertir stdClass en array simple
-                $this->product = (array) $result;
-            } else {
-                $this->product = null;
-                \Log::warning('Product not found', ['entity_id' => $entity_id]);
-            }
+            return $result;
 
         } catch (\Throwable $e) {
             \Log::error('Error loading product:', [
                 'message' => $e->getMessage(),
-                'entity_id' => $entity_id ?? null,
+                'entity_id' => $this->productId ?? null,
                 'trace' => $e->getTraceAsString()
             ]);
             
-            $this->product = null;
-            session()->flash('error', 'Une erreur est survenue lors du chargement du produit.');
+            return null;
         }
     }
 
