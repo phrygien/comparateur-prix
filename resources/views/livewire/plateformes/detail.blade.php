@@ -132,7 +132,7 @@ new class extends Component {
 
             <div class="mt-4 space-y-6">
                 <p class="text-base text-gray-500">
-                    {{ utf8_encode($this->product->description) ?? 'N/A' }}
+                    {{ strip_tags(utf8_encode($this->product->description)) ?? 'N/A' }}
                 </p>
             </div>
 
