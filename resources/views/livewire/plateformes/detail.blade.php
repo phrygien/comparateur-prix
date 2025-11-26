@@ -12,7 +12,7 @@ new class extends Component {
     {
         $this->getOneProductDetails($id);
 
-        //dd($this->product);
+        dd($this->product);
     }
 
     public function getOneProductDetails($entity_id){
