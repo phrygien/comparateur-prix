@@ -15,8 +15,6 @@ new class extends Component {
 
     public function getOneProductDetails($entity_id){
         try{
-
-            // Paginated data
             $dataQuery = "
                 SELECT 
                     produit.entity_id as id,
@@ -28,7 +26,6 @@ new class extends Component {
                     SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) as type,
                     product_char.thumbnail as thumbnail,
                     product_char.swatch_image as swatch_image,
-                    product_char.reference as parkode,
                     product_char.reference_us as reference_us,
                     CAST(product_text.description AS CHAR CHARACTER SET utf8mb4) as description,
                     CAST(product_text.short_description AS CHAR CHARACTER SET utf8mb4) as short_description,
@@ -72,38 +69,45 @@ new class extends Component {
                 LEFT JOIN catalog_product_entity as produit_parent ON parent_child_table.parent_id = produit_parent.entity_id 
                 LEFT JOIN product_char as product_parent_char ON product_parent_char.entity_id = produit_parent.entity_id
                 LEFT JOIN product_text as product_parent_text ON product_parent_text.entity_id = produit_parent.entity_id 
-                WHERE product_int.status >= 0 AND produit.entity_id = ? 
+                WHERE produit.entity_id = ?
+                AND (product_int.status IS NULL OR product_int.status >= 0)
                 ORDER BY product_char.entity_id DESC
+                LIMIT 1
             ";
 
             $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
 
-            // ✅ ÉTAPE 1: Vérifier ce que retourne la requête
-dd([
-    'result' => $result,
-    'count' => count($result),
-    'entity_id' => $entity_id,
-    'is_empty' => empty($result)
-]);
-
-            $this->product = json_decode(json_encode($result[0]), true);
-
-            
-            dd($this->product);
-
-            // ✅ SOLUTION 1: Conversion complète en array (recommandé pour tableau)
-            // if (!empty($result)) {
-            //     $this->product = json_decode(json_encode($result[0]), true);
-            // } else {
-            //     $this->product = null;
-            // }
-
-            // ✅ OU SOLUTION 2: Conversion en objet (si vous voulez garder $product->vendor)
-            // if (!empty($result)) {
-            //     $this->product = json_decode(json_encode($result[0]));
-            // } else {
-            //     $this->product = null;
-            // }
+            if (!empty($result) && isset($result[0])) {
+                // ✅ Convertir en array
+                $productData = json_decode(json_encode($result[0]), true);
+                
+                // ✅ CORRECTION: Convertir les champs binaires en string
+                $binaryFields = [
+                    'description', 
+                    'short_description', 
+                    'parent_description', 
+                    'parent_short_description',
+                    'composition',
+                    'olfactive_families',
+                    'categorie',
+                    'tags'
+                ];
+                
+                foreach ($binaryFields as $field) {
+                    if (isset($productData[$field]) && is_resource($productData[$field])) {
+                        $productData[$field] = stream_get_contents($productData[$field]);
+                    } elseif (isset($productData[$field])) {
+                        // S'assurer que c'est une string UTF-8
+                        $productData[$field] = (string) $productData[$field];
+                    }
+                }
+                
+                $this->product = $productData;
+                
+            } else {
+                $this->product = null;
+                \Log::warning('Product not found', ['entity_id' => $entity_id]);
+            }
 
         } catch (\Throwable $e) {
             \Log::error('Error loading product:', [
@@ -113,7 +117,6 @@ dd([
             ]);
             
             $this->product = null;
-            
             session()->flash('error', 'Une erreur est survenue lors du chargement du produit.');
         }
     }
