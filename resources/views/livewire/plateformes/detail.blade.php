@@ -5,6 +5,9 @@ use Illuminate\Support\Facades\DB;
 
 new class extends Component {
 
+    // product details
+    public $product = null;
+
     public function mount($id)
     {
         $this->getOneProductDetails($id);
@@ -75,7 +78,7 @@ new class extends Component {
 
             $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
 
-            return $result;
+            $this->product = $result;
 
         } catch (\Throwable $e) {
             \Log::error('Error loading products:', [
