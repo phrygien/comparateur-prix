@@ -436,6 +436,32 @@ new class extends Component {
         return $hasMatchingVolume && $hasMatchingVariationKeyword;
     }
 
+    /**
+     * Vérifie si le produit a le même volume ET le même type que la recherche
+     */
+    public function hasSameVolumeAndType($product)
+    {
+        // Vérifier si le produit a au moins un volume correspondant
+        $hasMatchingVolume = $this->hasMatchingVolume($product);
+        
+        // Vérifier si le type correspond (en comparant avec le produit principal)
+        $hasMatchingType = false;
+        
+        // Récupérer le produit principal pour comparer le type
+        $mainProduct = $this->getOneProductDetails($this->id);
+        if (!empty($mainProduct) && isset($mainProduct[0])) {
+            $mainProductType = $mainProduct[0]->type ?? null;
+            $productType = $product->type ?? null;
+            
+            // Comparer les types (insensible à la casse)
+            if ($mainProductType && $productType) {
+                $hasMatchingType = strtolower(trim($mainProductType)) === strtolower(trim($productType));
+            }
+        }
+        
+        return $hasMatchingVolume && $hasMatchingType;
+    }
+
 /**
  * Met en évidence les volumes correspondants dans un texte
  */
@@ -541,30 +567,32 @@ public function highlightMatchingTerms($text)
     <div class="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">
         @if($hasData)
             <!-- Indicateur des critères recherchés -->
-            @if(!empty($searchVolumes) || !empty($searchVariationKeywords))
+            @if(!empty($searchVolumes))
                 <div class="mb-4 p-4 bg-blue-50 rounded-lg">
                     <div class="flex flex-col space-y-2">
                         <div class="flex items-center">
                             <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                             </svg>
-                            <span class="text-sm font-medium text-blue-800">Critères de correspondance parfaite :</span>
+                            <span class="text-sm font-medium text-blue-800">Critères de correspondance :</span>
                         </div>
                         <div class="flex flex-wrap gap-2">
                             @if(!empty($searchVolumes))
                                 <div class="flex items-center">
-                                    <span class="text-xs text-blue-700 mr-1">Volumes :</span>
+                                    <span class="text-xs text-blue-700 mr-1">Volumes recherchés :</span>
                                     @foreach($searchVolumes as $volume)
                                         <span class="bg-green-100 text-green-800 font-semibold px-2 py-1 rounded text-xs">{{ $volume }} ml</span>
                                     @endforeach
                                 </div>
                             @endif
-                            @if(!empty($searchVariationKeywords))
+                            @php
+                                $mainProduct = $this->getOneProductDetails($this->id);
+                                $mainProductType = !empty($mainProduct) && isset($mainProduct[0]) ? $mainProduct[0]->type : null;
+                            @endphp
+                            @if($mainProductType)
                                 <div class="flex items-center">
-                                    <span class="text-xs text-blue-700 mr-1">Mots clés variation :</span>
-                                    @foreach($searchVariationKeywords as $keyword)
-                                        <span class="bg-green-100 text-green-800 font-semibold px-2 py-1 rounded text-xs">{{ $keyword }}</span>
-                                    @endforeach
+                                    <span class="text-xs text-blue-700 mr-1">Type recherché :</span>
+                                    <span class="bg-purple-100 text-purple-800 font-semibold px-2 py-1 rounded text-xs">{{ $mainProductType }}</span>
                                 </div>
                             @endif
                         </div>
@@ -572,7 +600,7 @@ public function highlightMatchingTerms($text)
                             <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                             </svg>
-                            Les produits en vert contiennent AU MOINS un volume ET AU MOINS un mot clé de la variation recherchée
+                            Les produits en vert contiennent AU MOINS un volume ET le même type que le produit recherché
                         </div>
                     </div>
                 </div>
@@ -602,10 +630,9 @@ public function highlightMatchingTerms($text)
                                 @php
                                     $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
                                     $hasMatchingVolume = $this->hasMatchingVolume($product);
-                                    $hasMatchingVariationKeyword = $this->hasMatchingVariationKeyword($product);
-                                    $isPerfectMatch = $this->isPerfectMatch($product);
+                                    $hasSameVolumeAndType = $this->hasSameVolumeAndType($product);
                                 @endphp
-                                <tr class="hover:bg-gray-50 @if($isPerfectMatch) bg-green-50 border-l-4 border-green-500 @endif">
+                                <tr class="hover:bg-gray-50 @if($hasSameVolumeAndType) bg-green-50 border-l-4 border-green-500 @endif">
                                     <!-- Colonne Image -->
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         @if(!empty($product->image))
@@ -618,13 +645,13 @@ public function highlightMatchingTerms($text)
                                                 <span class="text-xs text-gray-500">No Image</span>
                                             </div>
                                         @endif
-                                        @if($isPerfectMatch)
+                                        @if($hasSameVolumeAndType)
                                             <div class="mt-1 text-center">
                                                 <span class="inline-flex items-center px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">
                                                     <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
                                                         <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
                                                     </svg>
-                                                    Correspondance parfaite
+                                                    Même volume et type
                                                 </span>
                                             </div>
                                         @endif
@@ -633,7 +660,6 @@ public function highlightMatchingTerms($text)
                                     <!-- Colonne Nom -->
                                     <td class="px-6 py-4">
                                         <div class="text-sm font-medium text-gray-900 max-w-xs" title="{{ $product->name ?? 'N/A' }}">
-                                            {{-- {!! $this->highlightMatchingVolumes($product->name ?? 'N/A') !!} --}}
                                             {{ $product->name }}
                                         </div>
                                         @if(!empty($product->vendor))
@@ -642,7 +668,7 @@ public function highlightMatchingTerms($text)
                                             </div>
                                         @endif
                                         <!-- Badges des volumes du produit -->
-                                        {{-- @if(!empty($productVolumes))
+                                        @if(!empty($productVolumes))
                                             <div class="mt-2 flex flex-wrap gap-1">
                                                 @foreach($productVolumes as $volume)
                                                     <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium 
@@ -660,13 +686,12 @@ public function highlightMatchingTerms($text)
                                                     </span>
                                                 @endforeach
                                             </div>
-                                        @endif --}}
+                                        @endif
                                     </td>
 
                                     <!-- Colonne Variation -->
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <div class="text-sm text-gray-900 max-w-xs" title="{{ $product->variation ?? 'Standard' }}">
-                                            {{-- {!! $this->highlightMatchingVariationKeywords($product->variation ?? 'Standard') !!} --}}
                                             {!! $this->highlightMatchingTerms($product->variation ?? 'Standard') !!}
                                         </div>
                                     </td>
@@ -699,8 +724,24 @@ public function highlightMatchingTerms($text)
                                     
                                     <!-- Colonne Type -->
                                     <td class="px-6 py-4 whitespace-nowrap">
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                            {{ $product->type ?? 'N/A' }}
+                                        @php
+                                            $mainProduct = $this->getOneProductDetails($this->id);
+                                            $mainProductType = !empty($mainProduct) && isset($mainProduct[0]) ? $mainProduct[0]->type : null;
+                                            $productType = $product->type ?? 'N/A';
+                                            $isTypeMatching = $mainProductType && $productType && strtolower(trim($mainProductType)) === strtolower(trim($productType));
+                                        @endphp
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium 
+                                            @if($isTypeMatching)
+                                                bg-green-100 text-green-800 border border-green-300
+                                            @else
+                                                bg-purple-100 text-purple-800
+                                            @endif">
+                                            {{ $productType }}
+                                            @if($isTypeMatching)
+                                                <svg class="w-3 h-3 ml-1 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                                </svg>
+                                            @endif
                                         </span>
                                     </td>
                                     
