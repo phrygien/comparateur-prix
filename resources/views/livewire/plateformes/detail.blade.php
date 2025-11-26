@@ -12,7 +12,7 @@ new class extends Component {
     {
         $this->getOneProductDetails($id);
 
-        dd($this->product);
+        //dd($this->product);
     }
 
     public function getOneProductDetails($entity_id){
@@ -90,6 +90,8 @@ new class extends Component {
             } else {
                 $this->product = null;
             }
+
+            dd($this->product);
 
         } catch (\Throwable $e) {
             \Log::error('Error loading product:', [
