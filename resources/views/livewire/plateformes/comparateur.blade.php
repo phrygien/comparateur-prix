@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\DB;
 
 new class extends Component {
     public $products = [];
+    public $product = null;
     public $hasData = false;
     public $searchTerms = [];
     public $searchVolumes = [];
@@ -13,8 +14,15 @@ new class extends Component {
     public function mount($name, $id)
     {
         $this->getCompetitorPrice($name);
-        $this->getOneProductDetails($id);
+        //$this->getOneProductDetails($id);
         
+        $productData = $this->getOneProductDetails($id);
+        
+        // Récupérer le premier élément du tableau data
+        if (isset($productData['data']) && count($productData['data']) > 0) {
+            $this->product = $productData['data'][0];
+        }
+
     }
 
     public function getOneProductDetails($entity_id){
