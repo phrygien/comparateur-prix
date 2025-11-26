@@ -17,6 +17,7 @@ new class extends Component {
     public function mount($name, $id)
     {
         $this->getCompetitorPrice($name);
+        $this->id = $id;
     }
 
     public function getOneProductDetails($entity_id){
@@ -534,7 +535,7 @@ public function highlightMatchingTerms($text)
 
 <div>
 
-    <livewire:plateformes.detail />
+    <livewire:plateformes.detail :id="$id"/>
 
     <!-- Section des résultats -->
     <div class="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">
