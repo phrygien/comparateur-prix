@@ -78,12 +78,15 @@ new class extends Component {
 
             $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
 
+            $this->product = json_decode(json_encode($result[0]), true);
+
+
             // ✅ SOLUTION 1: Conversion complète en array (recommandé pour tableau)
-            if (!empty($result)) {
-                $this->product = json_decode(json_encode($result[0]), true);
-            } else {
-                $this->product = null;
-            }
+            // if (!empty($result)) {
+            //     $this->product = json_decode(json_encode($result[0]), true);
+            // } else {
+            //     $this->product = null;
+            // }
 
             // ✅ OU SOLUTION 2: Conversion en objet (si vous voulez garder $product->vendor)
             // if (!empty($result)) {
