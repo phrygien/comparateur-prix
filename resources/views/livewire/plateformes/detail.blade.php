@@ -80,6 +80,7 @@ new class extends Component {
 
             $this->product = json_decode(json_encode($result[0]), true);
 
+            dd($this->product);
 
             // ✅ SOLUTION 1: Conversion complète en array (recommandé pour tableau)
             // if (!empty($result)) {
