@@ -476,7 +476,7 @@ new class extends Component {
     <div class="w-full px-4 py-2 sm:px-2 sm:py-4 lg:grid lg:grid-cols-2 lg:gap-x-8 lg:px-8">
         <!-- Product image -->
         <div class="mt-10 lg:col-start-1 lg:row-span-2 lg:mt-0 lg:self-center">
-            <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . {{ $oneProduct->thumbnail ) }}" 
+            <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $oneProduct->thumbnail ) }}" 
         alt="{{ $product->title ?? 'Product image' }}" 
         class="aspect-square w-full rounded-lg object-cover">
         </div>
