@@ -16,6 +16,24 @@ new class extends Component {
     public $name;
     public $oneProduct;
 
+    // Ajouter cette méthode dans votre composant
+    public function mount($productId = null, $productName = null)
+    {
+        if ($productId) {
+            $this->id = $productId;
+        }
+        
+        if ($productName) {
+            $this->name = $productName;
+        }
+        
+        // Optionnel: charger les données immédiatement
+        if ($this->id && $this->name) {
+            $this->oneProduct = $this->getOneProductDetails($this->id);
+            $this->products = $this->getCompetitorPrice($this->name);
+        }
+    }
+
     /**
      * Récupère les détails d'un produit spécifique
      */
@@ -455,30 +473,28 @@ new class extends Component {
     /**
      * Méthode with() pour passer les données à la vue
      */
-    public function with(): array
-    {
-        //dd($this->name);
-        // Récupérer les données du produit
-        $oneProduct = $this->getOneProductDetails($this->id);
+    // public function with(): array
+    // {
+    //     //dd($this->name);
+    //     // Récupérer les données du produit
+    //     $oneProduct = $this->getOneProductDetails($this->id);
         
-        // Récupérer les prix des concurrents
-        $products = $this->getCompetitorPrice($this->name);
+    //     // Récupérer les prix des concurrents
+    //     $products = $this->getCompetitorPrice($this->name);
         
-        //dd($products);
-        return [
-            'oneProduct' => $oneProduct,
-            'products' => $products,
-            'hasData' => $this->hasData,
-            'searchVolumes' => $this->searchVolumes,
-            'searchVariationKeywords' => $this->searchVariationKeywords,
-        ];
-    }
+    //     return [
+    //         'oneProduct' => $oneProduct,
+    //         'products' => $products,
+    //         'hasData' => $this->hasData,
+    //         'searchVolumes' => $this->searchVolumes,
+    //         'searchVariationKeywords' => $this->searchVariationKeywords,
+    //     ];
+    // }
 }; 
 
 ?>
 
 <div>
-    @dump($this->products)
     {{-- <div class="w-full px-4 py-2 sm:px-2 sm:py-4 lg:grid lg:grid-cols-2 lg:gap-x-8 lg:px-8">
         <!-- Product image -->
         <div class="mt-10 lg:col-start-1 lg:row-span-2 lg:mt-0 lg:self-center">
