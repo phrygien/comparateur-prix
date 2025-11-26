@@ -17,11 +17,7 @@ new class extends Component {
         //$this->getOneProductDetails($id);
         
         $productData = $this->getOneProductDetails($id);
-        
-        // Récupérer le premier élément du tableau data
-        if (isset($productData['data']) && count($productData['data']) > 0) {
-            $this->product = $productData['data'][0];
-        }
+    
 
     }
 
