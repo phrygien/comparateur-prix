@@ -78,8 +78,17 @@ new class extends Component {
 
             $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
 
+            // ✅ ÉTAPE 1: Vérifier ce que retourne la requête
+dd([
+    'result' => $result,
+    'count' => count($result),
+    'entity_id' => $entity_id,
+    'is_empty' => empty($result)
+]);
+
             $this->product = json_decode(json_encode($result[0]), true);
 
+            
             dd($this->product);
 
             // ✅ SOLUTION 1: Conversion complète en array (recommandé pour tableau)
