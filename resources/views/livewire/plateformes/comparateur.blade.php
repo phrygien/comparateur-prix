@@ -15,10 +15,10 @@ new class extends Component {
 
     public function mount($name, $id)
     {
-        $this->getCompetitorPrice($name);
+        $myadata = $this->getCompetitorPrice($name);
         //$this->getOneProductDetails($id);
         
-        dd($this->products);
+        dd($myadata);
         //$this->getOneProductDetails($id);
     
         $this->id = $id;
