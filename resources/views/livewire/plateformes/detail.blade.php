@@ -15,95 +15,72 @@ new class extends Component {
 
     public function getOneProductDetails($entity_id){
         try{
-            $dataQuery = "
-                SELECT 
-                    produit.entity_id as id,
-                    produit.sku as sku,
-                    product_char.reference as parkode,
-                    CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) as title,
-                    CAST(product_parent_char.name AS CHAR CHARACTER SET utf8mb4) as parent_title,
-                    SUBSTRING_INDEX(product_char.name, ' - ', 1) as vendor,
-                    SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) as type,
-                    product_char.thumbnail as thumbnail,
-                    product_char.swatch_image as swatch_image,
-                    product_char.reference_us as reference_us,
-                    CAST(product_text.description AS CHAR CHARACTER SET utf8mb4) as description,
-                    CAST(product_text.short_description AS CHAR CHARACTER SET utf8mb4) as short_description,
-                    CAST(product_parent_text.description AS CHAR CHARACTER SET utf8mb4) as parent_description,
-                    CAST(product_parent_text.short_description AS CHAR CHARACTER SET utf8mb4) as parent_short_description,
-                    CAST(product_text.composition AS CHAR CHARACTER SET utf8mb4) as composition,
-                    CAST(product_text.olfactive_families AS CHAR CHARACTER SET utf8mb4) as olfactive_families,
-                    CAST(product_text.product_benefit AS CHAR CHARACTER SET utf8mb4) as product_benefit,
-                    ROUND(product_decimal.price, 2) as price,
-                    ROUND(product_decimal.special_price, 2) as special_price,
-                    ROUND(product_decimal.cost, 2) as cost,
-                    ROUND(product_decimal.pvc, 2) as pvc,
-                    ROUND(product_decimal.prix_achat_ht, 2) as prix_achat_ht,
-                    ROUND(product_decimal.prix_us, 2) as prix_us,
-                    product_int.status as status,
-                    product_int.color as color,
-                    product_int.capacity as capacity,
-                    product_int.product_type as product_type,
-                    product_media.media_gallery as media_gallery,
-                    CAST(product_categorie.name AS CHAR CHARACTER SET utf8mb4) as categorie,
-                    REPLACE(product_categorie.name, ' > ', ',') as tags,
-                    stock_item.qty as quatity,
-                    stock_status.stock_status as quatity_status,
-                    options.configurable_product_id as configurable_product_id,
-                    parent_child_table.parent_id as parent_id,
-                    options.attribute_code as option_name,
-                    options.attribute_value as option_value
-                FROM catalog_product_entity as produit
-                LEFT JOIN catalog_product_relation as parent_child_table ON parent_child_table.child_id = produit.entity_id 
-                LEFT JOIN catalog_product_super_link as cpsl ON cpsl.product_id = produit.entity_id 
-                LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
-                LEFT JOIN product_text ON product_text.entity_id = produit.entity_id 
-                LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
-                LEFT JOIN product_int ON product_int.entity_id = produit.entity_id
-                LEFT JOIN product_media ON product_media.entity_id = produit.entity_id
-                LEFT JOIN product_categorie ON product_categorie.entity_id = produit.entity_id 
-                LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id 
-                LEFT JOIN cataloginventory_stock_status AS stock_status ON stock_item.product_id = stock_status.product_id 
-                LEFT JOIN option_super_attribut AS options ON options.simple_product_id = produit.entity_id 
-                LEFT JOIN eav_attribute_set AS eas ON produit.attribute_set_id = eas.attribute_set_id 
-                LEFT JOIN catalog_product_entity as produit_parent ON parent_child_table.parent_id = produit_parent.entity_id 
-                LEFT JOIN product_char as product_parent_char ON product_parent_char.entity_id = produit_parent.entity_id
-                LEFT JOIN product_text as product_parent_text ON product_parent_text.entity_id = produit_parent.entity_id 
-                WHERE produit.entity_id = ?
-                AND (product_int.status IS NULL OR product_int.status >= 0)
-                ORDER BY product_char.entity_id DESC
-                LIMIT 1
-            ";
+            $result = DB::connection('mysqlMagento')
+                ->table('catalog_product_entity as produit')
+                ->select([
+                    'produit.entity_id as id',
+                    'produit.sku as sku',
+                    'product_char.reference as parkode',
+                    DB::raw('CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) as title'),
+                    DB::raw('CAST(product_parent_char.name AS CHAR CHARACTER SET utf8mb4) as parent_title'),
+                    DB::raw("SUBSTRING_INDEX(product_char.name, ' - ', 1) as vendor"),
+                    DB::raw("SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) as type"),
+                    'product_char.thumbnail as thumbnail',
+                    'product_char.swatch_image as swatch_image',
+                    'product_char.reference_us as reference_us',
+                    DB::raw('CAST(product_text.description AS CHAR CHARACTER SET utf8mb4) as description'),
+                    DB::raw('CAST(product_text.short_description AS CHAR CHARACTER SET utf8mb4) as short_description'),
+                    DB::raw('CAST(product_parent_text.description AS CHAR CHARACTER SET utf8mb4) as parent_description'),
+                    DB::raw('CAST(product_parent_text.short_description AS CHAR CHARACTER SET utf8mb4) as parent_short_description'),
+                    DB::raw('CAST(product_text.composition AS CHAR CHARACTER SET utf8mb4) as composition'),
+                    DB::raw('CAST(product_text.olfactive_families AS CHAR CHARACTER SET utf8mb4) as olfactive_families'),
+                    DB::raw('CAST(product_text.product_benefit AS CHAR CHARACTER SET utf8mb4) as product_benefit'),
+                    DB::raw('ROUND(product_decimal.price, 2) as price'),
+                    DB::raw('ROUND(product_decimal.special_price, 2) as special_price'),
+                    DB::raw('ROUND(product_decimal.cost, 2) as cost'),
+                    DB::raw('ROUND(product_decimal.pvc, 2) as pvc'),
+                    DB::raw('ROUND(product_decimal.prix_achat_ht, 2) as prix_achat_ht'),
+                    DB::raw('ROUND(product_decimal.prix_us, 2) as prix_us'),
+                    'product_int.status as status',
+                    'product_int.color as color',
+                    'product_int.capacity as capacity',
+                    'product_int.product_type as product_type',
+                    'product_media.media_gallery as media_gallery',
+                    DB::raw('CAST(product_categorie.name AS CHAR CHARACTER SET utf8mb4) as categorie'),
+                    DB::raw("REPLACE(product_categorie.name, ' > ', ',') as tags"),
+                    'stock_item.qty as quatity',
+                    'stock_status.stock_status as quatity_status',
+                    'options.configurable_product_id as configurable_product_id',
+                    'parent_child_table.parent_id as parent_id',
+                    'options.attribute_code as option_name',
+                    'options.attribute_value as option_value'
+                ])
+                ->leftJoin('catalog_product_relation as parent_child_table', 'parent_child_table.child_id', '=', 'produit.entity_id')
+                ->leftJoin('catalog_product_super_link as cpsl', 'cpsl.product_id', '=', 'produit.entity_id')
+                ->leftJoin('product_char', 'product_char.entity_id', '=', 'produit.entity_id')
+                ->leftJoin('product_text', 'product_text.entity_id', '=', 'produit.entity_id')
+                ->leftJoin('product_decimal', 'product_decimal.entity_id', '=', 'produit.entity_id')
+                ->leftJoin('product_int', 'product_int.entity_id', '=', 'produit.entity_id')
+                ->leftJoin('product_media', 'product_media.entity_id', '=', 'produit.entity_id')
+                ->leftJoin('product_categorie', 'product_categorie.entity_id', '=', 'produit.entity_id')
+                ->leftJoin('cataloginventory_stock_item as stock_item', 'stock_item.product_id', '=', 'produit.entity_id')
+                ->leftJoin('cataloginventory_stock_status as stock_status', 'stock_item.product_id', '=', 'stock_status.product_id')
+                ->leftJoin('option_super_attribut as options', 'options.simple_product_id', '=', 'produit.entity_id')
+                ->leftJoin('eav_attribute_set as eas', 'produit.attribute_set_id', '=', 'eas.attribute_set_id')
+                ->leftJoin('catalog_product_entity as produit_parent', 'parent_child_table.parent_id', '=', 'produit_parent.entity_id')
+                ->leftJoin('product_char as product_parent_char', 'product_parent_char.entity_id', '=', 'produit_parent.entity_id')
+                ->leftJoin('product_text as product_parent_text', 'product_parent_text.entity_id', '=', 'produit_parent.entity_id')
+                ->where('produit.entity_id', $entity_id)
+                ->where(function($query) {
+                    $query->whereNull('product_int.status')
+                          ->orWhere('product_int.status', '>=', 0);
+                })
+                ->orderBy('product_char.entity_id', 'DESC')
+                ->first();
 
-            $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
-
-            if (!empty($result) && isset($result[0])) {
-                // ✅ Convertir en array
-                $productData = json_decode(json_encode($result[0]), true);
-                
-                // ✅ CORRECTION: Convertir les champs binaires en string
-                $binaryFields = [
-                    'description', 
-                    'short_description', 
-                    'parent_description', 
-                    'parent_short_description',
-                    'composition',
-                    'olfactive_families',
-                    'categorie',
-                    'tags'
-                ];
-                
-                foreach ($binaryFields as $field) {
-                    if (isset($productData[$field]) && is_resource($productData[$field])) {
-                        $productData[$field] = stream_get_contents($productData[$field]);
-                    } elseif (isset($productData[$field])) {
-                        // S'assurer que c'est une string UTF-8
-                        $productData[$field] = (string) $productData[$field];
-                    }
-                }
-                
-                $this->product = $productData;
-                
+            if ($result) {
+                // Convertir stdClass en array simple
+                $this->product = (array) $result;
             } else {
                 $this->product = null;
                 \Log::warning('Product not found', ['entity_id' => $entity_id]);
