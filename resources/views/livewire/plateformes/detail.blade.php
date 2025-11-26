@@ -78,7 +78,7 @@ new class extends Component {
 
             $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
 
-            $this->product = $result;
+            $this->product = "hello";
 
         } catch (\Throwable $e) {
             \Log::error('Error loading products:', [
