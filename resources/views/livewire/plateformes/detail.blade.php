@@ -80,6 +80,8 @@ new class extends Component {
 
             $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
 
+            dd($result);
+
             // CORRECTION: Convertir l'objet stdClass en array pour Livewire
             if (!empty($result)) {
                 // Méthode 1: Via json_decode/encode (recommandée)
@@ -90,8 +92,6 @@ new class extends Component {
             } else {
                 $this->product = null;
             }
-
-            dd($this->product);
 
         } catch (\Throwable $e) {
             \Log::error('Error loading product:', [
