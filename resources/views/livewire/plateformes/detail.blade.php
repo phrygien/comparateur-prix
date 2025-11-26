@@ -7,6 +7,7 @@ new class extends Component {
 
     public function mount($id)
     {
+        dd($id);
         $this->getOneProductDetails($id);
     }
 
