@@ -5,7 +5,7 @@ use Illuminate\Support\Facades\DB;
 
 new class extends Component {
     public $products = [];
-    //public $product = null;
+    public $product = null;
     public $hasData = false;
     public $searchTerms = [];
     public $searchVolumes = [];
