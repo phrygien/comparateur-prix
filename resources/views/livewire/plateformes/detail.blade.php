@@ -11,6 +11,8 @@ new class extends Component {
     public function mount($id)
     {
         $this->getOneProductDetails($id);
+
+        dd($this->product);
     }
 
     public function getOneProductDetails($entity_id){
