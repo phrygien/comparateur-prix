@@ -15,7 +15,7 @@ new class extends Component {
 
     public function mount($name, $id)
     {
-        $this->getCompetitorPrice($name);
+        dd($this->getCompetitorPrice($name));
         //$this->getOneProductDetails($id);
         
         //$this->getOneProductDetails($id);
@@ -542,15 +542,7 @@ public function highlightMatchingTerms($text)
 <div class="w-full px-4 py-2 sm:px-2 sm:py-4 lg:grid lg:grid-cols-2 lg:gap-x-8 lg:px-8">
     <!-- Product image -->
     <div class="mt-10 lg:col-start-1 lg:row-span-2 lg:mt-0 lg:self-center">
-        @if(isset($product['data'][0]->media_gallery))
-            @php
-                $images = explode(',', $product['data'][0]->media_gallery);
-                $mainImage = $images[0];
-            @endphp
-            <img src="{{ $mainImage }}" alt="{{ $product['data'][0]->title }}" class="aspect-square w-full rounded-lg object-cover">
-        @else
-            <img src="https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800&q=80" alt="{{ $product['data'][0]->title }}" class="aspect-square w-full rounded-lg object-cover">
-        @endif
+        <img src="https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800&q=80" alt="Model wearing light green backpack with black canvas straps and front zipper pouch." class="aspect-square w-full rounded-lg object-cover">
     </div>
 
     <!-- Product details -->
@@ -559,7 +551,7 @@ public function highlightMatchingTerms($text)
             <ol role="list" class="flex items-center space-x-2">
                 <li>
                     <div class="flex items-center text-sm">
-                        <a href="#" class="font-medium text-gray-500 hover:text-gray-900">{{ $product['data'][0]->vendor }}</a>
+                        <a href="#" class="font-medium text-gray-500 hover:text-gray-900">CHANEL</a>
                         <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" class="ml-2 size-5 shrink-0 text-gray-300">
                             <path d="M5.555 17.776l8-16 .894.448-8 16-.894-.448z" />
                         </svg>
@@ -567,77 +559,28 @@ public function highlightMatchingTerms($text)
                 </li>
                 <li>
                     <div class="flex items-center text-sm">
-                        <a href="#" class="font-medium text-gray-500 hover:text-gray-900">{{ $product['data'][0]->type }}</a>
+                        <a href="#" class="font-medium text-gray-500 hover:text-gray-900">Bags</a>
                     </div>
                 </li>
             </ol>
         </nav>
 
         <div class="mt-4">
-            <h1 class="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">{{ $product['data'][0]->title }}</h1>
-        </div>
-
-        <!-- Prix -->
-        <div class="mt-4">
-            @if(isset($product['data'][0]->special_price) && $product['data'][0]->special_price < $product['data'][0]->price)
-                <div class="flex items-center gap-3">
-                    <p class="text-2xl font-bold text-gray-900">{{ number_format($product['data'][0]->special_price, 2, ',', ' ') }} €</p>
-                    <p class="text-lg text-gray-500 line-through">{{ number_format($product['data'][0]->price, 2, ',', ' ') }} €</p>
-                    @php
-                        $discount = round((($product['data'][0]->price - $product['data'][0]->special_price) / $product['data'][0]->price) * 100);
-                    @endphp
-                    <span class="bg-red-100 text-red-800 text-sm font-medium px-2 py-1 rounded">-{{ $discount }}%</span>
-                </div>
-            @else
-                <p class="text-2xl font-bold text-gray-900">{{ number_format($product['data'][0]->price, 2, ',', ' ') }} €</p>
-            @endif
+            <h1 class="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">Crème Visage Premium</h1>
         </div>
 
         <section aria-labelledby="information-heading" class="mt-4">
             <h2 id="information-heading" class="sr-only">Product information</h2>
 
             <div class="mt-4 space-y-6">
-                @if(isset($product['data'][0]->short_description))
-                    <p class="text-base text-gray-500">{{ strip_tags($product['data'][0]->short_description) }}</p>
-                @elseif(isset($product['data'][0]->description))
-                    <p class="text-base text-gray-500">{{ strip_tags(Str::limit($product['data'][0]->description, 200)) }}</p>
-                @endif
+                <p class="text-base text-gray-500">Don&#039;t compromise on snack-carrying capacity with this lightweight and spacious bag. The drawstring top keeps all your favorite chips, crisps, fries, biscuits, crackers, and cookies secure.</p>
             </div>
 
-            <!-- Composition -->
-            @if(isset($product['data'][0]->composition))
-                <div class="mt-6">
-                    <h3 class="text-sm font-medium text-gray-900">Composition</h3>
-                    <div class="mt-2 text-sm text-gray-600">{!! $product['data'][0]->composition !!}</div>
-                </div>
-            @endif
-
-            <!-- Familles olfactives -->
-            @if(isset($product['data'][0]->olfactive_families))
-                <div class="mt-4">
-                    <h3 class="text-sm font-medium text-gray-900">Famille olfactive</h3>
-                    <div class="mt-2 text-sm text-gray-600">{!! $product['data'][0]->olfactive_families !!}</div>
-                </div>
-            @endif
-
-            <!-- Stock status -->
             <div class="mt-6 flex items-center">
-                @if($product['data'][0]->quatity_status && $product['data'][0]->quatity > 0)
-                    <svg class="size-5 shrink-0 text-green-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon">
-                        <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" />
-                    </svg>
-                    <p class="ml-2 text-sm text-gray-500">En stock ({{ $product['data'][0]->quatity }} unités)</p>
-                @else
-                    <svg class="size-5 shrink-0 text-red-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon">
-                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" />
-                    </svg>
-                    <p class="ml-2 text-sm text-gray-500">Rupture de stock</p>
-                @endif
-            </div>
-
-            <!-- Référence -->
-            <div class="mt-4">
-                <p class="text-xs text-gray-500">Référence: {{ $product['data'][0]->sku }}</p>
+                <svg class="size-5 shrink-0 text-green-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon">
+                    <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" />
+                </svg>
+                <p class="ml-2 text-sm text-gray-500">In stock and ready to ship</p>
             </div>
         </section>
     </div>
@@ -648,45 +591,38 @@ public function highlightMatchingTerms($text)
             <h2 id="options-heading" class="sr-only">Product options</h2>
 
             <form>
-                <!-- Variants selector -->
-                @if(isset($volumes) && count($volumes) > 0)
-                <fieldset>
-                    <legend class="block text-sm font-medium text-gray-700">Variantes disponibles</legend>
-                    <div class="mt-1 grid grid-cols-1 gap-4">
-                        @foreach($volumes as $volume)
-                        <div class="relative block cursor-pointer rounded-lg border border-gray-300 p-4 focus:outline-hidden hover:border-indigo-500">
-                            <input type="radio" name="variant-choice" value="{{ $volume->id }}" class="sr-only">
-                            <div class="flex justify-between items-start">
-                                <p class="text-base font-medium text-gray-900">{{ $volume->option_value }}</p>
-                                <div class="flex items-center gap-2">
-                                    @if(isset($volume->special_price) && $volume->special_price < $volume->price)
-                                        <p class="text-base font-semibold text-gray-900">{{ number_format($volume->special_price, 2, ',', ' ') }} €</p>
-                                        <p class="text-sm text-gray-500 line-through">{{ number_format($volume->price, 2, ',', ' ') }} €</p>
-                                    @else
-                                        <p class="text-base font-semibold text-gray-900">{{ number_format($volume->price, 2, ',', ' ') }} €</p>
-                                    @endif
+                <div class="sm:flex sm:justify-between">
+                    <!-- Size selector -->
+                    <fieldset>
+                        <legend class="block text-sm font-medium text-gray-700">Variant (s)</legend>
+                        <div class="mt-1 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <!-- Active: "ring-2 ring-indigo-500" -->
+                            <div aria-label="18L" aria-description="Perfect for a reasonable amount of snacks." class="relative block cursor-pointer rounded-lg border border-gray-300 p-4 focus:outline-hidden">
+                                <input type="radio" name="size-choice" value="18L" class="sr-only">
+                                <div class="flex justify-between items-start">
+                                    <p class="text-base font-medium text-gray-900">18 ML</p>
+                                    <p class="text-base font-semibold text-gray-900">$65</p>
                                 </div>
+                                <p class="mt-1 text-sm text-gray-500">Perfect for a reasonable amount of snacks.</p>
+                                <div class="pointer-events-none absolute -inset-px rounded-lg border-2" aria-hidden="true"></div>
                             </div>
-                            @if(isset($volume->short_description))
-                                <p class="mt-1 text-sm text-gray-500">{{ strip_tags($volume->short_description) }}</p>
-                            @endif
-                            <div class="pointer-events-none absolute -inset-px rounded-lg border-2 border-transparent" aria-hidden="true"></div>
+                            
+                            <!-- Active: "ring-2 ring-indigo-500" -->
+                            <div aria-label="20L" aria-description="Enough room for a serious amount of snacks." class="relative block cursor-pointer rounded-lg border border-gray-300 p-4 focus:outline-hidden">
+                                <input type="radio" name="size-choice" value="20L" class="sr-only">
+                                <div class="flex justify-between items-start">
+                                    <p class="text-base font-medium text-gray-900">20 ML</p>
+                                    <p class="text-base font-semibold text-gray-900">$85</p>
+                                </div>
+                                <p class="mt-1 text-sm text-gray-500">Enough room for a serious amount of snacks.</p>
+                                <div class="pointer-events-none absolute -inset-px rounded-lg border-2" aria-hidden="true"></div>
+                            </div>
                         </div>
-                        @endforeach
-                    </div>
-                </fieldset>
-                @endif
-
-                <!-- Add to cart button -->
-                <div class="mt-6">
-                    <button type="submit" class="flex w-full items-center justify-center rounded-md border border-transparent bg-indigo-600 px-8 py-3 text-base font-medium text-white hover:bg-indigo-700 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-50">
-                        Ajouter au panier
-                    </button>
+                    </fieldset>
                 </div>
-
                 <div class="mt-4">
                     <a href="#" class="group inline-flex text-sm text-gray-500 hover:text-gray-700">
-                        <span>Voir tous nos produits</span>
+                        <span>Nos produits</span>
                         <svg class="ml-2 size-5 shrink-0 text-gray-400 group-hover:text-gray-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon">
                             <path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0ZM8.94 6.94a.75.75 0 1 1-1.061-1.061 3 3 0 1 1 2.871 5.026v.345a.75.75 0 0 1-1.5 0v-.5c0-.72.57-1.172 1.081-1.287A1.5 1.5 0 1 0 8.94 6.94ZM10 15a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
                         </svg>
