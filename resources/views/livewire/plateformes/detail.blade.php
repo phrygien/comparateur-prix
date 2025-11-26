@@ -135,59 +135,143 @@ new class extends Component {
             </h1>
         </div>
 
+        <!-- Informations de prix -->
+        <div class="mb-6 bg-gray-50 p-4 rounded-lg border border-gray-200">
+            <h3 class="text-lg font-semibold text-gray-900 mb-3">Informations de prix</h3>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <p class="text-sm text-gray-600">Prix de vente</p>
+                    <p class="text-xl font-bold text-green-600">
+                        {{ $this->product->price ? number_format($this->product->price, 2) . ' €' : 'N/A' }}
+                    </p>
+                </div>
+                @if($this->product->special_price)
+                <div>
+                    <p class="text-sm text-gray-600">Prix promotionnel</p>
+                    <p class="text-xl font-bold text-red-600">
+                        {{ number_format($this->product->special_price, 2) }} €
+                    </p>
+                </div>
+                @endif
+                <div>
+                    <p class="text-sm text-gray-600">Coût d'achat HT</p>
+                    <p class="text-lg font-semibold text-blue-600">
+                        {{ $this->product->prix_achat_ht ? number_format($this->product->prix_achat_ht, 2) . ' €' : 'N/A' }}
+                    </p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-600">Prix PVC</p>
+                    <p class="text-lg font-semibold text-purple-600">
+                        {{ $this->product->pvc ? number_format($this->product->pvc, 2) . ' €' : 'N/A' }}
+                    </p>
+                </div>
+                @if($this->product->prix_us)
+                <div class="col-span-2">
+                    <p class="text-sm text-gray-600">Prix US</p>
+                    <p class="text-lg font-semibold text-orange-600">
+                        ${{ number_format($this->product->prix_us, 2) }}
+                    </p>
+                </div>
+                @endif
+            </div>
+        </div>
+
+        <!-- Informations techniques -->
+        <div class="mb-6 bg-white p-4 rounded-lg border border-gray-200">
+            <h3 class="text-lg font-semibold text-gray-900 mb-3">Informations techniques</h3>
+            <div class="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                    <p class="text-gray-600">SKU</p>
+                    <p class="font-medium text-gray-900">{{ $this->product->sku ?? 'N/A' }}</p>
+                </div>
+                <div>
+                    <p class="text-gray-600">Référence</p>
+                    <p class="font-medium text-gray-900">{{ $this->product->parkode ?? 'N/A' }}</p>
+                </div>
+                <div>
+                    <p class="text-gray-600">Statut stock</p>
+                    <p class="font-medium {{ $this->product->quatity_status ? 'text-green-600' : 'text-red-600' }}">
+                        {{ $this->product->quatity_status ? 'En stock' : 'Rupture' }}
+                    </p>
+                </div>
+                <div>
+                    <p class="text-gray-600">Quantité</p>
+                    <p class="font-medium text-gray-900">{{ $this->product->quatity ?? 0 }}</p>
+                </div>
+                @if($this->product->capacity)
+                <div>
+                    <p class="text-gray-600">Capacité</p>
+                    <p class="font-medium text-gray-900">{{ $this->product->capacity }} ml</p>
+                </div>
+                @endif
+                @if($this->product->color)
+                <div>
+                    <p class="text-gray-600">Couleur</p>
+                    <p class="font-medium text-gray-900">{{ $this->product->color }}</p>
+                </div>
+                @endif
+            </div>
+        </div>
+
+        <!-- Informations produit -->
         <section aria-labelledby="information-heading" class="mb-6">
             <h2 id="information-heading" class="sr-only">Product information</h2>
 
             <div class="space-y-4">
-                <p class="text-base leading-relaxed text-gray-700">
-                    {{ strip_tags(utf8_encode($this->product->description)) ?? 'N/A' }}
-                </p>
+                @if($this->product->short_description)
+                <div>
+                    <h4 class="text-sm font-semibold text-gray-900 mb-2">Description courte</h4>
+                    <p class="text-base leading-relaxed text-gray-700">
+                        {{ strip_tags(utf8_encode($this->product->short_description)) }}
+                    </p>
+                </div>
+                @endif
+
+                @if($this->product->description)
+                <div>
+                    <h4 class="text-sm font-semibold text-gray-900 mb-2">Description complète</h4>
+                    <p class="text-base leading-relaxed text-gray-700">
+                        {{ strip_tags(utf8_encode($this->product->description)) }}
+                    </p>
+                </div>
+                @endif
+
+                @if($this->product->composition)
+                <div>
+                    <h4 class="text-sm font-semibold text-gray-900 mb-2">Composition</h4>
+                    <p class="text-base leading-relaxed text-gray-700">
+                        {{ strip_tags(utf8_encode($this->product->composition)) }}
+                    </p>
+                </div>
+                @endif
+
+                @if($this->product->olfactive_families)
+                <div>
+                    <h4 class="text-sm font-semibold text-gray-900 mb-2">Familles olfactives</h4>
+                    <p class="text-base leading-relaxed text-gray-700">
+                        {{ strip_tags(utf8_encode($this->product->olfactive_families)) }}
+                    </p>
+                </div>
+                @endif
+
+                @if($this->product->product_benefit)
+                <div>
+                    <h4 class="text-sm font-semibold text-gray-900 mb-2">Bénéfices produit</h4>
+                    <p class="text-base leading-relaxed text-gray-700">
+                        {{ strip_tags(utf8_encode($this->product->product_benefit)) }}
+                    </p>
+                </div>
+                @endif
+
+                @if($this->product->categorie)
+                <div>
+                    <h4 class="text-sm font-semibold text-gray-900 mb-2">Catégorie</h4>
+                    <p class="text-base leading-relaxed text-gray-700">
+                        {{ utf8_encode($this->product->categorie) }}
+                    </p>
+                </div>
+                @endif
             </div>
         </section>
     </div>
-
-    <!-- Product form -->
-    {{-- <div class="mt-8 lg:col-start-2 lg:row-start-2 lg:max-w-lg lg:self-start">
-        <section aria-labelledby="options-heading" class="p-4 rounded-lg border border-gray-200">
-            <h2 id="options-heading" class="sr-only">Product options</h2>
-
-            <form>
-                <div class="sm:flex sm:justify-between">
-                    <!-- Size selector -->
-                    <fieldset>
-                        <legend class="block text-sm font-semibold text-gray-900 mb-3">Variantes disponibles</legend>
-                        <div class="mt-1 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                            <div aria-label="18L" aria-description="Perfect for a reasonable amount of snacks." 
-                                 class="relative block cursor-pointer rounded-lg border border-gray-200 p-3 focus:outline-hidden transition-all duration-200 hover:border-indigo-300">
-                                <input type="radio" name="size-choice" value="18L" class="sr-only">
-                                <div class="flex justify-between items-start">
-                                    <p class="text-base font-medium text-gray-900">18 ML</p>
-                                    <p class="text-base font-semibold text-indigo-600">65€</p>
-                                </div>
-                                <p class="mt-1 text-sm text-gray-600">Parfait pour une quantité raisonnable.</p>
-                            </div>
-                            
-                            <div aria-label="20L" aria-description="Enough room for a serious amount of snacks." 
-                                 class="relative block cursor-pointer rounded-lg border border-gray-200 p-3 focus:outline-hidden transition-all duration-200 hover:border-indigo-300">
-                                <input type="radio" name="size-choice" value="20L" class="sr-only">
-                                <div class="flex justify-between items-start">
-                                    <p class="text-base font-medium text-gray-900">20 ML</p>
-                                    <p class="text-base font-semibold text-indigo-600">85€</p>
-                                </div>
-                                <p class="mt-1 text-sm text-gray-600">Assez d'espace pour une quantité importante.</p>
-                            </div>
-                        </div>
-                    </fieldset>
-                </div>
-                <div class="mt-4 pt-4 border-t border-gray-200">
-                    <a href="#" class="group inline-flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-800 transition-colors duration-200">
-                        <span>Voir tous nos produits</span>
-                        <svg class="ml-1 size-4 shrink-0 text-indigo-400 group-hover:text-indigo-600 transition-colors duration-200" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon">
-                            <path fill-rule="evenodd" d="M5.22 14.78a.75.75 0 001.06 0l7.22-7.22v5.69a.75.75 0 001.5 0v-7.5a.75.75 0 00-.75-.75h-7.5a.75.75 0 000 1.5h5.69l-7.22 7.22a.75.75 0 000 1.06z" clip-rule="evenodd" />
-                        </svg>
-                    </a>
-                </div>
-            </form>
-        </section>
-    </div> --}}
 </div>
