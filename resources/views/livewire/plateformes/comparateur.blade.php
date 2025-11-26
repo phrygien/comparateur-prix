@@ -15,6 +15,16 @@ new class extends Component {
     public $id;
     public $name;
     public $oneProduct;
+    
+    public function mount($name, $id)
+    {
+        
+        // Charger le produit principal
+        $this->getOneProductDetails($id);
+        
+        // Charger les prix des concurrents
+        $this->getCompetitorPrice($name);
+    }
 
     /**
      * Récupère les détails d'un produit spécifique
@@ -83,7 +93,11 @@ new class extends Component {
 
             $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
 
-            return !empty($result) ? $result[0] : null;
+            $this->oneProduct = !empty($result) ? $result[0] : null;
+
+            return [
+                "oneProduct" => $this->oneProduct
+            ];
 
         } catch (\Throwable $e) {
             \Log::error('Error loading product details:', [
@@ -92,7 +106,10 @@ new class extends Component {
                 'trace' => $e->getTraceAsString()
             ]);
             
-            return null;
+            $this->oneProduct = null;
+            return [
+                'error' => $e->getMessage()
+            ];
         }
     }
 
@@ -105,7 +122,7 @@ new class extends Component {
             if (empty($search)) {
                 $this->products = [];
                 $this->hasData = false;
-                return [];
+                return null;
             }
             
             // Extraire les volumes et les mots clés de la variation
@@ -118,7 +135,7 @@ new class extends Component {
             if (empty($searchQuery)) {
                 $this->products = [];
                 $this->hasData = false;
-                return [];
+                return null;
             }
             
             // Construction de la requête SQL avec paramètres liés
@@ -142,9 +159,17 @@ new class extends Component {
             // Exécution de la requête avec binding
             $result = DB::connection('mysql')->select($sql, [$searchQuery]);
             
+            $this->products = $result;
             $this->hasData = !empty($result);
             
-            return $result;
+            return [
+                'count' => count($result),
+                'has_data' => $this->hasData,
+                'products' => $this->products,
+                'query' => $searchQuery,
+                'volumes' => $this->searchVolumes,
+                'variation_keywords' => $this->searchVariationKeywords
+            ];
             
         } catch (\Throwable $e) {
             \Log::error('Error loading competitor prices:', [
@@ -153,9 +178,12 @@ new class extends Component {
                 'trace' => $e->getTraceAsString()
             ]);
             
+            $this->products = [];
             $this->hasData = false;
             
-            return [];
+            return [
+                'error' => $e->getMessage()
+            ];
         }
     }
     
@@ -450,27 +478,6 @@ new class extends Component {
         } else {
             return 'text-red-600'; // Beaucoup plus cher
         }
-    }
-
-    /**
-     * Méthode with() pour passer les données à la vue
-     */
-    public function with(): array
-    {
-        // Récupérer les données du produit
-        $oneProduct = $this->getOneProductDetails($this->id);
-        
-        // Récupérer les prix des concurrents
-        $products = $this->getCompetitorPrice($this->name);
-        
-        dd($products);
-        return [
-            'oneProduct' => $oneProduct,
-            'products' => $products,
-            'hasData' => $this->hasData,
-            'searchVolumes' => $this->searchVolumes,
-            'searchVariationKeywords' => $this->searchVariationKeywords,
-        ];
     }
 }; 
 
