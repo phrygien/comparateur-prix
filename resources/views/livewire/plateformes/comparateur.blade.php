@@ -13,6 +13,9 @@ new class extends Component {
     
     public $id;
     public $mydata;
+    
+    public $similarityThreshold = 0.6;
+    public $matchedProducts = [];
 
     public function mount($name, $id)
     {
@@ -22,8 +25,6 @@ new class extends Component {
 
     public function getOneProductDetails($entity_id){
         try{
-
-            // Paginated data
             $dataQuery = "
                 SELECT 
                     produit.entity_id as id,
@@ -84,13 +85,11 @@ new class extends Component {
             ";
 
             $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
-
             return $result;
 
         } catch (\Throwable $e) {
             \Log::error('Error loading products:', [
                 'message' => $e->getMessage(),
-                'search' => $search ?? null,
                 'trace' => $e->getTraceAsString()
             ]);
             
@@ -112,11 +111,9 @@ new class extends Component {
                 return null;
             }
             
-            // Extraire les volumes et les mots clés de la variation
             $this->extractSearchVolumes($search);
             $this->extractSearchVariationKeywords($search);
             
-            // Préparer les termes de recherche
             $searchQuery = $this->prepareSearchTerms($search);
             
             if (empty($searchQuery)) {
@@ -125,7 +122,6 @@ new class extends Component {
                 return null;
             }
             
-            // Construction de la requête SQL avec paramètres liés
             $sql = "SELECT *, 
                            prix_ht,
                            image_url as image,
@@ -142,22 +138,20 @@ new class extends Component {
                 'search_variation_keywords' => $this->searchVariationKeywords
             ]);
             
-            // Exécution de la requête avec binding
             $result = DB::connection('mysql')->select($sql, [$searchQuery]);
             
             \Log::info('Query result:', [
                 'count' => count($result)
             ]);
             
-            $this->products = $result;
+            $this->matchedProducts = $this->calculateSimilarity($result, $search);
+            $this->products = $this->matchedProducts;
             $this->hasData = !empty($result);
 
-            // one product
-            
             return [
                 'count' => count($result),
                 'has_data' => $this->hasData,
-                'products' => $this->products,
+                'products' => $this->matchedProducts,
                 'product' => $this->getOneProductDetails($this->id),
                 'query' => $searchQuery,
                 'volumes' => $this->searchVolumes,
@@ -181,13 +175,282 @@ new class extends Component {
     }
     
     /**
+     * Calcule la similarité entre la recherche et chaque produit
+     */
+    private function calculateSimilarity($products, $search)
+    {
+        $scoredProducts = [];
+        
+        foreach ($products as $product) {
+            $similarityScore = $this->computeOverallSimilarity($product, $search);
+            
+            if ($similarityScore >= $this->similarityThreshold) {
+                $product->similarity_score = $similarityScore;
+                $product->match_level = $this->getMatchLevel($similarityScore);
+                $scoredProducts[] = $product;
+            }
+        }
+        
+        usort($scoredProducts, function($a, $b) {
+            return $b->similarity_score <=> $a->similarity_score;
+        });
+        
+        return $scoredProducts;
+    }
+
+    /**
+     * Calcule le score de similarité global
+     */
+    private function computeOverallSimilarity($product, $search)
+    {
+        $weights = [
+            'name' => 0.3,
+            'vendor' => 0.2,
+            'variation' => 0.25,
+            'volumes' => 0.15,
+            'type' => 0.1
+        ];
+        
+        $totalScore = 0;
+        
+        $nameScore = $this->computeStringSimilarity($search, $product->name ?? '');
+        $totalScore += $nameScore * $weights['name'];
+        
+        $vendorScore = $this->computeVendorSimilarity($product, $search);
+        $totalScore += $vendorScore * $weights['vendor'];
+        
+        $variationScore = $this->computeVariationSimilarity($product, $search);
+        $totalScore += $variationScore * $weights['variation'];
+        
+        $volumeScore = $this->computeVolumeSimilarity($product);
+        $totalScore += $volumeScore * $weights['volumes'];
+        
+        $typeScore = $this->computeTypeSimilarity($product, $search);
+        $totalScore += $typeScore * $weights['type'];
+        
+        return min(1.0, $totalScore);
+    }
+
+    /**
+     * Similarité de chaîne (algorithme de Jaro-Winkler amélioré)
+     */
+    private function computeStringSimilarity($str1, $str2)
+    {
+        $str1 = mb_strtolower(trim($str1));
+        $str2 = mb_strtolower(trim($str2));
+        
+        if (empty($str1) || empty($str2)) {
+            return 0;
+        }
+        
+        if ($str1 === $str2) {
+            return 1.0;
+        }
+        
+        $len1 = mb_strlen($str1);
+        $len2 = mb_strlen($str2);
+        
+        $matchDistance = (int) floor(max($len1, $len2) / 2) - 1;
+        $matches1 = array_fill(0, $len1, false);
+        $matches2 = array_fill(0, $len2, false);
+        
+        $matches = 0;
+        $transpositions = 0;
+        
+        for ($i = 0; $i < $len1; $i++) {
+            $start = max(0, $i - $matchDistance);
+            $end = min($i + $matchDistance + 1, $len2);
+            
+            for ($j = $start; $j < $end; $j++) {
+                if (!$matches2[$j] && mb_substr($str1, $i, 1) === mb_substr($str2, $j, 1)) {
+                    $matches1[$i] = true;
+                    $matches2[$j] = true;
+                    $matches++;
+                    break;
+                }
+            }
+        }
+        
+        if ($matches === 0) {
+            return 0;
+        }
+        
+        $k = 0;
+        for ($i = 0; $i < $len1; $i++) {
+            if ($matches1[$i]) {
+                while (!$matches2[$k]) {
+                    $k++;
+                }
+                if (mb_substr($str1, $i, 1) !== mb_substr($str2, $k, 1)) {
+                    $transpositions++;
+                }
+                $k++;
+            }
+        }
+        
+        $transpositions = $transpositions / 2;
+        $jaro = (($matches / $len1) + ($matches / $len2) + (($matches - $transpositions) / $matches)) / 3;
+        
+        $prefix = 0;
+        $maxPrefix = min(4, min($len1, $len2));
+        
+        for ($i = 0; $i < $maxPrefix; $i++) {
+            if (mb_substr($str1, $i, 1) === mb_substr($str2, $i, 1)) {
+                $prefix++;
+            } else {
+                break;
+            }
+        }
+        
+        return $jaro + ($prefix * 0.1 * (1 - $jaro));
+    }
+
+    /**
+     * Similarité du vendeur
+     */
+    private function computeVendorSimilarity($product, $search)
+    {
+        $vendor = $product->vendor ?? '';
+        if (empty($vendor)) {
+            return 0;
+        }
+        
+        $searchVendor = $this->extractVendorFromSearch($search);
+        
+        if (empty($searchVendor)) {
+            return 0;
+        }
+        
+        return $this->computeStringSimilarity($searchVendor, $vendor);
+    }
+
+    /**
+     * Similarité de la variation
+     */
+    private function computeVariationSimilarity($product, $search)
+    {
+        $productVariation = $product->variation ?? '';
+        $searchVariation = $this->extractSearchVariationFromSearch($search);
+        
+        if (empty($productVariation) || empty($searchVariation)) {
+            return 0;
+        }
+        
+        $baseScore = $this->computeStringSimilarity($searchVariation, $productVariation);
+        
+        $keywordMatches = 0;
+        foreach ($this->searchVariationKeywords as $keyword) {
+            if (stripos($productVariation, $keyword) !== false) {
+                $keywordMatches++;
+            }
+        }
+        
+        $keywordBonus = $keywordMatches / max(1, count($this->searchVariationKeywords)) * 0.3;
+        
+        return min(1.0, $baseScore + $keywordBonus);
+    }
+
+    /**
+     * Similarité des volumes
+     */
+    private function computeVolumeSimilarity($product)
+    {
+        if (empty($this->searchVolumes)) {
+            return 0;
+        }
+        
+        $productVolumes = $this->extractVolumesFromText($product->name . ' ' . ($product->variation ?? ''));
+        
+        if (empty($productVolumes)) {
+            return 0;
+        }
+        
+        $matches = array_intersect($this->searchVolumes, $productVolumes);
+        $matchRatio = count($matches) / count($this->searchVolumes);
+        
+        if ($matchRatio === 1.0) {
+            $matchRatio = 1.0;
+        }
+        
+        return $matchRatio;
+    }
+
+    /**
+     * Similarité du type de produit
+     */
+    private function computeTypeSimilarity($product, $search)
+    {
+        $productType = $product->type ?? '';
+        if (empty($productType)) {
+            return 0;
+        }
+        
+        $searchType = $this->extractProductTypeFromSearch($search);
+        
+        if (empty($searchType)) {
+            return 0;
+        }
+        
+        return $this->computeStringSimilarity($searchType, $productType);
+    }
+
+    /**
+     * Extrait la marque de la recherche
+     */
+    private function extractVendorFromSearch($search)
+    {
+        if (preg_match('/^([^-]+)/', $search, $matches)) {
+            return trim($matches[1]);
+        }
+        
+        return '';
+    }
+
+    /**
+     * Extrait la variation de la recherche
+     */
+    private function extractSearchVariationFromSearch($search)
+    {
+        $pattern = '/^[^-]+\s*-\s*[^-]+\s*-\s*/i';
+        $variation = preg_replace($pattern, '', $search);
+        
+        return trim($variation);
+    }
+
+    /**
+     * Extrait le type de produit de la recherche
+     */
+    private function extractProductTypeFromSearch($search)
+    {
+        $types = ['parfum', 'eau de parfum', 'eau de toilette', 'coffret', 'gel douche', 'lotion'];
+        
+        foreach ($types as $type) {
+            if (stripos($search, $type) !== false) {
+                return $type;
+            }
+        }
+        
+        return '';
+    }
+
+    /**
+     * Détermine le niveau de correspondance
+     */
+    private function getMatchLevel($similarityScore)
+    {
+        if ($similarityScore >= 0.9) return 'excellent';
+        if ($similarityScore >= 0.7) return 'bon';
+        if ($similarityScore >= 0.6) return 'moyen';
+        return 'faible';
+    }
+
+    /**
      * Extrait les volumes (ml) de la recherche
      */
     private function extractSearchVolumes(string $search): void
     {
         $this->searchVolumes = [];
         
-        // Recherche de motifs comme "50 ml", "75ml", "100 ml", etc.
         if (preg_match_all('/(\d+)\s*ml/i', $search, $matches)) {
             $this->searchVolumes = $matches[1];
         }
@@ -200,40 +463,28 @@ new class extends Component {
 
     /**
      * Extrait les mots clés de la variation de la recherche
-     * Exemple: "Guerlain - Shalimar - Coffret Eau de Parfum 50 ml + 5 ml + 75 ml"
-     * Mots clés: ["coffret", "eau", "parfum", "50", "5", "75"]
      */
     private function extractSearchVariationKeywords(string $search): void
     {
         $this->searchVariationKeywords = [];
         
-        // Supprimer la marque et le nom du produit pour isoler la variation
         $pattern = '/^[^-]+\s*-\s*[^-]+\s*-\s*/i';
         $variation = preg_replace($pattern, '', $search);
         
-        // Nettoyer les caractères spéciaux et garder lettres, chiffres et espaces
         $variationClean = preg_replace('/[^a-zA-ZÀ-ÿ0-9\s]/', ' ', $variation);
-        
-        // Normaliser les espaces multiples
         $variationClean = trim(preg_replace('/\s+/', ' ', $variationClean));
-        
-        // Convertir en minuscules
         $variationClean = mb_strtolower($variationClean);
         
-        // Séparer les mots
         $words = explode(" ", $variationClean);
         
-        // Stop words à ignorer
         $stopWords = [
             'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec',
             'the', 'a', 'an', 'and', 'or', 'ml', 'edition', 'édition'
         ];
         
-        // Garder les mots significatifs
         foreach ($words as $word) {
             $word = trim($word);
             
-            // Garder les mots de plus de 1 caractère, non-stop words, et les chiffres
             if ((strlen($word) > 1 && !in_array($word, $stopWords)) || is_numeric($word)) {
                 $this->searchVariationKeywords[] = $word;
             }
@@ -248,54 +499,34 @@ new class extends Component {
     
     /**
      * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
-     * Extrait uniquement les 3 premiers mots significatifs (marque, gamme, type)
-     * 
-     * Format: +mot1* +mot2* +mot3*
-     * 
-     * Exemple: "Guerlain - Shalimar - Coffret Eau de Parfum 50 ml + 5 ml + 75 ml (Édition"
-     * Résultat: "+guerlain* +shalimar* +coffret*"
-     * 
-     * @param string $search
-     * @return string
      */
     private function prepareSearchTerms(string $search): string
     {
-        // Nettoyage agressif : supprimer tous les caractères spéciaux et chiffres
         $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ\s]/', ' ', $search);
-        
-        // Normaliser les espaces multiples
         $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
-        
-        // Convertir en minuscules
         $searchClean = mb_strtolower($searchClean);
         
-        // Séparer les mots
         $words = explode(" ", $searchClean);
         
-        // Stop words français et anglais à ignorer
         $stopWords = [
             'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec',
             'the', 'a', 'an', 'and', 'or', 'eau', 'ml', 'edition', 'édition', 'coffret'
         ];
         
-        // Mots significatifs seulement (marque, gamme, produit)
         $significantWords = [];
         
         foreach ($words as $word) {
             $word = trim($word);
             
-            // Garder uniquement les mots de plus de 2 caractères, non-stop words
             if (strlen($word) > 2 && !in_array($word, $stopWords)) {
                 $significantWords[] = $word;
             }
             
-            // Limiter à 3 mots maximum (marque + gamme + type) SEULEMENT
             if (count($significantWords) >= 3) {
                 break;
             }
         }
         
-        // Construire la requête boolean avec seulement 3 termes
         $booleanTerms = array_map(function($word) {
             return '+' . $word . '*';
         }, $significantWords);
@@ -327,7 +558,6 @@ new class extends Component {
             $parsedUrl = parse_url($url);
             if (isset($parsedUrl['host'])) {
                 $domain = $parsedUrl['host'];
-                // Retirer www. si présent
                 if (strpos($domain, 'www.') === 0) {
                     $domain = substr($domain, 4);
                 }
@@ -362,7 +592,6 @@ new class extends Component {
             return 'Standard';
         }
         
-        // Limiter la longueur pour l'affichage
         return Str::limit($variation, 30);
     }
 
@@ -432,175 +661,194 @@ new class extends Component {
         $hasMatchingVolume = $this->hasMatchingVolume($product);
         $hasMatchingVariationKeyword = $this->hasMatchingVariationKeyword($product);
         
-        // Correspondance parfaite si contient AU MOINS un volume ET AU MOINS un mot clé de variation
         return $hasMatchingVolume && $hasMatchingVariationKeyword;
     }
 
     /**
-     * Vérifie si le produit a le même volume ET le même type que la recherche
+     * Vérifie si le produit a exactement la même variation que la recherche
      */
-    public function hasSameVolumeAndType($product)
+    public function hasExactVariationMatch($product)
     {
-        // Vérifier si le produit a au moins un volume correspondant
+        $searchVariation = $this->extractSearchVariation();
+        $productVariation = $product->variation ?? '';
+        
+        $searchNormalized = $this->normalizeVariation($searchVariation);
+        $productNormalized = $this->normalizeVariation($productVariation);
+        
+        return $searchNormalized === $productNormalized;
+    }
+    
+    /**
+     * Extrait la variation de la recherche complète
+     */
+    private function extractSearchVariation()
+    {
+        $pattern = '/^[^-]+\s*-\s*[^-]+\s*-\s*/i';
+        $variation = preg_replace($pattern, '', $this->search ?? '');
+        
+        return trim($variation);
+    }
+    
+    /**
+     * Normalise une variation pour la comparaison
+     */
+    private function normalizeVariation($variation)
+    {
+        if (empty($variation)) {
+            return '';
+        }
+        
+        $normalized = mb_strtolower(trim($variation));
+        $normalized = preg_replace('/[^a-zA-ZÀ-ÿ0-9\s]/', ' ', $normalized);
+        $normalized = trim(preg_replace('/\s+/', ' ', $normalized));
+        
+        return $normalized;
+    }
+
+    /**
+     * Vérifie si le produit a le même volume ET la même variation exacte que la recherche
+     */
+    public function hasSameVolumeAndExactVariation($product)
+    {
         $hasMatchingVolume = $this->hasMatchingVolume($product);
+        $hasExactVariation = $this->hasExactVariationMatch($product);
         
-        // Vérifier si le type correspond (en comparant avec le produit principal)
-        $hasMatchingType = false;
+        return $hasMatchingVolume && $hasExactVariation;
+    }
+
+    /**
+     * Met en évidence les volumes et mots clés correspondants dans un texte
+     */
+    public function highlightMatchingTerms($text)
+    {
+        if (empty($text)) {
+            return $text;
+        }
+
+        $patterns = [];
         
-        // Récupérer le produit principal pour comparer le type
-        $mainProduct = $this->getOneProductDetails($this->id);
-        if (!empty($mainProduct) && isset($mainProduct[0])) {
-            $mainProductType = $mainProduct[0]->type ?? null;
-            $productType = $product->type ?? null;
-            
-            // Comparer les types (insensible à la casse)
-            if ($mainProductType && $productType) {
-                $hasMatchingType = strtolower(trim($mainProductType)) === strtolower(trim($productType));
+        if (!empty($this->searchVolumes)) {
+            foreach ($this->searchVolumes as $volume) {
+                $patterns[] = '\b' . preg_quote($volume, '/') . '\s*ml\b';
             }
         }
         
-        return $hasMatchingVolume && $hasMatchingType;
-    }
-
-/**
- * Met en évidence les volumes correspondants dans un texte
- */
-/**
- * Met en évidence les volumes correspondants dans un texte
- */
-public function highlightMatchingVolumes($text)
-{
-    if (empty($text) || empty($this->searchVolumes)) {
-        return $text;
-    }
-
-    foreach ($this->searchVolumes as $volume) {
-        // Recherche le volume suivi de "ml" (avec ou sans espace)
-        $pattern = '/\b' . preg_quote($volume, '/') . '\s*ml\b/i';
-        
-        // Utilise une fonction de callback pour éviter les problèmes d'échappement
-        $text = preg_replace_callback($pattern, function($matches) {
-            return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
-                   . htmlspecialchars($matches[0]) 
-                   . '</span>';
-        }, $text);
-    }
-
-    return $text;
-}
-
-/**
- * Met en évidence les mots clés de variation correspondants dans un texte
- */
-public function highlightMatchingVariationKeywords($text)
-{
-    if (empty($text) || empty($this->searchVariationKeywords)) {
-        return $text;
-    }
-
-    foreach ($this->searchVariationKeywords as $keyword) {
-        // Recherche le mot clé exact (avec limites de mots)
-        $pattern = '/\b' . preg_quote($keyword, '/') . '\b/i';
-        
-        // Utilise une fonction de callback pour éviter les problèmes d'échappement
-        $text = preg_replace_callback($pattern, function($matches) {
-            return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
-                   . htmlspecialchars($matches[0]) 
-                   . '</span>';
-        }, $text);
-    }
-
-    return $text;
-}
-
-
-/**
- * Met en évidence les volumes et mots clés correspondants dans un texte
- */
-public function highlightMatchingTerms($text)
-{
-    if (empty($text)) {
-        return $text;
-    }
-
-    $patterns = [];
-    
-    // Ajouter les patterns pour les volumes (priorité aux volumes complets "X ml")
-    if (!empty($this->searchVolumes)) {
-        foreach ($this->searchVolumes as $volume) {
-            $patterns[] = '\b' . preg_quote($volume, '/') . '\s*ml\b';
-        }
-    }
-    
-    // Ajouter les patterns pour les mots-clés de variation (sauf les chiffres seuls)
-    if (!empty($this->searchVariationKeywords)) {
-        foreach ($this->searchVariationKeywords as $keyword) {
-            if (empty($keyword) || is_numeric($keyword)) {
-                continue; // Ignorer les chiffres seuls
+        if (!empty($this->searchVariationKeywords)) {
+            foreach ($this->searchVariationKeywords as $keyword) {
+                if (empty($keyword) || is_numeric($keyword)) {
+                    continue;
+                }
+                $patterns[] = '\b' . preg_quote(trim($keyword), '/') . '\b';
             }
-            $patterns[] = '\b' . preg_quote(trim($keyword), '/') . '\b';
         }
-    }
-    
-    if (empty($patterns)) {
+        
+        if (empty($patterns)) {
+            return $text;
+        }
+        
+        $pattern = '/(' . implode('|', $patterns) . ')/iu';
+        
+        $text = preg_replace_callback($pattern, function($matches) {
+            return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
+                   . $matches[0] 
+                   . '</span>';
+        }, $text);
+        
         return $text;
     }
     
-    // Combiner tous les patterns
-    $pattern = '/(' . implode('|', $patterns) . ')/iu';
-    
-    $text = preg_replace_callback($pattern, function($matches) {
-        return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
-               . $matches[0] 
-               . '</span>';
-    }, $text);
-    
-    return $text;
-}
+    /**
+     * Ajuste le seuil de similarité
+     */
+    public function adjustSimilarityThreshold($threshold)
+    {
+        $this->similarityThreshold = $threshold;
+        $this->getCompetitorPrice($this->search ?? '');
+    }
 }; ?>
 
 <div>
-
     <livewire:plateformes.detail :id="$id"/>
 
     <!-- Section des résultats -->
     <div class="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">
         @if($hasData)
-            <!-- Indicateur des critères recherchés -->
-            @if(!empty($searchVolumes))
+            <!-- Indicateur de similarité -->
+            <div class="mb-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border">
+                <div class="flex flex-col space-y-3">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                            </svg>
+                            <span class="text-sm font-medium text-blue-800">
+                                Algorithme de similarité activé - 
+                                {{ count($matchedProducts) }} produit(s) correspondant(s) au seuil de {{ $similarityThreshold * 100 }}%
+                            </span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <span class="text-xs text-blue-600 font-semibold">Ajuster le seuil :</span>
+                            <button wire:click="adjustSimilarityThreshold(0.5)" 
+                                    class="px-2 py-1 text-xs {{ $similarityThreshold == 0.5 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors">
+                                50%
+                            </button>
+                            <button wire:click="adjustSimilarityThreshold(0.6)" 
+                                    class="px-2 py-1 text-xs {{ $similarityThreshold == 0.6 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors">
+                                60%
+                            </button>
+                            <button wire:click="adjustSimilarityThreshold(0.7)" 
+                                    class="px-2 py-1 text-xs {{ $similarityThreshold == 0.7 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors">
+                                70%
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center space-x-4 text-xs text-blue-600">
+                        <span class="font-semibold">Légende :</span>
+                        <span class="flex items-center">
+                            <span class="w-3 h-3 bg-green-500 rounded-full mr-1"></span>
+                            Excellent (90-100%)
+                        </span>
+                        <span class="flex items-center">
+                            <span class="w-3 h-3 bg-blue-500 rounded-full mr-1"></span>
+                            Bon (70-89%)
+                        </span>
+                        <span class="flex items-center">
+                            <span class="w-3 h-3 bg-yellow-500 rounded-full mr-1"></span>
+                            Moyen (60-69%)
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Critères de recherche -->
+            @if(!empty($searchVolumes) || !empty($searchVariationKeywords))
                 <div class="mb-4 p-4 bg-blue-50 rounded-lg">
                     <div class="flex flex-col space-y-2">
                         <div class="flex items-center">
                             <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                             </svg>
-                            <span class="text-sm font-medium text-blue-800">Critères de correspondance :</span>
+                            <span class="text-sm font-medium text-blue-800">Critères de recherche détectés :</span>
                         </div>
                         <div class="flex flex-wrap gap-2">
                             @if(!empty($searchVolumes))
                                 <div class="flex items-center">
-                                    <span class="text-xs text-blue-700 mr-1">Volumes recherchés :</span>
+                                    <span class="text-xs text-blue-700 mr-1">Volumes :</span>
                                     @foreach($searchVolumes as $volume)
                                         <span class="bg-green-100 text-green-800 font-semibold px-2 py-1 rounded text-xs">{{ $volume }} ml</span>
                                     @endforeach
                                 </div>
                             @endif
                             @php
-                                $mainProduct = $this->getOneProductDetails($this->id);
-                                $mainProductType = !empty($mainProduct) && isset($mainProduct[0]) ? $mainProduct[0]->type : null;
+                                $searchVariation = $this->extractSearchVariation();
                             @endphp
-                            @if($mainProductType)
+                            @if($searchVariation)
                                 <div class="flex items-center">
-                                    <span class="text-xs text-blue-700 mr-1">Type recherché :</span>
-                                    <span class="bg-purple-100 text-purple-800 font-semibold px-2 py-1 rounded text-xs">{{ $mainProductType }}</span>
+                                    <span class="text-xs text-blue-700 mr-1">Variation :</span>
+                                    <span class="bg-blue-100 text-blue-800 font-semibold px-2 py-1 rounded text-xs">{{ $searchVariation }}</span>
                                 </div>
                             @endif
-                        </div>
-                        <div class="text-xs text-blue-600 mt-1">
-                            <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Les produits en vert contiennent AU MOINS un volume ET le même type que le produit recherché
                         </div>
                     </div>
                 </div>
@@ -610,12 +858,14 @@ public function highlightMatchingTerms($text)
             <div class="bg-white shadow-sm rounded-lg overflow-hidden">
                 <div class="px-6 py-4 border-b border-gray-200">
                     <h3 class="text-lg font-medium text-gray-900">Résultats de la recherche</h3>
-                    <p class="mt-1 text-sm text-gray-500">{{ count($products) }} produit(s) trouvé(s)</p>
+                    <p class="mt-1 text-sm text-gray-500">{{ count($matchedProducts) }} produit(s) correspondant(s)</p>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
                             <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Score</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Correspondance</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Image</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Variation</th>
@@ -626,33 +876,64 @@ public function highlightMatchingTerms($text)
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
-                            @foreach($products as $product)
+                            @foreach($matchedProducts as $product)
                                 @php
+                                    $matchClass = [
+                                        'excellent' => 'bg-green-100 text-green-800 border-green-300',
+                                        'bon' => 'bg-blue-100 text-blue-800 border-blue-300',
+                                        'moyen' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
+                                        'faible' => 'bg-gray-100 text-gray-800 border-gray-300'
+                                    ][$product->match_level ?? 'faible'];
+                                    
                                     $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
                                     $hasMatchingVolume = $this->hasMatchingVolume($product);
-                                    $hasSameVolumeAndType = $this->hasSameVolumeAndType($product);
+                                    $hasExactVariation = $this->hasExactVariationMatch($product);
                                 @endphp
-                                <tr class="hover:bg-gray-50 @if($hasSameVolumeAndType) bg-green-50 border-l-4 border-green-500 @endif">
+                                <tr class="hover:bg-gray-50 transition-colors duration-150">
+                                    <!-- Colonne Score -->
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <div class="flex items-center">
+                                            <div class="w-16 bg-gray-200 rounded-full h-2 mr-3">
+                                                <div class="h-2 rounded-full 
+                                                    @if(($product->similarity_score ?? 0) >= 0.9) bg-green-500
+                                                    @elseif(($product->similarity_score ?? 0) >= 0.7) bg-blue-500
+                                                    @elseif(($product->similarity_score ?? 0) >= 0.6) bg-yellow-500
+                                                    @else bg-gray-500 @endif"
+                                                    style="width: {{ ($product->similarity_score ?? 0) * 100 }}%">
+                                                </div>
+                                            </div>
+                                            <span class="text-sm font-mono font-semibold 
+                                                @if(($product->similarity_score ?? 0) >= 0.9) text-green-600
+                                                @elseif(($product->similarity_score ?? 0) >= 0.7) text-blue-600
+                                                @elseif(($product->similarity_score ?? 0) >= 0.6) text-yellow-600
+                                                @else text-gray-600 @endif">
+                                                {{ number_format(($product->similarity_score ?? 0) * 100, 0) }}%
+                                            </span>
+                                        </div>
+                                    </td>
+                                    
+                                    <!-- Colonne Correspondance -->
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border {{ $matchClass }}">
+                                            @if($product->match_level === 'excellent')
+                                                <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                                </svg>
+                                            @endif
+                                            {{ ucfirst($product->match_level) }}
+                                        </span>
+                                    </td>
+                                    
                                     <!-- Colonne Image -->
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         @if(!empty($product->image))
                                             <img src="{{ $product->image }}" 
                                                  alt="{{ $product->name ?? 'Produit' }}" 
-                                                 class="h-12 w-12 object-cover rounded-lg"
+                                                 class="h-12 w-12 object-cover rounded-lg shadow-sm"
                                                  onerror="this.src='https://via.placeholder.com/48?text=No+Image'">
                                         @else
-                                            <div class="h-12 w-12 bg-gray-200 rounded-lg flex items-center justify-center">
+                                            <div class="h-12 w-12 bg-gray-200 rounded-lg flex items-center justify-center shadow-sm">
                                                 <span class="text-xs text-gray-500">No Image</span>
-                                            </div>
-                                        @endif
-                                        @if($hasSameVolumeAndType)
-                                            <div class="mt-1 text-center">
-                                                <span class="inline-flex items-center px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">
-                                                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
-                                                    </svg>
-                                                    Même volume et type
-                                                </span>
                                             </div>
                                         @endif
                                     </td>
@@ -660,7 +941,7 @@ public function highlightMatchingTerms($text)
                                     <!-- Colonne Nom -->
                                     <td class="px-6 py-4">
                                         <div class="text-sm font-medium text-gray-900 max-w-xs" title="{{ $product->name ?? 'N/A' }}">
-                                            {{ $product->name }}
+                                            {!! $this->highlightMatchingTerms($product->name) !!}
                                         </div>
                                         @if(!empty($product->vendor))
                                             <div class="text-xs text-gray-500 mt-1">
@@ -694,6 +975,16 @@ public function highlightMatchingTerms($text)
                                         <div class="text-sm text-gray-900 max-w-xs" title="{{ $product->variation ?? 'Standard' }}">
                                             {!! $this->highlightMatchingTerms($product->variation ?? 'Standard') !!}
                                         </div>
+                                        @if($hasExactVariation)
+                                            <div class="mt-1">
+                                                <span class="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
+                                                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                                    </svg>
+                                                    Variation identique
+                                                </span>
+                                            </div>
+                                        @endif
                                     </td>
 
                                     <!-- Colonne Site Source -->
@@ -724,24 +1015,8 @@ public function highlightMatchingTerms($text)
                                     
                                     <!-- Colonne Type -->
                                     <td class="px-6 py-4 whitespace-nowrap">
-                                        @php
-                                            $mainProduct = $this->getOneProductDetails($this->id);
-                                            $mainProductType = !empty($mainProduct) && isset($mainProduct[0]) ? $mainProduct[0]->type : null;
-                                            $productType = $product->type ?? 'N/A';
-                                            $isTypeMatching = $mainProductType && $productType && strtolower(trim($mainProductType)) === strtolower(trim($productType));
-                                        @endphp
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium 
-                                            @if($isTypeMatching)
-                                                bg-green-100 text-green-800 border border-green-300
-                                            @else
-                                                bg-purple-100 text-purple-800
-                                            @endif">
-                                            {{ $productType }}
-                                            @if($isTypeMatching)
-                                                <svg class="w-3 h-3 ml-1 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                                                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
-                                                </svg>
-                                            @endif
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                            {{ $product->type ?? 'N/A' }}
                                         </span>
                                     </td>
                                     
@@ -779,7 +1054,15 @@ public function highlightMatchingTerms($text)
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <h3 class="mt-4 text-lg font-medium text-gray-900">Aucun résultat trouvé</h3>
-                <p class="mt-2 text-sm text-gray-500">Aucun produit ne correspond à la recherche : {{ $search ?? 'N/A' }}</p>
+                <p class="mt-2 text-sm text-gray-500">
+                    Aucun produit ne correspond au seuil de similarité de {{ $similarityThreshold * 100 }}%
+                </p>
+                <div class="mt-4">
+                    <button wire:click="adjustSimilarityThreshold(0.5)" 
+                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                        Baisser le seuil à 50%
+                    </button>
+                </div>
             </div>
         @endif
     </div>
