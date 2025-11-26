@@ -101,7 +101,7 @@ new class extends Component {
         <div class="relative overflow-hidden rounded-lg">
             <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $this->product->thumbnail) }}" 
                  alt="{{ utf8_encode($this->product->title) ?? 'Product image' }}" 
-                 class="aspect-[4/3] w-full object-contain bg-gray-50">
+                 class="aspect-[4/3] w-full object-cover">
         </div>
     </div>
 
@@ -133,19 +133,69 @@ new class extends Component {
             @endif
         </div>
 
-        <!-- Description -->
-        @if($this->product->description)
-        <div class="prose prose-sm max-w-none">
-            <p class="text-gray-700 leading-relaxed">
-                {{ strip_tags(utf8_encode($this->product->description)) }}
-            </p>
-        </div>
-        @elseif($this->product->short_description)
-        <div class="prose prose-sm max-w-none">
-            <p class="text-gray-700 leading-relaxed">
-                {{ strip_tags(utf8_encode($this->product->short_description)) }}
-            </p>
-        </div>
+        <!-- Price Details - Collapsible -->
+        <details class="mb-6 border border-gray-200 rounded-lg">
+            <summary class="cursor-pointer p-4 font-semibold text-gray-900 hover:bg-gray-50 transition-colors rounded-lg flex items-center justify-between">
+                <span>Détails des prix</span>
+                <svg class="w-5 h-5 text-gray-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+            </summary>
+            <div class="px-4 pb-4 space-y-3 text-sm border-t border-gray-100 pt-3">
+                @if($this->product->price)
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Prix de vente</span>
+                    <span class="font-semibold text-gray-900">{{ number_format($this->product->price, 2) }} €</span>
+                </div>
+                @endif
+                @if($this->product->special_price)
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Prix promotionnel</span>
+                    <span class="font-semibold text-red-600">{{ number_format($this->product->special_price, 2) }} €</span>
+                </div>
+                @endif
+                @if($this->product->prix_achat_ht)
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Coût d'achat HT</span>
+                    <span class="font-semibold text-blue-600">{{ number_format($this->product->prix_achat_ht, 2) }} €</span>
+                </div>
+                @endif
+                @if($this->product->pvc)
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Prix PVC</span>
+                    <span class="font-semibold text-purple-600">{{ number_format($this->product->pvc, 2) }} €</span>
+                </div>
+                @endif
+                @if($this->product->prix_us)
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Prix US</span>
+                    <span class="font-semibold text-orange-600">${{ number_format($this->product->prix_us, 2) }}</span>
+                </div>
+                @endif
+            </div>
+        </details>
+
+        <!-- Description - Collapsible -->
+        @if($this->product->description || $this->product->short_description)
+        <details class="border border-gray-200 rounded-lg">
+            <summary class="cursor-pointer p-4 font-semibold text-gray-900 hover:bg-gray-50 transition-colors rounded-lg flex items-center justify-between">
+                <span>Description</span>
+                <svg class="w-5 h-5 text-gray-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+            </summary>
+            <div class="px-4 pb-4 border-t border-gray-100 pt-3">
+                @if($this->product->description)
+                <p class="text-gray-700 leading-relaxed">
+                    {{ strip_tags(utf8_encode($this->product->description)) }}
+                </p>
+                @elseif($this->product->short_description)
+                <p class="text-gray-700 leading-relaxed">
+                    {{ strip_tags(utf8_encode($this->product->short_description)) }}
+                </p>
+                @endif
+            </div>
+        </details>
         @endif
     </div>
 </div>
