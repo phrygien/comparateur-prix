@@ -924,16 +924,16 @@ new class extends Component {
                                         </span>
                                     </td>
                                     
-                                    <!-- Colonne Image -->
+                                    <!-- Colonne Image - TAILLE AUGMENTÉE -->
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         @if(!empty($product->image))
                                             <img src="{{ $product->image }}" 
                                                  alt="{{ $product->name ?? 'Produit' }}" 
-                                                 class="h-12 w-12 object-cover rounded-lg shadow-sm"
-                                                 onerror="this.src='https://via.placeholder.com/48?text=No+Image'">
+                                                 class="h-20 w-20 object-cover rounded-lg shadow-md border border-gray-200"
+                                                 onerror="this.src='https://via.placeholder.com/80?text=No+Image'">
                                         @else
-                                            <div class="h-12 w-12 bg-gray-200 rounded-lg flex items-center justify-center shadow-sm">
-                                                <span class="text-xs text-gray-500">No Image</span>
+                                            <div class="h-20 w-20 bg-gray-100 rounded-lg flex items-center justify-center shadow-md border border-gray-200">
+                                                <span class="text-xs text-gray-500 text-center px-1">No Image</span>
                                             </div>
                                         @endif
                                     </td>
