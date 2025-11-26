@@ -134,7 +134,7 @@ new class extends Component {
         </div>
 
         <!-- Price Details - Collapsible -->
-        <details class="mb-6 border border-gray-200 rounded-lg">
+        <details class="mb-6 border border-gray-200 rounded-lg" open>
             <summary class="cursor-pointer p-4 font-semibold text-gray-900 hover:bg-gray-50 transition-colors rounded-lg flex items-center justify-between">
                 <span>Détails des prix</span>
                 <svg class="w-5 h-5 text-gray-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
