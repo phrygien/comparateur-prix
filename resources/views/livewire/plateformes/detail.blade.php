@@ -108,7 +108,7 @@ new class extends Component {
                 <li>
                     <div class="flex items-center text-sm">
                         <a href="#" class="font-medium text-gray-500 hover:text-gray-900">
-                           {{ $this->product->vendor ?? 'N/A' }}
+                           {{ utf8_encode($this->product->vendor) ?? 'N/A' }}
                         </a>
                         <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" class="ml-2 size-5 shrink-0 text-gray-300">
                             <path d="M5.555 17.776l8-16 .894.448-8 16-.894-.448z" />
@@ -117,14 +117,14 @@ new class extends Component {
                 </li>
                 <li>
                     <div class="flex items-center text-sm">
-                        <a href="#" class="font-medium text-gray-500 hover:text-gray-900">Bags</a>
+                        <a href="#" class="font-medium text-gray-500 hover:text-gray-900">{{ utf8_encode($this->product->type) ?? 'N/A' }}</a>
                     </div>
                 </li>
             </ol>
         </nav>
 
         <div class="mt-4">
-            <h1 class="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">{{ $this->product->title ?? 'N/A' }}</h1>
+            <h1 class="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">{{ utf8_encode($this->product->title) ?? 'N/A' }}</h1>
         </div>
 
         <section aria-labelledby="information-heading" class="mt-4">
@@ -132,7 +132,7 @@ new class extends Component {
 
             <div class="mt-4 space-y-6">
                 <p class="text-base text-gray-500">
-                    {{ $this->product->description ?? 'N/A' }}
+                    {{ utf8_encode($this->product->description) ?? 'N/A' }}
                 </p>
             </div>
 
