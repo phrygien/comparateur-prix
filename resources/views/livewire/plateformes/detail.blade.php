@@ -96,12 +96,15 @@ new class extends Component {
 }; ?>
 
 <div class="w-full px-4 py-6 sm:px-6 lg:grid lg:grid-cols-2 lg:gap-x-10 lg:px-10">
-    <!-- Product image - Left column -->
-    <div class="lg:col-start-1 flex items-start">
-        <div class="relative overflow-hidden rounded-lg bg-transparent w-full">
-            <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $this->product->thumbnail) }}" 
-                 alt="{{ utf8_encode($this->product->title) ?? 'Product image' }}" 
-                 class="w-3/5 mx-auto object-contain max-h-96 transition-all duration-300 ease-in-out hover:scale-105 cursor-pointer">
+<!-- Product image - Left column -->
+    <div class="lg:col-start-1 flex items-start justify-center">
+        <div class="hover-3d">
+            <!-- content -->
+            <figure class="w-80 rounded-2xl">
+                <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $this->product->thumbnail) }}" 
+                     alt="{{ utf8_encode($this->product->title) ?? 'Product image' }}" 
+                     class="w-full object-contain max-h-96" />
+            </figure>
         </div>
     </div>
 
