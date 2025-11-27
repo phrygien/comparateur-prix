@@ -804,26 +804,29 @@ new class extends Component {
     /**
      * Détermine le statut de compétitivité de notre prix
      */
-    public function getPriceCompetitiveness($competitorPrice)
-    {
-        $difference = $this->calculatePriceDifference($competitorPrice);
-        
-        if ($difference === null) {
-            return 'unknown';
-        }
-        
-        if ($difference < -10) {
-            return 'higher'; // Nous sommes beaucoup plus cher
-        } elseif ($difference < 0) {
-            return 'slightly_higher'; // Nous sommes plus cher
-        } elseif ($difference == 0) {
-            return 'same'; // Même prix
-        } elseif ($difference <= 10) {
-            return 'competitive'; // Nous sommes moins cher
-        } else {
-            return 'very_competitive'; // Nous sommes beaucoup moins cher
-        }
+/**
+ * Détermine le statut de compétitivité de notre prix
+ */
+public function getPriceCompetitiveness($competitorPrice)
+{
+    $difference = $this->calculatePriceDifference($competitorPrice);
+    
+    if ($difference === null) {
+        return 'unknown';
     }
+    
+    if ($difference > 10) {
+        return 'very_competitive'; // Nous sommes beaucoup moins cher (différence positive = nous - cher)
+    } elseif ($difference > 0) {
+        return 'competitive'; // Nous sommes moins cher
+    } elseif ($difference == 0) {
+        return 'same'; // Même prix
+    } elseif ($difference >= -10) {
+        return 'slightly_higher'; // Nous sommes légèrement plus cher
+    } else {
+        return 'higher'; // Nous sommes beaucoup plus cher
+    }
+}
 
     /**
      * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
@@ -907,26 +910,29 @@ new class extends Component {
     /**
      * Détermine le statut de compétitivité de Cosmashop
      */
-    public function getCosmashopPriceCompetitiveness($competitorPrice)
-    {
-        $difference = $this->calculateCosmashopPriceDifference($competitorPrice);
-        
-        if ($difference === null) {
-            return 'unknown';
-        }
-        
-        if ($difference < -10) {
-            return 'higher'; // Cosmashop serait beaucoup plus cher
-        } elseif ($difference < 0) {
-            return 'slightly_higher'; // Cosmashop serait plus cher
-        } elseif ($difference == 0) {
-            return 'same'; // Même prix que Cosmashop
-        } elseif ($difference <= 10) {
-            return 'competitive'; // Cosmashop serait moins cher
-        } else {
-            return 'very_competitive'; // Cosmashop serait beaucoup moins cher
-        }
+/**
+ * Détermine le statut de compétitivité de Cosmashop
+ */
+public function getCosmashopPriceCompetitiveness($competitorPrice)
+{
+    $difference = $this->calculateCosmashopPriceDifference($competitorPrice);
+    
+    if ($difference === null) {
+        return 'unknown';
     }
+    
+    if ($difference > 10) {
+        return 'very_competitive'; // Cosmashop serait beaucoup moins cher
+    } elseif ($difference > 0) {
+        return 'competitive'; // Cosmashop serait moins cher
+    } elseif ($difference == 0) {
+        return 'same'; // Même prix que Cosmashop
+    } elseif ($difference >= -10) {
+        return 'slightly_higher'; // Cosmashop serait légèrement plus cher
+    } else {
+        return 'higher'; // Cosmashop serait beaucoup plus cher
+    }
+}
 
     /**
      * Retourne le libellé pour le statut Cosmashop
