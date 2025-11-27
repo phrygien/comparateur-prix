@@ -17,9 +17,9 @@ new class extends Component {
     public $similarityThreshold = 0.6;
     public $matchedProducts = [];
 
-    // prix a comparer
+    // prix a commparer
     public $price;
-    // Ajoutez cette propriété dans la classe
+        // Ajoutez cette propriété dans la classe
     public $referencePrice;
     
     // price cosmashop
@@ -777,8 +777,13 @@ new class extends Component {
         $this->getCompetitorPrice($this->search ?? '');
     }
 
+
+
+
+
+
     /**
-     * Calcule la différence de prix par rapport au prix du concurrent
+     * Calcule la différence de prix par rapport au prix de référence
      */
     public function calculatePriceDifference($competitorPrice)
     {
@@ -786,11 +791,11 @@ new class extends Component {
             return null;
         }
         
-        return $this->referencePrice - $competitorPrice;
+        return $competitorPrice - $this->referencePrice;
     }
 
     /**
-     * Calcule le pourcentage de différence par rapport au concurrent
+     * Calcule le pourcentage de différence
      */
     public function calculatePriceDifferencePercentage($competitorPrice)
     {
@@ -798,11 +803,11 @@ new class extends Component {
             return null;
         }
         
-        return (($this->referencePrice - $competitorPrice) / $competitorPrice) * 100;
+        return (($competitorPrice - $this->referencePrice) / $this->referencePrice) * 100;
     }
 
     /**
-     * Détermine le statut de compétitivité de notre prix
+     * Détermine le statut de compétitivité du prix
      */
     public function getPriceCompetitiveness($competitorPrice)
     {
@@ -813,35 +818,16 @@ new class extends Component {
         }
         
         if ($difference < -10) {
-            return 'higher'; // Nous sommes beaucoup plus cher
+            return 'very_competitive'; // Beaucoup moins cher
         } elseif ($difference < 0) {
-            return 'slightly_higher'; // Nous sommes plus cher
+            return 'competitive'; // Moins cher
         } elseif ($difference == 0) {
             return 'same'; // Même prix
         } elseif ($difference <= 10) {
-            return 'competitive'; // Nous sommes moins cher
+            return 'slightly_higher'; // Légèrement plus cher
         } else {
-            return 'very_competitive'; // Nous sommes beaucoup moins cher
+            return 'higher'; // Plus cher
         }
-    }
-
-    /**
-     * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
-     */
-    public function getPriceStatusLabel($competitorPrice)
-    {
-        $status = $this->getPriceCompetitiveness($competitorPrice);
-        
-        $labels = [
-            'very_competitive' => 'Nous sommes beaucoup - cher',
-            'competitive' => 'Nous sommes - cher', 
-            'same' => 'Prix identique',
-            'slightly_higher' => 'Nous sommes + cher',
-            'higher' => 'Nous sommes beaucoup + cher',
-            'unknown' => 'Non comparable'
-        ];
-        
-        return $labels[$status] ?? $labels['unknown'];
     }
 
     /**
@@ -864,66 +850,18 @@ new class extends Component {
     }
 
     /**
-     * Calcule la différence de prix Cosmashop par rapport au concurrent
+     * Retourne le libellé pour le statut de prix
      */
-    public function calculateCosmashopPriceDifference($competitorPrice)
+    public function getPriceStatusLabel($competitorPrice)
     {
-        if (!is_numeric($competitorPrice) || !is_numeric($this->cosmashopPrice) || $this->cosmashopPrice == 0) {
-            return null;
-        }
-        
-        return $this->cosmashopPrice - $competitorPrice;
-    }
-
-    /**
-     * Calcule le pourcentage de différence Cosmashop par rapport au concurrent
-     */
-    public function calculateCosmashopPriceDifferencePercentage($competitorPrice)
-    {
-        if (!is_numeric($competitorPrice) || !is_numeric($this->cosmashopPrice) || $this->cosmashopPrice == 0) {
-            return null;
-        }
-        
-        return (($this->cosmashopPrice - $competitorPrice) / $competitorPrice) * 100;
-    }
-
-    /**
-     * Détermine le statut de compétitivité de Cosmashop
-     */
-    public function getCosmashopPriceCompetitiveness($competitorPrice)
-    {
-        $difference = $this->calculateCosmashopPriceDifference($competitorPrice);
-        
-        if ($difference === null) {
-            return 'unknown';
-        }
-        
-        if ($difference < -10) {
-            return 'higher'; // Cosmashop serait beaucoup plus cher
-        } elseif ($difference < 0) {
-            return 'slightly_higher'; // Cosmashop serait plus cher
-        } elseif ($difference == 0) {
-            return 'same'; // Même prix que Cosmashop
-        } elseif ($difference <= 10) {
-            return 'competitive'; // Cosmashop serait moins cher
-        } else {
-            return 'very_competitive'; // Cosmashop serait beaucoup moins cher
-        }
-    }
-
-    /**
-     * Retourne le libellé pour le statut Cosmashop
-     */
-    public function getCosmashopPriceStatusLabel($competitorPrice)
-    {
-        $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
+        $status = $this->getPriceCompetitiveness($competitorPrice);
         
         $labels = [
-            'very_competitive' => 'Cosmashop serait beaucoup - cher',
-            'competitive' => 'Cosmashop serait - cher',
-            'same' => 'Prix identique à Cosmashop', 
-            'slightly_higher' => 'Cosmashop serait + cher',
-            'higher' => 'Cosmashop serait beaucoup + cher',
+            'very_competitive' => 'Très compétitif',
+            'competitive' => 'Compétitif',
+            'same' => 'Prix identique',
+            'slightly_higher' => 'Légèrement plus cher',
+            'higher' => 'Plus cher',
             'unknown' => 'Non comparable'
         ];
         
@@ -931,26 +869,7 @@ new class extends Component {
     }
 
     /**
-     * Retourne la classe CSS pour le statut Cosmashop
-     */
-    public function getCosmashopPriceStatusClass($competitorPrice)
-    {
-        $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
-        
-        $classes = [
-            'very_competitive' => 'bg-green-100 text-green-800 border-green-300',
-            'competitive' => 'bg-emerald-100 text-emerald-800 border-emerald-300',
-            'same' => 'bg-blue-100 text-blue-800 border-blue-300',
-            'slightly_higher' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
-            'higher' => 'bg-red-100 text-red-800 border-red-300',
-            'unknown' => 'bg-gray-100 text-gray-800 border-gray-300'
-        ];
-        
-        return $classes[$status] ?? $classes['unknown'];
-    }
-
-    /**
-     * Formate la différence de prix avec le bon symbole
+     * Formate la différence de prix
      */
     public function formatPriceDifference($difference)
     {
@@ -964,23 +883,6 @@ new class extends Component {
         
         $formatted = number_format(abs($difference), 2, ',', ' ');
         return $difference > 0 ? "+{$formatted} €" : "-{$formatted} €";
-    }
-
-    /**
-     * Formate le pourcentage de différence avec le bon symbole
-     */
-    public function formatPercentageDifference($percentage)
-    {
-        if ($percentage === null) {
-            return 'N/A';
-        }
-        
-        if ($percentage == 0) {
-            return '0%';
-        }
-        
-        $formatted = number_format(abs($percentage), 1, ',', ' ');
-        return $percentage > 0 ? "+{$formatted}%" : "-{$formatted}%";
     }
 
     /**
@@ -1014,6 +916,100 @@ new class extends Component {
             'count' => count($prices),
             'our_position' => $ourPrice <= $avgPrice ? 'competitive' : 'above_average'
         ];
+    }
+
+
+
+
+
+
+
+
+
+    /**
+     * Calcule la différence de prix par rapport au prix Cosmashop
+     */
+    public function calculateCosmashopPriceDifference($competitorPrice)
+    {
+        if (!is_numeric($competitorPrice) || !is_numeric($this->cosmashopPrice) || $this->cosmashopPrice == 0) {
+            return null;
+        }
+        
+        return $competitorPrice - $this->cosmashopPrice;
+    }
+
+    /**
+     * Calcule le pourcentage de différence par rapport à Cosmashop
+     */
+    public function calculateCosmashopPriceDifferencePercentage($competitorPrice)
+    {
+        if (!is_numeric($competitorPrice) || !is_numeric($this->cosmashopPrice) || $this->cosmashopPrice == 0) {
+            return null;
+        }
+        
+        return (($competitorPrice - $this->cosmashopPrice) / $this->cosmashopPrice) * 100;
+    }
+
+    /**
+     * Détermine le statut de compétitivité par rapport à Cosmashop
+     */
+    public function getCosmashopPriceCompetitiveness($competitorPrice)
+    {
+        $difference = $this->calculateCosmashopPriceDifference($competitorPrice);
+        
+        if ($difference === null) {
+            return 'unknown';
+        }
+        
+        if ($difference < -10) {
+            return 'very_competitive'; // Beaucoup moins cher que Cosmashop
+        } elseif ($difference < 0) {
+            return 'competitive'; // Moins cher que Cosmashop
+        } elseif ($difference == 0) {
+            return 'same'; // Même prix que Cosmashop
+        } elseif ($difference <= 10) {
+            return 'slightly_higher'; // Légèrement plus cher que Cosmashop
+        } else {
+            return 'higher'; // Plus cher que Cosmashop
+        }
+    }
+
+    /**
+     * Retourne la classe CSS pour le statut Cosmashop
+     */
+    public function getCosmashopPriceStatusClass($competitorPrice)
+    {
+        $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
+        
+        $classes = [
+            'very_competitive' => 'bg-green-100 text-green-800 border-green-300',
+            'competitive' => 'bg-emerald-100 text-emerald-800 border-emerald-300',
+            'same' => 'bg-blue-100 text-blue-800 border-blue-300',
+            'slightly_higher' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
+            'higher' => 'bg-red-100 text-red-800 border-red-300',
+            'unknown' => 'bg-gray-100 text-gray-800 border-gray-300'
+        ];
+        
+        return $classes[$status] ?? $classes['unknown'];
+    }
+
+    /**
+     * Retourne le libellé pour le statut Cosmashop
+     */
+    public function getCosmashopPriceStatusLabel($competitorPrice)
+    {
+        $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
+        
+        $labels = [
+            'very_competitive' => 'Très compétitif',
+            'competitive' => 'Compétitif',
+            'same' => 'Prix identique',
+            'slightly_higher' => 'Légèrement + cher',
+            'higher' => 'Plus cher',
+            'unknown' => 'Non comparable'
+        ];
+        
+        return $labels[$status] ?? $labels['unknown'];
     }
 
     /**
@@ -1063,6 +1059,7 @@ new class extends Component {
         ];
     }
 
+
 }; ?>
 
 <div>
@@ -1088,15 +1085,15 @@ new class extends Component {
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
                         <div class="text-center p-3 bg-white rounded-lg shadow-sm">
                             <div class="text-2xl font-bold text-green-600">{{ $this->formatPrice($priceAnalysis['min']) }}</div>
-                            <div class="text-xs text-gray-600">Prix minimum concurrent</div>
+                            <div class="text-xs text-gray-600">Prix minimum</div>
                         </div>
                         <div class="text-center p-3 bg-white rounded-lg shadow-sm">
                             <div class="text-2xl font-bold text-red-600">{{ $this->formatPrice($priceAnalysis['max']) }}</div>
-                            <div class="text-xs text-gray-600">Prix maximum concurrent</div>
+                            <div class="text-xs text-gray-600">Prix maximum</div>
                         </div>
                         <div class="text-center p-3 bg-white rounded-lg shadow-sm">
                             <div class="text-2xl font-bold text-blue-600">{{ $this->formatPrice($priceAnalysis['average']) }}</div>
-                            <div class="text-xs text-gray-600">Prix moyen concurrent</div>
+                            <div class="text-xs text-gray-600">Prix moyen</div>
                         </div>
                         <div class="text-center p-3 bg-white rounded-lg shadow-sm border-2 
                             {{ $priceAnalysis['our_position'] === 'competitive' ? 'border-green-300' : 'border-yellow-300' }}">
@@ -1132,15 +1129,15 @@ new class extends Component {
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
                         <div class="text-center p-3 bg-white rounded-lg shadow-sm">
                             <div class="text-2xl font-bold text-green-600">{{ $this->formatPrice($cosmashopAnalysis['min']) }}</div>
-                            <div class="text-xs text-gray-600">Prix minimum concurrent</div>
+                            <div class="text-xs text-gray-600">Prix minimum</div>
                         </div>
                         <div class="text-center p-3 bg-white rounded-lg shadow-sm">
                             <div class="text-2xl font-bold text-red-600">{{ $this->formatPrice($cosmashopAnalysis['max']) }}</div>
-                            <div class="text-xs text-gray-600">Prix maximum concurrent</div>
+                            <div class="text-xs text-gray-600">Prix maximum</div>
                         </div>
                         <div class="text-center p-3 bg-white rounded-lg shadow-sm">
                             <div class="text-2xl font-bold text-blue-600">{{ $this->formatPrice($cosmashopAnalysis['average']) }}</div>
-                            <div class="text-xs text-gray-600">Prix moyen concurrent</div>
+                            <div class="text-xs text-gray-600">Prix moyen</div>
                         </div>
                         <div class="text-center p-3 bg-white rounded-lg shadow-sm border-2 border-orange-300">
                             <div class="text-2xl font-bold text-orange-600">{{ $this->formatPrice($cosmashopAnalysis['cosmashop_price']) }}</div>
@@ -1266,6 +1263,7 @@ new class extends Component {
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Site Source</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prix HT</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vs Cosmaparfumerie</th>
+                                <!-- NOUVELLE COLONNE -->
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vs Cosmashop</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -1292,7 +1290,7 @@ new class extends Component {
                                     $priceStatusClass = $this->getPriceStatusClass($competitorPrice);
                                     $priceStatusLabel = $this->getPriceStatusLabel($competitorPrice);
                                     
-                                    // Données pour Cosmashop
+                                    // NOUVELLES DONNÉES POUR COSMASHOP
                                     $cosmashopDifference = $this->calculateCosmashopPriceDifference($competitorPrice);
                                     $cosmashopDifferencePercent = $this->calculateCosmashopPriceDifferencePercentage($competitorPrice);
                                     $cosmashopStatusClass = $this->getCosmashopPriceStatusClass($competitorPrice);
@@ -1433,14 +1431,14 @@ new class extends Component {
                                                 
                                                 <!-- Différence -->
                                                 <div class="text-xs font-semibold 
-                                                    {{ $priceDifference > 0 ? 'text-green-600' : ($priceDifference < 0 ? 'text-red-600' : 'text-blue-600') }}">
+                                                    {{ $priceDifference < 0 ? 'text-green-600' : ($priceDifference > 0 ? 'text-red-600' : 'text-blue-600') }}">
                                                     {{ $this->formatPriceDifference($priceDifference) }}
                                                 </div>
                                                 
                                                 <!-- Pourcentage -->
                                                 @if($priceDifferencePercent !== null && $priceDifference != 0)
                                                     <div class="text-xs text-gray-500">
-                                                        {{ $this->formatPercentageDifference($priceDifferencePercent) }}
+                                                        ({{ number_format(abs($priceDifferencePercent), 1) }}%)
                                                     </div>
                                                 @endif
                                             </div>
@@ -1449,7 +1447,7 @@ new class extends Component {
                                         @endif
                                     </td>
                                     
-                                    <!-- Colonne Vs Cosmashop -->
+                                    <!-- NOUVELLE COLONNE : Vs Cosmashop -->
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         @if(is_numeric($competitorPrice) && is_numeric($cosmashopPrice))
                                             <div class="space-y-1">
@@ -1460,14 +1458,14 @@ new class extends Component {
                                                 
                                                 <!-- Différence Cosmashop -->
                                                 <div class="text-xs font-semibold 
-                                                    {{ $cosmashopDifference > 0 ? 'text-green-600' : ($cosmashopDifference < 0 ? 'text-red-600' : 'text-blue-600') }}">
+                                                    {{ $cosmashopDifference < 0 ? 'text-green-600' : ($cosmashopDifference > 0 ? 'text-red-600' : 'text-blue-600') }}">
                                                     {{ $this->formatPriceDifference($cosmashopDifference) }}
                                                 </div>
                                                 
                                                 <!-- Pourcentage Cosmashop -->
                                                 @if($cosmashopDifferencePercent !== null && $cosmashopDifference != 0)
                                                     <div class="text-xs text-gray-500">
-                                                        {{ $this->formatPercentageDifference($cosmashopDifferencePercent) }}
+                                                        ({{ number_format(abs($cosmashopDifferencePercent), 1) }}%)
                                                     </div>
                                                 @endif
                                             </div>
