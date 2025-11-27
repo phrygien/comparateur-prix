@@ -852,34 +852,16 @@ new class extends Component {
     /**
      * Retourne le libellé pour le statut de prix
      */
-    // public function getPriceStatusLabel($competitorPrice)
-    // {
-    //     $status = $this->getPriceCompetitiveness($competitorPrice);
-        
-    //     $labels = [
-    //         'very_competitive' => 'Très compétitif',
-    //         'competitive' => 'Compétitif',
-    //         'same' => 'Prix identique',
-    //         'slightly_higher' => 'Légèrement plus cher',
-    //         'higher' => 'Plus cher',
-    //         'unknown' => 'Non comparable'
-    //     ];
-        
-    //     return $labels[$status] ?? $labels['unknown'];
-    // }
-    /**
-     * Retourne le libellé pour le statut de prix
-     */
     public function getPriceStatusLabel($competitorPrice)
     {
         $status = $this->getPriceCompetitiveness($competitorPrice);
         
         $labels = [
-            'very_competitive' => 'Nous sommes très compétitifs',
-            'competitive' => 'Nous sommes compétitifs',
+            'very_competitive' => 'Très compétitif',
+            'competitive' => 'Compétitif',
             'same' => 'Prix identique',
-            'slightly_higher' => 'Nous sommes légèrement + chers',
-            'higher' => 'Nous sommes plus chers',
+            'slightly_higher' => 'Légèrement plus cher',
+            'higher' => 'Plus cher',
             'unknown' => 'Non comparable'
         ];
         
@@ -906,68 +888,37 @@ new class extends Component {
     /**
      * Analyse globale des prix des concurrents
      */
-    // public function getPriceAnalysis()
-    // {
-    //     $prices = [];
+    public function getPriceAnalysis()
+    {
+        $prices = [];
         
-    //     foreach ($this->matchedProducts as $product) {
-    //         $price = $product->price_ht ?? $product->prix_ht;
-    //         if (is_numeric($price)) {
-    //             $prices[] = $price;
-    //         }
-    //     }
-        
-    //     if (empty($prices)) {
-    //         return null;
-    //     }
-        
-    //     $minPrice = min($prices);
-    //     $maxPrice = max($prices);
-    //     $avgPrice = array_sum($prices) / count($prices);
-    //     $ourPrice = $this->referencePrice;
-        
-    //     return [
-    //         'min' => $minPrice,
-    //         'max' => $maxPrice,
-    //         'average' => $avgPrice,
-    //         'our_price' => $ourPrice,
-    //         'count' => count($prices),
-    //         'our_position' => $ourPrice <= $avgPrice ? 'competitive' : 'above_average'
-    //     ];
-    // }
-
-/**
- * Analyse globale des prix des concurrents
- */
-public function getPriceAnalysis()
-{
-    $prices = [];
-    
-    foreach ($this->matchedProducts as $product) {
-        $price = $product->price_ht ?? $product->prix_ht;
-        if (is_numeric($price)) {
-            $prices[] = $price;
+        foreach ($this->matchedProducts as $product) {
+            $price = $product->price_ht ?? $product->prix_ht;
+            if (is_numeric($price)) {
+                $prices[] = $price;
+            }
         }
+        
+        if (empty($prices)) {
+            return null;
+        }
+        
+        $minPrice = min($prices);
+        $maxPrice = max($prices);
+        $avgPrice = array_sum($prices) / count($prices);
+        $ourPrice = $this->referencePrice;
+        
+        return [
+            'min' => $minPrice,
+            'max' => $maxPrice,
+            'average' => $avgPrice,
+            'our_price' => $ourPrice,
+            'count' => count($prices),
+            'our_position' => $ourPrice <= $avgPrice ? 'competitive' : 'above_average'
+        ];
     }
-    
-    if (empty($prices)) {
-        return null;
-    }
-    
-    $minPrice = min($prices);
-    $maxPrice = max($prices);
-    $avgPrice = array_sum($prices) / count($prices);
-    $ourPrice = $this->referencePrice;
-    
-    return [
-        'min' => $minPrice,
-        'max' => $maxPrice,
-        'average' => $avgPrice,
-        'our_price' => $ourPrice,
-        'count' => count($prices),
-        'our_position' => $ourPrice <= $avgPrice ? 'competitive' : 'above_average'
-    ];
-}
+
+
 
 
 
@@ -1045,34 +996,16 @@ public function getPriceAnalysis()
     /**
      * Retourne le libellé pour le statut Cosmashop
      */
-    // public function getCosmashopPriceStatusLabel($competitorPrice)
-    // {
-    //     $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
-        
-    //     $labels = [
-    //         'very_competitive' => 'Nous somme Très compétitif',
-    //         'competitive' => 'Compétitif',
-    //         'same' => 'Prix identique',
-    //         'slightly_higher' => 'Légèrement + cher',
-    //         'higher' => 'Plus cher',
-    //         'unknown' => 'Non comparable'
-    //     ];
-        
-    //     return $labels[$status] ?? $labels['unknown'];
-    // }
-    /**
-     * Retourne le libellé pour le statut Cosmashop
-     */
     public function getCosmashopPriceStatusLabel($competitorPrice)
     {
         $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
         
         $labels = [
-            'very_competitive' => 'Nous serions très compétitifs',
-            'competitive' => 'Nous serions compétitifs',
+            'very_competitive' => 'Nous somme Très compétitif',
+            'competitive' => 'Compétitif',
             'same' => 'Prix identique',
-            'slightly_higher' => 'Nous serions légèrement + chers',
-            'higher' => 'Nous serions plus chers',
+            'slightly_higher' => 'Légèrement + cher',
+            'higher' => 'Plus cher',
             'unknown' => 'Non comparable'
         ];
         
@@ -1082,95 +1015,50 @@ public function getPriceAnalysis()
     /**
      * Analyse globale pour Cosmashop
      */
-    // public function getCosmashopPriceAnalysis()
-    // {
-    //     $prices = [];
+    public function getCosmashopPriceAnalysis()
+    {
+        $prices = [];
         
-    //     foreach ($this->matchedProducts as $product) {
-    //         $price = $product->price_ht ?? $product->prix_ht;
-    //         if (is_numeric($price)) {
-    //             $prices[] = $price;
-    //         }
-    //     }
-        
-    //     if (empty($prices)) {
-    //         return null;
-    //     }
-        
-    //     $minPrice = min($prices);
-    //     $maxPrice = max($prices);
-    //     $avgPrice = array_sum($prices) / count($prices);
-    //     $cosmashopPrice = $this->cosmashopPrice;
-        
-    //     // Compter les concurrents en dessous/au-dessus de Cosmashop
-    //     $belowCosmashop = 0;
-    //     $aboveCosmashop = 0;
-        
-    //     foreach ($prices as $price) {
-    //         if ($price < $cosmashopPrice) {
-    //             $belowCosmashop++;
-    //         } else {
-    //             $aboveCosmashop++;
-    //         }
-    //     }
-        
-    //     return [
-    //         'min' => $minPrice,
-    //         'max' => $maxPrice,
-    //         'average' => $avgPrice,
-    //         'cosmashop_price' => $cosmashopPrice,
-    //         'count' => count($prices),
-    //         'below_cosmashop' => $belowCosmashop,
-    //         'above_cosmashop' => $aboveCosmashop,
-    //         'cosmashop_position' => $cosmashopPrice <= $avgPrice ? 'competitive' : 'above_average'
-    //     ];
-    // }
-/**
- * Analyse globale pour Cosmashop
- */
-public function getCosmashopPriceAnalysis()
-{
-    $prices = [];
-    
-    foreach ($this->matchedProducts as $product) {
-        $price = $product->price_ht ?? $product->prix_ht;
-        if (is_numeric($price)) {
-            $prices[] = $price;
+        foreach ($this->matchedProducts as $product) {
+            $price = $product->price_ht ?? $product->prix_ht;
+            if (is_numeric($price)) {
+                $prices[] = $price;
+            }
         }
-    }
-    
-    if (empty($prices)) {
-        return null;
-    }
-    
-    $minPrice = min($prices);
-    $maxPrice = max($prices);
-    $avgPrice = array_sum($prices) / count($prices);
-    $cosmashopPrice = $this->cosmashopPrice;
-    
-    // Compter les concurrents en dessous/au-dessus de Cosmashop
-    $belowCosmashop = 0;
-    $aboveCosmashop = 0;
-    
-    foreach ($prices as $price) {
-        if ($price < $cosmashopPrice) {
-            $belowCosmashop++;
-        } else {
-            $aboveCosmashop++;
+        
+        if (empty($prices)) {
+            return null;
         }
+        
+        $minPrice = min($prices);
+        $maxPrice = max($prices);
+        $avgPrice = array_sum($prices) / count($prices);
+        $cosmashopPrice = $this->cosmashopPrice;
+        
+        // Compter les concurrents en dessous/au-dessus de Cosmashop
+        $belowCosmashop = 0;
+        $aboveCosmashop = 0;
+        
+        foreach ($prices as $price) {
+            if ($price < $cosmashopPrice) {
+                $belowCosmashop++;
+            } else {
+                $aboveCosmashop++;
+            }
+        }
+        
+        return [
+            'min' => $minPrice,
+            'max' => $maxPrice,
+            'average' => $avgPrice,
+            'cosmashop_price' => $cosmashopPrice,
+            'count' => count($prices),
+            'below_cosmashop' => $belowCosmashop,
+            'above_cosmashop' => $aboveCosmashop,
+            'cosmashop_position' => $cosmashopPrice <= $avgPrice ? 'competitive' : 'above_average'
+        ];
     }
-    
-    return [
-        'min' => $minPrice,
-        'max' => $maxPrice,
-        'average' => $avgPrice,
-        'cosmashop_price' => $cosmashopPrice,
-        'count' => count($prices),
-        'below_cosmashop' => $belowCosmashop,
-        'above_cosmashop' => $aboveCosmashop,
-        'cosmashop_position' => $cosmashopPrice <= $avgPrice ? 'competitive' : 'above_average'
-    ];
-}
+
 
 }; ?>
 
@@ -1178,7 +1066,7 @@ public function getCosmashopPriceAnalysis()
     <livewire:plateformes.detail :id="$id"/>
 
     <!-- Section d'analyse des prix -->
-    {{-- @if($hasData && $referencePrice)
+    @if($hasData && $referencePrice)
         @php
             $priceAnalysis = $this->getPriceAnalysis();
             $cosmashopAnalysis = $this->getCosmashopPriceAnalysis();
@@ -1271,109 +1159,8 @@ public function getCosmashopPriceAnalysis()
                 </div>
             </div>
         @endif
-    @endif --}}
-<!-- Section d'analyse des prix -->
-@if($hasData && $referencePrice)
-    @php
-        $priceAnalysis = $this->getPriceAnalysis();
-        $cosmashopAnalysis = $this->getCosmashopPriceAnalysis();
-    @endphp
-    @if($priceAnalysis && $cosmashopAnalysis)
-        <div class="mx-auto w-full px-4 py-4 sm:px-6 lg:px-8">
-            <!-- Analyse Cosmaparfumerie -->
-            <div class="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200 p-4 mb-4">
-                <h4 class="text-lg font-semibold text-purple-800 mb-3 flex items-center">
-                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                    </svg>
-                    Analyse Cosmaparfumerie
-                </h4>
-                
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
-                    <div class="text-center p-3 bg-white rounded-lg shadow-sm">
-                        <div class="text-2xl font-bold text-green-600">{{ $this->formatPrice($priceAnalysis['min']) }}</div>
-                        <div class="text-xs text-gray-600">Prix minimum concurrent</div>
-                    </div>
-                    <div class="text-center p-3 bg-white rounded-lg shadow-sm">
-                        <div class="text-2xl font-bold text-red-600">{{ $this->formatPrice($priceAnalysis['max']) }}</div>
-                        <div class="text-xs text-gray-600">Prix maximum concurrent</div>
-                    </div>
-                    <div class="text-center p-3 bg-white rounded-lg shadow-sm">
-                        <div class="text-2xl font-bold text-blue-600">{{ $this->formatPrice($priceAnalysis['average']) }}</div>
-                        <div class="text-xs text-gray-600">Prix moyen concurrent</div>
-                    </div>
-                    <div class="text-center p-3 bg-white rounded-lg shadow-sm border-2 
-                        {{ $priceAnalysis['our_position'] === 'competitive' ? 'border-green-300' : 'border-yellow-300' }}">
-                        <div class="text-2xl font-bold text-purple-600">{{ $this->formatPrice($priceAnalysis['our_price']) }}</div>
-                        <div class="text-xs {{ $priceAnalysis['our_position'] === 'competitive' ? 'text-green-600' : 'text-yellow-600' }} font-semibold">
-                            Notre prix actuel
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="text-sm text-purple-700">
-                    <strong>Analyse :</strong> 
-                    <span class="font-semibold {{ $priceAnalysis['our_position'] === 'competitive' ? 'text-green-600' : 'text-yellow-600' }}">
-                        @if($priceAnalysis['our_position'] === 'competitive')
-                            Nous sommes compétitifs
-                        @else
-                            Nous sommes au-dessus de la moyenne
-                        @endif
-                    </span>
-                    par rapport aux {{ $priceAnalysis['count'] }} concurrents analysés.
-                    @if($priceAnalysis['our_price'] > $priceAnalysis['average'])
-                        <span class="text-yellow-600">({{ $this->formatPriceDifference($priceAnalysis['our_price'] - $priceAnalysis['average']) }} par rapport à la moyenne)</span>
-                    @endif
-                </div>
-            </div>
-
-            <!-- Analyse Cosmashop -->
-            <div class="bg-gradient-to-r from-orange-50 to-amber-50 rounded-lg border border-orange-200 p-4">
-                <h4 class="text-lg font-semibold text-orange-800 mb-3 flex items-center">
-                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                    </svg>
-                    Analyse Cosmashop (Prix +5%)
-                </h4>
-                
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
-                    <div class="text-center p-3 bg-white rounded-lg shadow-sm">
-                        <div class="text-2xl font-bold text-green-600">{{ $this->formatPrice($cosmashopAnalysis['min']) }}</div>
-                        <div class="text-xs text-gray-600">Prix minimum concurrent</div>
-                    </div>
-                    <div class="text-center p-3 bg-white rounded-lg shadow-sm">
-                        <div class="text-2xl font-bold text-red-600">{{ $this->formatPrice($cosmashopAnalysis['max']) }}</div>
-                        <div class="text-xs text-gray-600">Prix maximum concurrent</div>
-                    </div>
-                    <div class="text-center p-3 bg-white rounded-lg shadow-sm">
-                        <div class="text-2xl font-bold text-blue-600">{{ $this->formatPrice($cosmashopAnalysis['average']) }}</div>
-                        <div class="text-xs text-gray-600">Prix moyen concurrent</div>
-                    </div>
-                    <div class="text-center p-3 bg-white rounded-lg shadow-sm border-2 border-orange-300">
-                        <div class="text-2xl font-bold text-orange-600">{{ $this->formatPrice($cosmashopAnalysis['cosmashop_price']) }}</div>
-                        <div class="text-xs text-orange-600 font-semibold">
-                            Notre prix Cosmashop
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="text-sm text-orange-700">
-                    <strong>Analyse :</strong> 
-                    <span class="font-semibold {{ $cosmashopAnalysis['cosmashop_position'] === 'competitive' ? 'text-green-600' : 'text-yellow-600' }}">
-                        @if($cosmashopAnalysis['cosmashop_position'] === 'competitive')
-                            Nous serions compétitifs
-                        @else
-                            Nous serions au-dessus de la moyenne
-                        @endif
-                    </span>
-                    avec ce prix.
-                    <span class="font-semibold text-green-600">{{ $cosmashopAnalysis['below_cosmashop'] }} concurrent(s)</span> en dessous de nous et 
-                    <span class="font-semibold text-red-600">{{ $cosmashopAnalysis['above_cosmashop'] }} concurrent(s)</span> au-dessus de nous.
-                </div>
-            </div>
-        </div>
     @endif
-@endif
+
     <!-- Section des résultats -->
     <div class="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">
         @if($hasData)
