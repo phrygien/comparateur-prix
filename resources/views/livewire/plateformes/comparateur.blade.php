@@ -1476,6 +1476,9 @@ public function getCosmashopPriceStatusLabel($competitorPrice)
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         @if(is_numeric($competitorPrice) && is_numeric($referencePrice))
                                             <div class="space-y-1">
+                                                <div class="text-xs text-gray-500">
+                                                    prix cosma-parfumerie: {{ number_format($price, 2, ',', ' ') }} €
+                                                </div>
                                                 <!-- Statut -->
                                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $priceStatusClass }}">
                                                     {{ $priceStatusLabel }}
@@ -1503,6 +1506,9 @@ public function getCosmashopPriceStatusLabel($competitorPrice)
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         @if(is_numeric($competitorPrice) && is_numeric($cosmashopPrice))
                                             <div class="space-y-1">
+                                                <div class="text-xs text-gray-500">
+                                                    prix cosmashop: {{ number_format($cosmashopPrice, 2, ',', ' ') }} €
+                                                </div>
                                                 <!-- Statut Cosmashop -->
                                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $cosmashopStatusClass }}">
                                                     {{ $cosmashopStatusLabel }}
@@ -1520,10 +1526,6 @@ public function getCosmashopPriceStatusLabel($competitorPrice)
                                                         {{ $this->formatPercentageDifference($cosmashopDifferencePercent) }}
                                                     </div>
                                                 @endif
-
-                                                <div class="text-xs text-gray-500">
-                                                    prix cosmashop: {{ number_format($cosmashopPrice, 2, ',', ' ') }} €
-                                                </div>
                                             </div>
                                         @else
                                             <span class="text-xs text-gray-400">N/A</span>
