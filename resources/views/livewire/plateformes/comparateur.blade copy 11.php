@@ -17,17 +17,10 @@ new class extends Component {
     public $similarityThreshold = 0.6;
     public $matchedProducts = [];
 
-    // prix a commparer
-    public $price;
-        // Ajoutez cette propriété dans la classe
-    public $referencePrice;
-
-    public function mount($name, $id, $price)
+    public function mount($name, $id)
     {
         $this->getCompetitorPrice($name);
         $this->id = $id;
-        $this->price = $price;
-        $this->referencePrice = $price; // Prix de référence pour la comparaison
     }
 
     public function getOneProductDetails($entity_id){
@@ -772,206 +765,10 @@ new class extends Component {
         $this->similarityThreshold = $threshold;
         $this->getCompetitorPrice($this->search ?? '');
     }
-
-
-
-
-
-
-    /**
-     * Calcule la différence de prix par rapport au prix de référence
-     */
-    public function calculatePriceDifference($competitorPrice)
-    {
-        if (!is_numeric($competitorPrice) || !is_numeric($this->referencePrice) || $this->referencePrice == 0) {
-            return null;
-        }
-        
-        return $competitorPrice - $this->referencePrice;
-    }
-
-    /**
-     * Calcule le pourcentage de différence
-     */
-    public function calculatePriceDifferencePercentage($competitorPrice)
-    {
-        if (!is_numeric($competitorPrice) || !is_numeric($this->referencePrice) || $this->referencePrice == 0) {
-            return null;
-        }
-        
-        return (($competitorPrice - $this->referencePrice) / $this->referencePrice) * 100;
-    }
-
-    /**
-     * Détermine le statut de compétitivité du prix
-     */
-    public function getPriceCompetitiveness($competitorPrice)
-    {
-        $difference = $this->calculatePriceDifference($competitorPrice);
-        
-        if ($difference === null) {
-            return 'unknown';
-        }
-        
-        if ($difference < -10) {
-            return 'very_competitive'; // Beaucoup moins cher
-        } elseif ($difference < 0) {
-            return 'competitive'; // Moins cher
-        } elseif ($difference == 0) {
-            return 'same'; // Même prix
-        } elseif ($difference <= 10) {
-            return 'slightly_higher'; // Légèrement plus cher
-        } else {
-            return 'higher'; // Plus cher
-        }
-    }
-
-    /**
-     * Retourne la classe CSS pour le statut de prix
-     */
-    public function getPriceStatusClass($competitorPrice)
-    {
-        $status = $this->getPriceCompetitiveness($competitorPrice);
-        
-        $classes = [
-            'very_competitive' => 'bg-green-100 text-green-800 border-green-300',
-            'competitive' => 'bg-emerald-100 text-emerald-800 border-emerald-300',
-            'same' => 'bg-blue-100 text-blue-800 border-blue-300',
-            'slightly_higher' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
-            'higher' => 'bg-red-100 text-red-800 border-red-300',
-            'unknown' => 'bg-gray-100 text-gray-800 border-gray-300'
-        ];
-        
-        return $classes[$status] ?? $classes['unknown'];
-    }
-
-    /**
-     * Retourne le libellé pour le statut de prix
-     */
-    public function getPriceStatusLabel($competitorPrice)
-    {
-        $status = $this->getPriceCompetitiveness($competitorPrice);
-        
-        $labels = [
-            'very_competitive' => 'Très compétitif',
-            'competitive' => 'Compétitif',
-            'same' => 'Prix identique',
-            'slightly_higher' => 'Légèrement plus cher',
-            'higher' => 'Plus cher',
-            'unknown' => 'Non comparable'
-        ];
-        
-        return $labels[$status] ?? $labels['unknown'];
-    }
-
-    /**
-     * Formate la différence de prix
-     */
-    public function formatPriceDifference($difference)
-    {
-        if ($difference === null) {
-            return 'N/A';
-        }
-        
-        if ($difference == 0) {
-            return '0 €';
-        }
-        
-        $formatted = number_format(abs($difference), 2, ',', ' ');
-        return $difference > 0 ? "+{$formatted} €" : "-{$formatted} €";
-    }
-
-    /**
-     * Analyse globale des prix des concurrents
-     */
-    public function getPriceAnalysis()
-    {
-        $prices = [];
-        
-        foreach ($this->matchedProducts as $product) {
-            $price = $product->price_ht ?? $product->prix_ht;
-            if (is_numeric($price)) {
-                $prices[] = $price;
-            }
-        }
-        
-        if (empty($prices)) {
-            return null;
-        }
-        
-        $minPrice = min($prices);
-        $maxPrice = max($prices);
-        $avgPrice = array_sum($prices) / count($prices);
-        $ourPrice = $this->referencePrice;
-        
-        return [
-            'min' => $minPrice,
-            'max' => $maxPrice,
-            'average' => $avgPrice,
-            'our_price' => $ourPrice,
-            'count' => count($prices),
-            'our_position' => $ourPrice <= $avgPrice ? 'competitive' : 'above_average'
-        ];
-    }
-
-
 }; ?>
 
 <div>
     <livewire:plateformes.detail :id="$id"/>
-
-    <!-- Section d'analyse des prix -->
-    @if($hasData && $referencePrice)
-        @php
-            $priceAnalysis = $this->getPriceAnalysis();
-        @endphp
-        @if($priceAnalysis)
-            <div class="mx-auto w-full px-4 py-4 sm:px-6 lg:px-8">
-                <div class="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200 p-4">
-                    <h4 class="text-lg font-semibold text-purple-800 mb-3 flex items-center">
-                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                        </svg>
-                        Analyse Comparative des Prix
-                    </h4>
-                    
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
-                        <div class="text-center p-3 bg-white rounded-lg shadow-sm">
-                            <div class="text-2xl font-bold text-green-600">{{ $this->formatPrice($priceAnalysis['min']) }}</div>
-                            <div class="text-xs text-gray-600">Prix minimum</div>
-                        </div>
-                        <div class="text-center p-3 bg-white rounded-lg shadow-sm">
-                            <div class="text-2xl font-bold text-red-600">{{ $this->formatPrice($priceAnalysis['max']) }}</div>
-                            <div class="text-xs text-gray-600">Prix maximum</div>
-                        </div>
-                        <div class="text-center p-3 bg-white rounded-lg shadow-sm">
-                            <div class="text-2xl font-bold text-blue-600">{{ $this->formatPrice($priceAnalysis['average']) }}</div>
-                            <div class="text-xs text-gray-600">Prix moyen</div>
-                        </div>
-                        <div class="text-center p-3 bg-white rounded-lg shadow-sm border-2 
-                            {{ $priceAnalysis['our_position'] === 'competitive' ? 'border-green-300' : 'border-yellow-300' }}">
-                            <div class="text-2xl font-bold text-purple-600">{{ $this->formatPrice($priceAnalysis['our_price']) }}</div>
-                            <div class="text-xs {{ $priceAnalysis['our_position'] === 'competitive' ? 'text-green-600' : 'text-yellow-600' }} font-semibold">
-                                Notre prix
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="text-sm text-purple-700">
-                        <strong>Analyse :</strong> 
-                        Notre prix est 
-                        <span class="font-semibold {{ $priceAnalysis['our_position'] === 'competitive' ? 'text-green-600' : 'text-yellow-600' }}">
-                            {{ $priceAnalysis['our_position'] === 'competitive' ? 'compétitif' : 'au-dessus de la moyenne' }}
-                        </span>
-                        par rapport aux {{ $priceAnalysis['count'] }} concurrents analysés.
-                        @if($priceAnalysis['our_price'] > $priceAnalysis['average'])
-                            <span class="text-yellow-600">({{ $this->formatPriceDifference($priceAnalysis['our_price'] - $priceAnalysis['average']) }} par rapport à la moyenne)</span>
-                        @endif
-                    </div>
-                </div>
-            </div>
-        @endif
-    @endif
 
     <!-- Section des résultats -->
     <div class="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">
@@ -1074,8 +871,6 @@ new class extends Component {
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Variation</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Site Source</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prix HT</th>
-                                <!-- NOUVELLE COLONNE -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Comparaison</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                             </tr>
@@ -1093,13 +888,6 @@ new class extends Component {
                                     $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
                                     $hasMatchingVolume = $this->hasMatchingVolume($product);
                                     $hasExactVariation = $this->hasExactVariationMatch($product);
-                                    
-                                    // Données pour la comparaison de prix
-                                    $competitorPrice = $product->price_ht ?? $product->prix_ht;
-                                    $priceDifference = $this->calculatePriceDifference($competitorPrice);
-                                    $priceDifferencePercent = $this->calculatePriceDifferencePercentage($competitorPrice);
-                                    $priceStatusClass = $this->getPriceStatusClass($competitorPrice);
-                                    $priceStatusLabel = $this->getPriceStatusLabel($competitorPrice);
                                 @endphp
                                 <tr class="hover:bg-gray-50 transition-colors duration-150">
                                     <!-- Colonne Score -->
@@ -1223,33 +1011,6 @@ new class extends Component {
                                         <div class="text-sm font-semibold text-green-600">
                                             {{ $this->formatPrice($product->price_ht ?? $product->prix_ht) }}
                                         </div>
-                                    </td>
-                                    
-                                    <!-- NOUVELLE COLONNE : Comparaison -->
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        @if(is_numeric($competitorPrice) && is_numeric($referencePrice))
-                                            <div class="space-y-1">
-                                                <!-- Statut -->
-                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $priceStatusClass }}">
-                                                    {{ $priceStatusLabel }}
-                                                </span>
-                                                
-                                                <!-- Différence -->
-                                                <div class="text-xs font-semibold 
-                                                    {{ $priceDifference < 0 ? 'text-green-600' : ($priceDifference > 0 ? 'text-red-600' : 'text-blue-600') }}">
-                                                    {{ $this->formatPriceDifference($priceDifference) }}
-                                                </div>
-                                                
-                                                <!-- Pourcentage -->
-                                                @if($priceDifferencePercent !== null && $priceDifference != 0)
-                                                    <div class="text-xs text-gray-500">
-                                                        ({{ number_format(abs($priceDifferencePercent), 1) }}%)
-                                                    </div>
-                                                @endif
-                                            </div>
-                                        @else
-                                            <span class="text-xs text-gray-400">N/A</span>
-                                        @endif
                                     </td>
                                     
                                     <!-- Colonne Type -->
