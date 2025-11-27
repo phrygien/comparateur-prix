@@ -129,7 +129,7 @@ new class extends Component {
         <div class="mb-6">
             @if($this->product->special_price)
                 <p class="text-2xl font-bold text-red-600">
-                    {{ number_format($this->product->special_price, 2) }} €
+                    Prix :{{ number_format($this->product->special_price, 2) }} €
                 </p>
                 <p class="text-lg text-gray-500 line-through">
                     {{ number_format($this->product->price, 2) }} €
