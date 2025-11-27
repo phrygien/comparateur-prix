@@ -1520,6 +1520,10 @@ public function getCosmashopPriceStatusLabel($competitorPrice)
                                                         {{ $this->formatPercentageDifference($cosmashopDifferencePercent) }}
                                                     </div>
                                                 @endif
+
+                                                <p>
+                                                    <span>Prix cosmashop actuel: {{ $cosmashopPrice }}</span>
+                                                </p>
                                             </div>
                                         @else
                                             <span class="text-xs text-gray-400">N/A</span>
