@@ -828,6 +828,24 @@ new class extends Component {
     /**
      * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
      */
+    // public function getPriceStatusLabel($competitorPrice)
+    // {
+    //     $status = $this->getPriceCompetitiveness($competitorPrice);
+        
+    //     $labels = [
+    //         'very_competitive' => 'Nous sommes beaucoup - cher',
+    //         'competitive' => 'Nous sommes - cher', 
+    //         'same' => 'Prix identique',
+    //         'slightly_higher' => 'Nous sommes + cher',
+    //         'higher' => 'Nous sommes beaucoup + cher',
+    //         'unknown' => 'Non comparable'
+    //     ];
+        
+    //     return $labels[$status] ?? $labels['unknown'];
+    // }
+    /**
+     * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
+     */
     public function getPriceStatusLabel($competitorPrice)
     {
         $status = $this->getPriceCompetitiveness($competitorPrice);
@@ -836,14 +854,13 @@ new class extends Component {
             'very_competitive' => 'Nous sommes beaucoup - cher',
             'competitive' => 'Nous sommes - cher', 
             'same' => 'Prix identique',
-            'slightly_higher' => 'Nous sommes + cher',
+            'slightly_higher' => 'Nous sommes légèrement + cher',
             'higher' => 'Nous sommes beaucoup + cher',
             'unknown' => 'Non comparable'
         ];
         
         return $labels[$status] ?? $labels['unknown'];
     }
-
     /**
      * Retourne la classe CSS pour le statut de prix
      */
@@ -914,22 +931,39 @@ new class extends Component {
     /**
      * Retourne le libellé pour le statut Cosmashop
      */
-    public function getCosmashopPriceStatusLabel($competitorPrice)
-    {
-        $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
+    // public function getCosmashopPriceStatusLabel($competitorPrice)
+    // {
+    //     $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
         
-        $labels = [
-            'very_competitive' => 'Cosmashop serait beaucoup - cher',
-            'competitive' => 'Cosmashop serait - cher',
-            'same' => 'Prix identique à Cosmashop', 
-            'slightly_higher' => 'Cosmashop serait + cher',
-            'higher' => 'Cosmashop serait beaucoup + cher',
-            'unknown' => 'Non comparable'
-        ];
+    //     $labels = [
+    //         'very_competitive' => 'Cosmashop serait beaucoup - cher',
+    //         'competitive' => 'Cosmashop serait - cher',
+    //         'same' => 'Prix identique à Cosmashop', 
+    //         'slightly_higher' => 'Cosmashop serait + cher',
+    //         'higher' => 'Cosmashop serait beaucoup + cher',
+    //         'unknown' => 'Non comparable'
+    //     ];
         
-        return $labels[$status] ?? $labels['unknown'];
-    }
-
+    //     return $labels[$status] ?? $labels['unknown'];
+    // }
+/**
+ * Retourne le libellé pour le statut Cosmashop
+ */
+public function getCosmashopPriceStatusLabel($competitorPrice)
+{
+    $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
+    
+    $labels = [
+        'very_competitive' => 'Cosmashop serait beaucoup - cher',
+        'competitive' => 'Cosmashop serait - cher',
+        'same' => 'Prix identique à Cosmashop', 
+        'slightly_higher' => 'Cosmashop serait légèrement + cher',
+        'higher' => 'Cosmashop serait beaucoup + cher',
+        'unknown' => 'Non comparable'
+    ];
+    
+    return $labels[$status] ?? $labels['unknown'];
+}
     /**
      * Retourne la classe CSS pour le statut Cosmashop
      */
