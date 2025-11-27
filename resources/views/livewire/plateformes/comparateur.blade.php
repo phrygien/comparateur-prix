@@ -804,8 +804,12 @@ new class extends Component {
     /**
      * Détermine le statut de compétitivité de notre prix
      */
+
 /**
  * Détermine le statut de compétitivité de notre prix
+ * LOGIQUE CORRIGÉE: difference = notre_prix - concurrent_prix
+ * Si difference > 0 : nous sommes PLUS CHER
+ * Si difference < 0 : nous sommes MOINS CHER
  */
 public function getPriceCompetitiveness($competitorPrice)
 {
@@ -815,16 +819,17 @@ public function getPriceCompetitiveness($competitorPrice)
         return 'unknown';
     }
     
+    // CORRECTION: Inverser la logique
     if ($difference > 10) {
-        return 'very_competitive'; // Nous sommes beaucoup moins cher (différence positive = nous - cher)
+        return 'higher'; // Nous sommes beaucoup plus cher
     } elseif ($difference > 0) {
-        return 'competitive'; // Nous sommes moins cher
+        return 'slightly_higher'; // Nous sommes légèrement plus cher
     } elseif ($difference == 0) {
         return 'same'; // Même prix
     } elseif ($difference >= -10) {
-        return 'slightly_higher'; // Nous sommes légèrement plus cher
+        return 'competitive'; // Nous sommes légèrement moins cher
     } else {
-        return 'higher'; // Nous sommes beaucoup plus cher
+        return 'very_competitive'; // Nous sommes beaucoup moins cher
     }
 }
 
@@ -849,21 +854,24 @@ public function getPriceCompetitiveness($competitorPrice)
     /**
      * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
      */
-    public function getPriceStatusLabel($competitorPrice)
-    {
-        $status = $this->getPriceCompetitiveness($competitorPrice);
-        
-        $labels = [
-            'very_competitive' => 'Nous sommes beaucoup - cher',
-            'competitive' => 'Nous sommes - cher', 
-            'same' => 'Prix identique',
-            'slightly_higher' => 'Nous sommes légèrement + cher',
-            'higher' => 'Nous sommes beaucoup + cher',
-            'unknown' => 'Non comparable'
-        ];
-        
-        return $labels[$status] ?? $labels['unknown'];
-    }
+/**
+ * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
+ */
+public function getPriceStatusLabel($competitorPrice)
+{
+    $status = $this->getPriceCompetitiveness($competitorPrice);
+    
+    $labels = [
+        'very_competitive' => 'Nous sommes beaucoup - cher',
+        'competitive' => 'Nous sommes - cher', 
+        'same' => 'Prix identique',
+        'slightly_higher' => 'Nous sommes légèrement + cher',
+        'higher' => 'Nous sommes beaucoup + cher',
+        'unknown' => 'Non comparable'
+    ];
+    
+    return $labels[$status] ?? $labels['unknown'];
+}
     /**
      * Retourne la classe CSS pour le statut de prix
      */
@@ -910,29 +918,26 @@ public function getPriceCompetitiveness($competitorPrice)
     /**
      * Détermine le statut de compétitivité de Cosmashop
      */
-/**
- * Détermine le statut de compétitivité de Cosmashop
- */
-public function getCosmashopPriceCompetitiveness($competitorPrice)
-{
-    $difference = $this->calculateCosmashopPriceDifference($competitorPrice);
-    
-    if ($difference === null) {
-        return 'unknown';
+    public function getCosmashopPriceCompetitiveness($competitorPrice)
+    {
+        $difference = $this->calculateCosmashopPriceDifference($competitorPrice);
+        
+        if ($difference === null) {
+            return 'unknown';
+        }
+        
+        if ($difference < -10) {
+            return 'higher'; // Cosmashop serait beaucoup plus cher
+        } elseif ($difference < 0) {
+            return 'slightly_higher'; // Cosmashop serait plus cher
+        } elseif ($difference == 0) {
+            return 'same'; // Même prix que Cosmashop
+        } elseif ($difference <= 10) {
+            return 'competitive'; // Cosmashop serait moins cher
+        } else {
+            return 'very_competitive'; // Cosmashop serait beaucoup moins cher
+        }
     }
-    
-    if ($difference > 10) {
-        return 'very_competitive'; // Cosmashop serait beaucoup moins cher
-    } elseif ($difference > 0) {
-        return 'competitive'; // Cosmashop serait moins cher
-    } elseif ($difference == 0) {
-        return 'same'; // Même prix que Cosmashop
-    } elseif ($difference >= -10) {
-        return 'slightly_higher'; // Cosmashop serait légèrement plus cher
-    } else {
-        return 'higher'; // Cosmashop serait beaucoup plus cher
-    }
-}
 
     /**
      * Retourne le libellé pour le statut Cosmashop
