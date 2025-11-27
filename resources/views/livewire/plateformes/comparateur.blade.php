@@ -1001,7 +1001,7 @@ new class extends Component {
         $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
         
         $labels = [
-            'very_competitive' => 'Nous somme Très compétitif',
+            'very_competitive' => 'Très compétitif',
             'competitive' => 'Compétitif',
             'same' => 'Prix identique',
             'slightly_higher' => 'Légèrement + cher',
@@ -1069,17 +1069,15 @@ new class extends Component {
     @if($hasData && $referencePrice)
         @php
             $priceAnalysis = $this->getPriceAnalysis();
-            $cosmashopAnalysis = $this->getCosmashopPriceAnalysis();
         @endphp
-        @if($priceAnalysis && $cosmashopAnalysis)
+        @if($priceAnalysis)
             <div class="mx-auto w-full px-4 py-4 sm:px-6 lg:px-8">
-                <!-- Analyse Cosmaparfumerie -->
-                <div class="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200 p-4 mb-4">
+                <div class="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200 p-4">
                     <h4 class="text-lg font-semibold text-purple-800 mb-3 flex items-center">
                         <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
                         </svg>
-                        Analyse Cosmaparfumerie
+                        Analyse Comparative des Prix
                     </h4>
                     
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
@@ -1099,7 +1097,7 @@ new class extends Component {
                             {{ $priceAnalysis['our_position'] === 'competitive' ? 'border-green-300' : 'border-yellow-300' }}">
                             <div class="text-2xl font-bold text-purple-600">{{ $this->formatPrice($priceAnalysis['our_price']) }}</div>
                             <div class="text-xs {{ $priceAnalysis['our_position'] === 'competitive' ? 'text-green-600' : 'text-yellow-600' }} font-semibold">
-                                Notre prix actuel
+                                Notre prix
                             </div>
                         </div>
                     </div>
@@ -1114,47 +1112,6 @@ new class extends Component {
                         @if($priceAnalysis['our_price'] > $priceAnalysis['average'])
                             <span class="text-yellow-600">({{ $this->formatPriceDifference($priceAnalysis['our_price'] - $priceAnalysis['average']) }} par rapport à la moyenne)</span>
                         @endif
-                    </div>
-                </div>
-
-                <!-- Analyse Cosmashop -->
-                <div class="bg-gradient-to-r from-orange-50 to-amber-50 rounded-lg border border-orange-200 p-4">
-                    <h4 class="text-lg font-semibold text-orange-800 mb-3 flex items-center">
-                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                        Analyse Cosmashop (Prix +5%)
-                    </h4>
-                    
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
-                        <div class="text-center p-3 bg-white rounded-lg shadow-sm">
-                            <div class="text-2xl font-bold text-green-600">{{ $this->formatPrice($cosmashopAnalysis['min']) }}</div>
-                            <div class="text-xs text-gray-600">Prix minimum</div>
-                        </div>
-                        <div class="text-center p-3 bg-white rounded-lg shadow-sm">
-                            <div class="text-2xl font-bold text-red-600">{{ $this->formatPrice($cosmashopAnalysis['max']) }}</div>
-                            <div class="text-xs text-gray-600">Prix maximum</div>
-                        </div>
-                        <div class="text-center p-3 bg-white rounded-lg shadow-sm">
-                            <div class="text-2xl font-bold text-blue-600">{{ $this->formatPrice($cosmashopAnalysis['average']) }}</div>
-                            <div class="text-xs text-gray-600">Prix moyen</div>
-                        </div>
-                        <div class="text-center p-3 bg-white rounded-lg shadow-sm border-2 border-orange-300">
-                            <div class="text-2xl font-bold text-orange-600">{{ $this->formatPrice($cosmashopAnalysis['cosmashop_price']) }}</div>
-                            <div class="text-xs text-orange-600 font-semibold">
-                                Prix Cosmashop
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="text-sm text-orange-700">
-                        <strong>Analyse :</strong> 
-                        Le prix Cosmashop serait 
-                        <span class="font-semibold {{ $cosmashopAnalysis['cosmashop_position'] === 'competitive' ? 'text-green-600' : 'text-yellow-600' }}">
-                            {{ $cosmashopAnalysis['cosmashop_position'] === 'competitive' ? 'compétitif' : 'au-dessus de la moyenne' }}
-                        </span>.
-                        <span class="font-semibold text-green-600">{{ $cosmashopAnalysis['below_cosmashop'] }} concurrent(s)</span> en dessous et 
-                        <span class="font-semibold text-red-600">{{ $cosmashopAnalysis['above_cosmashop'] }} concurrent(s)</span> au-dessus.
                     </div>
                 </div>
             </div>
@@ -1262,9 +1219,8 @@ new class extends Component {
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Variation</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Site Source</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prix HT</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vs Cosmaparfumerie</th>
                                 <!-- NOUVELLE COLONNE -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vs Cosmashop</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Comparaison</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                             </tr>
@@ -1289,12 +1245,6 @@ new class extends Component {
                                     $priceDifferencePercent = $this->calculatePriceDifferencePercentage($competitorPrice);
                                     $priceStatusClass = $this->getPriceStatusClass($competitorPrice);
                                     $priceStatusLabel = $this->getPriceStatusLabel($competitorPrice);
-                                    
-                                    // NOUVELLES DONNÉES POUR COSMASHOP
-                                    $cosmashopDifference = $this->calculateCosmashopPriceDifference($competitorPrice);
-                                    $cosmashopDifferencePercent = $this->calculateCosmashopPriceDifferencePercentage($competitorPrice);
-                                    $cosmashopStatusClass = $this->getCosmashopPriceStatusClass($competitorPrice);
-                                    $cosmashopStatusLabel = $this->getCosmashopPriceStatusLabel($competitorPrice);
                                 @endphp
                                 <tr class="hover:bg-gray-50 transition-colors duration-150">
                                     <!-- Colonne Score -->
@@ -1420,7 +1370,7 @@ new class extends Component {
                                         </div>
                                     </td>
                                     
-                                    <!-- Colonne Vs Cosmaparfumerie -->
+                                    <!-- NOUVELLE COLONNE : Comparaison -->
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         @if(is_numeric($competitorPrice) && is_numeric($referencePrice))
                                             <div class="space-y-1">
@@ -1439,33 +1389,6 @@ new class extends Component {
                                                 @if($priceDifferencePercent !== null && $priceDifference != 0)
                                                     <div class="text-xs text-gray-500">
                                                         ({{ number_format(abs($priceDifferencePercent), 1) }}%)
-                                                    </div>
-                                                @endif
-                                            </div>
-                                        @else
-                                            <span class="text-xs text-gray-400">N/A</span>
-                                        @endif
-                                    </td>
-                                    
-                                    <!-- NOUVELLE COLONNE : Vs Cosmashop -->
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        @if(is_numeric($competitorPrice) && is_numeric($cosmashopPrice))
-                                            <div class="space-y-1">
-                                                <!-- Statut Cosmashop -->
-                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $cosmashopStatusClass }}">
-                                                    {{ $cosmashopStatusLabel }}
-                                                </span>
-                                                
-                                                <!-- Différence Cosmashop -->
-                                                <div class="text-xs font-semibold 
-                                                    {{ $cosmashopDifference < 0 ? 'text-green-600' : ($cosmashopDifference > 0 ? 'text-red-600' : 'text-blue-600') }}">
-                                                    {{ $this->formatPriceDifference($cosmashopDifference) }}
-                                                </div>
-                                                
-                                                <!-- Pourcentage Cosmashop -->
-                                                @if($cosmashopDifferencePercent !== null && $cosmashopDifference != 0)
-                                                    <div class="text-xs text-gray-500">
-                                                        ({{ number_format(abs($cosmashopDifferencePercent), 1) }}%)
                                                     </div>
                                                 @endif
                                             </div>
