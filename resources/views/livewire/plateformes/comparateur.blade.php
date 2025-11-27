@@ -1521,9 +1521,9 @@ public function getCosmashopPriceStatusLabel($competitorPrice)
                                                     </div>
                                                 @endif
 
-                                                <p>
-                                                    <span>Prix cosmashop actuel: {{ $cosmashopPrice }}</span>
-                                                </p>
+                                                <div class="text-xs text-gray-500">
+                                                    prix cosmashop: {{ number_format($cosmashopPrice, 2, ',', ' ') }} €
+                                                </div>
                                             </div>
                                         @else
                                             <span class="text-xs text-gray-400">N/A</span>
