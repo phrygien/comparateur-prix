@@ -777,11 +777,6 @@ new class extends Component {
         $this->getCompetitorPrice($this->search ?? '');
     }
 
-
-
-
-
-
     /**
      * Calcule la différence de prix par rapport au prix de référence
      */
@@ -791,6 +786,9 @@ new class extends Component {
             return null;
         }
         
+        // Différence = prix_concurrent - notre_prix
+        // Si différence > 0 => concurrent est plus cher (nous sommes moins chers)
+        // Si différence < 0 => concurrent est moins cher (nous sommes plus chers)
         return $competitorPrice - $this->referencePrice;
     }
 
@@ -803,6 +801,7 @@ new class extends Component {
             return null;
         }
         
+        // Pourcentage = (prix_concurrent - notre_prix) / notre_prix * 100
         return (($competitorPrice - $this->referencePrice) / $this->referencePrice) * 100;
     }
 
@@ -817,16 +816,22 @@ new class extends Component {
             return 'unknown';
         }
         
-        if ($difference < -10) {
-            return 'very_competitive'; // Beaucoup moins cher
-        } elseif ($difference < 0) {
-            return 'competitive'; // Moins cher
+        // Différence = prix_concurrent - notre_prix
+        // Si différence > 0 => concurrent est PLUS CHER (nous sommes moins chers)
+        // Si différence < 0 => concurrent est MOINS CHER (nous sommes plus chers)
+        
+        if ($difference > 20) {
+            return 'very_competitive'; // Concurrent beaucoup plus cher → NOUS SOMMES TRÈS COMPÉTITIFS
+        } elseif ($difference > 10) {
+            return 'competitive'; // Concurrent plus cher → NOUS SOMMES COMPÉTITIFS
+        } elseif ($difference > 0) {
+            return 'slightly_higher'; // Concurrent légèrement plus cher → NOUS SOMMES LÉGÈREMENT MOINS CHERS
         } elseif ($difference == 0) {
             return 'same'; // Même prix
-        } elseif ($difference <= 10) {
-            return 'slightly_higher'; // Légèrement plus cher
+        } elseif ($difference >= -10) {
+            return 'higher'; // Concurrent légèrement moins cher → NOUS SOMMES LÉGÈREMENT PLUS CHERS
         } else {
-            return 'higher'; // Plus cher
+            return 'very_higher'; // Concurrent beaucoup moins cher → NOUS SOMMES PLUS CHERS
         }
     }
 
@@ -842,7 +847,8 @@ new class extends Component {
             'competitive' => 'bg-emerald-100 text-emerald-800 border-emerald-300',
             'same' => 'bg-blue-100 text-blue-800 border-blue-300',
             'slightly_higher' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
-            'higher' => 'bg-red-100 text-red-800 border-red-300',
+            'higher' => 'bg-orange-100 text-orange-800 border-orange-300',
+            'very_higher' => 'bg-red-100 text-red-800 border-red-300',
             'unknown' => 'bg-gray-100 text-gray-800 border-gray-300'
         ];
         
@@ -857,11 +863,12 @@ new class extends Component {
         $status = $this->getPriceCompetitiveness($competitorPrice);
         
         $labels = [
-            'very_competitive' => 'Très compétitif',
-            'competitive' => 'Compétitif',
+            'very_competitive' => 'Nous sommes très compétitifs',
+            'competitive' => 'Nous sommes compétitifs',
             'same' => 'Prix identique',
-            'slightly_higher' => 'Légèrement plus cher',
-            'higher' => 'Plus cher',
+            'slightly_higher' => 'Nous sommes légèrement - chers',
+            'higher' => 'Nous sommes + chers',
+            'very_higher' => 'Nous sommes très chers',
             'unknown' => 'Non comparable'
         ];
         
@@ -882,7 +889,9 @@ new class extends Component {
         }
         
         $formatted = number_format(abs($difference), 2, ',', ' ');
-        return $difference > 0 ? "+{$formatted} €" : "-{$formatted} €";
+        // Si différence > 0 => concurrent est plus cher (nous sommes moins chers)
+        // Si différence < 0 => concurrent est moins cher (nous sommes plus chers)
+        return $difference > 0 ? "+{$formatted} €" : "{$formatted} €";
     }
 
     /**
@@ -918,14 +927,6 @@ new class extends Component {
         ];
     }
 
-
-
-
-
-
-
-
-
     /**
      * Calcule la différence de prix par rapport au prix Cosmashop
      */
@@ -935,6 +936,7 @@ new class extends Component {
             return null;
         }
         
+        // Différence = prix_concurrent - prix_cosmashop
         return $competitorPrice - $this->cosmashopPrice;
     }
 
@@ -947,6 +949,7 @@ new class extends Component {
             return null;
         }
         
+        // Pourcentage = (prix_concurrent - prix_cosmashop) / prix_cosmashop * 100
         return (($competitorPrice - $this->cosmashopPrice) / $this->cosmashopPrice) * 100;
     }
 
@@ -961,16 +964,19 @@ new class extends Component {
             return 'unknown';
         }
         
-        if ($difference < -10) {
-            return 'very_competitive'; // Beaucoup moins cher que Cosmashop
-        } elseif ($difference < 0) {
-            return 'competitive'; // Moins cher que Cosmashop
+        // Même logique pour Cosmashop
+        if ($difference > 20) {
+            return 'very_competitive'; // Concurrent plus cher → COSMASHOP SERAIT TRÈS COMPÉTITIF
+        } elseif ($difference > 10) {
+            return 'competitive'; // Concurrent plus cher → COSMASHOP SERAIT COMPÉTITIF
+        } elseif ($difference > 0) {
+            return 'slightly_higher'; // Concurrent légèrement plus cher → COSMASHOP SERAIT LÉGÈREMENT MOINS CHER
         } elseif ($difference == 0) {
             return 'same'; // Même prix que Cosmashop
-        } elseif ($difference <= 10) {
-            return 'slightly_higher'; // Légèrement plus cher que Cosmashop
+        } elseif ($difference >= -10) {
+            return 'higher'; // Concurrent légèrement moins cher → COSMASHOP SERAIT LÉGÈREMENT PLUS CHER
         } else {
-            return 'higher'; // Plus cher que Cosmashop
+            return 'very_higher'; // Concurrent beaucoup moins cher → COSMASHOP SERAIT PLUS CHER
         }
     }
 
@@ -986,7 +992,8 @@ new class extends Component {
             'competitive' => 'bg-emerald-100 text-emerald-800 border-emerald-300',
             'same' => 'bg-blue-100 text-blue-800 border-blue-300',
             'slightly_higher' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
-            'higher' => 'bg-red-100 text-red-800 border-red-300',
+            'higher' => 'bg-orange-100 text-orange-800 border-orange-300',
+            'very_higher' => 'bg-red-100 text-red-800 border-red-300',
             'unknown' => 'bg-gray-100 text-gray-800 border-gray-300'
         ];
         
@@ -1001,11 +1008,12 @@ new class extends Component {
         $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
         
         $labels = [
-            'very_competitive' => 'Nous somme Très compétitif',
-            'competitive' => 'Compétitif',
+            'very_competitive' => 'Nous serions très compétitifs',
+            'competitive' => 'Nous serions compétitifs',
             'same' => 'Prix identique',
-            'slightly_higher' => 'Légèrement + cher',
-            'higher' => 'Plus cher',
+            'slightly_higher' => 'Nous serions légèrement - chers',
+            'higher' => 'Nous serions + chers',
+            'very_higher' => 'Nous serions très chers',
             'unknown' => 'Non comparable'
         ];
         
@@ -1058,8 +1066,6 @@ new class extends Component {
             'cosmashop_position' => $cosmashopPrice <= $avgPrice ? 'competitive' : 'above_average'
         ];
     }
-
-
 }; ?>
 
 <div>
