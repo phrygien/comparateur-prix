@@ -140,7 +140,7 @@ new class extends Component {
                     FROM last_price_scraped_product 
                     WHERE MATCH (name, vendor, type, variation) 
                     AGAINST (? IN BOOLEAN MODE)
-                    ORDER BY prix_ht DESC";
+                    ORDER BY prix_ht DESC LIMIT 50";
             
             \Log::info('SQL Query:', [
                 'original_search' => $search,
