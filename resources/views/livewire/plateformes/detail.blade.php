@@ -98,7 +98,28 @@ new class extends Component {
 <div class="w-full px-4 py-6 sm:px-6 lg:grid lg:grid-cols-2 lg:gap-x-10 lg:px-10">
 
 
-<x-header title="{{ utf8_encode($this->product->title) ?? 'N/A' }}" subtitle="{{ utf8_encode($this->product->vendor) ?? 'N/A' }}" no-separator />
+<x-header title="{{ utf8_encode($this->product->title) ?? 'N/A' }}" subtitle="{{ utf8_encode($this->product->vendor) ?? 'N/A' }}" no-separator >
+    {{-- <x-slot:middle class="!justify-end">
+        <x-input icon="o-bolt" placeholder="Search..." />
+    </x-slot:middle> --}}
+    <x-slot:actions>
+        <!-- Price -->
+        <div class="mb-6">
+            @if($this->product->special_price)
+                <p class="text-2xl font-bold text-red-600">
+                    Prix :{{ number_format($this->product->special_price, 2) }} €
+                </p>
+                <p class="text-lg text-gray-500 line-through">
+                    {{ number_format($this->product->price, 2) }} €
+                </p>
+            @else
+                <p class="text-2xl font-bold text-gray-900">
+                    {{ $this->product->price ? number_format($this->product->price, 2) . ' €' : 'N/A' }}
+                </p>
+            @endif
+        </div>
+    </x-slot:actions>
+</x-header>
 
 
 <!-- Product image - Left column -->
@@ -125,7 +146,7 @@ new class extends Component {
             {{ utf8_encode($this->product->title) ?? 'N/A' }}
         </h1> --}}
 
-        <!-- Price -->
+        {{-- <!-- Price -->
         <div class="mb-6">
             @if($this->product->special_price)
                 <p class="text-2xl font-bold text-red-600">
@@ -139,7 +160,7 @@ new class extends Component {
                     {{ $this->product->price ? number_format($this->product->price, 2) . ' €' : 'N/A' }}
                 </p>
             @endif
-        </div>
+        </div> --}}
 
         <!-- Price Details - Collapsible -->
         <details class="mb-6 border border-gray-200 rounded-lg bg-white" open>
