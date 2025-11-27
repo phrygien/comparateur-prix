@@ -101,7 +101,7 @@ new class extends Component {
         <div class="relative overflow-hidden rounded-lg">
             <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $this->product->thumbnail) }}" 
                  alt="{{ utf8_encode($this->product->title) ?? 'Product image' }}" 
-                 class="w-full object-contain">
+                 class="w-4/5 mx-auto object-contain transition-all duration-300 ease-in-out hover:scale-105 hover:shadow-lg cursor-pointer">
         </div>
     </div>
 
