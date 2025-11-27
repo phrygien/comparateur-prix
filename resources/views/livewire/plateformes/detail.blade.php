@@ -116,14 +116,14 @@ new class extends Component {
     <!-- Product details - Right column -->
     <div class="lg:col-start-2 mt-6 lg:mt-0">
         <!-- Vendor -->
-        <p class="text-sm text-gray-600 mb-2">
+        {{-- <p class="text-sm text-gray-600 mb-2">
             {{ utf8_encode($this->product->vendor) ?? 'N/A' }}
         </p>
 
         <!-- Product Name -->
         <h1 class="text-3xl font-bold text-gray-900 mb-4">
             {{ utf8_encode($this->product->title) ?? 'N/A' }}
-        </h1>
+        </h1> --}}
 
         <!-- Price -->
         <div class="mb-6">
