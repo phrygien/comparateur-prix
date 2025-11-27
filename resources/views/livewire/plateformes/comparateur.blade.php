@@ -777,6 +777,11 @@ new class extends Component {
         $this->getCompetitorPrice($this->search ?? '');
     }
 
+
+
+
+
+
     /**
      * Calcule la différence de prix par rapport au prix de référence
      */
@@ -786,9 +791,6 @@ new class extends Component {
             return null;
         }
         
-        // Différence = prix_concurrent - notre_prix
-        // Si différence > 0 => concurrent est plus cher (nous sommes moins chers)
-        // Si différence < 0 => concurrent est moins cher (nous sommes plus chers)
         return $competitorPrice - $this->referencePrice;
     }
 
@@ -801,7 +803,6 @@ new class extends Component {
             return null;
         }
         
-        // Pourcentage = (prix_concurrent - notre_prix) / notre_prix * 100
         return (($competitorPrice - $this->referencePrice) / $this->referencePrice) * 100;
     }
 
@@ -816,44 +817,19 @@ new class extends Component {
             return 'unknown';
         }
         
-        // Différence = prix_concurrent - notre_prix
-        // Si différence > 0 => concurrent est PLUS CHER (nous sommes moins chers)
-        // Si différence < 0 => concurrent est MOINS CHER (nous sommes plus chers)
-        
-        if ($difference > 20) {
-            return 'very_competitive'; // Concurrent beaucoup plus cher → NOUS SOMMES TRÈS COMPÉTITIFS
-        } elseif ($difference > 10) {
-            return 'competitive'; // Concurrent plus cher → NOUS SOMMES COMPÉTITIFS
-        } elseif ($difference > 0) {
-            return 'slightly_higher'; // Concurrent légèrement plus cher → NOUS SOMMES LÉGÈREMENT MOINS CHERS
+        if ($difference < -10) {
+            return 'very_competitive'; // Beaucoup moins cher
+        } elseif ($difference < 0) {
+            return 'competitive'; // Moins cher
         } elseif ($difference == 0) {
             return 'same'; // Même prix
-        } elseif ($difference >= -10) {
-            return 'higher'; // Concurrent légèrement moins cher → NOUS SOMMES LÉGÈREMENT PLUS CHERS
+        } elseif ($difference <= 10) {
+            return 'slightly_higher'; // Légèrement plus cher
         } else {
-            return 'very_higher'; // Concurrent beaucoup moins cher → NOUS SOMMES PLUS CHERS
+            return 'higher'; // Plus cher
         }
     }
 
-    /**
-     * Retourne la classe CSS pour le statut de prix
-     */
-    // public function getPriceStatusClass($competitorPrice)
-    // {
-    //     $status = $this->getPriceCompetitiveness($competitorPrice);
-        
-    //     $classes = [
-    //         'very_competitive' => 'bg-green-100 text-green-800 border-green-300',
-    //         'competitive' => 'bg-emerald-100 text-emerald-800 border-emerald-300',
-    //         'same' => 'bg-blue-100 text-blue-800 border-blue-300',
-    //         'slightly_higher' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
-    //         'higher' => 'bg-orange-100 text-orange-800 border-orange-300',
-    //         'very_higher' => 'bg-red-100 text-red-800 border-red-300',
-    //         'unknown' => 'bg-gray-100 text-gray-800 border-gray-300'
-    //     ];
-        
-    //     return $classes[$status] ?? $classes['unknown'];
-    // }
     /**
      * Retourne la classe CSS pour le statut de prix
      */
@@ -862,12 +838,11 @@ new class extends Component {
         $status = $this->getPriceCompetitiveness($competitorPrice);
         
         $classes = [
-            'very_competitive' => 'bg-red-100 text-red-800 border-red-300', // Rouge quand nous sommes très chers
-            'competitive' => 'bg-orange-100 text-orange-800 border-orange-300', // Orange quand nous sommes chers
+            'very_competitive' => 'bg-green-100 text-green-800 border-green-300',
+            'competitive' => 'bg-emerald-100 text-emerald-800 border-emerald-300',
             'same' => 'bg-blue-100 text-blue-800 border-blue-300',
-            'slightly_higher' => 'bg-yellow-100 text-yellow-800 border-yellow-300', // Jaune quand nous sommes légèrement moins chers
-            'higher' => 'bg-emerald-100 text-emerald-800 border-emerald-300', // Vert clair quand nous sommes moins chers
-            'very_higher' => 'bg-green-100 text-green-800 border-green-300', // Vert quand nous sommes très moins chers
+            'slightly_higher' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
+            'higher' => 'bg-red-100 text-red-800 border-red-300',
             'unknown' => 'bg-gray-100 text-gray-800 border-gray-300'
         ];
         
@@ -877,60 +852,22 @@ new class extends Component {
     /**
      * Retourne le libellé pour le statut de prix
      */
-    // public function getPriceStatusLabel($competitorPrice)
-    // {
-    //     $status = $this->getPriceCompetitiveness($competitorPrice);
-        
-    //     $labels = [
-    //         'very_competitive' => 'Nous sommes très compétitifs',
-    //         'competitive' => 'Nous sommes compétitifs',
-    //         'same' => 'Prix identique',
-    //         'slightly_higher' => 'Nous sommes légèrement - chers',
-    //         'higher' => 'Nous sommes + chers',
-    //         'very_higher' => 'Nous sommes très chers',
-    //         'unknown' => 'Non comparable'
-    //     ];
-        
-    //     return $labels[$status] ?? $labels['unknown'];
-    // }
-    /**
-     * Retourne le libellé pour le statut de prix
-     */
     public function getPriceStatusLabel($competitorPrice)
     {
         $status = $this->getPriceCompetitiveness($competitorPrice);
         
         $labels = [
-            'very_competitive' => 'Nous sommes très chers',
-            'competitive' => 'Nous sommes chers',
+            'very_competitive' => 'Très compétitif',
+            'competitive' => 'Compétitif',
             'same' => 'Prix identique',
-            'slightly_higher' => 'Nous sommes légèrement - chers',
-            'higher' => 'Nous sommes - chers',
-            'very_higher' => 'Nous sommes très - chers',
+            'slightly_higher' => 'Légèrement plus cher',
+            'higher' => 'Plus cher',
             'unknown' => 'Non comparable'
         ];
         
         return $labels[$status] ?? $labels['unknown'];
     }
 
-    /**
-     * Formate la différence de prix
-     */
-    // public function formatPriceDifference($difference)
-    // {
-    //     if ($difference === null) {
-    //         return 'N/A';
-    //     }
-        
-    //     if ($difference == 0) {
-    //         return '0 €';
-    //     }
-        
-    //     $formatted = number_format(abs($difference), 2, ',', ' ');
-    //     // Si différence > 0 => concurrent est plus cher (nous sommes moins chers)
-    //     // Si différence < 0 => concurrent est moins cher (nous sommes plus chers)
-    //     return $difference > 0 ? "+{$formatted} €" : "{$formatted} €";
-    // }
     /**
      * Formate la différence de prix
      */
@@ -945,9 +882,7 @@ new class extends Component {
         }
         
         $formatted = number_format(abs($difference), 2, ',', ' ');
-        // Si différence > 0 => nous sommes plus chers (affichage négatif)
-        // Si différence < 0 => nous sommes moins chers (affichage positif)
-        return $difference > 0 ? "-{$formatted} €" : "+{$formatted} €";
+        return $difference > 0 ? "+{$formatted} €" : "-{$formatted} €";
     }
 
     /**
@@ -983,6 +918,14 @@ new class extends Component {
         ];
     }
 
+
+
+
+
+
+
+
+
     /**
      * Calcule la différence de prix par rapport au prix Cosmashop
      */
@@ -992,7 +935,6 @@ new class extends Component {
             return null;
         }
         
-        // Différence = prix_concurrent - prix_cosmashop
         return $competitorPrice - $this->cosmashopPrice;
     }
 
@@ -1005,7 +947,6 @@ new class extends Component {
             return null;
         }
         
-        // Pourcentage = (prix_concurrent - prix_cosmashop) / prix_cosmashop * 100
         return (($competitorPrice - $this->cosmashopPrice) / $this->cosmashopPrice) * 100;
     }
 
@@ -1020,41 +961,19 @@ new class extends Component {
             return 'unknown';
         }
         
-        // Même logique pour Cosmashop
-        if ($difference > 20) {
-            return 'very_competitive'; // Concurrent plus cher → COSMASHOP SERAIT TRÈS COMPÉTITIF
-        } elseif ($difference > 10) {
-            return 'competitive'; // Concurrent plus cher → COSMASHOP SERAIT COMPÉTITIF
-        } elseif ($difference > 0) {
-            return 'slightly_higher'; // Concurrent légèrement plus cher → COSMASHOP SERAIT LÉGÈREMENT MOINS CHER
+        if ($difference < -10) {
+            return 'very_competitive'; // Beaucoup moins cher que Cosmashop
+        } elseif ($difference < 0) {
+            return 'competitive'; // Moins cher que Cosmashop
         } elseif ($difference == 0) {
             return 'same'; // Même prix que Cosmashop
-        } elseif ($difference >= -10) {
-            return 'higher'; // Concurrent légèrement moins cher → COSMASHOP SERAIT LÉGÈREMENT PLUS CHER
+        } elseif ($difference <= 10) {
+            return 'slightly_higher'; // Légèrement plus cher que Cosmashop
         } else {
-            return 'very_higher'; // Concurrent beaucoup moins cher → COSMASHOP SERAIT PLUS CHER
+            return 'higher'; // Plus cher que Cosmashop
         }
     }
 
-    /**
-     * Retourne la classe CSS pour le statut Cosmashop
-     */
-    // public function getCosmashopPriceStatusClass($competitorPrice)
-    // {
-    //     $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
-        
-    //     $classes = [
-    //         'very_competitive' => 'bg-green-100 text-green-800 border-green-300',
-    //         'competitive' => 'bg-emerald-100 text-emerald-800 border-emerald-300',
-    //         'same' => 'bg-blue-100 text-blue-800 border-blue-300',
-    //         'slightly_higher' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
-    //         'higher' => 'bg-orange-100 text-orange-800 border-orange-300',
-    //         'very_higher' => 'bg-red-100 text-red-800 border-red-300',
-    //         'unknown' => 'bg-gray-100 text-gray-800 border-gray-300'
-    //     ];
-        
-    //     return $classes[$status] ?? $classes['unknown'];
-    // }
     /**
      * Retourne la classe CSS pour le statut Cosmashop
      */
@@ -1063,12 +982,11 @@ new class extends Component {
         $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
         
         $classes = [
-            'very_competitive' => 'bg-red-100 text-red-800 border-red-300', // Rouge quand Cosmashop serait très cher
-            'competitive' => 'bg-orange-100 text-orange-800 border-orange-300', // Orange quand Cosmashop serait cher
+            'very_competitive' => 'bg-green-100 text-green-800 border-green-300',
+            'competitive' => 'bg-emerald-100 text-emerald-800 border-emerald-300',
             'same' => 'bg-blue-100 text-blue-800 border-blue-300',
-            'slightly_higher' => 'bg-yellow-100 text-yellow-800 border-yellow-300', // Jaune quand Cosmashop serait légèrement moins cher
-            'higher' => 'bg-emerald-100 text-emerald-800 border-emerald-300', // Vert clair quand Cosmashop serait moins cher
-            'very_higher' => 'bg-green-100 text-green-800 border-green-300', // Vert quand Cosmashop serait très moins cher
+            'slightly_higher' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
+            'higher' => 'bg-red-100 text-red-800 border-red-300',
             'unknown' => 'bg-gray-100 text-gray-800 border-gray-300'
         ];
         
@@ -1078,42 +996,22 @@ new class extends Component {
     /**
      * Retourne le libellé pour le statut Cosmashop
      */
-    // public function getCosmashopPriceStatusLabel($competitorPrice)
-    // {
-    //     $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
-        
-    //     $labels = [
-    //         'very_competitive' => 'Nous serions très compétitifs',
-    //         'competitive' => 'Nous serions compétitifs',
-    //         'same' => 'Prix identique',
-    //         'slightly_higher' => 'Nous serions légèrement - chers',
-    //         'higher' => 'Nous serions + chers',
-    //         'very_higher' => 'Nous serions très chers',
-    //         'unknown' => 'Non comparable'
-    //     ];
-        
-    //     return $labels[$status] ?? $labels['unknown'];
-    // }
-    /**
-     * Retourne le libellé pour le statut Cosmashop
-     */
     public function getCosmashopPriceStatusLabel($competitorPrice)
     {
         $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
         
         $labels = [
-            'very_competitive' => 'Nous serions très chers',
-            'competitive' => 'Nous serions chers',
+            'very_competitive' => 'Nous somme Très compétitif',
+            'competitive' => 'Compétitif',
             'same' => 'Prix identique',
-            'slightly_higher' => 'Nous serions légèrement - chers',
-            'higher' => 'Nous serions - chers',
-            'very_higher' => 'Nous serions très - chers',
+            'slightly_higher' => 'Légèrement + cher',
+            'higher' => 'Plus cher',
             'unknown' => 'Non comparable'
         ];
         
         return $labels[$status] ?? $labels['unknown'];
     }
-    
+
     /**
      * Analyse globale pour Cosmashop
      */
@@ -1160,6 +1058,8 @@ new class extends Component {
             'cosmashop_position' => $cosmashopPrice <= $avgPrice ? 'competitive' : 'above_average'
         ];
     }
+
+
 }; ?>
 
 <div>
