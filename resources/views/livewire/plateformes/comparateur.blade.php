@@ -1505,7 +1505,7 @@ public function getCosmashopPriceAnalysis()
                                                                         <img src="{{ $product->image }}" 
                                                                              alt="{{ $product->name ?? 'Produit' }}" 
                                                                              class="h-20 w-20 object-cover rounded-lg shadow-md border border-gray-200"
-                                                                             onerror="this.src='https://via.placeholder.com/80?text=No+Image'">
+                                                                             onerror="this.src='https://placehold.co/400'">
                                                                     @else
                                                                         <div class="h-20 w-20 bg-gray-100 rounded-lg flex items-center justify-center shadow-md border border-gray-200">
                                                                             <span class="text-xs text-gray-500 text-center px-1">No Image</span>
