@@ -233,7 +233,7 @@ new class extends Component {
          x-transition:leave="transition ease-in duration-300"
          x-transition:leave-start="translate-y-0"
          x-transition:leave-end="translate-y-full"
-         class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
+         class="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-gray-200 shadow-lg z-50">
         <div class="px-4 py-4 sm:px-6 lg:px-10">
             <div class="flex items-center justify-between max-w-7xl mx-auto">
                 <!-- Product Image -->
