@@ -14,44 +14,55 @@ new class extends Component {
 
     public $id;
     public $mydata;
-    public $search;
+    public $search; // Ajout de la propriété search
 
     public $similarityThreshold = 0.6;
     public $matchedProducts = [];
-    public $isLoading = false;
+    public $isLoading = false; // Indicateur de chargement
 
     // prix a comparer
     public $price;
+    // Ajoutez cette propriété dans la classe
     public $referencePrice;
+
+    // price cosmashop
     public $cosmashopPrice;
 
     public function mount($name, $id, $price)
     {
-        $this->search = $name;
+        $this->search = $name; // Stocker le terme de recherche
         $this->getCompetitorPrice($name);
         $this->id = $id;
         $this->price = $this->cleanPrice($price);
-        $this->referencePrice = $this->cleanPrice($price);
-        $this->cosmashopPrice = $this->cleanPrice($price) * 1.05;
+        $this->referencePrice = $this->cleanPrice($price); // Prix de référence pour la comparaison
+        $this->cosmashopPrice = $this->cleanPrice($price) * 1.05; // Prix majoré de 5% pour Cosmashop
     }
 
     /**
      * Nettoie et convertit un prix en nombre décimal
+     * Enlève tous les symboles de devise et caractères non numériques
      */
     private function cleanPrice($price)
     {
+        // Si null ou vide, retourner null
         if ($price === null || $price === '') {
             return null;
         }
         
+        // Si déjà numérique, retourner tel quel
         if (is_numeric($price)) {
             return (float) $price;
         }
         
+        // Si string, nettoyer
         if (is_string($price)) {
+            // Enlever symboles de devise et espaces (garder seulement chiffres, virgule, point, tiret)
             $cleanPrice = preg_replace('/[^\d,.-]/', '', $price);
+            
+            // Remplacer virgule par point pour conversion
             $cleanPrice = str_replace(',', '.', $cleanPrice);
             
+            // Vérifier si numérique après nettoyage
             if (is_numeric($cleanPrice)) {
                 return (float) $cleanPrice;
             }
@@ -155,6 +166,7 @@ new class extends Component {
             $this->extractSearchVolumes($search);
             $this->extractSearchVariationKeywords($search);
 
+            // Préparer les termes de recherche améliorés
             $searchQuery = $this->prepareEnhancedSearchTerms($search);
 
             if (empty($searchQuery)) {
@@ -163,6 +175,7 @@ new class extends Component {
                 return null;
             }
 
+            // Requête SQL améliorée avec plusieurs stratégies
             $sql = "SELECT *, 
                            prix_ht,
                            image_url as image,
@@ -207,11 +220,17 @@ new class extends Component {
                 $likeTerm
             ]);
 
+            // NETTOYER LE PRIX_HT DÈS LA RÉCUPÉRATION
             foreach ($result as $product) {
                 if (isset($product->prix_ht)) {
                     $originalPrice = $product->prix_ht;
                     $cleanedPrice = $this->cleanPrice($product->prix_ht);
                     $product->prix_ht = $cleanedPrice;
+                    
+                    \Log::info('Prix nettoyé:', [
+                        'original' => $originalPrice,
+                        'cleaned' => $cleanedPrice
+                    ]);
                 }
             }
 
@@ -259,26 +278,31 @@ new class extends Component {
         $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
         $searchClean = mb_strtolower($searchClean);
 
+        // Extraire les composants principaux
         $components = $this->extractSearchComponents($search);
         
         $booleanTerms = [];
         $significantWords = [];
 
+        // Ajouter la marque avec haute priorité
         if (!empty($components['brand'])) {
             $booleanTerms[] = '+' . $components['brand'] . '*';
             $significantWords[] = $components['brand'];
         }
 
+        // Ajouter le nom du produit avec haute priorité
         if (!empty($components['product_name'])) {
             $booleanTerms[] = '+' . $components['product_name'] . '*';
             $significantWords[] = $components['product_name'];
         }
 
+        // Ajouter le type de produit
         if (!empty($components['product_type'])) {
             $booleanTerms[] = '+' . $components['product_type'] . '*';
             $significantWords[] = $components['product_type'];
         }
 
+        // Ajouter la variation
         if (!empty($components['variation'])) {
             $variationWords = explode(' ', $components['variation']);
             foreach ($variationWords as $word) {
@@ -289,6 +313,7 @@ new class extends Component {
             }
         }
 
+        // Ajouter les mots significatifs restants
         $words = explode(' ', $searchClean);
         $stopWords = $this->getStopWords();
 
@@ -323,6 +348,7 @@ new class extends Component {
             'volume' => ''
         ];
 
+        // Pattern pour: "Marque - Nom Produit - Type Produit - Variation Volume"
         $pattern = '/^([^-]+)\s*-\s*([^-]+)\s*-\s*([^-]+)\s*-\s*(.+)$/i';
         
         if (preg_match($pattern, $search, $matches)) {
@@ -331,17 +357,20 @@ new class extends Component {
             $components['product_type'] = trim($matches[3]);
             $components['variation'] = trim($matches[4]);
         } else {
+            // Pattern pour: "Marque - Nom Produit - Type Produit"
             $pattern2 = '/^([^-]+)\s*-\s*([^-]+)\s*-\s*(.+)$/i';
             if (preg_match($pattern2, $search, $matches)) {
                 $components['brand'] = trim($matches[1]);
                 $components['product_name'] = trim($matches[2]);
                 $components['product_type'] = trim($matches[3]);
             } else {
+                // Pattern pour: "Marque - Nom Produit"
                 $pattern3 = '/^([^-]+)\s*-\s*(.+)$/i';
                 if (preg_match($pattern3, $search, $matches)) {
                     $components['brand'] = trim($matches[1]);
                     $components['product_name'] = trim($matches[2]);
                 } else {
+                    // Si aucun pattern ne match, utiliser le premier mot comme marque
                     $words = explode(' ', $search);
                     if (count($words) > 0) {
                         $components['brand'] = trim($words[0]);
@@ -350,10 +379,12 @@ new class extends Component {
             }
         }
 
+        // Extraire le volume
         if (preg_match('/(\d+)\s*ml/i', $search, $volumeMatches)) {
             $components['volume'] = $volumeMatches[1];
         }
 
+        // Nettoyer et normaliser les composants
         foreach ($components as $key => $value) {
             if ($key !== 'volume') {
                 $components[$key] = mb_strtolower(trim($value));
@@ -375,6 +406,7 @@ new class extends Component {
     {
         $components = $this->extractSearchComponents($search);
         
+        // Priorité: nom du produit > marque > premier mot significatif
         if (!empty($components['product_name'])) {
             return $components['product_name'];
         }
@@ -409,13 +441,13 @@ new class extends Component {
 
             if ($similarityScore >= $this->similarityThreshold) {
                 $product->similarity_score = $similarityScore;
-                $product->match_level = $this->getAdvancedMatchLevel($similarityScore, $product, $searchComponents);
+                $product->match_level = $this->getMatchLevel($similarityScore);
                 $product->match_reasons = $this->getMatchReasons($product, $searchComponents);
-                $product->component_scores = $this->getComponentScores($product, $searchComponents);
                 $scoredProducts[] = $product;
             }
         }
 
+        // Tri par score de similarité décroissant
         usort($scoredProducts, function ($a, $b) {
             return $b->similarity_score <=> $a->similarity_score;
         });
@@ -424,273 +456,45 @@ new class extends Component {
     }
 
     /**
-     * Calcule le score de similarité amélioré avec pondérations optimisées
+     * Calcule le score de similarité amélioré
      */
     private function computeEnhancedSimilarity($product, $search, $searchComponents)
     {
-        // Poids optimisés pour une meilleure distribution des scores
         $weights = [
-            'brand' => 0.15,       // Important mais secondaire
-            'product_name' => 0.35, // Très important - CRITÈRE PRINCIPAL
-            'product_type' => 0.25, // Important - CRITÈRE PRINCIPAL  
-            'variation' => 0.10,    // Moins important
-            'volume' => 0.30        // Très important - CRITÈRE PRINCIPAL
+            'brand' => 0.25,
+            'product_name' => 0.30,
+            'product_type' => 0.15,
+            'variation' => 0.20,
+            'volume' => 0.10
         ];
 
         $totalScore = 0;
-        $componentScores = [];
 
-        // Calcul des scores individuels
+        // Similarité de la marque
         $brandScore = $this->computeBrandSimilarity($product, $searchComponents);
-        $componentScores['brand'] = $brandScore;
         $totalScore += $brandScore * $weights['brand'];
 
+        // Similarité du nom du produit
         $productNameScore = $this->computeProductNameSimilarity($product, $searchComponents);
-        $componentScores['product_name'] = $productNameScore;
         $totalScore += $productNameScore * $weights['product_name'];
 
+        // Similarité du type de produit
         $productTypeScore = $this->computeProductTypeSimilarity($product, $searchComponents);
-        $componentScores['product_type'] = $productTypeScore;
         $totalScore += $productTypeScore * $weights['product_type'];
 
+        // Similarité de la variation
         $variationScore = $this->computeEnhancedVariationSimilarity($product, $searchComponents);
-        $componentScores['variation'] = $variationScore;
         $totalScore += $variationScore * $weights['variation'];
 
+        // Similarité du volume
         $volumeScore = $this->computeVolumeSimilarity($product);
-        $componentScores['volume'] = $volumeScore;
         $totalScore += $volumeScore * $weights['volume'];
 
-        // Bonus pour les correspondances exactes (plus modérés)
+        // Bonus pour les correspondances exactes
         $exactMatchBonus = $this->computeExactMatchBonus($product, $searchComponents);
         $totalScore += $exactMatchBonus;
 
-        // Bonus pour les correspondances partielles
-        $partialMatchBonus = $this->computePartialMatchBonus($componentScores, $product, $searchComponents);
-        $totalScore += $partialMatchBonus;
-
-        // BONUS SPÉCIAL: Pour les combinaisons critiques
-        $comboBonus = $this->computeComboBonus($componentScores);
-        $totalScore += $comboBonus;
-
-        // Score final limité à 1.0
-        $finalScore = min(1.0, $totalScore);
-
-        \Log::info('Similarity calculation completed', [
-            'component_scores' => $componentScores,
-            'weights' => $weights,
-            'bonuses' => [
-                'exact' => $exactMatchBonus,
-                'partial' => $partialMatchBonus,
-                'combo' => $comboBonus
-            ],
-            'total_score' => $totalScore,
-            'final_score' => $finalScore,
-            'product_name' => $product->name
-        ]);
-
-        return $finalScore;
-    }
-
-    /**
-     * Détermine le niveau de correspondance avancé basé sur les critères
-     */
-    private function getAdvancedMatchLevel($similarityScore, $product, $searchComponents)
-    {
-        $brandScore = $this->computeBrandSimilarity($product, $searchComponents);
-        $nameScore = $this->computeProductNameSimilarity($product, $searchComponents);
-        $volumeScore = $this->computeVolumeSimilarity($product);
-        $variationScore = $this->computeEnhancedVariationSimilarity($product, $searchComponents);
-        $typeScore = $this->computeProductTypeSimilarity($product, $searchComponents);
-
-        // Seuils ajustés pour une meilleure distribution
-        $excellentThreshold = 0.8;
-        $goodThreshold = 0.7;
-        $moderateThreshold = 0.5;
-
-        // CRITÈRES PRINCIPAUX POUR EXCELLENT
-        $hasExcellentName = $nameScore >= $excellentThreshold;
-        $hasExcellentVolume = $volumeScore >= $excellentThreshold;
-        $hasExcellentType = $typeScore >= $excellentThreshold;
-
-        // CRITÈRES POUR BON
-        $hasGoodName = $nameScore >= $goodThreshold;
-        $hasGoodVolume = $volumeScore >= $goodThreshold;
-        $hasGoodType = $typeScore >= $goodThreshold;
-        $hasGoodBrand = $brandScore >= $goodThreshold;
-
-        // CRITÈRES POUR MOYEN
-        $hasModerateName = $nameScore >= $moderateThreshold;
-        $hasModerateVolume = $volumeScore >= $moderateThreshold;
-        $hasModerateType = $typeScore >= $moderateThreshold;
-        $hasModerateBrand = $brandScore >= $moderateThreshold;
-
-        // === RÈGLE 1: EXCELLENT - Nom + Volume + Type excellents ===
-        if ($hasExcellentName && $hasExcellentVolume && $hasExcellentType) {
-            \Log::info('EXCELLENT MATCH: Name + Volume + Type all excellent', [
-                'name_score' => $nameScore,
-                'volume_score' => $volumeScore,
-                'type_score' => $typeScore,
-                'product_name' => $product->name,
-                'similarity_score' => $similarityScore
-            ]);
-            return 'excellent';
-        }
-
-        // === RÈGLE 2: BON - Nom + Type excellents OU Nom + Volume excellents ===
-        if (($hasExcellentName && $hasExcellentType) || ($hasExcellentName && $hasExcellentVolume)) {
-            \Log::info('GOOD MATCH: Name + Type/Volume excellent', [
-                'name_score' => $nameScore,
-                'type_score' => $typeScore,
-                'volume_score' => $volumeScore,
-                'product_name' => $product->name,
-                'similarity_score' => $similarityScore
-            ]);
-            return 'bon';
-        }
-
-        // === RÈGLE 3: BON - Score global élevé avec bons critères ===
-        if ($similarityScore >= 0.75 && ($hasGoodName && ($hasGoodType || $hasGoodVolume))) {
-            \Log::info('GOOD MATCH: High similarity with good name + type/volume', [
-                'similarity_score' => $similarityScore,
-                'name_score' => $nameScore,
-                'type_score' => $typeScore,
-                'volume_score' => $volumeScore,
-                'product_name' => $product->name
-            ]);
-            return 'bon';
-        }
-
-        // === RÈGLE 4: MOYEN - Critères modérés ou combinaisons partielles ===
-        $goodCriteriaCount = 0;
-        $goodCriteriaCount += $hasGoodName ? 1 : 0;
-        $goodCriteriaCount += $hasGoodVolume ? 1 : 0;
-        $goodCriteriaCount += $hasGoodType ? 1 : 0;
-        $goodCriteriaCount += $hasGoodBrand ? 1 : 0;
-
-        $moderateCriteriaCount = 0;
-        $moderateCriteriaCount += $hasModerateName ? 1 : 0;
-        $moderateCriteriaCount += $hasModerateVolume ? 1 : 0;
-        $moderateCriteriaCount += $hasModerateType ? 1 : 0;
-        $moderateCriteriaCount += $hasModerateBrand ? 1 : 0;
-
-        // MOYEN: Au moins 2 critères bons OU 3 critères modérés
-        if ($goodCriteriaCount >= 2 || $moderateCriteriaCount >= 3 || $similarityScore >= 0.65) {
-            \Log::info('MODERATE MATCH: Multiple good/moderate criteria', [
-                'good_criteria' => $goodCriteriaCount,
-                'moderate_criteria' => $moderateCriteriaCount,
-                'similarity_score' => $similarityScore,
-                'product_name' => $product->name
-            ]);
-            return 'moyen';
-        }
-
-        // === RÈGLE 5: FAIBLE - Peu de critères correspondants ===
-        \Log::info('WEAK MATCH: Few matching criteria', [
-            'name_score' => $nameScore,
-            'volume_score' => $volumeScore,
-            'type_score' => $typeScore,
-            'brand_score' => $brandScore,
-            'similarity_score' => $similarityScore,
-            'product_name' => $product->name
-        ]);
-        return 'faible';
-    }
-
-    /**
-     * Bonus spécial pour les combinaisons critiques
-     */
-    private function computeComboBonus($componentScores)
-    {
-        $bonus = 0;
-
-        $hasExcellentName = $componentScores['product_name'] >= 0.8;
-        $hasExcellentVolume = $componentScores['volume'] >= 0.8;
-        $hasExcellentType = $componentScores['product_type'] >= 0.8;
-
-        $hasGoodName = $componentScores['product_name'] >= 0.7;
-        $hasGoodVolume = $componentScores['volume'] >= 0.7;
-        $hasGoodType = $componentScores['product_type'] >= 0.7;
-
-        // BONUS MAXIMAL: Les trois critères pour "excellent"
-        if ($hasExcellentName && $hasExcellentVolume && $hasExcellentType) {
-            $bonus += 0.25;
-            \Log::info('MAX COMBO BONUS: Name + Volume + Type all excellent');
-        }
-        // BONUS IMPORTANT: Pour "bon" - Nom + Type
-        elseif ($hasExcellentName && $hasExcellentType) {
-            $bonus += 0.15;
-            \Log::info('GOOD COMBO BONUS: Name + Type excellent');
-        }
-        // BONUS: Pour "bon" - Nom + Volume
-        elseif ($hasExcellentName && $hasExcellentVolume) {
-            $bonus += 0.12;
-            \Log::info('GOOD COMBO BONUS: Name + Volume excellent');
-        }
-        // BONUS LÉGER: Bonnes correspondances
-        elseif ($hasGoodName && $hasGoodType) {
-            $bonus += 0.08;
-            \Log::info('MODERATE COMBO BONUS: Name + Type good');
-        }
-
-        return $bonus;
-    }
-
-    /**
-     * Bonus pour les correspondances exactes (réduit pour éviter les scores trop élevés)
-     */
-    private function computeExactMatchBonus($product, $searchComponents)
-    {
-        $bonus = 0;
-
-        // Bonus marque exacte
-        if (!empty($searchComponents['brand']) && 
-            !empty($product->vendor) &&
-            stripos($product->vendor, $searchComponents['brand']) !== false) {
-            $bonus += 0.08;
-        }
-
-        // Bonus volume exact
-        if (!empty($this->searchVolumes)) {
-            $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
-            $volumeMatches = array_intersect($this->searchVolumes, $productVolumes);
-            if (!empty($volumeMatches)) {
-                $bonus += 0.10;
-            }
-        }
-
-        // Bonus type exact
-        if (!empty($searchComponents['product_type']) && 
-            !empty($product->type) &&
-            stripos($product->type, $searchComponents['product_type']) !== false) {
-            $bonus += 0.06;
-        }
-
-        return $bonus;
-    }
-
-    /**
-     * Bonus pour les correspondances partielles
-     */
-    private function computePartialMatchBonus($componentScores, $product, $searchComponents)
-    {
-        $bonus = 0;
-
-        $hasGoodNameMatch = $componentScores['product_name'] >= 0.7;
-        $hasGoodBrandMatch = $componentScores['brand'] >= 0.7;
-        $hasVolumeMatch = $componentScores['volume'] >= 0.7;
-
-        // Bonus si bon nom/marque mais volume différent
-        if (($hasGoodNameMatch || $hasGoodBrandMatch) && !$hasVolumeMatch) {
-            $bonus += 0.05;
-        }
-
-        // Bonus si bon volume mais nom différent
-        if ($hasVolumeMatch && !$hasGoodNameMatch && !$hasGoodBrandMatch) {
-            $bonus += 0.04;
-        }
-
-        return $bonus;
+        return min(1.0, $totalScore);
     }
 
     /**
@@ -707,6 +511,7 @@ new class extends Component {
 
         $score = $this->computeStringSimilarity($searchBrand, $productBrand);
 
+        // Bonus si la marque correspond exactement au début
         if (stripos($product->name ?? '', $searchBrand) === 0) {
             $score = min(1.0, $score + 0.2);
         }
@@ -715,7 +520,7 @@ new class extends Component {
     }
 
     /**
-     * Amélioration de la similarité du nom du produit
+     * Similarité du nom du produit
      */
     private function computeProductNameSimilarity($product, $searchComponents)
     {
@@ -726,33 +531,14 @@ new class extends Component {
             return 0;
         }
 
-        $baseScore = $this->computeStringSimilarity($searchProductName, $productName);
+        $score = $this->computeStringSimilarity($searchProductName, $productName);
 
-        // Bonus pour inclusion exacte
-        $containsBonus = 0;
+        // Vérifier si le nom du produit contient le terme recherché
         if (stripos($productName, $searchProductName) !== false) {
-            $containsBonus = 0.20;
+            $score = min(1.0, $score + 0.15);
         }
 
-        // Bonus pour mots individuels
-        $searchWords = explode(' ', $searchProductName);
-        $productWords = explode(' ', $productName);
-        
-        $wordMatches = 0;
-        foreach ($searchWords as $searchWord) {
-            foreach ($productWords as $productWord) {
-                if (strlen($searchWord) > 2 && stripos($productWord, $searchWord) !== false) {
-                    $wordMatches++;
-                    break;
-                }
-            }
-        }
-        
-        $wordBonus = ($wordMatches / max(1, count($searchWords))) * 0.10;
-
-        $totalScore = min(1.0, $baseScore + $containsBonus + $wordBonus);
-
-        return $totalScore;
+        return $score;
     }
 
     /**
@@ -784,6 +570,7 @@ new class extends Component {
 
         $baseScore = $this->computeStringSimilarity($searchVariation, $productVariation);
 
+        // Bonus pour les mots clés de variation correspondants
         $keywordMatches = 0;
         foreach ($this->searchVariationKeywords as $keyword) {
             if (stripos($productVariation, $keyword) !== false) {
@@ -797,112 +584,98 @@ new class extends Component {
     }
 
     /**
-     * Amélioration de la similarité du volume
+     * Bonus pour les correspondances exactes
      */
-    private function computeVolumeSimilarity($product)
+    private function computeExactMatchBonus($product, $searchComponents)
     {
-        if (empty($this->searchVolumes)) {
-            return 0;
+        $bonus = 0;
+
+        // Bonus si la marque correspond exactement
+        if (!empty($searchComponents['brand']) && 
+            !empty($product->vendor) &&
+            stripos($product->vendor, $searchComponents['brand']) !== false) {
+            $bonus += 0.1;
         }
 
-        $productVolumes = $this->extractVolumesFromText($product->name . ' ' . ($product->variation ?? ''));
-
-        if (empty($productVolumes)) {
-            return 0;
-        }
-
-        $matches = array_intersect($this->searchVolumes, $productVolumes);
-        $matchRatio = count($matches) / count($this->searchVolumes);
-
-        // Bonus pour correspondance exacte de volume (réduit)
-        $exactBonus = 0;
-        foreach ($this->searchVolumes as $searchedVolume) {
-            if (in_array($searchedVolume, $productVolumes)) {
-                $exactBonus += 0.15;
-                break; // Un seul bonus même si plusieurs volumes correspondent
+        // Bonus si le volume correspond exactement
+        if (!empty($this->searchVolumes)) {
+            $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
+            $volumeMatches = array_intersect($this->searchVolumes, $productVolumes);
+            if (!empty($volumeMatches)) {
+                $bonus += 0.15;
             }
         }
 
-        $baseScore = $matchRatio * 0.8; // Base score augmenté
-        $totalScore = min(1.0, $baseScore + $exactBonus);
+        // Bonus si le type de produit correspond
+        if (!empty($searchComponents['product_type']) && 
+            !empty($product->type) &&
+            stripos($product->type, $searchComponents['product_type']) !== false) {
+            $bonus += 0.1;
+        }
 
-        return $totalScore;
+        return $bonus;
     }
 
     /**
-     * Retourne les scores des composants
-     */
-    private function getComponentScores($product, $searchComponents)
-    {
-        return [
-            'brand' => $this->computeBrandSimilarity($product, $searchComponents),
-            'product_name' => $this->computeProductNameSimilarity($product, $searchComponents),
-            'product_type' => $this->computeProductTypeSimilarity($product, $searchComponents),
-            'variation' => $this->computeEnhancedVariationSimilarity($product, $searchComponents),
-            'volume' => $this->computeVolumeSimilarity($product)
-        ];
-    }
-
-    /**
-     * Retourne les raisons de la correspondance améliorées
+     * Retourne les raisons de la correspondance pour le débogage
      */
     private function getMatchReasons($product, $searchComponents)
     {
         $reasons = [];
-        $scores = $this->getComponentScores($product, $searchComponents);
 
-        // Seuils pour les raisons
-        $excellentThreshold = 0.8;
-        $goodThreshold = 0.7;
-        $moderateThreshold = 0.5;
-
-        // Marque
-        if ($scores['brand'] >= $excellentThreshold) {
-            $reasons[] = 'Marque correspondante';
-        } elseif ($scores['brand'] >= $goodThreshold) {
-            $reasons[] = 'Marque similaire';
+        if (!empty($searchComponents['brand']) && !empty($product->vendor)) {
+            $brandSimilarity = $this->computeStringSimilarity($searchComponents['brand'], $product->vendor);
+            if ($brandSimilarity > 0.7) {
+                $reasons[] = 'Marque correspondante';
+            }
         }
 
-        // Nom du produit
-        if ($scores['product_name'] >= $excellentThreshold) {
-            $reasons[] = 'Nom produit correspondant';
-        } elseif ($scores['product_name'] >= $goodThreshold) {
-            $reasons[] = 'Nom produit similaire';
+        if (!empty($searchComponents['product_name']) && !empty($product->name)) {
+            $nameSimilarity = $this->computeStringSimilarity($searchComponents['product_name'], $product->name);
+            if ($nameSimilarity > 0.7) {
+                $reasons[] = 'Nom produit similaire';
+            }
         }
 
-        // Volume
-        if ($scores['volume'] >= $excellentThreshold) {
+        if ($this->hasMatchingVolume($product)) {
             $reasons[] = 'Volume correspondant';
-        } elseif ($scores['volume'] >= $goodThreshold) {
-            $reasons[] = 'Volume similaire';
         }
 
-        // Type de produit
-        if ($scores['product_type'] >= $excellentThreshold) {
-            $reasons[] = 'Type produit correspondant';
-        } elseif ($scores['product_type'] >= $goodThreshold) {
-            $reasons[] = 'Type produit similaire';
-        }
-
-        // Variation
-        if ($scores['variation'] >= $excellentThreshold) {
-            $reasons[] = 'Variation correspondante';
-        } elseif ($scores['variation'] >= $goodThreshold) {
+        if ($this->hasMatchingVariationKeyword($product)) {
             $reasons[] = 'Variation similaire';
         }
 
-        // Raisons spéciales basées sur les combinaisons
-        if ($scores['product_name'] >= $excellentThreshold && 
-            $scores['volume'] >= $excellentThreshold && 
-            $scores['product_type'] >= $excellentThreshold) {
-            $reasons[] = 'Nom+Volume+Type excellents ★';
-        } elseif ($scores['product_name'] >= $excellentThreshold && $scores['product_type'] >= $excellentThreshold) {
-            $reasons[] = 'Nom+Type excellents';
-        } elseif ($scores['product_name'] >= $excellentThreshold && $scores['volume'] >= $excellentThreshold) {
-            $reasons[] = 'Nom+Volume excellents';
-        }
+        return $reasons;
+    }
 
-        return array_slice($reasons, 0, 4);
+    /**
+     * Liste des mots à ignorer
+     */
+    private function getStopWords(): array
+    {
+        return [
+            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou',
+            'pour', 'avec', 'the', 'a', 'an', 'and', 'or', 'eau', 'ml',
+            'edition', 'édition', 'coffret', 'parfum', 'vaporisateur',
+            'spray', 'flacon', 'bottle'
+        ];
+    }
+
+    /**
+     * Calcule la similarité entre la recherche et chaque produit (ancienne méthode conservée pour compatibilité)
+     */
+    private function calculateSimilarity($products, $search)
+    {
+        return $this->calculateEnhancedSimilarity($products, $search);
+    }
+
+    /**
+     * Calcule le score de similarité global (ancienne méthode conservée pour compatibilité)
+     */
+    private function computeOverallSimilarity($product, $search)
+    {
+        $searchComponents = $this->extractSearchComponents($search);
+        return $this->computeEnhancedSimilarity($product, $search, $searchComponents);
     }
 
     /**
@@ -980,6 +753,84 @@ new class extends Component {
     }
 
     /**
+     * Similarité des volumes
+     */
+    private function computeVolumeSimilarity($product)
+    {
+        if (empty($this->searchVolumes)) {
+            return 0;
+        }
+
+        $productVolumes = $this->extractVolumesFromText($product->name . ' ' . ($product->variation ?? ''));
+
+        if (empty($productVolumes)) {
+            return 0;
+        }
+
+        $matches = array_intersect($this->searchVolumes, $productVolumes);
+        $matchRatio = count($matches) / count($this->searchVolumes);
+
+        if ($matchRatio === 1.0) {
+            $matchRatio = 1.0;
+        }
+
+        return $matchRatio;
+    }
+
+    /**
+     * Extrait la marque de la recherche (ancienne méthode)
+     */
+    private function extractVendorFromSearch($search)
+    {
+        if (preg_match('/^([^-]+)/', $search, $matches)) {
+            return trim($matches[1]);
+        }
+
+        return '';
+    }
+
+    /**
+     * Extrait la variation de la recherche (ancienne méthode)
+     */
+    private function extractSearchVariationFromSearch($search)
+    {
+        $pattern = '/^[^-]+\s*-\s*[^-]+\s*-\s*/i';
+        $variation = preg_replace($pattern, '', $search);
+
+        return trim($variation);
+    }
+
+    /**
+     * Extrait le type de produit de la recherche (ancienne méthode)
+     */
+    private function extractProductTypeFromSearch($search)
+    {
+        $types = ['parfum', 'eau de parfum', 'eau de toilette', 'coffret', 'gel douche', 'lotion'];
+
+        foreach ($types as $type) {
+            if (stripos($search, $type) !== false) {
+                return $type;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Détermine le niveau de correspondance
+     */
+    private function getMatchLevel($similarityScore)
+    {
+        if ($similarityScore >= 0.9)
+            return 'excellent';
+        if ($similarityScore >= 0.7)
+            return 'bon';
+        if ($similarityScore >= 0.6)
+            return 'moyen';
+        return 'faible';
+    }
+
+    /**
      * Extrait les volumes (ml) de la recherche
      */
     private function extractSearchVolumes(string $search): void
@@ -1013,12 +864,31 @@ new class extends Component {
         $words = explode(" ", $variationClean);
 
         $stopWords = [
-            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou',
-            'pour', 'avec', 'the', 'a', 'an', 'and', 'or', 'ml', 'edition', 'édition'
+            'de',
+            'le',
+            'la',
+            'les',
+            'un',
+            'une',
+            'des',
+            'du',
+            'et',
+            'ou',
+            'pour',
+            'avec',
+            'the',
+            'a',
+            'an',
+            'and',
+            'or',
+            'ml',
+            'edition',
+            'édition'
         ];
 
         foreach ($words as $word) {
             $word = trim($word);
+
             if ((strlen($word) > 1 && !in_array($word, $stopWords)) || is_numeric($word)) {
                 $this->searchVariationKeywords[] = $word;
             }
@@ -1032,31 +902,11 @@ new class extends Component {
     }
 
     /**
-     * Liste des mots à ignorer
+     * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT (ancienne méthode)
      */
-    private function getStopWords(): array
+    private function prepareSearchTerms(string $search): string
     {
-        return [
-            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou',
-            'pour', 'avec', 'the', 'a', 'an', 'and', 'or', 'eau', 'ml',
-            'edition', 'édition', 'coffret', 'parfum', 'vaporisateur',
-            'spray', 'flacon', 'bottle'
-        ];
-    }
-
-    /**
-     * Ajuste le seuil de similarité
-     */
-    public function adjustSimilarityThreshold($threshold)
-    {
-        $this->isLoading = true;
-        $this->similarityThreshold = $threshold;
-        
-        if (!empty($this->products)) {
-            $this->matchedProducts = $this->calculateEnhancedSimilarity($this->products, $this->search ?? '');
-        }
-        
-        $this->isLoading = false;
+        return $this->prepareEnhancedSearchTerms($search);
     }
 
     /**
@@ -1209,7 +1059,7 @@ new class extends Component {
     /**
      * Extrait la variation de la recherche complète
      */
-    public function extractSearchVariation()
+    private function extractSearchVariation()
     {
         $pattern = '/^[^-]+\s*-\s*[^-]+\s*-\s*/i';
         $variation = preg_replace($pattern, '', $this->search ?? '');
@@ -1286,6 +1136,22 @@ new class extends Component {
     }
 
     /**
+     * Ajuste le seuil de similarité et filtre les résultats
+     */
+    public function adjustSimilarityThreshold($threshold)
+    {
+        $this->isLoading = true;
+        $this->similarityThreshold = $threshold;
+        
+        // Filtrer les produits existants avec le nouveau seuil
+        if (!empty($this->products)) {
+            $this->matchedProducts = $this->calculateEnhancedSimilarity($this->products, $this->search ?? '');
+        }
+        
+        $this->isLoading = false;
+    }
+
+    /**
      * Calcule la différence de prix par rapport au prix du concurrent
      */
     public function calculatePriceDifference($competitorPrice)
@@ -1317,6 +1183,9 @@ new class extends Component {
 
     /**
      * Détermine le statut de compétitivité de notre prix
+     * LOGIQUE CORRIGÉE: difference = notre_prix - concurrent_prix
+     * Si difference > 0 : nous sommes PLUS CHER
+     * Si difference < 0 : nous sommes MOINS CHER
      */
     public function getPriceCompetitiveness($competitorPrice)
     {
@@ -1326,21 +1195,22 @@ new class extends Component {
             return 'unknown';
         }
 
+        // CORRECTION: Inverser la logique
         if ($difference > 10) {
-            return 'higher';
+            return 'higher'; // Nous sommes beaucoup plus cher
         } elseif ($difference > 0) {
-            return 'slightly_higher';
+            return 'slightly_higher'; // Nous sommes légèrement plus cher
         } elseif ($difference == 0) {
-            return 'same';
+            return 'same'; // Même prix
         } elseif ($difference >= -10) {
-            return 'competitive';
+            return 'competitive'; // Nous sommes légèrement moins cher
         } else {
-            return 'very_competitive';
+            return 'very_competitive'; // Nous sommes beaucoup moins cher
         }
     }
 
     /**
-     * Retourne le libellé pour le statut de prix
+     * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
      */
     public function getPriceStatusLabel($competitorPrice)
     {
@@ -1409,6 +1279,9 @@ new class extends Component {
 
     /**
      * Détermine le statut de compétitivité de Cosmashop
+     * LOGIQUE CORRIGÉE: difference = cosmashop_prix - concurrent_prix
+     * Si difference > 0 : Cosmashop PLUS CHER
+     * Si difference < 0 : Cosmashop MOINS CHER
      */
     public function getCosmashopPriceCompetitiveness($competitorPrice)
     {
@@ -1418,16 +1291,17 @@ new class extends Component {
             return 'unknown';
         }
 
+        // CORRECTION: Inverser la logique
         if ($difference > 10) {
-            return 'higher';
+            return 'higher'; // Cosmashop serait beaucoup plus cher
         } elseif ($difference > 0) {
-            return 'slightly_higher';
+            return 'slightly_higher'; // Cosmashop serait légèrement plus cher
         } elseif ($difference == 0) {
-            return 'same';
+            return 'same'; // Même prix que Cosmashop
         } elseif ($difference >= -10) {
-            return 'competitive';
+            return 'competitive'; // Cosmashop serait légèrement moins cher
         } else {
-            return 'very_competitive';
+            return 'very_competitive'; // Cosmashop serait beaucoup moins cher
         }
     }
 
@@ -1563,6 +1437,7 @@ new class extends Component {
         $avgPrice = array_sum($prices) / count($prices);
         $cosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
 
+        // Compter les concurrents en dessous/au-dessus de Cosmashop
         $belowCosmashop = 0;
         $aboveCosmashop = 0;
 
