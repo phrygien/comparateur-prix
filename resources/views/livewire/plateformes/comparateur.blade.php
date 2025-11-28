@@ -1510,7 +1510,8 @@ new class extends Component {
                                                                 <!-- Colonne Prix HT -->
                                                                 <td class="px-6 py-4 whitespace-nowrap">
                                                                     <div class="text-sm font-semibold text-green-600">
-                                                                        {{ $this->formatPrice($product->price_ht ?? $product->prix_ht) }}
+                                                                        {{-- {{ $this->formatPrice($product->price_ht ?? $product->prix_ht) }} --}}
+                                                                        {{ $this->formatPrice($product->prix_ht) }}
                                                                     </div>
                                                                 </td>
 
