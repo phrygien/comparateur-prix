@@ -428,13 +428,20 @@ new class extends Component {
      */
     private function computeEnhancedSimilarity($product, $search, $searchComponents)
     {
+        // Poids réajustés pour prioriser Nom, Volume et Type
         $weights = [
-            'brand' => 0.20,
-            'product_name' => 0.25,
-            'product_type' => 0.10,
-            'variation' => 0.20,
-            'volume' => 0.25
+            'brand' => 0.15,       // Légèrement réduit
+            'product_name' => 0.30, // Augmenté - CRITÈRE PRINCIPAL
+            'product_type' => 0.25, // Augmenté - CRITÈRE PRINCIPAL  
+            'variation' => 0.15,    // Réduit
+            'volume' => 0.30        // Augmenté - CRITÈRE PRINCIPAL
         ];
+
+        // Normaliser les poids pour que la somme fasse 1.0
+        $totalWeight = array_sum($weights);
+        foreach ($weights as $key => $weight) {
+            $weights[$key] = $weight / $totalWeight;
+        }
 
         $totalScore = 0;
         $componentScores = [];
@@ -465,6 +472,7 @@ new class extends Component {
         $partialMatchBonus = $this->computePartialMatchBonus($componentScores, $product, $searchComponents);
         $totalScore += $partialMatchBonus;
 
+        // BONUS SPÉCIAL: Pour les combinaisons Nom+Volume+Type et Nom+Type
         $comboBonus = $this->computeComboBonus($componentScores);
         $totalScore += $comboBonus;
 
@@ -482,62 +490,115 @@ new class extends Component {
         $variationScore = $this->computeEnhancedVariationSimilarity($product, $searchComponents);
         $typeScore = $this->computeProductTypeSimilarity($product, $searchComponents);
 
-        $strongMatches = 0;
-        $strongMatches += $brandScore > 0.8 ? 1 : 0;
-        $strongMatches += $nameScore > 0.8 ? 1 : 0;
-        $strongMatches += $volumeScore > 0.8 ? 1 : 0;
-        $strongMatches += $variationScore > 0.8 ? 1 : 0;
-        $strongMatches += $typeScore > 0.8 ? 1 : 0;
+        // Seuils pour les correspondances
+        $excellentThreshold = 0.8;
+        $goodThreshold = 0.7;
+        $moderateThreshold = 0.6;
 
-        $moderateMatches = 0;
-        $moderateMatches += ($brandScore > 0.6 && $brandScore <= 0.8) ? 1 : 0;
-        $moderateMatches += ($nameScore > 0.6 && $nameScore <= 0.8) ? 1 : 0;
-        $moderateMatches += ($volumeScore > 0.6 && $volumeScore <= 0.8) ? 1 : 0;
-        $moderateMatches += ($variationScore > 0.6 && $variationScore <= 0.8) ? 1 : 0;
-        $moderateMatches += ($typeScore > 0.6 && $typeScore <= 0.8) ? 1 : 0;
-
-        $hasExcellentName = $nameScore > 0.8;
-        $hasExcellentVariation = $variationScore > 0.8;
-        $hasExcellentVolume = $volumeScore > 0.8;
+        // CRITÈRES PRINCIPAUX
+        $hasExcellentName = $nameScore > $excellentThreshold;
+        $hasExcellentVolume = $volumeScore > $excellentThreshold;
+        $hasExcellentType = $typeScore > $excellentThreshold;
         
-        if ($hasExcellentName && $hasExcellentVariation && $hasExcellentVolume) {
+        $hasGoodName = $nameScore > $goodThreshold;
+        $hasGoodVolume = $volumeScore > $goodThreshold;
+        $hasGoodType = $typeScore > $goodThreshold;
+        $hasGoodVariation = $variationScore > $goodThreshold;
+        $hasGoodBrand = $brandScore > $goodThreshold;
+
+        // RÈGLE: EXCELLENT - Nom + Volume + Type excellents
+        if ($hasExcellentName && $hasExcellentVolume && $hasExcellentType) {
+            \Log::info('EXCELLENT MATCH: Name + Volume + Type all excellent', [
+                'name_score' => $nameScore,
+                'volume_score' => $volumeScore,
+                'type_score' => $typeScore,
+                'product_name' => $product->name
+            ]);
             return 'excellent';
         }
 
-        $hasGoodNameAndVolume = ($nameScore > 0.7 && $volumeScore > 0.7);
-        $hasGoodNameAndVariation = ($nameScore > 0.7 && $variationScore > 0.7);
-        $hasGoodVolumeAndVariation = ($volumeScore > 0.7 && $variationScore > 0.7);
-        
-        if ($strongMatches >= 2 || $hasGoodNameAndVolume || $hasGoodNameAndVariation || $hasGoodVolumeAndVariation) {
+        // RÈGLE: BON - Nom + Type excellents (même sans volume exact)
+        if ($hasExcellentName && $hasExcellentType) {
+            \Log::info('GOOD MATCH: Name + Type excellent (volume may differ)', [
+                'name_score' => $nameScore,
+                'type_score' => $typeScore,
+                'volume_score' => $volumeScore,
+                'product_name' => $product->name
+            ]);
             return 'bon';
         }
 
-        if ($strongMatches >= 1 || $moderateMatches >= 2) {
+        // RÈGLE: BON - Nom excellent + Volume excellent (même sans type exact)
+        if ($hasExcellentName && $hasExcellentVolume) {
+            \Log::info('GOOD MATCH: Name + Volume excellent (type may differ)', [
+                'name_score' => $nameScore,
+                'volume_score' => $volumeScore,
+                'type_score' => $typeScore,
+                'product_name' => $product->name
+            ]);
+            return 'bon';
+        }
+
+        // RÈGLE: MOYEN - Au moins 2 critères bons ou 1 critère excellent
+        $strongMatches = 0;
+        $strongMatches += $brandScore > $excellentThreshold ? 1 : 0;
+        $strongMatches += $nameScore > $excellentThreshold ? 1 : 0;
+        $strongMatches += $volumeScore > $excellentThreshold ? 1 : 0;
+        $strongMatches += $variationScore > $excellentThreshold ? 1 : 0;
+        $strongMatches += $typeScore > $excellentThreshold ? 1 : 0;
+
+        $goodMatches = 0;
+        $goodMatches += $brandScore > $goodThreshold ? 1 : 0;
+        $goodMatches += $nameScore > $goodThreshold ? 1 : 0;
+        $goodMatches += $volumeScore > $goodThreshold ? 1 : 0;
+        $goodMatches += $variationScore > $goodThreshold ? 1 : 0;
+        $goodMatches += $typeScore > $goodThreshold ? 1 : 0;
+
+        if ($strongMatches >= 1 || $goodMatches >= 2) {
+            \Log::info('MODERATE MATCH: At least 1 strong or 2 good criteria', [
+                'strong_matches' => $strongMatches,
+                'good_matches' => $goodMatches,
+                'product_name' => $product->name
+            ]);
             return 'moyen';
         }
 
+        // RÈGLE: FAIBLE - Score bas et peu de critères
+        \Log::info('WEAK MATCH: Few matching criteria', [
+            'name_score' => $nameScore,
+            'volume_score' => $volumeScore,
+            'type_score' => $typeScore,
+            'similarity_score' => $similarityScore,
+            'product_name' => $product->name
+        ]);
         return 'faible';
     }
 
     /**
-     * Bonus spécial pour la combinaison Nom + Variation + Volume
+     * Bonus spécial pour la combinaison Nom + Volume + Type (critères pour EXCELLENT)
      */
     private function computeComboBonus($componentScores)
     {
         $bonus = 0;
 
         $hasExcellentName = $componentScores['product_name'] > 0.8;
-        $hasExcellentVariation = $componentScores['variation'] > 0.8;
         $hasExcellentVolume = $componentScores['volume'] > 0.8;
+        $hasExcellentType = $componentScores['product_type'] > 0.8;
 
-        if ($hasExcellentName && $hasExcellentVariation && $hasExcellentVolume) {
-            $bonus += 0.25;
+        // BONUS MAXIMAL: Les trois critères pour "excellent"
+        if ($hasExcellentName && $hasExcellentVolume && $hasExcellentType) {
+            $bonus += 0.30; // Bonus très important pour la combinaison parfaite
+            \Log::info('MAX COMBO BONUS: Name + Volume + Type all excellent');
         }
+        // BONUS IMPORTANT: Pour "bon" - Nom + Type
+        elseif ($hasExcellentName && $hasExcellentType) {
+            $bonus += 0.20;
+            \Log::info('GOOD COMBO BONUS: Name + Type excellent');
+        }
+        // BONUS: Pour "bon" - Nom + Volume
         elseif ($hasExcellentName && $hasExcellentVolume) {
             $bonus += 0.15;
-        }
-        elseif ($hasExcellentVariation && $hasExcellentVolume) {
-            $bonus += 0.10;
+            \Log::info('GOOD COMBO BONUS: Name + Volume excellent');
         }
 
         return $bonus;
@@ -738,47 +799,55 @@ new class extends Component {
     }
 
     /**
-     * Retourne les raisons de la correspondance
+     * Retourne les raisons de la correspondance avec focus sur Nom/Volume/Type
      */
     private function getMatchReasons($product, $searchComponents)
     {
         $reasons = [];
         $scores = $this->getComponentScores($product, $searchComponents);
 
+        // Marque
         if ($scores['brand'] > 0.8) {
             $reasons[] = 'Marque correspondante';
         } elseif ($scores['brand'] > 0.6) {
             $reasons[] = 'Marque similaire';
         }
 
+        // Nom du produit (CRITÈRE PRINCIPAL)
         if ($scores['product_name'] > 0.8) {
             $reasons[] = 'Nom produit correspondant';
         } elseif ($scores['product_name'] > 0.6) {
             $reasons[] = 'Nom produit similaire';
         }
 
+        // Volume (CRITÈRE PRINCIPAL)
         if ($scores['volume'] > 0.8) {
             $reasons[] = 'Volume correspondant';
         } elseif ($scores['volume'] > 0.6) {
             $reasons[] = 'Volume similaire';
         }
 
+        // Type de produit (CRITÈRE PRINCIPAL)
+        if ($scores['product_type'] > 0.8) {
+            $reasons[] = 'Type produit correspondant';
+        } elseif ($scores['product_type'] > 0.6) {
+            $reasons[] = 'Type produit similaire';
+        }
+
+        // Variation
         if ($scores['variation'] > 0.8) {
             $reasons[] = 'Variation correspondante';
         } elseif ($scores['variation'] > 0.6) {
             $reasons[] = 'Variation similaire';
         }
 
-        if ($scores['product_type'] > 0.8) {
-            $reasons[] = 'Type produit correspondant';
-        }
-
-        if ($scores['product_name'] > 0.8 && $scores['variation'] > 0.8 && $scores['volume'] > 0.8) {
-            $reasons[] = 'Nom+Variation+Volume excellents';
+        // Raisons spéciales basées sur les combinaisons pour EXCELLENT et BON
+        if ($scores['product_name'] > 0.8 && $scores['volume'] > 0.8 && $scores['product_type'] > 0.8) {
+            $reasons[] = 'Nom+Volume+Type excellents ★';
+        } elseif ($scores['product_name'] > 0.8 && $scores['product_type'] > 0.8) {
+            $reasons[] = 'Nom+Type excellents';
         } elseif ($scores['product_name'] > 0.8 && $scores['volume'] > 0.8) {
             $reasons[] = 'Nom+Volume excellents';
-        } elseif ($scores['variation'] > 0.8 && $scores['volume'] > 0.8) {
-            $reasons[] = 'Variation+Volume excellents';
         }
 
         return array_slice($reasons, 0, 4);
@@ -1086,7 +1155,7 @@ new class extends Component {
     }
 
     /**
-     * Extrait la variation de la recherche complète - MÉTHODE MANQUANTE AJOUTÉE
+     * Extrait la variation de la recherche complète
      */
     public function extractSearchVariation()
     {
@@ -1097,7 +1166,7 @@ new class extends Component {
     }
 
     /**
-     * Normalise une variation pour la comparaison - MÉTHODE MANQUANTE AJOUTÉE
+     * Normalise une variation pour la comparaison
      */
     private function normalizeVariation($variation)
     {
@@ -1113,7 +1182,7 @@ new class extends Component {
     }
 
     /**
-     * Vérifie si le produit a le même volume ET la même variation exacte que la recherche - MÉTHODE MANQUANTE AJOUTÉE
+     * Vérifie si le produit a le même volume ET la même variation exacte que la recherche
      */
     public function hasSameVolumeAndExactVariation($product)
     {
