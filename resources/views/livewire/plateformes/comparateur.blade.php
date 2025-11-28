@@ -19,6 +19,7 @@ new class extends Component {
     public $similarityThreshold = 0.6;
     public $matchedProducts = [];
     public $isLoading = false;
+    public $originalProducts = []; // Stocke les produits originaux
 
     // prix a comparer
     public $price;
@@ -222,6 +223,7 @@ new class extends Component {
 
             $this->matchedProducts = $this->calculateEnhancedSimilarity($result, $search);
             $this->products = $result;
+            $this->originalProducts = $result; // Stocker les produits originaux
             $this->hasData = !empty($result);
 
             return [
@@ -407,6 +409,7 @@ new class extends Component {
         foreach ($products as $product) {
             $similarityScore = $this->computeEnhancedSimilarity($product, $search, $searchComponents);
 
+            // Appliquer le seuil de similarité
             if ($similarityScore >= $this->similarityThreshold) {
                 $product->similarity_score = $similarityScore;
                 $product->match_level = $this->getAdvancedMatchLevel($similarityScore, $product, $searchComponents);
@@ -1045,15 +1048,16 @@ new class extends Component {
     }
 
     /**
-     * Ajuste le seuil de similarité
+     * Ajuste le seuil de similarité - CORRIGÉ
      */
     public function adjustSimilarityThreshold($threshold)
     {
         $this->isLoading = true;
         $this->similarityThreshold = $threshold;
         
-        if (!empty($this->products)) {
-            $this->matchedProducts = $this->calculateEnhancedSimilarity($this->products, $this->search ?? '');
+        // Recalculer la similarité avec le nouveau seuil
+        if (!empty($this->originalProducts)) {
+            $this->matchedProducts = $this->calculateEnhancedSimilarity($this->originalProducts, $this->search ?? '');
         }
         
         $this->isLoading = false;
