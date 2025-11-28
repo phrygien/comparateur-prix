@@ -2,10 +2,6 @@
 
 use Livewire\Volt\Component;
 use Illuminate\Support\Facades\DB;
-use Intervention\Image\Facades\Image;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 
 new class extends Component {
     public $products = [];
@@ -21,139 +17,49 @@ new class extends Component {
     public $similarityThreshold = 0.6;
     public $matchedProducts = [];
 
-    // Propriétés pour les prix
+    // prix a comparer
     public $price;
+    // Ajoutez cette propriété dans la classe
     public $referencePrice;
+
+    // price cosmashop
     public $cosmashopPrice;
-
-    // Propriétés pour l'analyse d'image
-    public $productImageUrl = null;
-    public $imageAnalysisResults = [];
-    public $useImageAnalysis = true;
-    public $imageSimilarityThreshold = 0.7;
-
-    // Configuration des poids de similarité
-    public $similarityWeights = [
-        'name' => 0.25,
-        'vendor' => 0.15,
-        'variation' => 0.20,
-        'volumes' => 0.15,
-        'type' => 0.10,
-        'image' => 0.15
-    ];
-
-    // Base URL pour les images
-    public $imageBaseUrl = 'https://www.cosma-parfumeries.com/media/catalog/product';
 
     public function mount($name, $id, $price)
     {
         $this->getCompetitorPrice($name);
         $this->id = $id;
         $this->price = $this->cleanPrice($price);
-        $this->referencePrice = $this->cleanPrice($price);
-        $this->cosmashopPrice = $this->cleanPrice($price) * 1.05;
-        
-        // Récupérer l'image du produit pour analyse
-        $this->getProductImage($id);
+        $this->referencePrice = $this->cleanPrice($price); // Prix de référence pour la comparaison
+        $this->cosmashopPrice = $this->cleanPrice($price) * 1.05; // Prix majoré de 5% pour Cosmashop
     }
 
-    /**
-     * Récupère l'image du produit depuis la base Magento et construit l'URL complète
-     */
-    private function getProductImage($entityId)
-    {
-        try {
-            $imageQuery = "
-                SELECT product_char.thumbnail, product_char.swatch_image, product_media.media_gallery
-                FROM catalog_product_entity as produit
-                LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
-                LEFT JOIN product_media ON product_media.entity_id = produit.entity_id
-                WHERE produit.entity_id = ?
-            ";
-
-            $result = DB::connection('mysqlMagento')->select($imageQuery, [$entityId]);
-            
-            if (!empty($result)) {
-                $productData = $result[0];
-                
-                // Priorité: thumbnail -> swatch_image -> première image de media_gallery
-                if (!empty($productData->thumbnail)) {
-                    $this->productImageUrl = $this->buildImageUrl($productData->thumbnail);
-                } elseif (!empty($productData->swatch_image)) {
-                    $this->productImageUrl = $this->buildImageUrl($productData->swatch_image);
-                } elseif (!empty($productData->media_gallery)) {
-                    $images = json_decode($productData->media_gallery, true);
-                    if (!empty($images) && isset($images[0]['file'])) {
-                        $this->productImageUrl = $this->buildImageUrl($images[0]['file']);
-                    }
-                }
-            }
-        } catch (\Throwable $e) {
-            \Log::error('Error fetching product image:', [
-                'entity_id' => $entityId,
-                'message' => $e->getMessage()
-            ]);
-        }
-    }
-
-    /**
-     * Construit l'URL complète de l'image
-     */
-    private function buildImageUrl($imagePath)
-    {
-        if (empty($imagePath)) {
-            return null;
-        }
-
-        // Nettoyer le chemin de l'image (enlever les slashes en double)
-        $cleanPath = ltrim($imagePath, '/');
-        
-        // Construire l'URL complète
-        return $this->imageBaseUrl . '/' . $cleanPath;
-    }
-
-    /**
-     * Obtient l'URL de l'image pour l'affichage
-     */
-    public function getProductImageUrl($imagePath = null)
-    {
-        if ($imagePath) {
-            return $this->buildImageUrl($imagePath);
-        }
-        
-        return $this->productImageUrl;
-    }
-
-    /**
-     * Obtient l'URL de l'image du produit principal pour le template Blade
-     */
-    public function getMainProductImage()
-    {
-        if ($this->productImageUrl) {
-            return $this->productImageUrl;
-        }
-
-        // Fallback si pas d'image trouvée
-        return asset('images/placeholder-product.jpg');
-    }
 
     /**
      * Nettoie et convertit un prix en nombre décimal
+     * Enlève tous les symboles de devise et caractères non numériques
      */
     private function cleanPrice($price)
     {
+        // Si null ou vide, retourner null
         if ($price === null || $price === '') {
             return null;
         }
         
+        // Si déjà numérique, retourner tel quel
         if (is_numeric($price)) {
             return (float) $price;
         }
         
+        // Si string, nettoyer
         if (is_string($price)) {
+            // Enlever symboles de devise et espaces (garder seulement chiffres, virgule, point, tiret)
             $cleanPrice = preg_replace('/[^\d,.-]/', '', $price);
+            
+            // Remplacer virgule par point pour conversion
             $cleanPrice = str_replace(',', '.', $cleanPrice);
             
+            // Vérifier si numérique après nettoyage
             if (is_numeric($cleanPrice)) {
                 return (float) $cleanPrice;
             }
@@ -161,6 +67,7 @@ new class extends Component {
         
         return null;
     }
+
 
     public function getOneProductDetails($entity_id)
     {
@@ -225,28 +132,6 @@ new class extends Component {
             ";
 
             $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
-            
-            // Construire les URLs complètes pour les images
-            foreach ($result as &$product) {
-                if (!empty($product->thumbnail)) {
-                    $product->thumbnail_url = $this->buildImageUrl($product->thumbnail);
-                }
-                if (!empty($product->swatch_image)) {
-                    $product->swatch_image_url = $this->buildImageUrl($product->swatch_image);
-                }
-                if (!empty($product->media_gallery)) {
-                    $images = json_decode($product->media_gallery, true);
-                    $product->gallery_urls = [];
-                    if (!empty($images)) {
-                        foreach ($images as $image) {
-                            if (isset($image['file'])) {
-                                $product->gallery_urls[] = $this->buildImageUrl($image['file']);
-                            }
-                        }
-                    }
-                }
-            }
-
             return $result;
 
         } catch (\Throwable $e) {
@@ -255,12 +140,17 @@ new class extends Component {
                 'trace' => $e->getTraceAsString()
             ]);
 
-            return ['error' => $e->getMessage()];
+            $this->products = [];
+            $this->hasData = false;
+
+            return [
+                'error' => $e->getMessage()
+            ];
         }
     }
 
     /**
-     * Récupère les prix des concurrents avec analyse d'image améliorée
+     * Récupère les prix des concurrents
      */
     public function getCompetitorPrice($search)
     {
@@ -300,12 +190,24 @@ new class extends Component {
 
             $result = DB::connection('mysql')->select($sql, [$searchQuery]);
 
-            // Nettoyer les prix
+            // NETTOYER LE PRIX_HT DÈS LA RÉCUPÉRATION
             foreach ($result as $product) {
                 if (isset($product->prix_ht)) {
-                    $product->prix_ht = $this->cleanPrice($product->prix_ht);
+                    $originalPrice = $product->prix_ht;
+                    $cleanedPrice = $this->cleanPrice($product->prix_ht);
+                    $product->prix_ht = $cleanedPrice;
+                    
+                    // Log pour vérifier le nettoyage
+                    \Log::info('Prix nettoyé:', [
+                        'original' => $originalPrice,
+                        'cleaned' => $cleanedPrice
+                    ]);
                 }
             }
+
+            \Log::info('Query result:', [
+                'count' => count($result)
+            ]);
 
             $this->matchedProducts = $this->calculateSimilarity($result, $search);
             $this->products = $this->matchedProducts;
@@ -331,12 +233,14 @@ new class extends Component {
             $this->products = [];
             $this->hasData = false;
 
-            return ['error' => $e->getMessage()];
+            return [
+                'error' => $e->getMessage()
+            ];
         }
     }
 
     /**
-     * Calcule la similarité entre la recherche et chaque produit avec analyse d'image
+     * Calcule la similarité entre la recherche et chaque produit
      */
     private function calculateSimilarity($products, $search)
     {
@@ -348,7 +252,6 @@ new class extends Component {
             if ($similarityScore >= $this->similarityThreshold) {
                 $product->similarity_score = $similarityScore;
                 $product->match_level = $this->getMatchLevel($similarityScore);
-                $product->image_similarity = $this->imageAnalysisResults[$product->id ?? ''] ?? null;
                 $scoredProducts[] = $product;
             }
         }
@@ -361,493 +264,36 @@ new class extends Component {
     }
 
     /**
-     * Calcule le score de similarité global avec analyse d'image
+     * Calcule le score de similarité global
      */
     private function computeOverallSimilarity($product, $search)
     {
+        $weights = [
+            'name' => 0.3,
+            'vendor' => 0.2,
+            'variation' => 0.25,
+            'volumes' => 0.15,
+            'type' => 0.1
+        ];
+
         $totalScore = 0;
 
         $nameScore = $this->computeStringSimilarity($search, $product->name ?? '');
-        $totalScore += $nameScore * $this->similarityWeights['name'];
+        $totalScore += $nameScore * $weights['name'];
 
         $vendorScore = $this->computeVendorSimilarity($product, $search);
-        $totalScore += $vendorScore * $this->similarityWeights['vendor'];
+        $totalScore += $vendorScore * $weights['vendor'];
 
         $variationScore = $this->computeVariationSimilarity($product, $search);
-        $totalScore += $variationScore * $this->similarityWeights['variation'];
+        $totalScore += $variationScore * $weights['variation'];
 
         $volumeScore = $this->computeVolumeSimilarity($product);
-        $totalScore += $volumeScore * $this->similarityWeights['volumes'];
+        $totalScore += $volumeScore * $weights['volumes'];
 
         $typeScore = $this->computeTypeSimilarity($product, $search);
-        $totalScore += $typeScore * $this->similarityWeights['type'];
-
-        // Analyse d'image si activée
-        if ($this->useImageAnalysis && !empty($product->image)) {
-            $imageScore = $this->computeImageSimilarity($product);
-            $totalScore += $imageScore * $this->similarityWeights['image'];
-        }
+        $totalScore += $typeScore * $weights['type'];
 
         return min(1.0, $totalScore);
-    }
-
-    /**
-     * Analyse de similarité d'image entre notre produit et le produit concurrent
-     */
-    private function computeImageSimilarity($competitorProduct)
-    {
-        try {
-            if (empty($this->productImageUrl) || empty($competitorProduct->image)) {
-                return 0;
-            }
-
-            $productId = $competitorProduct->id ?? uniqid();
-            
-            // Vérifier si l'analyse a déjà été faite
-            if (isset($this->imageAnalysisResults[$productId])) {
-                return $this->imageAnalysisResults[$productId]['similarity_score'] ?? 0;
-            }
-
-            // Analyser les deux images
-            $ourImageFeatures = $this->analyzeImage($this->productImageUrl);
-            $competitorImageFeatures = $this->analyzeImage($competitorProduct->image);
-
-            if (empty($ourImageFeatures) || empty($competitorImageFeatures)) {
-                return 0;
-            }
-
-            $similarityScore = $this->compareImageFeatures($ourImageFeatures, $competitorImageFeatures);
-
-            // Stocker les résultats
-            $this->imageAnalysisResults[$productId] = [
-                'similarity_score' => $similarityScore,
-                'our_image' => $this->productImageUrl,
-                'competitor_image' => $competitorProduct->image,
-                'features_matched' => $similarityScore > $this->imageSimilarityThreshold
-            ];
-
-            return $similarityScore;
-
-        } catch (\Throwable $e) {
-            \Log::error('Error in image similarity analysis:', [
-                'message' => $e->getMessage(),
-                'our_image' => $this->productImageUrl,
-                'competitor_image' => $competitorProduct->image ?? 'N/A'
-            ]);
-            return 0;
-        }
-    }
-
-    /**
-     * Analyse une image et extrait ses caractéristiques
-     */
-    private function analyzeImage($imageUrl)
-    {
-        try {
-            if (empty($imageUrl)) {
-                return null;
-            }
-
-            // Télécharger l'image
-            $imageContent = $this->downloadImage($imageUrl);
-            if (!$imageContent) {
-                return null;
-            }
-
-            // Créer une image Intervention
-            $image = Image::make($imageContent);
-            
-            // Extraire les caractéristiques de l'image
-            $features = [
-                'dominant_colors' => $this->extractDominantColors($image),
-                'color_distribution' => $this->analyzeColorDistribution($image),
-                'brightness' => $this->calculateBrightness($image),
-                'contrast' => $this->calculateContrast($image),
-                'aspect_ratio' => $this->getAspectRatio($image),
-                'entropy' => $this->calculateEntropy($image),
-                'edges' => $this->detectEdges($image),
-                'texture' => $this->analyzeTexture($image)
-            ];
-
-            return $features;
-
-        } catch (\Throwable $e) {
-            \Log::error('Error analyzing image:', [
-                'image_url' => $imageUrl,
-                'message' => $e->getMessage()
-            ]);
-            return null;
-        }
-    }
-
-    /**
-     * Télécharge une image depuis une URL
-     */
-    private function downloadImage($url)
-    {
-        try {
-            $response = Http::timeout(10)->get($url);
-            if ($response->successful()) {
-                return $response->body();
-            }
-        } catch (\Throwable $e) {
-            \Log::error('Error downloading image:', [
-                'url' => $url,
-                'message' => $e->getMessage()
-            ]);
-        }
-        return null;
-    }
-
-    /**
-     * Extrait les couleurs dominantes d'une image
-     */
-    private function extractDominantColors($image, $colorCount = 5)
-    {
-        try {
-            // Redimensionner pour accélérer le traitement
-            $resized = $image->resize(100, 100, function ($constraint) {
-                $constraint->aspectRatio();
-            });
-
-            $colors = [];
-            $width = $resized->width();
-            $height = $resized->height();
-
-            // Échantillonner des pixels
-            for ($x = 0; $x < $width; $x += 5) {
-                for ($y = 0; $y < $height; $y += 5) {
-                    $rgb = $resized->pickColor($x, $y, 'array');
-                    $colors[] = [
-                        'r' => $rgb[0],
-                        'g' => $rgb[1],
-                        'b' => $rgb[2]
-                    ];
-                }
-            }
-
-            // Regrouper les couleurs similaires
-            $groupedColors = [];
-            foreach ($colors as $color) {
-                $grouped = false;
-                foreach ($groupedColors as &$group) {
-                    $distance = $this->colorDistance($color, $group['color']);
-                    if ($distance < 30) { // Seuil de similarité
-                        $group['count']++;
-                        $grouped = true;
-                        break;
-                    }
-                }
-                if (!$grouped) {
-                    $groupedColors[] = [
-                        'color' => $color,
-                        'count' => 1
-                    ];
-                }
-            }
-
-            // Trier par fréquence
-            usort($groupedColors, function ($a, $b) {
-                return $b['count'] <=> $a['count'];
-            });
-
-            return array_slice($groupedColors, 0, $colorCount);
-
-        } catch (\Throwable $e) {
-            return [];
-        }
-    }
-
-    /**
-     * Calcule la distance entre deux couleurs
-     */
-    private function colorDistance($color1, $color2)
-    {
-        $rDiff = $color1['r'] - $color2['r'];
-        $gDiff = $color1['g'] - $color2['g'];
-        $bDiff = $color1['b'] - $color2['b'];
-        
-        return sqrt($rDiff * $rDiff + $gDiff * $gDiff + $bDiff * $bDiff);
-    }
-
-    /**
-     * Analyse la distribution des couleurs
-     */
-    private function analyzeColorDistribution($image)
-    {
-        try {
-            $resized = $image->resize(50, 50);
-            $histogram = [
-                'red' => array_fill(0, 8, 0),
-                'green' => array_fill(0, 8, 0),
-                'blue' => array_fill(0, 8, 0)
-            ];
-
-            $width = $resized->width();
-            $height = $resized->height();
-            $totalPixels = $width * $height;
-
-            for ($x = 0; $x < $width; $x++) {
-                for ($y = 0; $y < $height; $y++) {
-                    $rgb = $resized->pickColor($x, $y, 'array');
-                    
-                    $histogram['red'][(int)($rgb[0] / 32)]++;
-                    $histogram['green'][(int)($rgb[1] / 32)]++;
-                    $histogram['blue'][(int)($rgb[2] / 32)]++;
-                }
-            }
-
-            // Normaliser
-            foreach ($histogram as &$channel) {
-                foreach ($channel as &$value) {
-                    $value /= $totalPixels;
-                }
-            }
-
-            return $histogram;
-
-        } catch (\Throwable $e) {
-            return null;
-        }
-    }
-
-    /**
-     * Calcule la luminosité moyenne
-     */
-    private function calculateBrightness($image)
-    {
-        try {
-            $resized = $image->resize(50, 50);
-            $width = $resized->width();
-            $height = $resized->height();
-            $totalBrightness = 0;
-            $totalPixels = $width * $height;
-
-            for ($x = 0; $x < $width; $x++) {
-                for ($y = 0; $y < $height; $y++) {
-                    $rgb = $resized->pickColor($x, $y, 'array');
-                    $brightness = ($rgb[0] * 0.299 + $rgb[1] * 0.587 + $rgb[2] * 0.114);
-                    $totalBrightness += $brightness;
-                }
-            }
-
-            return $totalBrightness / ($totalPixels * 255);
-
-        } catch (\Throwable $e) {
-            return 0.5;
-        }
-    }
-
-    /**
-     * Calcule le contraste
-     */
-    private function calculateContrast($image)
-    {
-        try {
-            $resized = $image->resize(50, 50)->greyscale();
-            $width = $resized->width();
-            $height = $resized->height();
-            
-            $pixels = [];
-            for ($x = 0; $x < $width; $x++) {
-                for ($y = 0; $y < $height; $y++) {
-                    $pixels[] = $resized->pickColor($x, $y, 'array')[0];
-                }
-            }
-
-            $mean = array_sum($pixels) / count($pixels);
-            $variance = 0;
-            foreach ($pixels as $pixel) {
-                $variance += pow($pixel - $mean, 2);
-            }
-            $variance /= count($pixels);
-
-            return sqrt($variance) / 255;
-
-        } catch (\Throwable $e) {
-            return 0.5;
-        }
-    }
-
-    /**
-     * Calcule l'entropie de l'image (mesure de texture)
-     */
-    private function calculateEntropy($image)
-    {
-        try {
-            $resized = $image->resize(50, 50)->greyscale();
-            $width = $resized->width();
-            $height = $resized->height();
-            
-            $histogram = array_fill(0, 256, 0);
-            $totalPixels = $width * $height;
-
-            for ($x = 0; $x < $width; $x++) {
-                for ($y = 0; $y < $height; $y++) {
-                    $value = $resized->pickColor($x, $y, 'array')[0];
-                    $histogram[$value]++;
-                }
-            }
-
-            $entropy = 0;
-            for ($i = 0; $i < 256; $i++) {
-                if ($histogram[$i] > 0) {
-                    $p = $histogram[$i] / $totalPixels;
-                    $entropy -= $p * log($p, 2);
-                }
-            }
-
-            return $entropy / 8; // Normaliser entre 0 et 1
-
-        } catch (\Throwable $e) {
-            return 0.5;
-        }
-    }
-
-    /**
-     * Détection simple des bords
-     */
-    private function detectEdges($image)
-    {
-        try {
-            $resized = $image->resize(50, 50)->greyscale();
-            $width = $resized->width();
-            $height = $resized->height();
-            
-            $edgeIntensity = 0;
-            $kernel = [[-1, -1, -1], [-1, 8, -1], [-1, -1, -1]];
-
-            for ($x = 1; $x < $width - 1; $x++) {
-                for ($y = 1; $y < $height - 1; $y++) {
-                    $convolution = 0;
-                    for ($i = -1; $i <= 1; $i++) {
-                        for ($j = -1; $j <= 1; $j++) {
-                            $pixel = $resized->pickColor($x + $i, $y + $j, 'array')[0];
-                            $convolution += $pixel * $kernel[$i + 1][$j + 1];
-                        }
-                    }
-                    $edgeIntensity += abs($convolution);
-                }
-            }
-
-            return $edgeIntensity / (($width - 2) * ($height - 2) * 255);
-
-        } catch (\Throwable $e) {
-            return 0.5;
-        }
-    }
-
-    /**
-     * Analyse de texture simple
-     */
-    private function analyzeTexture($image)
-    {
-        // Utiliser l'entropie et la détection des bords comme indicateurs de texture
-        $entropy = $this->calculateEntropy($image);
-        $edges = $this->detectEdges($image);
-        
-        return [
-            'complexity' => $entropy,
-            'edge_density' => $edges,
-            'texture_score' => ($entropy + $edges) / 2
-        ];
-    }
-
-    /**
-     * Obtient le ratio d'aspect
-     */
-    private function getAspectRatio($image)
-    {
-        return $image->width() / max(1, $image->height());
-    }
-
-    /**
-     * Compare les caractéristiques de deux images
-     */
-    private function compareImageFeatures($features1, $features2)
-    {
-        $totalScore = 0;
-        $weights = [
-            'dominant_colors' => 0.3,
-            'color_distribution' => 0.25,
-            'brightness' => 0.1,
-            'contrast' => 0.1,
-            'aspect_ratio' => 0.1,
-            'texture' => 0.15
-        ];
-
-        // Comparaison des couleurs dominantes
-        if (!empty($features1['dominant_colors']) && !empty($features2['dominant_colors'])) {
-            $colorScore = $this->compareColorFeatures($features1['dominant_colors'], $features2['dominant_colors']);
-            $totalScore += $colorScore * $weights['dominant_colors'];
-        }
-
-        // Comparaison de la distribution des couleurs
-        if (!empty($features1['color_distribution']) && !empty($features2['color_distribution'])) {
-            $distributionScore = $this->compareColorDistribution($features1['color_distribution'], $features2['color_distribution']);
-            $totalScore += $distributionScore * $weights['color_distribution'];
-        }
-
-        // Comparaison des autres caractéristiques
-        $brightnessDiff = 1 - abs($features1['brightness'] - $features2['brightness']);
-        $totalScore += $brightnessDiff * $weights['brightness'];
-
-        $contrastDiff = 1 - abs($features1['contrast'] - $features2['contrast']);
-        $totalScore += $contrastDiff * $weights['contrast'];
-
-        $aspectRatioDiff = 1 - min(1, abs($features1['aspect_ratio'] - $features2['aspect_ratio']));
-        $totalScore += $aspectRatioDiff * $weights['aspect_ratio'];
-
-        $textureDiff = 1 - abs(($features1['texture']['texture_score'] ?? 0.5) - ($features2['texture']['texture_score'] ?? 0.5));
-        $totalScore += $textureDiff * $weights['texture'];
-
-        return $totalScore;
-    }
-
-    /**
-     * Compare les caractéristiques de couleur
-     */
-    private function compareColorFeatures($colors1, $colors2)
-    {
-        $totalSimilarity = 0;
-        $maxComparisons = min(count($colors1), count($colors2));
-
-        for ($i = 0; $i < $maxComparisons; $i++) {
-            $color1 = $colors1[$i]['color'];
-            $bestMatch = 0;
-            
-            for ($j = 0; $j < count($colors2); $j++) {
-                $color2 = $colors2[$j]['color'];
-                $distance = $this->colorDistance($color1, $color2);
-                $similarity = max(0, 1 - ($distance / 441.67)); // 441.67 = distance max entre deux couleurs
-                $bestMatch = max($bestMatch, $similarity);
-            }
-            
-            $totalSimilarity += $bestMatch;
-        }
-
-        return $totalSimilarity / max(1, $maxComparisons);
-    }
-
-    /**
-     * Compare la distribution des couleurs
-     */
-    private function compareColorDistribution($dist1, $dist2)
-    {
-        $totalSimilarity = 0;
-        $channels = ['red', 'green', 'blue'];
-
-        foreach ($channels as $channel) {
-            if (isset($dist1[$channel]) && isset($dist2[$channel])) {
-                $similarity = 0;
-                for ($i = 0; $i < count($dist1[$channel]); $i++) {
-                    $similarity += 1 - abs($dist1[$channel][$i] - $dist2[$channel][$i]);
-                }
-                $totalSimilarity += $similarity / count($dist1[$channel]);
-            }
-        }
-
-        return $totalSimilarity / count($channels);
     }
 
     /**
@@ -1100,8 +546,26 @@ new class extends Component {
         $words = explode(" ", $variationClean);
 
         $stopWords = [
-            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec',
-            'the', 'a', 'an', 'and', 'or', 'ml', 'edition', 'édition'
+            'de',
+            'le',
+            'la',
+            'les',
+            'un',
+            'une',
+            'des',
+            'du',
+            'et',
+            'ou',
+            'pour',
+            'avec',
+            'the',
+            'a',
+            'an',
+            'and',
+            'or',
+            'ml',
+            'edition',
+            'édition'
         ];
 
         foreach ($words as $word) {
@@ -1131,8 +595,28 @@ new class extends Component {
         $words = explode(" ", $searchClean);
 
         $stopWords = [
-            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec',
-            'the', 'a', 'an', 'and', 'or', 'eau', 'ml', 'edition', 'édition', 'coffret'
+            'de',
+            'le',
+            'la',
+            'les',
+            'un',
+            'une',
+            'des',
+            'du',
+            'et',
+            'ou',
+            'pour',
+            'avec',
+            'the',
+            'a',
+            'an',
+            'and',
+            'or',
+            'eau',
+            'ml',
+            'edition',
+            'édition',
+            'coffret'
         ];
 
         $significantWords = [];
@@ -1424,6 +908,13 @@ new class extends Component {
     /**
      * Détermine le statut de compétitivité de notre prix
      */
+
+    /**
+     * Détermine le statut de compétitivité de notre prix
+     * LOGIQUE CORRIGÉE: difference = notre_prix - concurrent_prix
+     * Si difference > 0 : nous sommes PLUS CHER
+     * Si difference < 0 : nous sommes MOINS CHER
+     */
     public function getPriceCompetitiveness($competitorPrice)
     {
         $difference = $this->calculatePriceDifference($competitorPrice);
@@ -1432,19 +923,41 @@ new class extends Component {
             return 'unknown';
         }
 
+        // CORRECTION: Inverser la logique
         if ($difference > 10) {
-            return 'higher';
+            return 'higher'; // Nous sommes beaucoup plus cher
         } elseif ($difference > 0) {
-            return 'slightly_higher';
+            return 'slightly_higher'; // Nous sommes légèrement plus cher
         } elseif ($difference == 0) {
-            return 'same';
+            return 'same'; // Même prix
         } elseif ($difference >= -10) {
-            return 'competitive';
+            return 'competitive'; // Nous sommes légèrement moins cher
         } else {
-            return 'very_competitive';
+            return 'very_competitive'; // Nous sommes beaucoup moins cher
         }
     }
 
+    /**
+     * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
+     */
+    // public function getPriceStatusLabel($competitorPrice)
+    // {
+    //     $status = $this->getPriceCompetitiveness($competitorPrice);
+
+    //     $labels = [
+    //         'very_competitive' => 'Nous sommes beaucoup - cher',
+    //         'competitive' => 'Nous sommes - cher', 
+    //         'same' => 'Prix identique',
+    //         'slightly_higher' => 'Nous sommes + cher',
+    //         'higher' => 'Nous sommes beaucoup + cher',
+    //         'unknown' => 'Non comparable'
+    //     ];
+
+    //     return $labels[$status] ?? $labels['unknown'];
+    // }
+    /**
+     * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
+     */
     /**
      * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
      */
@@ -1463,7 +976,6 @@ new class extends Component {
 
         return $labels[$status] ?? $labels['unknown'];
     }
-
     /**
      * Retourne la classe CSS pour le statut de prix
      */
@@ -1513,8 +1025,12 @@ new class extends Component {
         return (($cleanCosmashopPrice - $cleanCompetitorPrice) / $cleanCompetitorPrice) * 100;
     }
 
+
     /**
      * Détermine le statut de compétitivité de Cosmashop
+     * LOGIQUE CORRIGÉE: difference = cosmashop_prix - concurrent_prix
+     * Si difference > 0 : Cosmashop PLUS CHER
+     * Si difference < 0 : Cosmashop MOINS CHER
      */
     public function getCosmashopPriceCompetitiveness($competitorPrice)
     {
@@ -1524,19 +1040,39 @@ new class extends Component {
             return 'unknown';
         }
 
+        // CORRECTION: Inverser la logique
         if ($difference > 10) {
-            return 'higher';
+            return 'higher'; // Cosmashop serait beaucoup plus cher
         } elseif ($difference > 0) {
-            return 'slightly_higher';
+            return 'slightly_higher'; // Cosmashop serait légèrement plus cher
         } elseif ($difference == 0) {
-            return 'same';
+            return 'same'; // Même prix que Cosmashop
         } elseif ($difference >= -10) {
-            return 'competitive';
+            return 'competitive'; // Cosmashop serait légèrement moins cher
         } else {
-            return 'very_competitive';
+            return 'very_competitive'; // Cosmashop serait beaucoup moins cher
         }
     }
 
+
+    /**
+     * Retourne le libellé pour le statut Cosmashop
+     */
+    // public function getCosmashopPriceStatusLabel($competitorPrice)
+    // {
+    //     $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
+
+    //     $labels = [
+    //         'very_competitive' => 'Cosmashop serait beaucoup - cher',
+    //         'competitive' => 'Cosmashop serait - cher',
+    //         'same' => 'Prix identique à Cosmashop', 
+    //         'slightly_higher' => 'Cosmashop serait + cher',
+    //         'higher' => 'Cosmashop serait beaucoup + cher',
+    //         'unknown' => 'Non comparable'
+    //     ];
+
+    //     return $labels[$status] ?? $labels['unknown'];
+    // }
     /**
      * Retourne le libellé pour le statut Cosmashop
      */
@@ -1555,7 +1091,6 @@ new class extends Component {
 
         return $labels[$status] ?? $labels['unknown'];
     }
-
     /**
      * Retourne la classe CSS pour le statut Cosmashop
      */
@@ -1644,101 +1179,57 @@ new class extends Component {
         ];
     }
 
-    /**
-     * Analyse globale pour Cosmashop
-     */
-    public function getCosmashopPriceAnalysis()
-    {
-        $prices = [];
+/**
+ * Analyse globale pour Cosmashop
+ */
+public function getCosmashopPriceAnalysis()
+{
+    $prices = [];
 
-        foreach ($this->matchedProducts as $product) {
-            $price = $product->price_ht ?? $product->prix_ht;
-            $cleanPrice = $this->cleanPrice($price);
-            
-            if ($cleanPrice !== null) {
-                $prices[] = $cleanPrice;
-            }
-        }
-
-        if (empty($prices)) {
-            return null;
-        }
-
-        $minPrice = min($prices);
-        $maxPrice = max($prices);
-        $avgPrice = array_sum($prices) / count($prices);
-        $cosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
-
-        // Compter les concurrents en dessous/au-dessus de Cosmashop
-        $belowCosmashop = 0;
-        $aboveCosmashop = 0;
-
-        foreach ($prices as $price) {
-            if ($price < $cosmashopPrice) {
-                $belowCosmashop++;
-            } else {
-                $aboveCosmashop++;
-            }
-        }
-
-        return [
-            'min' => $minPrice,
-            'max' => $maxPrice,
-            'average' => $avgPrice,
-            'cosmashop_price' => $cosmashopPrice,
-            'count' => count($prices),
-            'below_cosmashop' => $belowCosmashop,
-            'above_cosmashop' => $aboveCosmashop,
-            'cosmashop_position' => $cosmashopPrice <= $avgPrice ? 'competitive' : 'above_average'
-        ];
-    }
-
-    /**
-     * Active/désactive l'analyse d'image
-     */
-    public function toggleImageAnalysis()
-    {
-        $this->useImageAnalysis = !$this->useImageAnalysis;
-        if ($this->useImageAnalysis) {
-            $this->getCompetitorPrice($this->search ?? '');
+    foreach ($this->matchedProducts as $product) {
+        $price = $product->price_ht ?? $product->prix_ht;
+        $cleanPrice = $this->cleanPrice($price);
+        
+        if ($cleanPrice !== null) {
+            $prices[] = $cleanPrice;
         }
     }
 
-    /**
-     * Ajuste les poids de similarité
-     */
-    public function adjustSimilarityWeights($weights)
-    {
-        $this->similarityWeights = array_merge($this->similarityWeights, $weights);
-        $this->getCompetitorPrice($this->search ?? '');
+    if (empty($prices)) {
+        return null;
     }
 
-    /**
-     * Vérifie si l'analyse d'image est disponible pour un produit
-     */
-    public function hasImageAnalysis($product)
-    {
-        $productId = $product->id ?? '';
-        return isset($this->imageAnalysisResults[$productId]);
+    $minPrice = min($prices);
+    $maxPrice = max($prices);
+    $avgPrice = array_sum($prices) / count($prices);
+    $cosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
+
+    // Compter les concurrents en dessous/au-dessus de Cosmashop
+    $belowCosmashop = 0;
+    $aboveCosmashop = 0;
+
+    foreach ($prices as $price) {
+        if ($price < $cosmashopPrice) {
+            $belowCosmashop++;
+        } else {
+            $aboveCosmashop++;
+        }
     }
 
-    /**
-     * Obtient le score de similarité d'image pour un produit
-     */
-    public function getImageSimilarityScore($product)
-    {
-        $productId = $product->id ?? '';
-        return $this->imageAnalysisResults[$productId]['similarity_score'] ?? 0;
-    }
+    return [
+        'min' => $minPrice,
+        'max' => $maxPrice,
+        'average' => $avgPrice,
+        'cosmashop_price' => $cosmashopPrice,
+        'count' => count($prices),
+        'below_cosmashop' => $belowCosmashop,
+        'above_cosmashop' => $aboveCosmashop,
+        'cosmashop_position' => $cosmashopPrice <= $avgPrice ? 'competitive' : 'above_average'
+    ];
+}
 
-    /**
-     * Vérifie si les images correspondent
-     */
-    public function isImageMatch($product)
-    {
-        return $this->getImageSimilarityScore($product) >= $this->imageSimilarityThreshold;
-    }
 }; ?>
+
 <div>
     <livewire:plateformes.detail :id="$id"/>
 
