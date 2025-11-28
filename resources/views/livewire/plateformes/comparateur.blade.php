@@ -429,20 +429,6 @@ new class extends Component {
         return $keywords;
     }
 
-    /**
-     * Extrait les volumes d'un texte
-     */
-    private function extractVolumesFromText(string $text): array
-    {
-        $volumes = [];
-        
-        // Recherche des patterns de volume : "50 ml", "100ml", "5 ml", etc.
-        if (preg_match_all('/(\d+)\s*ml/i', $text, $matches)) {
-            $volumes = $matches[1];
-        }
-        
-        return $volumes;
-    }
 
     /**
      * Extrait le nom principal du produit pour les recherches LIKE
