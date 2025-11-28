@@ -27,6 +27,7 @@ new class extends Component {
 
     public function mount($name, $id, $price)
     {
+        dd($this->cleanPrice('79,99 €'));
         $this->getCompetitorPrice($name);
         $this->id = $id;
         $this->price = $this->cleanPrice($price);
