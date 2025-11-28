@@ -233,11 +233,8 @@ new class extends Component {
          x-transition:leave="transition ease-in duration-300"
          x-transition:leave-start="translate-y-0"
          x-transition:leave-end="translate-y-full"
-         class="fixed bottom-0 left-0 right-0 bg-white/70 backdrop-blur-xl border-t border-gray-200 shadow-lg z-50">
-        <div class="px-4 py-4 sm:px-6 lg:px-10 relative">
-            <!-- Blur edges -->
-            <div class="absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-white/90 to-transparent backdrop-blur-2xl pointer-events-none"></div>
-            <div class="absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white/90 to-transparent backdrop-blur-2xl pointer-events-none"></div>
+         class="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-gray-200 shadow-lg z-50">
+        <div class="px-4 py-4 sm:px-6 lg:px-10">
             <div class="flex items-center justify-between max-w-7xl mx-auto">
                 <!-- Product Image -->
                 <div class="flex-shrink-0 mr-4">
@@ -264,11 +261,11 @@ new class extends Component {
                             <span class="font-semibold">SKU:</span> {{ $this->product->sku }}
                         </p>
                         @endif
-                        @if($this->product->capacity)
+                        {{-- @if($this->product->capacity)
                         <p class="text-xs text-gray-600">
                             <span class="font-semibold">Capacité:</span> {{ $this->product->capacity }} ml
                         </p>
-                        @endif
+                        @endif --}}
                     </div>
                 </div>
 
@@ -283,7 +280,7 @@ new class extends Component {
                         </p>
                     @else
                         <p class="text-lg font-bold text-gray-900">
-                            {{ $this->product->price ? number_format($this->product->price, 2) . ' €' : 'N/A' }}
+                           Prix : {{ $this->product->price ? number_format($this->product->price, 2) . ' €' : 'N/A' }}
                         </p>
                     @endif
                 </div>
