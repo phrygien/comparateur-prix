@@ -29,9 +29,9 @@ new class extends Component {
     {
         $this->getCompetitorPrice($name);
         $this->id = $id;
-        $this->price = $price;
-        $this->referencePrice = $price; // Prix de référence pour la comparaison
-        $this->cosmashopPrice = $price * 1.05; // Prix majoré de 5% pour Cosmashop
+        $this->price = $this->cleanPrice($price);
+        $this->referencePrice = $this->cleanPrice($price); // Prix de référence pour la comparaison
+        $this->cosmashopPrice = $this->cleanPrice($price) * 1.05; // Prix majoré de 5% pour Cosmashop
     }
 
 
