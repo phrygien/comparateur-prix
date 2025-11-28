@@ -10,10 +10,10 @@ new class extends Component {
     public $searchTerms = [];
     public $searchVolumes = [];
     public $searchVariationKeywords = [];
-    
+
     public $id;
     public $mydata;
-    
+
     public $similarityThreshold = 0.6;
     public $matchedProducts = [];
 
@@ -21,7 +21,7 @@ new class extends Component {
     public $price;
     // Ajoutez cette propriété dans la classe
     public $referencePrice;
-    
+
     // price cosmashop
     public $cosmashopPrice;
 
@@ -31,11 +31,12 @@ new class extends Component {
         $this->id = $id;
         $this->price = $price;
         $this->referencePrice = $price; // Prix de référence pour la comparaison
-         $this->cosmashopPrice = $price * 1.05; // Prix majoré de 5% pour Cosmashop
+        $this->cosmashopPrice = $price * 1.05; // Prix majoré de 5% pour Cosmashop
     }
 
-    public function getOneProductDetails($entity_id){
-        try{
+    public function getOneProductDetails($entity_id)
+    {
+        try {
             $dataQuery = "
                 SELECT 
                     produit.entity_id as id,
@@ -103,10 +104,10 @@ new class extends Component {
                 'message' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            
+
             $this->products = [];
             $this->hasData = false;
-            
+
             return [
                 'error' => $e->getMessage()
             ];
@@ -121,18 +122,18 @@ new class extends Component {
                 $this->hasData = false;
                 return null;
             }
-            
+
             $this->extractSearchVolumes($search);
             $this->extractSearchVariationKeywords($search);
-            
+
             $searchQuery = $this->prepareSearchTerms($search);
-            
+
             if (empty($searchQuery)) {
                 $this->products = [];
                 $this->hasData = false;
                 return null;
             }
-            
+
             $sql = "SELECT *, 
                            prix_ht,
                            image_url as image,
@@ -141,20 +142,20 @@ new class extends Component {
                     WHERE MATCH (name, vendor, type, variation) 
                     AGAINST (? IN BOOLEAN MODE)
                     ORDER BY prix_ht DESC LIMIT 50";
-            
+
             \Log::info('SQL Query:', [
                 'original_search' => $search,
                 'search_query' => $searchQuery,
                 'search_volumes' => $this->searchVolumes,
                 'search_variation_keywords' => $this->searchVariationKeywords
             ]);
-            
+
             $result = DB::connection('mysql')->select($sql, [$searchQuery]);
-            
+
             \Log::info('Query result:', [
                 'count' => count($result)
             ]);
-            
+
             $this->matchedProducts = $this->calculateSimilarity($result, $search);
             $this->products = $this->matchedProducts;
             $this->hasData = !empty($result);
@@ -168,44 +169,44 @@ new class extends Component {
                 'volumes' => $this->searchVolumes,
                 'variation_keywords' => $this->searchVariationKeywords
             ];
-            
+
         } catch (\Throwable $e) {
             \Log::error('Error loading products:', [
                 'message' => $e->getMessage(),
                 'search' => $search ?? null,
                 'trace' => $e->getTraceAsString()
             ]);
-            
+
             $this->products = [];
             $this->hasData = false;
-            
+
             return [
                 'error' => $e->getMessage()
             ];
         }
     }
-    
+
     /**
      * Calcule la similarité entre la recherche et chaque produit
      */
     private function calculateSimilarity($products, $search)
     {
         $scoredProducts = [];
-        
+
         foreach ($products as $product) {
             $similarityScore = $this->computeOverallSimilarity($product, $search);
-            
+
             if ($similarityScore >= $this->similarityThreshold) {
                 $product->similarity_score = $similarityScore;
                 $product->match_level = $this->getMatchLevel($similarityScore);
                 $scoredProducts[] = $product;
             }
         }
-        
-        usort($scoredProducts, function($a, $b) {
+
+        usort($scoredProducts, function ($a, $b) {
             return $b->similarity_score <=> $a->similarity_score;
         });
-        
+
         return $scoredProducts;
     }
 
@@ -221,24 +222,24 @@ new class extends Component {
             'volumes' => 0.15,
             'type' => 0.1
         ];
-        
+
         $totalScore = 0;
-        
+
         $nameScore = $this->computeStringSimilarity($search, $product->name ?? '');
         $totalScore += $nameScore * $weights['name'];
-        
+
         $vendorScore = $this->computeVendorSimilarity($product, $search);
         $totalScore += $vendorScore * $weights['vendor'];
-        
+
         $variationScore = $this->computeVariationSimilarity($product, $search);
         $totalScore += $variationScore * $weights['variation'];
-        
+
         $volumeScore = $this->computeVolumeSimilarity($product);
         $totalScore += $volumeScore * $weights['volumes'];
-        
+
         $typeScore = $this->computeTypeSimilarity($product, $search);
         $totalScore += $typeScore * $weights['type'];
-        
+
         return min(1.0, $totalScore);
     }
 
@@ -249,29 +250,29 @@ new class extends Component {
     {
         $str1 = mb_strtolower(trim($str1));
         $str2 = mb_strtolower(trim($str2));
-        
+
         if (empty($str1) || empty($str2)) {
             return 0;
         }
-        
+
         if ($str1 === $str2) {
             return 1.0;
         }
-        
+
         $len1 = mb_strlen($str1);
         $len2 = mb_strlen($str2);
-        
+
         $matchDistance = (int) floor(max($len1, $len2) / 2) - 1;
         $matches1 = array_fill(0, $len1, false);
         $matches2 = array_fill(0, $len2, false);
-        
+
         $matches = 0;
         $transpositions = 0;
-        
+
         for ($i = 0; $i < $len1; $i++) {
             $start = max(0, $i - $matchDistance);
             $end = min($i + $matchDistance + 1, $len2);
-            
+
             for ($j = $start; $j < $end; $j++) {
                 if (!$matches2[$j] && mb_substr($str1, $i, 1) === mb_substr($str2, $j, 1)) {
                     $matches1[$i] = true;
@@ -281,11 +282,11 @@ new class extends Component {
                 }
             }
         }
-        
+
         if ($matches === 0) {
             return 0;
         }
-        
+
         $k = 0;
         for ($i = 0; $i < $len1; $i++) {
             if ($matches1[$i]) {
@@ -298,13 +299,13 @@ new class extends Component {
                 $k++;
             }
         }
-        
+
         $transpositions = $transpositions / 2;
         $jaro = (($matches / $len1) + ($matches / $len2) + (($matches - $transpositions) / $matches)) / 3;
-        
+
         $prefix = 0;
         $maxPrefix = min(4, min($len1, $len2));
-        
+
         for ($i = 0; $i < $maxPrefix; $i++) {
             if (mb_substr($str1, $i, 1) === mb_substr($str2, $i, 1)) {
                 $prefix++;
@@ -312,7 +313,7 @@ new class extends Component {
                 break;
             }
         }
-        
+
         return $jaro + ($prefix * 0.1 * (1 - $jaro));
     }
 
@@ -325,13 +326,13 @@ new class extends Component {
         if (empty($vendor)) {
             return 0;
         }
-        
+
         $searchVendor = $this->extractVendorFromSearch($search);
-        
+
         if (empty($searchVendor)) {
             return 0;
         }
-        
+
         return $this->computeStringSimilarity($searchVendor, $vendor);
     }
 
@@ -342,22 +343,22 @@ new class extends Component {
     {
         $productVariation = $product->variation ?? '';
         $searchVariation = $this->extractSearchVariationFromSearch($search);
-        
+
         if (empty($productVariation) || empty($searchVariation)) {
             return 0;
         }
-        
+
         $baseScore = $this->computeStringSimilarity($searchVariation, $productVariation);
-        
+
         $keywordMatches = 0;
         foreach ($this->searchVariationKeywords as $keyword) {
             if (stripos($productVariation, $keyword) !== false) {
                 $keywordMatches++;
             }
         }
-        
+
         $keywordBonus = $keywordMatches / max(1, count($this->searchVariationKeywords)) * 0.3;
-        
+
         return min(1.0, $baseScore + $keywordBonus);
     }
 
@@ -369,20 +370,20 @@ new class extends Component {
         if (empty($this->searchVolumes)) {
             return 0;
         }
-        
+
         $productVolumes = $this->extractVolumesFromText($product->name . ' ' . ($product->variation ?? ''));
-        
+
         if (empty($productVolumes)) {
             return 0;
         }
-        
+
         $matches = array_intersect($this->searchVolumes, $productVolumes);
         $matchRatio = count($matches) / count($this->searchVolumes);
-        
+
         if ($matchRatio === 1.0) {
             $matchRatio = 1.0;
         }
-        
+
         return $matchRatio;
     }
 
@@ -395,13 +396,13 @@ new class extends Component {
         if (empty($productType)) {
             return 0;
         }
-        
+
         $searchType = $this->extractProductTypeFromSearch($search);
-        
+
         if (empty($searchType)) {
             return 0;
         }
-        
+
         return $this->computeStringSimilarity($searchType, $productType);
     }
 
@@ -413,7 +414,7 @@ new class extends Component {
         if (preg_match('/^([^-]+)/', $search, $matches)) {
             return trim($matches[1]);
         }
-        
+
         return '';
     }
 
@@ -424,7 +425,7 @@ new class extends Component {
     {
         $pattern = '/^[^-]+\s*-\s*[^-]+\s*-\s*/i';
         $variation = preg_replace($pattern, '', $search);
-        
+
         return trim($variation);
     }
 
@@ -434,13 +435,13 @@ new class extends Component {
     private function extractProductTypeFromSearch($search)
     {
         $types = ['parfum', 'eau de parfum', 'eau de toilette', 'coffret', 'gel douche', 'lotion'];
-        
+
         foreach ($types as $type) {
             if (stripos($search, $type) !== false) {
                 return $type;
             }
         }
-        
+
         return '';
     }
 
@@ -449,9 +450,12 @@ new class extends Component {
      */
     private function getMatchLevel($similarityScore)
     {
-        if ($similarityScore >= 0.9) return 'excellent';
-        if ($similarityScore >= 0.7) return 'bon';
-        if ($similarityScore >= 0.6) return 'moyen';
+        if ($similarityScore >= 0.9)
+            return 'excellent';
+        if ($similarityScore >= 0.7)
+            return 'bon';
+        if ($similarityScore >= 0.6)
+            return 'moyen';
         return 'faible';
     }
 
@@ -461,11 +465,11 @@ new class extends Component {
     private function extractSearchVolumes(string $search): void
     {
         $this->searchVolumes = [];
-        
+
         if (preg_match_all('/(\d+)\s*ml/i', $search, $matches)) {
             $this->searchVolumes = $matches[1];
         }
-        
+
         \Log::info('Extracted search volumes:', [
             'search' => $search,
             'volumes' => $this->searchVolumes
@@ -478,36 +482,54 @@ new class extends Component {
     private function extractSearchVariationKeywords(string $search): void
     {
         $this->searchVariationKeywords = [];
-        
+
         $pattern = '/^[^-]+\s*-\s*[^-]+\s*-\s*/i';
         $variation = preg_replace($pattern, '', $search);
-        
+
         $variationClean = preg_replace('/[^a-zA-ZÀ-ÿ0-9\s]/', ' ', $variation);
         $variationClean = trim(preg_replace('/\s+/', ' ', $variationClean));
         $variationClean = mb_strtolower($variationClean);
-        
+
         $words = explode(" ", $variationClean);
-        
+
         $stopWords = [
-            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec',
-            'the', 'a', 'an', 'and', 'or', 'ml', 'edition', 'édition'
+            'de',
+            'le',
+            'la',
+            'les',
+            'un',
+            'une',
+            'des',
+            'du',
+            'et',
+            'ou',
+            'pour',
+            'avec',
+            'the',
+            'a',
+            'an',
+            'and',
+            'or',
+            'ml',
+            'edition',
+            'édition'
         ];
-        
+
         foreach ($words as $word) {
             $word = trim($word);
-            
+
             if ((strlen($word) > 1 && !in_array($word, $stopWords)) || is_numeric($word)) {
                 $this->searchVariationKeywords[] = $word;
             }
         }
-        
+
         \Log::info('Extracted search variation keywords:', [
             'search' => $search,
             'variation' => $variation,
             'keywords' => $this->searchVariationKeywords
         ]);
     }
-    
+
     /**
      * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
      */
@@ -516,32 +538,52 @@ new class extends Component {
         $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ\s]/', ' ', $search);
         $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
         $searchClean = mb_strtolower($searchClean);
-        
+
         $words = explode(" ", $searchClean);
-        
+
         $stopWords = [
-            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec',
-            'the', 'a', 'an', 'and', 'or', 'eau', 'ml', 'edition', 'édition', 'coffret'
+            'de',
+            'le',
+            'la',
+            'les',
+            'un',
+            'une',
+            'des',
+            'du',
+            'et',
+            'ou',
+            'pour',
+            'avec',
+            'the',
+            'a',
+            'an',
+            'and',
+            'or',
+            'eau',
+            'ml',
+            'edition',
+            'édition',
+            'coffret'
         ];
-        
+
         $significantWords = [];
-        
+
         foreach ($words as $word) {
             $word = trim($word);
-            
+
             if (strlen($word) > 2 && !in_array($word, $stopWords)) {
                 $significantWords[] = $word;
             }
-            
+
             if (count($significantWords) >= 3) {
                 break;
             }
         }
-        
-        $booleanTerms = array_map(function($word) {
+
+        $booleanTerms = array_map(function ($word) {
             return '+' . $word . '*';
         }, $significantWords);
-        
+
         return implode(' ', $booleanTerms);
     }
 
@@ -564,7 +606,7 @@ new class extends Component {
         if (empty($url)) {
             return 'N/A';
         }
-        
+
         try {
             $parsedUrl = parse_url($url);
             if (isset($parsedUrl['host'])) {
@@ -580,7 +622,7 @@ new class extends Component {
                 'error' => $e->getMessage()
             ]);
         }
-        
+
         return 'N/A';
     }
 
@@ -602,7 +644,7 @@ new class extends Component {
         if (empty($variation)) {
             return 'Standard';
         }
-        
+
         return Str::limit($variation, 30);
     }
 
@@ -614,12 +656,12 @@ new class extends Component {
         if (empty($text)) {
             return [];
         }
-        
+
         $volumes = [];
         if (preg_match_all('/(\d+)\s*ml/i', $text, $matches)) {
             $volumes = $matches[1];
         }
-        
+
         return $volumes;
     }
 
@@ -639,7 +681,7 @@ new class extends Component {
         if (empty($this->searchVolumes)) {
             return false;
         }
-        
+
         $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
         return !empty(array_intersect($this->searchVolumes, $productVolumes));
     }
@@ -652,15 +694,15 @@ new class extends Component {
         if (empty($this->searchVariationKeywords) || empty($product->variation)) {
             return false;
         }
-        
+
         $productVariationLower = mb_strtolower($product->variation);
-        
+
         foreach ($this->searchVariationKeywords as $keyword) {
             if (str_contains($productVariationLower, $keyword)) {
                 return true;
             }
         }
-        
+
         return false;
     }
 
@@ -671,7 +713,7 @@ new class extends Component {
     {
         $hasMatchingVolume = $this->hasMatchingVolume($product);
         $hasMatchingVariationKeyword = $this->hasMatchingVariationKeyword($product);
-        
+
         return $hasMatchingVolume && $hasMatchingVariationKeyword;
     }
 
@@ -682,13 +724,13 @@ new class extends Component {
     {
         $searchVariation = $this->extractSearchVariation();
         $productVariation = $product->variation ?? '';
-        
+
         $searchNormalized = $this->normalizeVariation($searchVariation);
         $productNormalized = $this->normalizeVariation($productVariation);
-        
+
         return $searchNormalized === $productNormalized;
     }
-    
+
     /**
      * Extrait la variation de la recherche complète
      */
@@ -696,10 +738,10 @@ new class extends Component {
     {
         $pattern = '/^[^-]+\s*-\s*[^-]+\s*-\s*/i';
         $variation = preg_replace($pattern, '', $this->search ?? '');
-        
+
         return trim($variation);
     }
-    
+
     /**
      * Normalise une variation pour la comparaison
      */
@@ -708,11 +750,11 @@ new class extends Component {
         if (empty($variation)) {
             return '';
         }
-        
+
         $normalized = mb_strtolower(trim($variation));
         $normalized = preg_replace('/[^a-zA-ZÀ-ÿ0-9\s]/', ' ', $normalized);
         $normalized = trim(preg_replace('/\s+/', ' ', $normalized));
-        
+
         return $normalized;
     }
 
@@ -723,7 +765,7 @@ new class extends Component {
     {
         $hasMatchingVolume = $this->hasMatchingVolume($product);
         $hasExactVariation = $this->hasExactVariationMatch($product);
-        
+
         return $hasMatchingVolume && $hasExactVariation;
     }
 
@@ -737,13 +779,13 @@ new class extends Component {
         }
 
         $patterns = [];
-        
+
         if (!empty($this->searchVolumes)) {
             foreach ($this->searchVolumes as $volume) {
                 $patterns[] = '\b' . preg_quote($volume, '/') . '\s*ml\b';
             }
         }
-        
+
         if (!empty($this->searchVariationKeywords)) {
             foreach ($this->searchVariationKeywords as $keyword) {
                 if (empty($keyword) || is_numeric($keyword)) {
@@ -752,22 +794,22 @@ new class extends Component {
                 $patterns[] = '\b' . preg_quote(trim($keyword), '/') . '\b';
             }
         }
-        
+
         if (empty($patterns)) {
             return $text;
         }
-        
+
         $pattern = '/(' . implode('|', $patterns) . ')/iu';
-        
-        $text = preg_replace_callback($pattern, function($matches) {
-            return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">' 
-                   . $matches[0] 
-                   . '</span>';
+
+        $text = preg_replace_callback($pattern, function ($matches) {
+            return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">'
+                . $matches[0]
+                . '</span>';
         }, $text);
-        
+
         return $text;
     }
-    
+
     /**
      * Ajuste le seuil de similarité
      */
@@ -785,7 +827,7 @@ new class extends Component {
         if (!is_numeric($competitorPrice) || !is_numeric($this->referencePrice) || $this->referencePrice == 0) {
             return null;
         }
-        
+
         return $this->referencePrice - $competitorPrice;
     }
 
@@ -797,7 +839,7 @@ new class extends Component {
         if (!is_numeric($competitorPrice) || !is_numeric($this->referencePrice) || $this->referencePrice == 0) {
             return null;
         }
-        
+
         return (($this->referencePrice - $competitorPrice) / $competitorPrice) * 100;
     }
 
@@ -805,33 +847,33 @@ new class extends Component {
      * Détermine le statut de compétitivité de notre prix
      */
 
-/**
- * Détermine le statut de compétitivité de notre prix
- * LOGIQUE CORRIGÉE: difference = notre_prix - concurrent_prix
- * Si difference > 0 : nous sommes PLUS CHER
- * Si difference < 0 : nous sommes MOINS CHER
- */
-public function getPriceCompetitiveness($competitorPrice)
-{
-    $difference = $this->calculatePriceDifference($competitorPrice);
-    
-    if ($difference === null) {
-        return 'unknown';
+    /**
+     * Détermine le statut de compétitivité de notre prix
+     * LOGIQUE CORRIGÉE: difference = notre_prix - concurrent_prix
+     * Si difference > 0 : nous sommes PLUS CHER
+     * Si difference < 0 : nous sommes MOINS CHER
+     */
+    public function getPriceCompetitiveness($competitorPrice)
+    {
+        $difference = $this->calculatePriceDifference($competitorPrice);
+
+        if ($difference === null) {
+            return 'unknown';
+        }
+
+        // CORRECTION: Inverser la logique
+        if ($difference > 10) {
+            return 'higher'; // Nous sommes beaucoup plus cher
+        } elseif ($difference > 0) {
+            return 'slightly_higher'; // Nous sommes légèrement plus cher
+        } elseif ($difference == 0) {
+            return 'same'; // Même prix
+        } elseif ($difference >= -10) {
+            return 'competitive'; // Nous sommes légèrement moins cher
+        } else {
+            return 'very_competitive'; // Nous sommes beaucoup moins cher
+        }
     }
-    
-    // CORRECTION: Inverser la logique
-    if ($difference > 10) {
-        return 'higher'; // Nous sommes beaucoup plus cher
-    } elseif ($difference > 0) {
-        return 'slightly_higher'; // Nous sommes légèrement plus cher
-    } elseif ($difference == 0) {
-        return 'same'; // Même prix
-    } elseif ($difference >= -10) {
-        return 'competitive'; // Nous sommes légèrement moins cher
-    } else {
-        return 'very_competitive'; // Nous sommes beaucoup moins cher
-    }
-}
 
     /**
      * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
@@ -839,7 +881,7 @@ public function getPriceCompetitiveness($competitorPrice)
     // public function getPriceStatusLabel($competitorPrice)
     // {
     //     $status = $this->getPriceCompetitiveness($competitorPrice);
-        
+
     //     $labels = [
     //         'very_competitive' => 'Nous sommes beaucoup - cher',
     //         'competitive' => 'Nous sommes - cher', 
@@ -848,37 +890,37 @@ public function getPriceCompetitiveness($competitorPrice)
     //         'higher' => 'Nous sommes beaucoup + cher',
     //         'unknown' => 'Non comparable'
     //     ];
-        
+
     //     return $labels[$status] ?? $labels['unknown'];
     // }
     /**
      * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
      */
-/**
- * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
- */
-public function getPriceStatusLabel($competitorPrice)
-{
-    $status = $this->getPriceCompetitiveness($competitorPrice);
-    
-    $labels = [
-        'very_competitive' => 'Nous sommes beaucoup moins cher',
-        'competitive' => 'Nous sommes moins cher', 
-        'same' => 'Prix identique',
-        'slightly_higher' => 'Nous sommes légèrement plus cher',
-        'higher' => 'Nous sommes beaucoup plus cher',
-        'unknown' => 'Non comparable'
-    ];
-    
-    return $labels[$status] ?? $labels['unknown'];
-}
+    /**
+     * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
+     */
+    public function getPriceStatusLabel($competitorPrice)
+    {
+        $status = $this->getPriceCompetitiveness($competitorPrice);
+
+        $labels = [
+            'very_competitive' => 'Nous sommes beaucoup moins cher',
+            'competitive' => 'Nous sommes moins cher',
+            'same' => 'Prix identique',
+            'slightly_higher' => 'Nous sommes légèrement plus cher',
+            'higher' => 'Nous sommes beaucoup plus cher',
+            'unknown' => 'Non comparable'
+        ];
+
+        return $labels[$status] ?? $labels['unknown'];
+    }
     /**
      * Retourne la classe CSS pour le statut de prix
      */
     public function getPriceStatusClass($competitorPrice)
     {
         $status = $this->getPriceCompetitiveness($competitorPrice);
-        
+
         $classes = [
             'very_competitive' => 'bg-green-100 text-green-800 border-green-300',
             'competitive' => 'bg-emerald-100 text-emerald-800 border-emerald-300',
@@ -887,7 +929,7 @@ public function getPriceStatusLabel($competitorPrice)
             'higher' => 'bg-red-100 text-red-800 border-red-300',
             'unknown' => 'bg-gray-100 text-gray-800 border-gray-300'
         ];
-        
+
         return $classes[$status] ?? $classes['unknown'];
     }
 
@@ -899,7 +941,7 @@ public function getPriceStatusLabel($competitorPrice)
         if (!is_numeric($competitorPrice) || !is_numeric($this->cosmashopPrice) || $this->cosmashopPrice == 0) {
             return null;
         }
-        
+
         return $this->cosmashopPrice - $competitorPrice;
     }
 
@@ -911,37 +953,37 @@ public function getPriceStatusLabel($competitorPrice)
         if (!is_numeric($competitorPrice) || !is_numeric($this->cosmashopPrice) || $this->cosmashopPrice == 0) {
             return null;
         }
-        
+
         return (($this->cosmashopPrice - $competitorPrice) / $competitorPrice) * 100;
     }
 
-/**
- * Détermine le statut de compétitivité de Cosmashop
- * LOGIQUE CORRIGÉE: difference = cosmashop_prix - concurrent_prix
- * Si difference > 0 : Cosmashop PLUS CHER
- * Si difference < 0 : Cosmashop MOINS CHER
- */
-public function getCosmashopPriceCompetitiveness($competitorPrice)
-{
-    $difference = $this->calculateCosmashopPriceDifference($competitorPrice);
-    
-    if ($difference === null) {
-        return 'unknown';
+    /**
+     * Détermine le statut de compétitivité de Cosmashop
+     * LOGIQUE CORRIGÉE: difference = cosmashop_prix - concurrent_prix
+     * Si difference > 0 : Cosmashop PLUS CHER
+     * Si difference < 0 : Cosmashop MOINS CHER
+     */
+    public function getCosmashopPriceCompetitiveness($competitorPrice)
+    {
+        $difference = $this->calculateCosmashopPriceDifference($competitorPrice);
+
+        if ($difference === null) {
+            return 'unknown';
+        }
+
+        // CORRECTION: Inverser la logique
+        if ($difference > 10) {
+            return 'higher'; // Cosmashop serait beaucoup plus cher
+        } elseif ($difference > 0) {
+            return 'slightly_higher'; // Cosmashop serait légèrement plus cher
+        } elseif ($difference == 0) {
+            return 'same'; // Même prix que Cosmashop
+        } elseif ($difference >= -10) {
+            return 'competitive'; // Cosmashop serait légèrement moins cher
+        } else {
+            return 'very_competitive'; // Cosmashop serait beaucoup moins cher
+        }
     }
-    
-    // CORRECTION: Inverser la logique
-    if ($difference > 10) {
-        return 'higher'; // Cosmashop serait beaucoup plus cher
-    } elseif ($difference > 0) {
-        return 'slightly_higher'; // Cosmashop serait légèrement plus cher
-    } elseif ($difference == 0) {
-        return 'same'; // Même prix que Cosmashop
-    } elseif ($difference >= -10) {
-        return 'competitive'; // Cosmashop serait légèrement moins cher
-    } else {
-        return 'very_competitive'; // Cosmashop serait beaucoup moins cher
-    }
-}
 
 
     /**
@@ -950,7 +992,7 @@ public function getCosmashopPriceCompetitiveness($competitorPrice)
     // public function getCosmashopPriceStatusLabel($competitorPrice)
     // {
     //     $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
-        
+
     //     $labels = [
     //         'very_competitive' => 'Cosmashop serait beaucoup - cher',
     //         'competitive' => 'Cosmashop serait - cher',
@@ -959,34 +1001,34 @@ public function getCosmashopPriceCompetitiveness($competitorPrice)
     //         'higher' => 'Cosmashop serait beaucoup + cher',
     //         'unknown' => 'Non comparable'
     //     ];
-        
+
     //     return $labels[$status] ?? $labels['unknown'];
     // }
-/**
- * Retourne le libellé pour le statut Cosmashop
- */
-public function getCosmashopPriceStatusLabel($competitorPrice)
-{
-    $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
-    
-    $labels = [
-        'very_competitive' => 'Cosmashop serait beaucoup moins cher',
-        'competitive' => 'Cosmashop serait moins cher',
-        'same' => 'Prix identique à Cosmashop', 
-        'slightly_higher' => 'Cosmashop serait légèrement plus cher',
-        'higher' => 'Cosmashop serait beaucoup plus cher',
-        'unknown' => 'Non comparable'
-    ];
-    
-    return $labels[$status] ?? $labels['unknown'];
-}
+    /**
+     * Retourne le libellé pour le statut Cosmashop
+     */
+    public function getCosmashopPriceStatusLabel($competitorPrice)
+    {
+        $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
+
+        $labels = [
+            'very_competitive' => 'Cosmashop serait beaucoup moins cher',
+            'competitive' => 'Cosmashop serait moins cher',
+            'same' => 'Prix identique à Cosmashop',
+            'slightly_higher' => 'Cosmashop serait légèrement plus cher',
+            'higher' => 'Cosmashop serait beaucoup plus cher',
+            'unknown' => 'Non comparable'
+        ];
+
+        return $labels[$status] ?? $labels['unknown'];
+    }
     /**
      * Retourne la classe CSS pour le statut Cosmashop
      */
     public function getCosmashopPriceStatusClass($competitorPrice)
     {
         $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
-        
+
         $classes = [
             'very_competitive' => 'bg-green-100 text-green-800 border-green-300',
             'competitive' => 'bg-emerald-100 text-emerald-800 border-emerald-300',
@@ -995,7 +1037,7 @@ public function getCosmashopPriceStatusLabel($competitorPrice)
             'higher' => 'bg-red-100 text-red-800 border-red-300',
             'unknown' => 'bg-gray-100 text-gray-800 border-gray-300'
         ];
-        
+
         return $classes[$status] ?? $classes['unknown'];
     }
 
@@ -1007,11 +1049,11 @@ public function getCosmashopPriceStatusLabel($competitorPrice)
         if ($difference === null) {
             return 'N/A';
         }
-        
+
         if ($difference == 0) {
             return '0 €';
         }
-        
+
         $formatted = number_format(abs($difference), 2, ',', ' ');
         return $difference > 0 ? "+{$formatted} €" : "-{$formatted} €";
     }
@@ -1024,11 +1066,11 @@ public function getCosmashopPriceStatusLabel($competitorPrice)
         if ($percentage === null) {
             return 'N/A';
         }
-        
+
         if ($percentage == 0) {
             return '0%';
         }
-        
+
         $formatted = number_format(abs($percentage), 1, ',', ' ');
         return $percentage > 0 ? "+{$formatted}%" : "-{$formatted}%";
     }
@@ -1039,23 +1081,23 @@ public function getCosmashopPriceStatusLabel($competitorPrice)
     public function getPriceAnalysis()
     {
         $prices = [];
-        
+
         foreach ($this->matchedProducts as $product) {
             $price = $product->price_ht ?? $product->prix_ht;
             if (is_numeric($price)) {
                 $prices[] = $price;
             }
         }
-        
+
         if (empty($prices)) {
             return null;
         }
-        
+
         $minPrice = min($prices);
         $maxPrice = max($prices);
         $avgPrice = array_sum($prices) / count($prices);
         $ourPrice = $this->referencePrice;
-        
+
         return [
             'min' => $minPrice,
             'max' => $maxPrice,
@@ -1072,27 +1114,27 @@ public function getCosmashopPriceStatusLabel($competitorPrice)
     public function getCosmashopPriceAnalysis()
     {
         $prices = [];
-        
+
         foreach ($this->matchedProducts as $product) {
             $price = $product->price_ht ?? $product->prix_ht;
             if (is_numeric($price)) {
                 $prices[] = $price;
             }
         }
-        
+
         if (empty($prices)) {
             return null;
         }
-        
+
         $minPrice = min($prices);
         $maxPrice = max($prices);
         $avgPrice = array_sum($prices) / count($prices);
         $cosmashopPrice = $this->cosmashopPrice;
-        
+
         // Compter les concurrents en dessous/au-dessus de Cosmashop
         $belowCosmashop = 0;
         $aboveCosmashop = 0;
-        
+
         foreach ($prices as $price) {
             if ($price < $cosmashopPrice) {
                 $belowCosmashop++;
@@ -1100,7 +1142,7 @@ public function getCosmashopPriceStatusLabel($competitorPrice)
                 $aboveCosmashop++;
             }
         }
-        
+
         return [
             'min' => $minPrice,
             'max' => $maxPrice,
@@ -1121,8 +1163,8 @@ public function getCosmashopPriceStatusLabel($competitorPrice)
     <!-- Section d'analyse des prix -->
     @if($hasData && $referencePrice)
         @php
-            $priceAnalysis = $this->getPriceAnalysis();
-            $cosmashopAnalysis = $this->getCosmashopPriceAnalysis();
+    $priceAnalysis = $this->getPriceAnalysis();
+    $cosmashopAnalysis = $this->getCosmashopPriceAnalysis();
         @endphp
         @if($priceAnalysis && $cosmashopAnalysis)
             <div class="mx-auto w-full px-4 py-4 sm:px-6 lg:px-8">
@@ -1217,367 +1259,365 @@ public function getCosmashopPriceStatusLabel($competitorPrice)
     <!-- Section des résultats -->
     <div class="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">
         @if($hasData)
-            <!-- Indicateur de similarité -->
-            <div class="mb-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border">
-                <div class="flex flex-col space-y-3">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center">
-                            <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
-                            </svg>
-                            <span class="text-sm font-medium text-blue-800">
-                                Algorithme de similarité activé - 
-                                {{ count($matchedProducts) }} produit(s) correspondant(s) au seuil de {{ $similarityThreshold * 100 }}%
+                <!-- Indicateur de similarité -->
+                <div class="mb-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border">
+                    <div class="flex flex-col space-y-3">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center">
+                                <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                                </svg>
+                                <span class="text-sm font-medium text-blue-800">
+                                    Algorithme de similarité activé - 
+                                    {{ count($matchedProducts) }} produit(s) correspondant(s) au seuil de {{ $similarityThreshold * 100 }}%
+                                </span>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <span class="text-xs text-blue-600 font-semibold">Ajuster le seuil :</span>
+                                <button wire:click="adjustSimilarityThreshold(0.5)" 
+                                        class="px-2 py-1 text-xs {{ $similarityThreshold == 0.5 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors">
+                                    50%
+                                </button>
+                                <button wire:click="adjustSimilarityThreshold(0.6)" 
+                                        class="px-2 py-1 text-xs {{ $similarityThreshold == 0.6 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors">
+                                    60%
+                                </button>
+                                <button wire:click="adjustSimilarityThreshold(0.7)" 
+                                        class="px-2 py-1 text-xs {{ $similarityThreshold == 0.7 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors">
+                                    70%
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center space-x-4 text-xs text-blue-600">
+                            <span class="font-semibold">Légende :</span>
+                            <span class="flex items-center">
+                                <span class="w-3 h-3 bg-green-500 rounded-full mr-1"></span>
+                                Excellent (90-100%)
+                            </span>
+                            <span class="flex items-center">
+                                <span class="w-3 h-3 bg-blue-500 rounded-full mr-1"></span>
+                                Bon (70-89%)
+                            </span>
+                            <span class="flex items-center">
+                                <span class="w-3 h-3 bg-yellow-500 rounded-full mr-1"></span>
+                                Moyen (60-69%)
                             </span>
                         </div>
-                        <div class="flex items-center space-x-2">
-                            <span class="text-xs text-blue-600 font-semibold">Ajuster le seuil :</span>
-                            <button wire:click="adjustSimilarityThreshold(0.5)" 
-                                    class="px-2 py-1 text-xs {{ $similarityThreshold == 0.5 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors">
-                                50%
-                            </button>
-                            <button wire:click="adjustSimilarityThreshold(0.6)" 
-                                    class="px-2 py-1 text-xs {{ $similarityThreshold == 0.6 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors">
-                                60%
-                            </button>
-                            <button wire:click="adjustSimilarityThreshold(0.7)" 
-                                    class="px-2 py-1 text-xs {{ $similarityThreshold == 0.7 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors">
-                                70%
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div class="flex items-center space-x-4 text-xs text-blue-600">
-                        <span class="font-semibold">Légende :</span>
-                        <span class="flex items-center">
-                            <span class="w-3 h-3 bg-green-500 rounded-full mr-1"></span>
-                            Excellent (90-100%)
-                        </span>
-                        <span class="flex items-center">
-                            <span class="w-3 h-3 bg-blue-500 rounded-full mr-1"></span>
-                            Bon (70-89%)
-                        </span>
-                        <span class="flex items-center">
-                            <span class="w-3 h-3 bg-yellow-500 rounded-full mr-1"></span>
-                            Moyen (60-69%)
-                        </span>
                     </div>
                 </div>
-            </div>
 
-            <!-- Critères de recherche -->
-            @if(!empty($searchVolumes) || !empty($searchVariationKeywords))
-                <div class="mb-4 p-4 bg-blue-50 rounded-lg">
-                    <div class="flex flex-col space-y-2">
-                        <div class="flex items-center">
-                            <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg>
-                            <span class="text-sm font-medium text-blue-800">Critères de recherche détectés :</span>
-                        </div>
-                        <div class="flex flex-wrap gap-2">
-                            @if(!empty($searchVolumes))
-                                <div class="flex items-center">
-                                    <span class="text-xs text-blue-700 mr-1">Volumes :</span>
-                                    @foreach($searchVolumes as $volume)
-                                        <span class="bg-green-100 text-green-800 font-semibold px-2 py-1 rounded text-xs">{{ $volume }} ml</span>
-                                    @endforeach
-                                </div>
-                            @endif
-                            @php
-                                $searchVariation = $this->extractSearchVariation();
-                            @endphp
-                            @if($searchVariation)
-                                <div class="flex items-center">
-                                    <span class="text-xs text-blue-700 mr-1">Variation :</span>
-                                    <span class="bg-blue-100 text-blue-800 font-semibold px-2 py-1 rounded text-xs">{{ $searchVariation }}</span>
-                                </div>
-                            @endif
-                        </div>
-                    </div>
-                </div>
-            @endif
-
-            <!-- Tableau des résultats -->
-            <div class="bg-white shadow-sm rounded-lg overflow-hidden">
-                <div class="px-6 py-4 border-b border-gray-200">
-                    <h3 class="text-lg font-medium text-gray-900">Résultats de la recherche</h3>
-                    <p class="mt-1 text-sm text-gray-500">{{ count($matchedProducts) }} produit(s) correspondant(s)</p>
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Score</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Correspondance</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Image</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Variation</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Site Source</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prix HT</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vs Cosmaparfumerie</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vs Cosmashop</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
-                            @foreach($matchedProducts as $product)
+                <!-- Critères de recherche -->
+                @if(!empty($searchVolumes) || !empty($searchVariationKeywords))
+                    <div class="mb-4 p-4 bg-blue-50 rounded-lg">
+                        <div class="flex flex-col space-y-2">
+                            <div class="flex items-center">
+                                <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                <span class="text-sm font-medium text-blue-800">Critères de recherche détectés :</span>
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                @if(!empty($searchVolumes))
+                                    <div class="flex items-center">
+                                        <span class="text-xs text-blue-700 mr-1">Volumes :</span>
+                                        @foreach($searchVolumes as $volume)
+                                            <span class="bg-green-100 text-green-800 font-semibold px-2 py-1 rounded text-xs">{{ $volume }} ml</span>
+                                        @endforeach
+                                    </div>
+                                @endif
                                 @php
+            $searchVariation = $this->extractSearchVariation();
+                                @endphp
+                                @if($searchVariation)
+                                    <div class="flex items-center">
+                                        <span class="text-xs text-blue-700 mr-1">Variation :</span>
+                                        <span class="bg-blue-100 text-blue-800 font-semibold px-2 py-1 rounded text-xs">{{ $searchVariation }}</span>
+                                    </div>
+                                @endif
+                            </div>
+                        </div>
+                    </div>
+                @endif
+
+                <!-- Tableau des résultats -->
+                <div class="bg-white shadow-sm rounded-lg overflow-hidden">
+                    <div class="px-6 py-4 border-b border-gray-200">
+                        <h3 class="text-lg font-medium text-gray-900">Résultats de la recherche</h3>
+                        <p class="mt-1 text-sm text-gray-500">{{ count($matchedProducts) }} produit(s) correspondant(s)</p>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Score</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Correspondance</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Image</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Variation</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Site Source</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prix HT</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vs Cosmaparfumerie</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vs Cosmashop</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                @foreach($matchedProducts as $product)
+                                                            @php
                                     $matchClass = [
                                         'excellent' => 'bg-green-100 text-green-800 border-green-300',
                                         'bon' => 'bg-blue-100 text-blue-800 border-blue-300',
                                         'moyen' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
                                         'faible' => 'bg-gray-100 text-gray-800 border-gray-300'
                                     ][$product->match_level ?? 'faible'];
-                                    
+
                                     $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
                                     $hasMatchingVolume = $this->hasMatchingVolume($product);
                                     $hasExactVariation = $this->hasExactVariationMatch($product);
-                                    
+
                                     // Données pour la comparaison de prix
                                     $competitorPrice = $product->price_ht ?? $product->prix_ht;
                                     $priceDifference = $this->calculatePriceDifference($competitorPrice);
                                     $priceDifferencePercent = $this->calculatePriceDifferencePercentage($competitorPrice);
                                     $priceStatusClass = $this->getPriceStatusClass($competitorPrice);
                                     $priceStatusLabel = $this->getPriceStatusLabel($competitorPrice);
-                                    
+
                                     // Données pour Cosmashop
                                     $cosmashopDifference = $this->calculateCosmashopPriceDifference($competitorPrice);
                                     $cosmashopDifferencePercent = $this->calculateCosmashopPriceDifferencePercentage($competitorPrice);
                                     $cosmashopStatusClass = $this->getCosmashopPriceStatusClass($competitorPrice);
                                     $cosmashopStatusLabel = $this->getCosmashopPriceStatusLabel($competitorPrice);
-                                @endphp
-                                <tr class="hover:bg-gray-50 transition-colors duration-150">
-                                    <!-- Colonne Score -->
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="flex items-center">
-                                            <div class="w-16 bg-gray-200 rounded-full h-2 mr-3">
-                                                <div class="h-2 rounded-full 
-                                                    @if(($product->similarity_score ?? 0) >= 0.9) bg-green-500
-                                                    @elseif(($product->similarity_score ?? 0) >= 0.7) bg-blue-500
-                                                    @elseif(($product->similarity_score ?? 0) >= 0.6) bg-yellow-500
-                                                    @else bg-gray-500 @endif"
-                                                    style="width: {{ ($product->similarity_score ?? 0) * 100 }}%">
-                                                </div>
-                                            </div>
-                                            <span class="text-sm font-mono font-semibold 
-                                                @if(($product->similarity_score ?? 0) >= 0.9) text-green-600
-                                                @elseif(($product->similarity_score ?? 0) >= 0.7) text-blue-600
-                                                @elseif(($product->similarity_score ?? 0) >= 0.6) text-yellow-600
-                                                @else text-gray-600 @endif">
-                                                {{ number_format(($product->similarity_score ?? 0) * 100, 0) }}%
-                                            </span>
-                                        </div>
-                                    </td>
-                                    
-                                    <!-- Colonne Correspondance -->
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border {{ $matchClass }}">
-                                            @if($product->match_level === 'excellent')
-                                                <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
-                                                </svg>
-                                            @endif
-                                            {{ ucfirst($product->match_level) }}
-                                        </span>
-                                    </td>
-                                    
-                                    <!-- Colonne Image - TAILLE AUGMENTÉE -->
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        @if(!empty($product->image))
-                                            <img src="{{ $product->image }}" 
-                                                 alt="{{ $product->name ?? 'Produit' }}" 
-                                                 class="h-20 w-20 object-cover rounded-lg shadow-md border border-gray-200"
-                                                 onerror="this.src='https://via.placeholder.com/80?text=No+Image'">
-                                        @else
-                                            <div class="h-20 w-20 bg-gray-100 rounded-lg flex items-center justify-center shadow-md border border-gray-200">
-                                                <span class="text-xs text-gray-500 text-center px-1">No Image</span>
-                                            </div>
-                                        @endif
-                                    </td>
-                                    
-                                    <!-- Colonne Nom -->
-                                    <td class="px-6 py-4">
-                                        <div class="text-sm font-medium text-gray-900 max-w-xs" title="{{ $product->name ?? 'N/A' }}">
-                                            {!! $this->highlightMatchingTerms($product->name) !!}
-                                        </div>
-                                        @if(!empty($product->vendor))
-                                            <div class="text-xs text-gray-500 mt-1">
-                                                {{ $product->vendor }}
-                                            </div>
-                                        @endif
-                                        <!-- Badges des volumes du produit -->
-                                        @if(!empty($productVolumes))
-                                            <div class="mt-2 flex flex-wrap gap-1">
-                                                @foreach($productVolumes as $volume)
-                                                    <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium 
-                                                        @if($this->isVolumeMatching($volume))
-                                                            bg-green-100 text-green-800 border border-green-300
-                                                        @else
-                                                            bg-gray-100 text-gray-800
-                                                        @endif">
-                                                        {{ $volume }} ml
-                                                        @if($this->isVolumeMatching($volume))
-                                                            <svg class="w-3 h-3 ml-1 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                                                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
-                                                            </svg>
-                                                        @endif
-                                                    </span>
-                                                @endforeach
-                                            </div>
-                                        @endif
-                                    </td>
+                                                            @endphp
+                                                            <tr class="hover:bg-gray-50 transition-colors duration-150">
+                                                                <!-- Colonne Score -->
+                                                                <td class="px-6 py-4 whitespace-nowrap">
+                                                                    <div class="flex items-center">
+                                                                        <div class="w-16 bg-gray-200 rounded-full h-2 mr-3">
+                                                                            <div class="h-2 rounded-full 
+                                                                                @if(($product->similarity_score ?? 0) >= 0.9) bg-green-500
+                                                                                @elseif(($product->similarity_score ?? 0) >= 0.7) bg-blue-500
+                                                                                @elseif(($product->similarity_score ?? 0) >= 0.6) bg-yellow-500
+                                                                                @else bg-gray-500 @endif"
+                                                                                style="width: {{ ($product->similarity_score ?? 0) * 100 }}%">
+                                                                            </div>
+                                                                        </div>
+                                                                        <span class="text-sm font-mono font-semibold 
+                                                                            @if(($product->similarity_score ?? 0) >= 0.9) text-green-600
+                                                                            @elseif(($product->similarity_score ?? 0) >= 0.7) text-blue-600
+                                                                            @elseif(($product->similarity_score ?? 0) >= 0.6) text-yellow-600
+                                                                            @else text-gray-600 @endif">
+                                                                            {{ number_format(($product->similarity_score ?? 0) * 100, 0) }}%
+                                                                        </span>
+                                                                    </div>
+                                                                </td>
 
-                                    <!-- Colonne Variation -->
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm text-gray-900 max-w-xs" title="{{ $product->variation ?? 'Standard' }}">
-                                            {!! $this->highlightMatchingTerms($product->variation ?? 'Standard') !!}
-                                        </div>
-                                        @if($hasExactVariation)
-                                            <div class="mt-1">
-                                                <span class="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
-                                                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
-                                                    </svg>
-                                                    Variation identique
-                                                </span>
-                                            </div>
-                                        @endif
-                                    </td>
+                                                                <!-- Colonne Correspondance -->
+                                                                <td class="px-6 py-4 whitespace-nowrap">
+                                                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border {{ $matchClass }}">
+                                                                        @if($product->match_level === 'excellent')
+                                                                            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                                                            </svg>
+                                                                        @endif
+                                                                        {{ ucfirst($product->match_level) }}
+                                                                    </span>
+                                                                </td>
 
-                                    <!-- Colonne Site Source -->
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="flex items-center">
-                                            <div class="flex-shrink-0 h-8 w-8 bg-gray-100 rounded-full flex items-center justify-center mr-3">
-                                                <span class="text-xs font-medium text-gray-600">
-                                                    {{ strtoupper(substr($this->extractDomain($product->product_url), 0, 2)) }}
-                                                </span>
-                                            </div>
-                                            <div>
-                                                <div class="text-sm font-medium text-gray-900">
-                                                    {{ $this->extractDomain($product->product_url) }}
-                                                </div>
-                                                {{-- <div class="text-xs text-gray-500 truncate max-w-xs" title="{{ $product->product_url ?? 'N/A' }}">
-                                                    {{ Str::limit($product->product_url, 40) }}
-                                                </div> --}}
-                                            </div>
-                                        </div>
-                                    </td>
-                                    
-                                    <!-- Colonne Prix HT -->
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm font-semibold text-green-600">
-                                            {{ $this->formatPrice($product->price_ht ?? $product->prix_ht) }}
-                                        </div>
-                                    </td>
-                                    
-                                    <!-- Colonne Vs Cosmaparfumerie -->
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        @if(is_numeric($competitorPrice) && is_numeric($referencePrice))
-                                            <div class="space-y-1">
-                                                <div class="text-xs text-gray-500">
-                                                    prix cosma-parfumerie: {{ number_format($price, 2, ',', ' ') }} €
-                                                </div>
-                                                <!-- Statut -->
-                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $priceStatusClass }}">
-                                                    {{ $priceStatusLabel }}
-                                                </span>
-                                                
-                                                <!-- Différence -->
-                                                <div class="text-xs font-semibold 
-                                                    {{ $priceDifference > 0 ? 'text-green-600' : ($priceDifference < 0 ? 'text-red-600' : 'text-blue-600') }}">
-                                                    {{ $this->formatPriceDifference($priceDifference) }}
-                                                </div>
-                                                
-                                                <!-- Pourcentage -->
-                                                @if($priceDifferencePercent !== null && $priceDifference != 0)
-                                                    <div class="text-xs text-gray-500">
-                                                        {{ $this->formatPercentageDifference($priceDifferencePercent) }}
-                                                    </div>
-                                                @endif
-                                            </div>
-                                        @else
-                                            <span class="text-xs text-gray-400">N/A</span>
-                                        @endif
-                                    </td>
-                                    
-                                    <!-- Colonne Vs Cosmashop -->
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        @if(is_numeric($competitorPrice) && is_numeric($cosmashopPrice))
-                                            <div class="space-y-1">
-                                                <div class="text-xs text-gray-500">
-                                                    prix cosmashop: {{ number_format($cosmashopPrice, 2, ',', ' ') }} €
-                                                </div>
-                                                <!-- Statut Cosmashop -->
-                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $cosmashopStatusClass }}">
-                                                    {{ $cosmashopStatusLabel }}
-                                                </span>
-                                                
-                                                <!-- Différence Cosmashop -->
-                                                <div class="text-xs font-semibold 
-                                                    {{ $cosmashopDifference > 0 ? 'text-green-600' : ($cosmashopDifference < 0 ? 'text-red-600' : 'text-blue-600') }}">
-                                                    {{ $this->formatPriceDifference($cosmashopDifference) }}
-                                                </div>
-                                                
-                                                <!-- Pourcentage Cosmashop -->
-                                                @if($cosmashopDifferencePercent !== null && $cosmashopDifference != 0)
-                                                    <div class="text-xs text-gray-500">
-                                                        {{ $this->formatPercentageDifference($cosmashopDifferencePercent) }}
-                                                    </div>
-                                                @endif
-                                            </div>
-                                        @else
-                                            <span class="text-xs text-gray-400">N/A</span>
-                                        @endif
-                                    </td>
-                                    
-                                    <!-- Colonne Type -->
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                            {{ $product->type ?? 'N/A' }}
-                                        </span>
-                                    </td>
-                                    
-                                    <!-- Colonne Actions -->
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                        <div class="flex space-x-2">
-                                            @if(!empty($product->product_url))
-                                                {{-- <button wire:click="viewProduct('{{ $product->product_url }}')" 
-                                                        class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-full shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200">
-                                                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-                                                    </svg>
-                                                    Voir
-                                                </button> --}}
-                                                <a href="{{ $product->product_url }}" 
-   target="_blank" 
-   rel="noopener noreferrer"
-   class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-full shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200">
-    
-    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-              d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-    </svg>
-    Voir
-</a>
+                                                                <!-- Colonne Image - TAILLE AUGMENTÉE -->
+                                                                <td class="px-6 py-4 whitespace-nowrap">
+                                                                    @if(!empty($product->image))
+                                                                        <img src="{{ $product->image }}" 
+                                                                             alt="{{ $product->name ?? 'Produit' }}" 
+                                                                             class="h-20 w-20 object-cover rounded-lg shadow-md border border-gray-200"
+                                                                             onerror="this.src='https://via.placeholder.com/80?text=No+Image'">
+                                                                    @else
+                                                                        <div class="h-20 w-20 bg-gray-100 rounded-lg flex items-center justify-center shadow-md border border-gray-200">
+                                                                            <span class="text-xs text-gray-500 text-center px-1">No Image</span>
+                                                                        </div>
+                                                                    @endif
+                                                                </td>
 
-                                            @else
-                                                <span class="inline-flex items-center px-2 py-1 text-xs text-gray-400 bg-gray-100 rounded-full">
-                                                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
-                                                    </svg>
-                                                    Indisponible
-                                                </span>
-                                            @endif
-                                        </div>
-                                    </td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
+                                                                <!-- Colonne Nom -->
+                                                                <td class="px-6 py-4">
+                                                                    <div class="text-sm font-medium text-gray-900 max-w-xs" title="{{ $product->name ?? 'N/A' }}">
+                                                                        {!! $this->highlightMatchingTerms($product->name) !!}
+                                                                    </div>
+                                                                    @if(!empty($product->vendor))
+                                                                        <div class="text-xs text-gray-500 mt-1">
+                                                                            {{ $product->vendor }}
+                                                                        </div>
+                                                                    @endif
+                                                                    <!-- Badges des volumes du produit -->
+                                                                    @if(!empty($productVolumes))
+                                                                        <div class="mt-2 flex flex-wrap gap-1">
+                                                                            @foreach($productVolumes as $volume)
+                                                                                <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium 
+                                                                                    @if($this->isVolumeMatching($volume))
+                                                                                        bg-green-100 text-green-800 border border-green-300
+                                                                                    @else
+                                                                                        bg-gray-100 text-gray-800
+                                                                                    @endif">
+                                                                                    {{ $volume }} ml
+                                                                                    @if($this->isVolumeMatching($volume))
+                                                                                        <svg class="w-3 h-3 ml-1 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                                                                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                                                                        </svg>
+                                                                                    @endif
+                                                                                </span>
+                                                                            @endforeach
+                                                                        </div>
+                                                                    @endif
+                                                                </td>
+
+                                                                <!-- Colonne Variation -->
+                                                                <td class="px-6 py-4 whitespace-nowrap">
+                                                                    <div class="text-sm text-gray-900 max-w-xs" title="{{ $product->variation ?? 'Standard' }}">
+                                                                        {!! $this->highlightMatchingTerms($product->variation ?? 'Standard') !!}
+                                                                    </div>
+                                                                    @if($hasExactVariation)
+                                                                        <div class="mt-1">
+                                                                            <span class="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
+                                                                                <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                                                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                                                                </svg>
+                                                                                Variation identique
+                                                                            </span>
+                                                                        </div>
+                                                                    @endif
+                                                                </td>
+
+                                                                <!-- Colonne Site Source -->
+                                                                <td class="px-6 py-4 whitespace-nowrap">
+                                                                    <div class="flex items-center">
+                                                                        <div class="flex-shrink-0 h-8 w-8 bg-gray-100 rounded-full flex items-center justify-center mr-3">
+                                                                            <span class="text-xs font-medium text-gray-600">
+                                                                                {{ strtoupper(substr($this->extractDomain($product->product_url), 0, 2)) }}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div>
+                                                                            <div class="text-sm font-medium text-gray-900">
+                                                                                {{ $this->extractDomain($product->product_url) }}
+                                                                            </div>
+                                                                            {{-- <div class="text-xs text-gray-500 truncate max-w-xs" title="{{ $product->product_url ?? 'N/A' }}">
+                                                                                {{ Str::limit($product->product_url, 40) }}
+                                                                            </div> --}}
+                                                                        </div>
+                                                                    </div>
+                                                                </td>
+
+                                                                <!-- Colonne Prix HT -->
+                                                                <td class="px-6 py-4 whitespace-nowrap">
+                                                                    <div class="text-sm font-semibold text-green-600">
+                                                                        {{ $this->formatPrice($product->price_ht ?? $product->prix_ht) }}
+                                                                    </div>
+                                                                </td>
+
+                                                                <!-- Colonne Vs Cosmaparfumerie -->
+                                                                <td class="px-6 py-4 whitespace-nowrap">
+                                                                    @if(is_numeric($competitorPrice) && is_numeric($referencePrice))
+                                                                        <div class="space-y-1">
+                                                                            <div class="text-xs text-gray-500">
+                                                                                prix cosma-parfumerie: {{ number_format($price, 2, ',', ' ') }} €
+                                                                            </div>
+                                                                            <!-- Statut -->
+                                                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $priceStatusClass }}">
+                                                                                {{ $priceStatusLabel }}
+                                                                            </span>
+
+                                                                            <!-- Différence -->
+                                                                            <div class="text-xs font-semibold 
+                                                                                {{ $priceDifference > 0 ? 'text-green-600' : ($priceDifference < 0 ? 'text-red-600' : 'text-blue-600') }}">
+                                                                                {{ $this->formatPriceDifference($priceDifference) }}
+                                                                            </div>
+
+                                                                            <!-- Pourcentage -->
+                                                                            @if($priceDifferencePercent !== null && $priceDifference != 0)
+                                                                                <div class="text-xs text-gray-500">
+                                                                                    {{ $this->formatPercentageDifference($priceDifferencePercent) }}
+                                                                                </div>
+                                                                            @endif
+                                                                        </div>
+                                                                    @else
+                                                                        <span class="text-xs text-gray-400">N/A</span>
+                                                                    @endif
+                                                                </td>
+
+                                                                <!-- Colonne Vs Cosmashop -->
+                                                                <td class="px-6 py-4 whitespace-nowrap">
+                                                                    @if(is_numeric($competitorPrice) && is_numeric($cosmashopPrice))
+                                                                        <div class="space-y-1">
+                                                                            <div class="text-xs text-gray-500">
+                                                                                prix cosmashop: {{ number_format($cosmashopPrice, 2, ',', ' ') }} €
+                                                                            </div>
+                                                                            <!-- Statut Cosmashop -->
+                                                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $cosmashopStatusClass }}">
+                                                                                {{ $cosmashopStatusLabel }}
+                                                                            </span>
+
+                                                                            <!-- Différence Cosmashop -->
+                                                                            <div class="text-xs font-semibold 
+                                                                                {{ $cosmashopDifference > 0 ? 'text-green-600' : ($cosmashopDifference < 0 ? 'text-red-600' : 'text-blue-600') }}">
+                                                                                {{ $this->formatPriceDifference($cosmashopDifference) }}
+                                                                            </div>
+
+                                                                            <!-- Pourcentage Cosmashop -->
+                                                                            @if($cosmashopDifferencePercent !== null && $cosmashopDifference != 0)
+                                                                                <div class="text-xs text-gray-500">
+                                                                                    {{ $this->formatPercentageDifference($cosmashopDifferencePercent) }}
+                                                                                </div>
+                                                                            @endif
+                                                                        </div>
+                                                                    @else
+                                                                        <span class="text-xs text-gray-400">N/A</span>
+                                                                    @endif
+                                                                </td>
+
+                                                                <!-- Colonne Type -->
+                                                                <td class="px-6 py-4 whitespace-nowrap">
+                                                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                                                        {{ $product->type ?? 'N/A' }}
+                                                                    </span>
+                                                                </td>
+
+                                                                <!-- Colonne Actions -->
+                                                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                                                    <div class="flex space-x-2">
+                                                                        @if(!empty($product->product_url))
+                                                                            {{-- <button wire:click="viewProduct('{{ $product->product_url }}')" 
+                                                                                    class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-full shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200">
+                                                                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                                                                                </svg>
+                                                                                Voir
+                                                                            </button> --}}
+                                                                            <a href="{{ $product->product_url }}" target="_blank" rel="noopener noreferrer"
+                                                                                class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-full shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200">
+
+                                                                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                                                        d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                                                                                </svg>
+                                                                                Voir
+                                                                            </a>
+
+                                                                        @else
+                                                                            <span class="inline-flex items-center px-2 py-1 text-xs text-gray-400 bg-gray-100 rounded-full">
+                                                                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                                                                                </svg>
+                                                                                Indisponible
+                                                                            </span>
+                                                                        @endif
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-            </div>
         @else
             <!-- Empty State -->
             <div class="text-center py-12">
