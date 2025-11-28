@@ -1591,7 +1591,9 @@ public function getCosmashopPriceAnalysis()
 
                                                                                                                                 <!-- Colonne Prix HT -->
                                                                 <td class="px-6 py-4 whitespace-nowrap">
-                                                                    {{ \Carbon\Carbon::parse($product->updated_at)->locale('fr')->isoFormat('D MMMM YYYY') }}
+                                                                    <div class="text-xs text-gray-400">
+                                                                        {{ \Carbon\Carbon::parse($product->updated_at)->translatedFormat('j F Y') }}
+                                                                    </div>
                                                                 </td>
 
                                                                 <!-- Colonne Vs Cosmaparfumerie -->
