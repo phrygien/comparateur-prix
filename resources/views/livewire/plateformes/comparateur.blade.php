@@ -1061,6 +1061,69 @@ new class extends Component {
     }
 
     /**
+     * Vérifie si le produit correspond parfaitement (volumes ET mots clés de variation)
+     */
+    public function isPerfectMatch($product)
+    {
+        $hasMatchingVolume = $this->hasMatchingVolume($product);
+        $hasMatchingVariationKeyword = $this->hasMatchingVariationKeyword($product);
+
+        return $hasMatchingVolume && $hasMatchingVariationKeyword;
+    }
+
+    /**
+     * Vérifie si le produit a exactement la même variation que la recherche
+     */
+    public function hasExactVariationMatch($product)
+    {
+        $searchVariation = $this->extractSearchVariation();
+        $productVariation = $product->variation ?? '';
+
+        $searchNormalized = $this->normalizeVariation($searchVariation);
+        $productNormalized = $this->normalizeVariation($productVariation);
+
+        return $searchNormalized === $productNormalized;
+    }
+
+    /**
+     * Extrait la variation de la recherche complète - MÉTHODE MANQUANTE AJOUTÉE
+     */
+    public function extractSearchVariation()
+    {
+        $pattern = '/^[^-]+\s*-\s*[^-]+\s*-\s*/i';
+        $variation = preg_replace($pattern, '', $this->search ?? '');
+
+        return trim($variation);
+    }
+
+    /**
+     * Normalise une variation pour la comparaison - MÉTHODE MANQUANTE AJOUTÉE
+     */
+    private function normalizeVariation($variation)
+    {
+        if (empty($variation)) {
+            return '';
+        }
+
+        $normalized = mb_strtolower(trim($variation));
+        $normalized = preg_replace('/[^a-zA-ZÀ-ÿ0-9\s]/', ' ', $normalized);
+        $normalized = trim(preg_replace('/\s+/', ' ', $normalized));
+
+        return $normalized;
+    }
+
+    /**
+     * Vérifie si le produit a le même volume ET la même variation exacte que la recherche - MÉTHODE MANQUANTE AJOUTÉE
+     */
+    public function hasSameVolumeAndExactVariation($product)
+    {
+        $hasMatchingVolume = $this->hasMatchingVolume($product);
+        $hasExactVariation = $this->hasExactVariationMatch($product);
+
+        return $hasMatchingVolume && $hasExactVariation;
+    }
+
+    /**
      * Met en évidence les volumes et mots clés correspondants dans un texte
      */
     public function highlightMatchingTerms($text)
