@@ -102,6 +102,7 @@ new class extends Component {
     handleScroll() {
         let currentScroll = window.pageYOffset || document.documentElement.scrollTop;
         
+        // Masquer la barre quand on arrive tout en haut de la page
         if (currentScroll <= 0) {
             this.showBar = false;
             return;
@@ -112,8 +113,8 @@ new class extends Component {
             this.showBar = true;
             clearTimeout(this.scrollTimeout);
         } 
-        // Lors du scroll vers le haut, attendre que le scroll se termine
-        else {
+        // Cacher la barre uniquement lors du scroll vers le haut
+        else if (currentScroll < this.lastScroll) {
             clearTimeout(this.scrollTimeout);
             this.scrollTimeout = setTimeout(() => {
                 this.showBar = false;
@@ -123,7 +124,7 @@ new class extends Component {
         this.lastScroll = currentScroll;
     }
 }" 
-@scroll.window="handleScroll()">
+@scroll.window.throttle.50ms="handleScroll()">
     <div class="w-full px-4 py-6 sm:px-6 lg:grid lg:grid-cols-2 lg:gap-x-10 lg:px-10 pb-24">
 
         <x-header title="{{ utf8_encode($this->product->title) ?? 'N/A' }}" subtitle="{{ utf8_encode($this->product->vendor) ?? 'N/A' }}" no-separator />
@@ -233,7 +234,7 @@ new class extends Component {
          x-transition:leave="transition ease-in duration-300"
          x-transition:leave-start="translate-y-0"
          x-transition:leave-end="translate-y-full"
-         class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
+         class="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-gray-200 shadow-lg z-50">
         <div class="px-4 py-4 sm:px-6 lg:px-10">
             <div class="flex items-center justify-between max-w-7xl mx-auto">
                 <!-- Product Image -->
