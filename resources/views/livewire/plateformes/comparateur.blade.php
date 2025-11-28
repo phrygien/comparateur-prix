@@ -27,7 +27,6 @@ new class extends Component {
 
     public function mount($name, $id, $price)
     {
-        dd($this->cleanPrice('79,99 €'));
         $this->getCompetitorPrice($name);
         $this->id = $id;
         $this->price = $this->cleanPrice($price);
@@ -150,6 +149,9 @@ new class extends Component {
         }
     }
 
+    /**
+     * Récupère les prix des concurrents
+     */
     public function getCompetitorPrice($search)
     {
         try {
@@ -187,6 +189,21 @@ new class extends Component {
             ]);
 
             $result = DB::connection('mysql')->select($sql, [$searchQuery]);
+
+            // NETTOYER LE PRIX_HT DÈS LA RÉCUPÉRATION
+            foreach ($result as $product) {
+                if (isset($product->prix_ht)) {
+                    $originalPrice = $product->prix_ht;
+                    $cleanedPrice = $this->cleanPrice($product->prix_ht);
+                    $product->prix_ht = $cleanedPrice;
+                    
+                    // Log pour vérifier le nettoyage
+                    \Log::info('Prix nettoyé:', [
+                        'original' => $originalPrice,
+                        'cleaned' => $cleanedPrice
+                    ]);
+                }
+            }
 
             \Log::info('Query result:', [
                 'count' => count($result)
