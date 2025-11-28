@@ -2,6 +2,7 @@
 
 use Livewire\Volt\Component;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 new class extends Component {
     public $products = [];
@@ -13,9 +14,11 @@ new class extends Component {
 
     public $id;
     public $mydata;
+    public $search; // Ajout de la propriété search
 
     public $similarityThreshold = 0.6;
     public $matchedProducts = [];
+    public $isLoading = false; // Indicateur de chargement
 
     // prix a comparer
     public $price;
@@ -27,6 +30,7 @@ new class extends Component {
 
     public function mount($name, $id, $price)
     {
+        $this->search = $name; // Stocker le terme de recherche
         $this->getCompetitorPrice($name);
         $this->id = $id;
         $this->price = $this->cleanPrice($price);
@@ -210,7 +214,7 @@ new class extends Component {
             ]);
 
             $this->matchedProducts = $this->calculateSimilarity($result, $search);
-            $this->products = $this->matchedProducts;
+            $this->products = $result; // Stocker tous les produits originaux
             $this->hasData = !empty($result);
 
             return [
@@ -867,12 +871,19 @@ new class extends Component {
     }
 
     /**
-     * Ajuste le seuil de similarité
+     * Ajuste le seuil de similarité et filtre les résultats
      */
     public function adjustSimilarityThreshold($threshold)
     {
+        $this->isLoading = true;
         $this->similarityThreshold = $threshold;
-        $this->getCompetitorPrice($this->search ?? '');
+        
+        // Filtrer les produits existants avec le nouveau seuil
+        if (!empty($this->products)) {
+            $this->matchedProducts = $this->calculateSimilarity($this->products, $this->search ?? '');
+        }
+        
+        $this->isLoading = false;
     }
 
     /**
@@ -907,10 +918,6 @@ new class extends Component {
 
     /**
      * Détermine le statut de compétitivité de notre prix
-     */
-
-    /**
-     * Détermine le statut de compétitivité de notre prix
      * LOGIQUE CORRIGÉE: difference = notre_prix - concurrent_prix
      * Si difference > 0 : nous sommes PLUS CHER
      * Si difference < 0 : nous sommes MOINS CHER
@@ -940,27 +947,6 @@ new class extends Component {
     /**
      * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
      */
-    // public function getPriceStatusLabel($competitorPrice)
-    // {
-    //     $status = $this->getPriceCompetitiveness($competitorPrice);
-
-    //     $labels = [
-    //         'very_competitive' => 'Nous sommes beaucoup - cher',
-    //         'competitive' => 'Nous sommes - cher', 
-    //         'same' => 'Prix identique',
-    //         'slightly_higher' => 'Nous sommes + cher',
-    //         'higher' => 'Nous sommes beaucoup + cher',
-    //         'unknown' => 'Non comparable'
-    //     ];
-
-    //     return $labels[$status] ?? $labels['unknown'];
-    // }
-    /**
-     * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
-     */
-    /**
-     * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
-     */
     public function getPriceStatusLabel($competitorPrice)
     {
         $status = $this->getPriceCompetitiveness($competitorPrice);
@@ -976,6 +962,7 @@ new class extends Component {
 
         return $labels[$status] ?? $labels['unknown'];
     }
+
     /**
      * Retourne la classe CSS pour le statut de prix
      */
@@ -1025,7 +1012,6 @@ new class extends Component {
         return (($cleanCosmashopPrice - $cleanCompetitorPrice) / $cleanCompetitorPrice) * 100;
     }
 
-
     /**
      * Détermine le statut de compétitivité de Cosmashop
      * LOGIQUE CORRIGÉE: difference = cosmashop_prix - concurrent_prix
@@ -1054,25 +1040,6 @@ new class extends Component {
         }
     }
 
-
-    /**
-     * Retourne le libellé pour le statut Cosmashop
-     */
-    // public function getCosmashopPriceStatusLabel($competitorPrice)
-    // {
-    //     $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
-
-    //     $labels = [
-    //         'very_competitive' => 'Cosmashop serait beaucoup - cher',
-    //         'competitive' => 'Cosmashop serait - cher',
-    //         'same' => 'Prix identique à Cosmashop', 
-    //         'slightly_higher' => 'Cosmashop serait + cher',
-    //         'higher' => 'Cosmashop serait beaucoup + cher',
-    //         'unknown' => 'Non comparable'
-    //     ];
-
-    //     return $labels[$status] ?? $labels['unknown'];
-    // }
     /**
      * Retourne le libellé pour le statut Cosmashop
      */
@@ -1091,6 +1058,7 @@ new class extends Component {
 
         return $labels[$status] ?? $labels['unknown'];
     }
+
     /**
      * Retourne la classe CSS pour le statut Cosmashop
      */
@@ -1179,55 +1147,54 @@ new class extends Component {
         ];
     }
 
-/**
- * Analyse globale pour Cosmashop
- */
-public function getCosmashopPriceAnalysis()
-{
-    $prices = [];
+    /**
+     * Analyse globale pour Cosmashop
+     */
+    public function getCosmashopPriceAnalysis()
+    {
+        $prices = [];
 
-    foreach ($this->matchedProducts as $product) {
-        $price = $product->price_ht ?? $product->prix_ht;
-        $cleanPrice = $this->cleanPrice($price);
-        
-        if ($cleanPrice !== null) {
-            $prices[] = $cleanPrice;
+        foreach ($this->matchedProducts as $product) {
+            $price = $product->price_ht ?? $product->prix_ht;
+            $cleanPrice = $this->cleanPrice($price);
+            
+            if ($cleanPrice !== null) {
+                $prices[] = $cleanPrice;
+            }
         }
-    }
 
-    if (empty($prices)) {
-        return null;
-    }
-
-    $minPrice = min($prices);
-    $maxPrice = max($prices);
-    $avgPrice = array_sum($prices) / count($prices);
-    $cosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
-
-    // Compter les concurrents en dessous/au-dessus de Cosmashop
-    $belowCosmashop = 0;
-    $aboveCosmashop = 0;
-
-    foreach ($prices as $price) {
-        if ($price < $cosmashopPrice) {
-            $belowCosmashop++;
-        } else {
-            $aboveCosmashop++;
+        if (empty($prices)) {
+            return null;
         }
+
+        $minPrice = min($prices);
+        $maxPrice = max($prices);
+        $avgPrice = array_sum($prices) / count($prices);
+        $cosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
+
+        // Compter les concurrents en dessous/au-dessus de Cosmashop
+        $belowCosmashop = 0;
+        $aboveCosmashop = 0;
+
+        foreach ($prices as $price) {
+            if ($price < $cosmashopPrice) {
+                $belowCosmashop++;
+            } else {
+                $aboveCosmashop++;
+            }
+        }
+
+        return [
+            'min' => $minPrice,
+            'max' => $maxPrice,
+            'average' => $avgPrice,
+            'cosmashop_price' => $cosmashopPrice,
+            'count' => count($prices),
+            'below_cosmashop' => $belowCosmashop,
+            'above_cosmashop' => $aboveCosmashop,
+            'cosmashop_position' => $cosmashopPrice <= $avgPrice ? 'competitive' : 'above_average'
+        ];
     }
-
-    return [
-        'min' => $minPrice,
-        'max' => $maxPrice,
-        'average' => $avgPrice,
-        'cosmashop_price' => $cosmashopPrice,
-        'count' => count($prices),
-        'below_cosmashop' => $belowCosmashop,
-        'above_cosmashop' => $aboveCosmashop,
-        'cosmashop_position' => $cosmashopPrice <= $avgPrice ? 'competitive' : 'above_average'
-    ];
-}
-
 }; ?>
 
 <div>
