@@ -253,67 +253,145 @@ new class extends Component {
     }
 
     /**
-     * Prépare les termes de recherche améliorés
+     * Prépare les termes de recherche améliorés avec morcelage optimisé
      */
     private function prepareEnhancedSearchTerms(string $search): string
     {
+        // Nettoyage moins agressif - garder les chiffres et tirets
         $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ0-9\s\-]/', ' ', $search);
         $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
         $searchClean = mb_strtolower($searchClean);
 
+        \Log::info('Search cleaning process:', [
+            'original' => $search,
+            'cleaned' => $searchClean
+        ]);
+
+        // Extraire les composants structurés
         $components = $this->extractSearchComponents($search);
         
         $booleanTerms = [];
         $significantWords = [];
 
+        \Log::info('Extracted components:', $components);
+
+        // 1. Traiter la marque (priorité haute)
         if (!empty($components['brand'])) {
-            $booleanTerms[] = '+' . $components['brand'] . '*';
-            $significantWords[] = $components['brand'];
-        }
-
-        if (!empty($components['product_name'])) {
-            $booleanTerms[] = '+' . $components['product_name'] . '*';
-            $significantWords[] = $components['product_name'];
-        }
-
-        if (!empty($components['product_type'])) {
-            $booleanTerms[] = '+' . $components['product_type'] . '*';
-            $significantWords[] = $components['product_type'];
-        }
-
-        if (!empty($components['variation'])) {
-            $variationWords = explode(' ', $components['variation']);
-            foreach ($variationWords as $word) {
-                if (strlen($word) > 2) {
-                    $booleanTerms[] = '+' . $word . '*';
-                    $significantWords[] = $word;
+            $brandWords = $this->splitIntoWords($components['brand']);
+            foreach ($brandWords as $brandWord) {
+                if (strlen($brandWord) > 1 && !$this->isStopWord($brandWord)) {
+                    $booleanTerms[] = '+' . $brandWord . '*';
+                    $significantWords[] = $brandWord;
                 }
             }
         }
 
-        $words = explode(' ', $searchClean);
+        // 2. Traiter le nom du produit (priorité haute)
+        if (!empty($components['product_name'])) {
+            $productNameWords = $this->splitIntoWords($components['product_name']);
+            foreach ($productNameWords as $productWord) {
+                if (strlen($productWord) > 1 && !$this->isStopWord($productWord)) {
+                    $booleanTerms[] = '+' . $productWord . '*';
+                    $significantWords[] = $productWord;
+                }
+            }
+        }
+
+        // 3. Traiter le type de produit (priorité moyenne)
+        if (!empty($components['product_type'])) {
+            $productTypeWords = $this->splitIntoWords($components['product_type']);
+            foreach ($productTypeWords as $typeWord) {
+                if (strlen($typeWord) > 2 && !$this->isStopWord($typeWord)) {
+                    $booleanTerms[] = '+' . $typeWord . '*';
+                    $significantWords[] = $typeWord;
+                }
+            }
+        }
+
+        // 4. Traiter la variation (priorité basse)
+        if (!empty($components['variation'])) {
+            $variationWords = $this->splitIntoWords($components['variation']);
+            foreach ($variationWords as $variationWord) {
+                if (strlen($variationWord) > 2 && !$this->isStopWord($variationWord)) {
+                    $booleanTerms[] = $variationWord . '*';
+                    $significantWords[] = $variationWord;
+                }
+            }
+        }
+
+        // 5. Ajouter les mots significatifs restants de la recherche complète
+        $allWords = $this->splitIntoWords($searchClean);
         $stopWords = $this->getStopWords();
 
-        foreach ($words as $word) {
+        foreach ($allWords as $word) {
             $word = trim($word);
-            if (strlen($word) > 2 && 
+            
+            // Éviter les doublons et les mots non significatifs
+            if (strlen($word) > 1 && 
                 !in_array($word, $stopWords) && 
                 !in_array($word, $significantWords) &&
-                !is_numeric($word)) {
+                !is_numeric($word) &&
+                !$this->isStopWord($word)) {
+                
                 $booleanTerms[] = $word . '*';
                 $significantWords[] = $word;
             }
 
-            if (count($booleanTerms) >= 10) {
+            // Limiter le nombre total de termes
+            if (count($booleanTerms) >= 8) {
                 break;
             }
         }
 
-        return implode(' ', $booleanTerms);
+        // 6. Ajouter le volume spécifiquement s'il existe
+        if (!empty($components['volume'])) {
+            $booleanTerms[] = '+' . $components['volume'] . '*';
+        }
+
+        $finalQuery = implode(' ', $booleanTerms);
+
+        \Log::info('Final search query construction:', [
+            'original_search' => $search,
+            'components' => $components,
+            'significant_words' => $significantWords,
+            'boolean_terms' => $booleanTerms,
+            'final_query' => $finalQuery
+        ]);
+
+        return $finalQuery;
     }
 
     /**
-     * Extrait les composants principaux de la recherche
+     * Divise une chaîne en mots significatifs
+     */
+    private function splitIntoWords(string $text): array
+    {
+        if (empty($text)) {
+            return [];
+        }
+
+        // Séparer par espaces et tirets
+        $words = preg_split('/[\s\-]+/', $text);
+        
+        // Filtrer les mots vides
+        $words = array_filter($words, function($word) {
+            return !empty(trim($word));
+        });
+
+        return array_values($words);
+    }
+
+    /**
+     * Vérifie si un mot est un stop word
+     */
+    private function isStopWord(string $word): bool
+    {
+        $stopWords = $this->getStopWords();
+        return in_array($word, $stopWords);
+    }
+
+    /**
+     * Amélioration de l'extraction des composants
      */
     private function extractSearchComponents(string $search): array
     {
@@ -325,49 +403,97 @@ new class extends Component {
             'volume' => ''
         ];
 
-        $pattern = '/^([^-]+)\s*-\s*([^-]+)\s*-\s*([^-]+)\s*-\s*(.+)$/i';
+        // Nettoyer la recherche pour l'analyse
+        $searchClean = preg_replace('/\s+/', ' ', trim($search));
         
-        if (preg_match($pattern, $search, $matches)) {
+        // Pattern pour le format: Marque - NomProduit - TypeProduit - Variation
+        $pattern1 = '/^([^-]+)\s*-\s*([^-]+)\s*-\s*([^-]+)\s*-\s*(.+)$/i';
+        
+        // Pattern pour: Marque - NomProduit - TypeProduit
+        $pattern2 = '/^([^-]+)\s*-\s*([^-]+)\s*-\s*(.+)$/i';
+        
+        // Pattern pour: Marque - NomProduit
+        $pattern3 = '/^([^-]+)\s*-\s*(.+)$/i';
+
+        if (preg_match($pattern1, $searchClean, $matches)) {
+            // Format complet: Marque - Nom - Type - Variation
             $components['brand'] = trim($matches[1]);
             $components['product_name'] = trim($matches[2]);
             $components['product_type'] = trim($matches[3]);
             $components['variation'] = trim($matches[4]);
+        } elseif (preg_match($pattern2, $searchClean, $matches)) {
+            // Format: Marque - Nom - Type
+            $components['brand'] = trim($matches[1]);
+            $components['product_name'] = trim($matches[2]);
+            
+            // Le reste peut contenir type + variation
+            $rest = trim($matches[3]);
+            $restParts = explode(' - ', $rest, 2);
+            $components['product_type'] = trim($restParts[0]);
+            if (isset($restParts[1])) {
+                $components['variation'] = trim($restParts[1]);
+            }
+        } elseif (preg_match($pattern3, $searchClean, $matches)) {
+            // Format: Marque - Nom
+            $components['brand'] = trim($matches[1]);
+            
+            // Le reste peut contenir nom + type + variation
+            $rest = trim($matches[2]);
+            $restParts = explode(' - ', $rest, 3);
+            
+            if (count($restParts) >= 1) {
+                $components['product_name'] = trim($restParts[0]);
+            }
+            if (count($restParts) >= 2) {
+                $components['product_type'] = trim($restParts[1]);
+            }
+            if (count($restParts) >= 3) {
+                $components['variation'] = trim($restParts[2]);
+            }
         } else {
-            $pattern2 = '/^([^-]+)\s*-\s*([^-]+)\s*-\s*(.+)$/i';
-            if (preg_match($pattern2, $search, $matches)) {
-                $components['brand'] = trim($matches[1]);
-                $components['product_name'] = trim($matches[2]);
-                $components['product_type'] = trim($matches[3]);
-            } else {
-                $pattern3 = '/^([^-]+)\s*-\s*(.+)$/i';
-                if (preg_match($pattern3, $search, $matches)) {
-                    $components['brand'] = trim($matches[1]);
-                    $components['product_name'] = trim($matches[2]);
-                } else {
-                    $words = explode(' ', $search);
-                    if (count($words) > 0) {
-                        $components['brand'] = trim($words[0]);
-                    }
+            // Format libre - prendre le premier mot comme marque potentielle
+            $words = explode(' ', $searchClean);
+            if (count($words) > 0) {
+                $components['brand'] = trim($words[0]);
+                // Le reste comme nom de produit
+                if (count($words) > 1) {
+                    $components['product_name'] = implode(' ', array_slice($words, 1));
                 }
             }
         }
 
+        // Extraire le volume
         if (preg_match('/(\d+)\s*ml/i', $search, $volumeMatches)) {
             $components['volume'] = $volumeMatches[1];
         }
 
+        // Nettoyer et normaliser
         foreach ($components as $key => $value) {
             if ($key !== 'volume') {
                 $components[$key] = mb_strtolower(trim($value));
             }
         }
 
-        \Log::info('Search components extracted:', [
-            'search' => $search,
-            'components' => $components
-        ]);
-
         return $components;
+    }
+
+    /**
+     * Liste étendue des mots à ignorer
+     */
+    private function getStopWords(): array
+    {
+        return [
+            // Français
+            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 
+            'avec', 'sans', 'dans', 'sur', 'par', 'au', 'aux', 'en', 'à',
+            
+            // Anglais
+            'the', 'a', 'an', 'and', 'or', 'for', 'with', 'without', 'in', 'on', 'by',
+            
+            // Termes produits
+            'eau', 'ml', 'edition', 'édition', 'coffret', 'parfum', 'vaporisateur',
+            'spray', 'flacon', 'bottle', 'perfume', 'toilette', 'edt', 'edp'
+        ];
     }
 
     /**
@@ -738,8 +864,8 @@ new class extends Component {
         }
 
         // Bonus pour mots individuels
-        $searchWords = explode(' ', $searchProductName);
-        $productWords = explode(' ', $productName);
+        $searchWords = $this->splitIntoWords($searchProductName);
+        $productWords = $this->splitIntoWords($productName);
         
         $wordMatches = 0;
         foreach ($searchWords as $searchWord) {
@@ -1013,12 +1139,9 @@ new class extends Component {
         $variationClean = trim(preg_replace('/\s+/', ' ', $variationClean));
         $variationClean = mb_strtolower($variationClean);
 
-        $words = explode(" ", $variationClean);
+        $words = $this->splitIntoWords($variationClean);
 
-        $stopWords = [
-            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou',
-            'pour', 'avec', 'the', 'a', 'an', 'and', 'or', 'ml', 'edition', 'édition'
-        ];
+        $stopWords = $this->getStopWords();
 
         foreach ($words as $word) {
             $word = trim($word);
@@ -1032,19 +1155,6 @@ new class extends Component {
             'variation' => $variation,
             'keywords' => $this->searchVariationKeywords
         ]);
-    }
-
-    /**
-     * Liste des mots à ignorer
-     */
-    private function getStopWords(): array
-    {
-        return [
-            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou',
-            'pour', 'avec', 'the', 'a', 'an', 'and', 'or', 'eau', 'ml',
-            'edition', 'édition', 'coffret', 'parfum', 'vaporisateur',
-            'spray', 'flacon', 'bottle'
-        ];
     }
 
     /**
@@ -1590,7 +1700,6 @@ new class extends Component {
         ];
     }
 }; ?>
-
 <div>
     <livewire:plateformes.detail :id="$id"/>
 
