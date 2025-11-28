@@ -1430,6 +1430,7 @@ public function getCosmashopPriceAnalysis()
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Variation</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Site Source</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prix HT</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date MAJ Prix</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vs Cosmaparfumerie</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vs Cosmashop</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
@@ -1586,6 +1587,11 @@ public function getCosmashopPriceAnalysis()
                                                                         {{-- {{ $this->formatPrice($product->price_ht ?? $product->prix_ht) }} --}}
                                                                         {{ $this->formatPrice($product->price_ht ?? $product->prix_ht) }}
                                                                     </div>
+                                                                </td>
+
+                                                                                                                                <!-- Colonne Prix HT -->
+                                                                <td class="px-6 py-4 whitespace-nowrap">
+                                                                    {{ \Carbon\Carbon::parse($product->updated_at)->locale('fr')->isoFormat('D MMMM YYYY') }}
                                                                 </td>
 
                                                                 <!-- Colonne Vs Cosmaparfumerie -->
