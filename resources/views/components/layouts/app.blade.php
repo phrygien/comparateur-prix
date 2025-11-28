@@ -29,7 +29,7 @@
     {{-- MAIN --}}
     <x-main full-width>
         {{-- SIDEBAR --}}
-        <x-slot:sidebar drawer="main-drawer" collapsible class="bg-base-100 lg:bg-inherit">
+        <x-slot:sidebar drawer="main-drawer" collapsible class="bg-base-100 lg:bg-inherit" collapse-text="Réduire">
 
             {{-- BRAND --}}
             {{-- <x-app-brand class="px-5 pt-4" /> --}}
