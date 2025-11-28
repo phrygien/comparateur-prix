@@ -32,7 +32,7 @@
         <x-slot:sidebar drawer="main-drawer" collapsible class="bg-base-100 lg:bg-inherit">
 
             {{-- BRAND --}}
-            <x-app-brand class="px-5 pt-4" />
+            {{-- <x-app-brand class="px-5 pt-4" /> --}}
 
             {{-- MENU --}}
             <x-menu activate-by-route>
