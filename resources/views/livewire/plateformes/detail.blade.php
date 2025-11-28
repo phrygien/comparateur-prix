@@ -197,12 +197,12 @@ new class extends Component {
         </div>
     </div>
 
-    <!-- Floating Product Name Bar with Enhanced Hover -->
-    <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50 transition-all duration-300 ease-in-out group hover:py-6">
-        <div class="px-4 py-3 sm:px-6 lg:px-10">
+    <!-- Floating Product Name Bar -->
+    <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
+        <div class="px-4 py-4 sm:px-6 lg:px-10">
             <div class="flex items-center justify-between max-w-7xl mx-auto">
-                <!-- Product Image (visible on hover) -->
-                <div class="flex-shrink-0 mr-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 w-0 group-hover:w-16 overflow-hidden">
+                <!-- Product Image -->
+                <div class="flex-shrink-0 mr-4">
                     @if($this->product->thumbnail)
                     <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $this->product->thumbnail) }}" 
                          alt="{{ utf8_encode($this->product->title) ?? 'Product' }}" 
@@ -219,30 +219,28 @@ new class extends Component {
                         {{ utf8_encode($this->product->vendor) ?? 'N/A' }}
                     </p>
                     
-                    <!-- Additional info visible on hover -->
-                    <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-300 max-h-0 group-hover:max-h-20 overflow-hidden">
-                        <div class="mt-2 space-y-1">
-                            @if($this->product->sku)
-                            <p class="text-xs text-gray-600">
-                                <span class="font-semibold">SKU:</span> {{ $this->product->sku }}
-                            </p>
-                            @endif
-                            @if($this->product->capacity)
-                            <p class="text-xs text-gray-600">
-                                <span class="font-semibold">Capacité:</span> {{ $this->product->capacity }} ml
-                            </p>
-                            @endif
-                        </div>
+                    <!-- Additional info always visible -->
+                    <div class="mt-1 space-y-0.5">
+                        @if($this->product->sku)
+                        <p class="text-xs text-gray-600">
+                            <span class="font-semibold">SKU:</span> {{ $this->product->sku }}
+                        </p>
+                        @endif
+                        @if($this->product->capacity)
+                        <p class="text-xs text-gray-600">
+                            <span class="font-semibold">Capacité:</span> {{ $this->product->capacity }} ml
+                        </p>
+                        @endif
                     </div>
                 </div>
 
                 <!-- Price -->
-                <div class="ml-4 flex-shrink-0">
+                <div class="ml-4 flex-shrink-0 text-right">
                     @if($this->product->special_price)
                         <p class="text-lg font-bold text-red-600">
                             {{ number_format($this->product->special_price, 2) }} €
                         </p>
-                        <p class="text-xs text-gray-500 line-through opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                        <p class="text-xs text-gray-500 line-through">
                             {{ number_format($this->product->price, 2) }} €
                         </p>
                     @else
