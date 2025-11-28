@@ -222,7 +222,7 @@ new class extends Component {
         </div>
     </div>
 
-    <!-- Floating Product Name Bar -->
+    <!-- Floating Product Name Bar avec plus de blur et dégradé violet -->
     <div x-show="showBar" 
          x-transition:enter="transition ease-out duration-300"
          x-transition:enter-start="translate-y-full"
@@ -230,15 +230,19 @@ new class extends Component {
          x-transition:leave="transition ease-in duration-300"
          x-transition:leave-start="translate-y-0"
          x-transition:leave-end="translate-y-full"
-         class="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-gray-200 shadow-lg z-50">
-        <div class="px-4 py-4 sm:px-6 lg:px-10">
+         class="fixed bottom-0 left-0 right-0 z-50">
+        <!-- Fond avec dégradé violet sur les côtés et blur renforcé -->
+        <div class="absolute inset-0 bg-gradient-to-r from-purple-500/20 via-white/80 to-purple-500/20 backdrop-blur-xl border-t border-purple-200/50 shadow-2xl"></div>
+        
+        <!-- Contenu de la barre -->
+        <div class="relative px-4 py-4 sm:px-6 lg:px-10">
             <div class="flex items-center justify-between max-w-7xl mx-auto">
                 <!-- Product Image -->
                 <div class="flex-shrink-0 mr-4">
                     @if($this->product->thumbnail)
                     <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $this->product->thumbnail) }}" 
                          alt="{{ utf8_encode($this->product->title) ?? 'Product' }}" 
-                         class="w-16 h-16 object-contain rounded-lg border border-gray-200" />
+                         class="w-16 h-16 object-contain rounded-lg border border-purple-200 shadow-sm" />
                     @endif
                 </div>
 
@@ -247,7 +251,7 @@ new class extends Component {
                     <p class="text-sm font-medium text-gray-900 truncate">
                         {{ utf8_encode($this->product->title) ?? 'N/A' }}
                     </p>
-                    <p class="text-xs text-gray-500 truncate">
+                    <p class="text-xs text-gray-600 truncate">
                         {{ utf8_encode($this->product->vendor) ?? 'N/A' }}
                     </p>
                     
@@ -269,14 +273,14 @@ new class extends Component {
                 <!-- Price -->
                 <div class="ml-4 flex-shrink-0 text-right">
                     @if($this->product->special_price)
-                        <p class="text-lg font-bold text-red-600">
+                        <p class="text-lg font-bold text-purple-700">
                             {{ number_format($this->product->special_price, 2) }} €
                         </p>
                         <p class="text-xs text-gray-500 line-through">
                             {{ number_format($this->product->price, 2) }} €
                         </p>
                     @else
-                        <p class="text-lg font-bold text-gray-900">
+                        <p class="text-lg font-bold text-purple-800">
                             {{ $this->product->price ? number_format($this->product->price, 2) . ' €' : 'N/A' }}
                         </p>
                     @endif
