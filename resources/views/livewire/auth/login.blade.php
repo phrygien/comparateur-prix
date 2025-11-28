@@ -42,7 +42,7 @@ new
 
         if (Auth::attempt(['email' => $this->email, 'password' => $this->password])) {
             session()->regenerate();
-            return redirect()->intended('/home');
+            return redirect()->intended('/boutique');
         }
 
         $this->error('Ces identifiants ne correspondent pas à nos enregistrements.');

@@ -51,7 +51,7 @@
                     <x-menu-separator />
                 @endif
 
-                <x-menu-item title="Accueil" icon="o-sparkles" link="/home" />
+                {{-- <x-menu-item title="Accueil" icon="o-sparkles" link="/home" /> --}}
 
                 <x-menu-item title="Boutiques" icon="o-building-storefront" link="/boutique" />
 
