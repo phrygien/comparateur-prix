@@ -1458,9 +1458,9 @@ public function getCosmashopPriceStatusLabel($competitorPrice)
                                                 <div class="text-sm font-medium text-gray-900">
                                                     {{ $this->extractDomain($product->product_url) }}
                                                 </div>
-                                                <div class="text-xs text-gray-500 truncate max-w-xs" title="{{ $product->product_url ?? 'N/A' }}">
+                                                {{-- <div class="text-xs text-gray-500 truncate max-w-xs" title="{{ $product->product_url ?? 'N/A' }}">
                                                     {{ Str::limit($product->product_url, 40) }}
-                                                </div>
+                                                </div> --}}
                                             </div>
                                         </div>
                                     </td>
