@@ -96,12 +96,12 @@ new class extends Component {
 }; ?>
 
 <div x-data="{ 
-    showBar: true, 
+    showBar: false, 
     lastScroll: 0,
     handleScroll() {
         let currentScroll = window.pageYOffset || document.documentElement.scrollTop;
         if (currentScroll <= 0) {
-            this.showBar = true;
+            this.showBar = false;
             return;
         }
         if (currentScroll > this.lastScroll) {
