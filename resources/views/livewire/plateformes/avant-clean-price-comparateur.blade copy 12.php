@@ -34,41 +34,6 @@ new class extends Component {
         $this->cosmashopPrice = $price * 1.05; // Prix majoré de 5% pour Cosmashop
     }
 
-
-    /**
-     * Nettoie et convertit un prix en nombre décimal
-     * Enlève tous les symboles de devise et caractères non numériques
-     */
-    private function cleanPrice($price)
-    {
-        // Si null ou vide, retourner null
-        if ($price === null || $price === '') {
-            return null;
-        }
-        
-        // Si déjà numérique, retourner tel quel
-        if (is_numeric($price)) {
-            return (float) $price;
-        }
-        
-        // Si string, nettoyer
-        if (is_string($price)) {
-            // Enlever symboles de devise et espaces (garder seulement chiffres, virgule, point, tiret)
-            $cleanPrice = preg_replace('/[^\d,.-]/', '', $price);
-            
-            // Remplacer virgule par point pour conversion
-            $cleanPrice = str_replace(',', '.', $cleanPrice);
-            
-            // Vérifier si numérique après nettoyage
-            if (is_numeric($cleanPrice)) {
-                return (float) $cleanPrice;
-            }
-        }
-        
-        return null;
-    }
-
-
     public function getOneProductDetails($entity_id)
     {
         try {
@@ -627,12 +592,9 @@ new class extends Component {
      */
     public function formatPrice($price)
     {
-        $cleanPrice = $this->cleanPrice($price);
-        
-        if ($cleanPrice !== null) {
-            return number_format($cleanPrice, 2, ',', ' ') . ' €';
+        if (is_numeric($price)) {
+            return number_format($price, 2, ',', ' ') . ' €';
         }
-        
         return 'N/A';
     }
 
@@ -862,14 +824,11 @@ new class extends Component {
      */
     public function calculatePriceDifference($competitorPrice)
     {
-        $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
-        $cleanReferencePrice = $this->cleanPrice($this->referencePrice);
-        
-        if ($cleanCompetitorPrice === null || $cleanReferencePrice === null) {
+        if (!is_numeric($competitorPrice) || !is_numeric($this->referencePrice) || $this->referencePrice == 0) {
             return null;
         }
 
-        return $cleanReferencePrice - $cleanCompetitorPrice;
+        return $this->referencePrice - $competitorPrice;
     }
 
     /**
@@ -877,14 +836,11 @@ new class extends Component {
      */
     public function calculatePriceDifferencePercentage($competitorPrice)
     {
-        $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
-        $cleanReferencePrice = $this->cleanPrice($this->referencePrice);
-        
-        if ($cleanCompetitorPrice === null || $cleanReferencePrice === null || $cleanCompetitorPrice == 0) {
+        if (!is_numeric($competitorPrice) || !is_numeric($this->referencePrice) || $this->referencePrice == 0) {
             return null;
         }
 
-        return (($cleanReferencePrice - $cleanCompetitorPrice) / $cleanCompetitorPrice) * 100;
+        return (($this->referencePrice - $competitorPrice) / $competitorPrice) * 100;
     }
 
     /**
@@ -982,14 +938,11 @@ new class extends Component {
      */
     public function calculateCosmashopPriceDifference($competitorPrice)
     {
-        $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
-        $cleanCosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
-        
-        if ($cleanCompetitorPrice === null || $cleanCosmashopPrice === null) {
+        if (!is_numeric($competitorPrice) || !is_numeric($this->cosmashopPrice) || $this->cosmashopPrice == 0) {
             return null;
         }
 
-        return $cleanCosmashopPrice - $cleanCompetitorPrice;
+        return $this->cosmashopPrice - $competitorPrice;
     }
 
     /**
@@ -997,16 +950,12 @@ new class extends Component {
      */
     public function calculateCosmashopPriceDifferencePercentage($competitorPrice)
     {
-        $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
-        $cleanCosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
-        
-        if ($cleanCompetitorPrice === null || $cleanCosmashopPrice === null || $cleanCompetitorPrice == 0) {
+        if (!is_numeric($competitorPrice) || !is_numeric($this->cosmashopPrice) || $this->cosmashopPrice == 0) {
             return null;
         }
 
-        return (($cleanCosmashopPrice - $cleanCompetitorPrice) / $cleanCompetitorPrice) * 100;
+        return (($this->cosmashopPrice - $competitorPrice) / $competitorPrice) * 100;
     }
-
 
     /**
      * Détermine le statut de compétitivité de Cosmashop
@@ -1135,10 +1084,8 @@ new class extends Component {
 
         foreach ($this->matchedProducts as $product) {
             $price = $product->price_ht ?? $product->prix_ht;
-            $cleanPrice = $this->cleanPrice($price);
-            
-            if ($cleanPrice !== null) {
-                $prices[] = $cleanPrice;
+            if (is_numeric($price)) {
+                $prices[] = $price;
             }
         }
 
@@ -1149,7 +1096,7 @@ new class extends Component {
         $minPrice = min($prices);
         $maxPrice = max($prices);
         $avgPrice = array_sum($prices) / count($prices);
-        $ourPrice = $this->cleanPrice($this->referencePrice);
+        $ourPrice = $this->referencePrice;
 
         return [
             'min' => $minPrice,
@@ -1161,54 +1108,52 @@ new class extends Component {
         ];
     }
 
-/**
- * Analyse globale pour Cosmashop
- */
-public function getCosmashopPriceAnalysis()
-{
-    $prices = [];
+    /**
+     * Analyse globale pour Cosmashop
+     */
+    public function getCosmashopPriceAnalysis()
+    {
+        $prices = [];
 
-    foreach ($this->matchedProducts as $product) {
-        $price = $product->price_ht ?? $product->prix_ht;
-        $cleanPrice = $this->cleanPrice($price);
-        
-        if ($cleanPrice !== null) {
-            $prices[] = $cleanPrice;
+        foreach ($this->matchedProducts as $product) {
+            $price = $product->price_ht ?? $product->prix_ht;
+            if (is_numeric($price)) {
+                $prices[] = $price;
+            }
         }
-    }
 
-    if (empty($prices)) {
-        return null;
-    }
-
-    $minPrice = min($prices);
-    $maxPrice = max($prices);
-    $avgPrice = array_sum($prices) / count($prices);
-    $cosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
-
-    // Compter les concurrents en dessous/au-dessus de Cosmashop
-    $belowCosmashop = 0;
-    $aboveCosmashop = 0;
-
-    foreach ($prices as $price) {
-        if ($price < $cosmashopPrice) {
-            $belowCosmashop++;
-        } else {
-            $aboveCosmashop++;
+        if (empty($prices)) {
+            return null;
         }
-    }
 
-    return [
-        'min' => $minPrice,
-        'max' => $maxPrice,
-        'average' => $avgPrice,
-        'cosmashop_price' => $cosmashopPrice,
-        'count' => count($prices),
-        'below_cosmashop' => $belowCosmashop,
-        'above_cosmashop' => $aboveCosmashop,
-        'cosmashop_position' => $cosmashopPrice <= $avgPrice ? 'competitive' : 'above_average'
-    ];
-}
+        $minPrice = min($prices);
+        $maxPrice = max($prices);
+        $avgPrice = array_sum($prices) / count($prices);
+        $cosmashopPrice = $this->cosmashopPrice;
+
+        // Compter les concurrents en dessous/au-dessus de Cosmashop
+        $belowCosmashop = 0;
+        $aboveCosmashop = 0;
+
+        foreach ($prices as $price) {
+            if ($price < $cosmashopPrice) {
+                $belowCosmashop++;
+            } else {
+                $aboveCosmashop++;
+            }
+        }
+
+        return [
+            'min' => $minPrice,
+            'max' => $maxPrice,
+            'average' => $avgPrice,
+            'cosmashop_price' => $cosmashopPrice,
+            'count' => count($prices),
+            'below_cosmashop' => $belowCosmashop,
+            'above_cosmashop' => $aboveCosmashop,
+            'cosmashop_position' => $cosmashopPrice <= $avgPrice ? 'competitive' : 'above_average'
+        ];
+    }
 
 }; ?>
 
