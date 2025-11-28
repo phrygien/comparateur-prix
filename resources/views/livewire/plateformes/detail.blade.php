@@ -95,140 +95,140 @@ new class extends Component {
 
 }; ?>
 
-<div class="w-full px-4 py-6 sm:px-6 lg:grid lg:grid-cols-2 lg:gap-x-10 lg:px-10 pb-24">
+<div>
+    <div class="w-full px-4 py-6 sm:px-6 lg:grid lg:grid-cols-2 lg:gap-x-10 lg:px-10 pb-24">
 
+        <x-header title="{{ utf8_encode($this->product->title) ?? 'N/A' }}" subtitle="{{ utf8_encode($this->product->vendor) ?? 'N/A' }}" no-separator />
 
-<x-header title="{{ utf8_encode($this->product->title) ?? 'N/A' }}" subtitle="{{ utf8_encode($this->product->vendor) ?? 'N/A' }}" no-separator />
-
-
-<!-- Product image - Left column -->
-    <div class="lg:col-start-1 flex items-start justify-center">
-        <div class="hover-3d">
-            <!-- content -->
-            <figure class="w-80 rounded-2xl">
-                <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $this->product->thumbnail) }}" 
-                     alt="{{ utf8_encode($this->product->title) ?? 'Product image' }}" 
-                     class="w-full object-contain max-h-96" />
-            </figure>
-        </div>
-    </div>
-
-    <!-- Product details - Right column -->
-    <div class="lg:col-start-2 mt-6 lg:mt-0">
-        <!-- Vendor -->
-        {{-- <p class="text-sm text-gray-600 mb-2">
-            {{ utf8_encode($this->product->vendor) ?? 'N/A' }}
-        </p>
-
-        <!-- Product Name -->
-        <h1 class="text-3xl font-bold text-gray-900 mb-4">
-            {{ utf8_encode($this->product->title) ?? 'N/A' }}
-        </h1> --}}
-
-        <!-- Price -->
-        <div class="mb-6">
-            @if($this->product->special_price)
-                <p class="text-2xl font-bold text-red-600">
-                    Prix :{{ number_format($this->product->special_price, 2) }} €
-                </p>
-                <p class="text-lg text-gray-500 line-through">
-                    {{ number_format($this->product->price, 2) }} €
-                </p>
-            @else
-                <p class="text-2xl font-bold text-gray-900">
-                    {{ $this->product->price ? number_format($this->product->price, 2) . ' €' : 'N/A' }}
-                </p>
-            @endif
+        <!-- Product image - Left column -->
+        <div class="lg:col-start-1 flex items-start justify-center">
+            <div class="hover-3d">
+                <!-- content -->
+                <figure class="w-80 rounded-2xl">
+                    <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $this->product->thumbnail) }}" 
+                         alt="{{ utf8_encode($this->product->title) ?? 'Product image' }}" 
+                         class="w-full object-contain max-h-96" />
+                </figure>
+            </div>
         </div>
 
-        <!-- Price Details - Collapsible -->
-        <details class="mb-6 border border-gray-200 rounded-lg bg-white" open>
-            <summary class="cursor-pointer p-4 font-semibold text-gray-900 hover:bg-gray-50 transition-colors rounded-lg flex items-center justify-between">
-                <span>Détails des prix</span>
-                <svg class="w-5 h-5 text-gray-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                </svg>
-            </summary>
-            <div class="px-4 pb-4 space-y-3 text-sm border-t border-gray-100 pt-3">
-                @if($this->product->price)
-                <div class="flex justify-between">
-                    <span class="text-gray-600">Prix de vente</span>
-                    <span class="font-semibold text-gray-900">{{ number_format($this->product->price, 2) }} €</span>
-                </div>
-                @endif
-                @if($this->product->special_price)
-                <div class="flex justify-between">
-                    <span class="text-gray-600">Prix promotionnel</span>
-                    <span class="font-semibold text-red-600">{{ number_format($this->product->special_price, 2) }} €</span>
-                </div>
-                @endif
-                @if($this->product->prix_achat_ht)
-                <div class="flex justify-between">
-                    <span class="text-gray-600">Coût d'achat HT</span>
-                    <span class="font-semibold text-blue-600">{{ number_format($this->product->prix_achat_ht, 2) }} €</span>
-                </div>
-                @endif
-                @if($this->product->pvc)
-                <div class="flex justify-between">
-                    <span class="text-gray-600">Prix PVC</span>
-                    <span class="font-semibold text-purple-600">{{ number_format($this->product->pvc, 2) }} €</span>
-                </div>
-                @endif
-                @if($this->product->prix_us)
-                <div class="flex justify-between">
-                    <span class="text-gray-600">Prix US</span>
-                    <span class="font-semibold text-orange-600">${{ number_format($this->product->prix_us, 2) }}</span>
-                </div>
-                @endif
-            </div>
-        </details>
-
-        <!-- Description - Collapsible -->
-        @if($this->product->description || $this->product->short_description)
-        <details class="border border-gray-200 rounded-lg bg-white">
-            <summary class="cursor-pointer p-4 font-semibold text-gray-900 hover:bg-gray-50 transition-colors rounded-lg flex items-center justify-between">
-                <span>Description</span>
-                <svg class="w-5 h-5 text-gray-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                </svg>
-            </summary>
-            <div class="px-4 pb-4 border-t border-gray-100 pt-3">
-                @if($this->product->description)
-                <p class="text-gray-700 leading-relaxed">
-                    {{ strip_tags(utf8_encode($this->product->description)) }}
-                </p>
-                @elseif($this->product->short_description)
-                <p class="text-gray-700 leading-relaxed">
-                    {{ strip_tags(utf8_encode($this->product->short_description)) }}
-                </p>
-                @endif
-            </div>
-        </details>
-        @endif
-    </div>
-</div>
-
-<!-- Floating Product Name Bar -->
-<div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50 px-4 py-3 sm:px-6 lg:px-10">
-    <div class="flex items-center justify-between max-w-7xl mx-auto">
-        <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-gray-900 truncate">
-                {{ utf8_encode($this->product->title) ?? 'N/A' }}
-            </p>
-            <p class="text-xs text-gray-500 truncate">
+        <!-- Product details - Right column -->
+        <div class="lg:col-start-2 mt-6 lg:mt-0">
+            <!-- Vendor -->
+            {{-- <p class="text-sm text-gray-600 mb-2">
                 {{ utf8_encode($this->product->vendor) ?? 'N/A' }}
             </p>
-        </div>
-        <div class="ml-4 flex-shrink-0">
-            @if($this->product->special_price)
-                <p class="text-lg font-bold text-red-600">
-                    {{ number_format($this->product->special_price, 2) }} €
-                </p>
-            @else
-                <p class="text-lg font-bold text-gray-900">
-                    {{ $this->product->price ? number_format($this->product->price, 2) . ' €' : 'N/A' }}
-                </p>
+
+            <!-- Product Name -->
+            <h1 class="text-3xl font-bold text-gray-900 mb-4">
+                {{ utf8_encode($this->product->title) ?? 'N/A' }}
+            </h1> --}}
+
+            <!-- Price -->
+            <div class="mb-6">
+                @if($this->product->special_price)
+                    <p class="text-2xl font-bold text-red-600">
+                        Prix :{{ number_format($this->product->special_price, 2) }} €
+                    </p>
+                    <p class="text-lg text-gray-500 line-through">
+                        {{ number_format($this->product->price, 2) }} €
+                    </p>
+                @else
+                    <p class="text-2xl font-bold text-gray-900">
+                        {{ $this->product->price ? number_format($this->product->price, 2) . ' €' : 'N/A' }}
+                    </p>
+                @endif
+            </div>
+
+            <!-- Price Details - Collapsible -->
+            <details class="mb-6 border border-gray-200 rounded-lg bg-white" open>
+                <summary class="cursor-pointer p-4 font-semibold text-gray-900 hover:bg-gray-50 transition-colors rounded-lg flex items-center justify-between">
+                    <span>Détails des prix</span>
+                    <svg class="w-5 h-5 text-gray-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </summary>
+                <div class="px-4 pb-4 space-y-3 text-sm border-t border-gray-100 pt-3">
+                    @if($this->product->price)
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Prix de vente</span>
+                        <span class="font-semibold text-gray-900">{{ number_format($this->product->price, 2) }} €</span>
+                    </div>
+                    @endif
+                    @if($this->product->special_price)
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Prix promotionnel</span>
+                        <span class="font-semibold text-red-600">{{ number_format($this->product->special_price, 2) }} €</span>
+                    </div>
+                    @endif
+                    @if($this->product->prix_achat_ht)
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Coût d'achat HT</span>
+                        <span class="font-semibold text-blue-600">{{ number_format($this->product->prix_achat_ht, 2) }} €</span>
+                    </div>
+                    @endif
+                    @if($this->product->pvc)
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Prix PVC</span>
+                        <span class="font-semibold text-purple-600">{{ number_format($this->product->pvc, 2) }} €</span>
+                    </div>
+                    @endif
+                    @if($this->product->prix_us)
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Prix US</span>
+                        <span class="font-semibold text-orange-600">${{ number_format($this->product->prix_us, 2) }}</span>
+                    </div>
+                    @endif
+                </div>
+            </details>
+
+            <!-- Description - Collapsible -->
+            @if($this->product->description || $this->product->short_description)
+            <details class="border border-gray-200 rounded-lg bg-white">
+                <summary class="cursor-pointer p-4 font-semibold text-gray-900 hover:bg-gray-50 transition-colors rounded-lg flex items-center justify-between">
+                    <span>Description</span>
+                    <svg class="w-5 h-5 text-gray-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </summary>
+                <div class="px-4 pb-4 border-t border-gray-100 pt-3">
+                    @if($this->product->description)
+                    <p class="text-gray-700 leading-relaxed">
+                        {{ strip_tags(utf8_encode($this->product->description)) }}
+                    </p>
+                    @elseif($this->product->short_description)
+                    <p class="text-gray-700 leading-relaxed">
+                        {{ strip_tags(utf8_encode($this->product->short_description)) }}
+                    </p>
+                    @endif
+                </div>
+            </details>
             @endif
+        </div>
+    </div>
+
+    <!-- Floating Product Name Bar -->
+    <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50 px-4 py-3 sm:px-6 lg:px-10">
+        <div class="flex items-center justify-between max-w-7xl mx-auto">
+            <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-gray-900 truncate">
+                    {{ utf8_encode($this->product->title) ?? 'N/A' }}
+                </p>
+                <p class="text-xs text-gray-500 truncate">
+                    {{ utf8_encode($this->product->vendor) ?? 'N/A' }}
+                </p>
+            </div>
+            <div class="ml-4 flex-shrink-0">
+                @if($this->product->special_price)
+                    <p class="text-lg font-bold text-red-600">
+                        {{ number_format($this->product->special_price, 2) }} €
+                    </p>
+                @else
+                    <p class="text-lg font-bold text-gray-900">
+                        {{ $this->product->price ? number_format($this->product->price, 2) . ' €' : 'N/A' }}
+                    </p>
+                @endif
+            </div>
         </div>
     </div>
 </div>
