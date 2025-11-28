@@ -95,7 +95,24 @@ new class extends Component {
 
 }; ?>
 
-<div>
+<div x-data="{ 
+    showBar: true, 
+    lastScroll: 0,
+    handleScroll() {
+        let currentScroll = window.pageYOffset || document.documentElement.scrollTop;
+        if (currentScroll <= 0) {
+            this.showBar = true;
+            return;
+        }
+        if (currentScroll > this.lastScroll) {
+            this.showBar = true;
+        } else {
+            this.showBar = false;
+        }
+        this.lastScroll = currentScroll;
+    }
+}" 
+@scroll.window="handleScroll()">
     <div class="w-full px-4 py-6 sm:px-6 lg:grid lg:grid-cols-2 lg:gap-x-10 lg:px-10 pb-24">
 
         <x-header title="{{ utf8_encode($this->product->title) ?? 'N/A' }}" subtitle="{{ utf8_encode($this->product->vendor) ?? 'N/A' }}" no-separator />
@@ -198,7 +215,14 @@ new class extends Component {
     </div>
 
     <!-- Floating Product Name Bar -->
-    <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
+    <div x-show="showBar" 
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="translate-y-full"
+         x-transition:enter-end="translate-y-0"
+         x-transition:leave="transition ease-in duration-300"
+         x-transition:leave-start="translate-y-0"
+         x-transition:leave-end="translate-y-full"
+         class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
         <div class="px-4 py-4 sm:px-6 lg:px-10">
             <div class="flex items-center justify-between max-w-7xl mx-auto">
                 <!-- Product Image -->
