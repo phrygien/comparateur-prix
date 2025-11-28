@@ -34,6 +34,34 @@ new class extends Component {
         $this->cosmashopPrice = $price * 1.05; // Prix majoré de 5% pour Cosmashop
     }
 
+    /**
+     * Nettoie et convertit un prix en nombre décimal
+     * Enlève tous les symboles de devise et caractères non numériques
+     */
+    private function cleanPrice($price)
+    {
+        // Si déjà numérique, retourner tel quel
+        if (is_numeric($price)) {
+            return (float) $price;
+        }
+        
+        // Si string, nettoyer
+        if (is_string($price)) {
+            // Enlever symboles de devise et espaces
+            $cleanPrice = preg_replace('/[^\d,.-]/', '', $price);
+            
+            // Remplacer virgule par point
+            $cleanPrice = str_replace(',', '.', $cleanPrice);
+            
+            // Vérifier si numérique après nettoyage
+            if (is_numeric($cleanPrice)) {
+                return (float) $cleanPrice;
+            }
+        }
+        
+        return null;
+    }
+
     public function getOneProductDetails($entity_id)
     {
         try {
@@ -597,32 +625,19 @@ new class extends Component {
     //     }
     //     return 'N/A';
     // }
-/**
- * Formate le prix pour l'affichage
- */
-public function formatPrice($price)
-{
-    // Si le prix est déjà numérique, on le formate directement
-    if (is_numeric($price)) {
-        return number_format($price, 2, ',', ' ') . ' €';
-    }
-    
-    // Si le prix contient des caractères non numériques, on les enlève
-    if (is_string($price)) {
-        // Enlever les symboles de devise courants et les espaces
-        $cleanPrice = preg_replace('/[^\d,.-]/', '', $price);
+    /**
+     * Formate le prix pour l'affichage
+     */
+    public function formatPrice($price)
+    {
+        $cleanPrice = $this->cleanPrice($price);
         
-        // Remplacer la virgule par un point pour la conversion
-        $cleanPrice = str_replace(',', '.', $cleanPrice);
-        
-        // Vérifier si le résultat est numérique
-        if (is_numeric($cleanPrice)) {
-            return number_format((float)$cleanPrice, 2, ',', ' ') . ' €';
+        if ($cleanPrice !== null) {
+            return number_format($cleanPrice, 2, ',', ' ') . ' €';
         }
+        
+        return 'N/A';
     }
-    
-    return 'N/A';
-}
 
     /**
      * Extrait le domaine d'une URL
@@ -848,27 +863,54 @@ public function formatPrice($price)
     /**
      * Calcule la différence de prix par rapport au prix du concurrent
      */
-    public function calculatePriceDifference($competitorPrice)
-    {
-        if (!is_numeric($competitorPrice) || !is_numeric($this->referencePrice) || $this->referencePrice == 0) {
-            return null;
-        }
+    // public function calculatePriceDifference($competitorPrice)
+    // {
+    //     if (!is_numeric($competitorPrice) || !is_numeric($this->referencePrice) || $this->referencePrice == 0) {
+    //         return null;
+    //     }
 
-        return $this->referencePrice - $competitorPrice;
+    //     return $this->referencePrice - $competitorPrice;
+    // }
+/**
+ * Calcule la différence de prix par rapport au prix du concurrent
+ */
+public function calculatePriceDifference($competitorPrice)
+{
+    $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
+    $cleanReferencePrice = $this->cleanPrice($this->referencePrice);
+    
+    if ($cleanCompetitorPrice === null || $cleanReferencePrice === null || $cleanReferencePrice == 0) {
+        return null;
     }
+
+    return $cleanReferencePrice - $cleanCompetitorPrice;
+}
 
     /**
      * Calcule le pourcentage de différence par rapport au concurrent
      */
-    public function calculatePriceDifferencePercentage($competitorPrice)
-    {
-        if (!is_numeric($competitorPrice) || !is_numeric($this->referencePrice) || $this->referencePrice == 0) {
-            return null;
-        }
+    // public function calculatePriceDifferencePercentage($competitorPrice)
+    // {
+    //     if (!is_numeric($competitorPrice) || !is_numeric($this->referencePrice) || $this->referencePrice == 0) {
+    //         return null;
+    //     }
 
-        return (($this->referencePrice - $competitorPrice) / $competitorPrice) * 100;
+    //     return (($this->referencePrice - $competitorPrice) / $competitorPrice) * 100;
+    // }
+/**
+ * Calcule le pourcentage de différence par rapport au concurrent
+ */
+public function calculatePriceDifferencePercentage($competitorPrice)
+{
+    $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
+    $cleanReferencePrice = $this->cleanPrice($this->referencePrice);
+    
+    if ($cleanCompetitorPrice === null || $cleanReferencePrice === null || $cleanCompetitorPrice == 0) {
+        return null;
     }
 
+    return (($cleanReferencePrice - $cleanCompetitorPrice) / $cleanCompetitorPrice) * 100;
+}
     /**
      * Détermine le statut de compétitivité de notre prix
      */
@@ -962,27 +1004,54 @@ public function formatPrice($price)
     /**
      * Calcule la différence de prix Cosmashop par rapport au concurrent
      */
-    public function calculateCosmashopPriceDifference($competitorPrice)
-    {
-        if (!is_numeric($competitorPrice) || !is_numeric($this->cosmashopPrice) || $this->cosmashopPrice == 0) {
-            return null;
-        }
+    // public function calculateCosmashopPriceDifference($competitorPrice)
+    // {
+    //     if (!is_numeric($competitorPrice) || !is_numeric($this->cosmashopPrice) || $this->cosmashopPrice == 0) {
+    //         return null;
+    //     }
 
-        return $this->cosmashopPrice - $competitorPrice;
+    //     return $this->cosmashopPrice - $competitorPrice;
+    // }
+/**
+ * Calcule la différence de prix Cosmashop par rapport au concurrent
+ */
+public function calculateCosmashopPriceDifference($competitorPrice)
+{
+    $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
+    $cleanCosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
+    
+    if ($cleanCompetitorPrice === null || $cleanCosmashopPrice === null || $cleanCosmashopPrice == 0) {
+        return null;
     }
+
+    return $cleanCosmashopPrice - $cleanCompetitorPrice;
+}
 
     /**
      * Calcule le pourcentage de différence Cosmashop par rapport au concurrent
      */
-    public function calculateCosmashopPriceDifferencePercentage($competitorPrice)
-    {
-        if (!is_numeric($competitorPrice) || !is_numeric($this->cosmashopPrice) || $this->cosmashopPrice == 0) {
-            return null;
-        }
+    // public function calculateCosmashopPriceDifferencePercentage($competitorPrice)
+    // {
+    //     if (!is_numeric($competitorPrice) || !is_numeric($this->cosmashopPrice) || $this->cosmashopPrice == 0) {
+    //         return null;
+    //     }
 
-        return (($this->cosmashopPrice - $competitorPrice) / $competitorPrice) * 100;
+    //     return (($this->cosmashopPrice - $competitorPrice) / $competitorPrice) * 100;
+    // }
+/**
+ * Calcule le pourcentage de différence Cosmashop par rapport au concurrent
+ */
+public function calculateCosmashopPriceDifferencePercentage($competitorPrice)
+{
+    $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
+    $cleanCosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
+    
+    if ($cleanCompetitorPrice === null || $cleanCosmashopPrice === null || $cleanCompetitorPrice == 0) {
+        return null;
     }
 
+    return (($cleanCosmashopPrice - $cleanCompetitorPrice) / $cleanCompetitorPrice) * 100;
+}
     /**
      * Détermine le statut de compétitivité de Cosmashop
      * LOGIQUE CORRIGÉE: difference = cosmashop_prix - concurrent_prix
@@ -1104,83 +1173,164 @@ public function formatPrice($price)
     /**
      * Analyse globale des prix des concurrents
      */
-    public function getPriceAnalysis()
-    {
-        $prices = [];
+    // public function getPriceAnalysis()
+    // {
+    //     $prices = [];
 
-        foreach ($this->matchedProducts as $product) {
-            $price = $product->price_ht ?? $product->prix_ht;
-            if (is_numeric($price)) {
-                $prices[] = $price;
-            }
+    //     foreach ($this->matchedProducts as $product) {
+    //         $price = $product->price_ht ?? $product->prix_ht;
+    //         if (is_numeric($price)) {
+    //             $prices[] = $price;
+    //         }
+    //     }
+
+    //     if (empty($prices)) {
+    //         return null;
+    //     }
+
+    //     $minPrice = min($prices);
+    //     $maxPrice = max($prices);
+    //     $avgPrice = array_sum($prices) / count($prices);
+    //     $ourPrice = $this->referencePrice;
+
+    //     return [
+    //         'min' => $minPrice,
+    //         'max' => $maxPrice,
+    //         'average' => $avgPrice,
+    //         'our_price' => $ourPrice,
+    //         'count' => count($prices),
+    //         'our_position' => $ourPrice <= $avgPrice ? 'competitive' : 'above_average'
+    //     ];
+    // }
+/**
+ * Analyse globale des prix des concurrents
+ */
+public function getPriceAnalysis()
+{
+    $prices = [];
+
+    foreach ($this->matchedProducts as $product) {
+        $price = $product->price_ht ?? $product->prix_ht;
+        $cleanPrice = $this->cleanPrice($price);
+        
+        if ($cleanPrice !== null) {
+            $prices[] = $cleanPrice;
         }
-
-        if (empty($prices)) {
-            return null;
-        }
-
-        $minPrice = min($prices);
-        $maxPrice = max($prices);
-        $avgPrice = array_sum($prices) / count($prices);
-        $ourPrice = $this->referencePrice;
-
-        return [
-            'min' => $minPrice,
-            'max' => $maxPrice,
-            'average' => $avgPrice,
-            'our_price' => $ourPrice,
-            'count' => count($prices),
-            'our_position' => $ourPrice <= $avgPrice ? 'competitive' : 'above_average'
-        ];
     }
+
+    if (empty($prices)) {
+        return null;
+    }
+
+    $minPrice = min($prices);
+    $maxPrice = max($prices);
+    $avgPrice = array_sum($prices) / count($prices);
+    $ourPrice = $this->cleanPrice($this->referencePrice);
+
+    return [
+        'min' => $minPrice,
+        'max' => $maxPrice,
+        'average' => $avgPrice,
+        'our_price' => $ourPrice,
+        'count' => count($prices),
+        'our_position' => $ourPrice <= $avgPrice ? 'competitive' : 'above_average'
+    ];
+}
 
     /**
      * Analyse globale pour Cosmashop
      */
-    public function getCosmashopPriceAnalysis()
-    {
-        $prices = [];
+    // public function getCosmashopPriceAnalysis()
+    // {
+    //     $prices = [];
 
-        foreach ($this->matchedProducts as $product) {
-            $price = $product->price_ht ?? $product->prix_ht;
-            if (is_numeric($price)) {
-                $prices[] = $price;
-            }
+    //     foreach ($this->matchedProducts as $product) {
+    //         $price = $product->price_ht ?? $product->prix_ht;
+    //         if (is_numeric($price)) {
+    //             $prices[] = $price;
+    //         }
+    //     }
+
+    //     if (empty($prices)) {
+    //         return null;
+    //     }
+
+    //     $minPrice = min($prices);
+    //     $maxPrice = max($prices);
+    //     $avgPrice = array_sum($prices) / count($prices);
+    //     $cosmashopPrice = $this->cosmashopPrice;
+
+    //     // Compter les concurrents en dessous/au-dessus de Cosmashop
+    //     $belowCosmashop = 0;
+    //     $aboveCosmashop = 0;
+
+    //     foreach ($prices as $price) {
+    //         if ($price < $cosmashopPrice) {
+    //             $belowCosmashop++;
+    //         } else {
+    //             $aboveCosmashop++;
+    //         }
+    //     }
+
+    //     return [
+    //         'min' => $minPrice,
+    //         'max' => $maxPrice,
+    //         'average' => $avgPrice,
+    //         'cosmashop_price' => $cosmashopPrice,
+    //         'count' => count($prices),
+    //         'below_cosmashop' => $belowCosmashop,
+    //         'above_cosmashop' => $aboveCosmashop,
+    //         'cosmashop_position' => $cosmashopPrice <= $avgPrice ? 'competitive' : 'above_average'
+    //     ];
+    // }
+/**
+ * Analyse globale pour Cosmashop
+ */
+public function getCosmashopPriceAnalysis()
+{
+    $prices = [];
+
+    foreach ($this->matchedProducts as $product) {
+        $price = $product->price_ht ?? $product->prix_ht;
+        $cleanPrice = $this->cleanPrice($price);
+        
+        if ($cleanPrice !== null) {
+            $prices[] = $cleanPrice;
         }
-
-        if (empty($prices)) {
-            return null;
-        }
-
-        $minPrice = min($prices);
-        $maxPrice = max($prices);
-        $avgPrice = array_sum($prices) / count($prices);
-        $cosmashopPrice = $this->cosmashopPrice;
-
-        // Compter les concurrents en dessous/au-dessus de Cosmashop
-        $belowCosmashop = 0;
-        $aboveCosmashop = 0;
-
-        foreach ($prices as $price) {
-            if ($price < $cosmashopPrice) {
-                $belowCosmashop++;
-            } else {
-                $aboveCosmashop++;
-            }
-        }
-
-        return [
-            'min' => $minPrice,
-            'max' => $maxPrice,
-            'average' => $avgPrice,
-            'cosmashop_price' => $cosmashopPrice,
-            'count' => count($prices),
-            'below_cosmashop' => $belowCosmashop,
-            'above_cosmashop' => $aboveCosmashop,
-            'cosmashop_position' => $cosmashopPrice <= $avgPrice ? 'competitive' : 'above_average'
-        ];
     }
 
+    if (empty($prices)) {
+        return null;
+    }
+
+    $minPrice = min($prices);
+    $maxPrice = max($prices);
+    $avgPrice = array_sum($prices) / count($prices);
+    $cosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
+
+    // Compter les concurrents en dessous/au-dessus de Cosmashop
+    $belowCosmashop = 0;
+    $aboveCosmashop = 0;
+
+    foreach ($prices as $price) {
+        if ($price < $cosmashopPrice) {
+            $belowCosmashop++;
+        } else {
+            $aboveCosmashop++;
+        }
+    }
+
+    return [
+        'min' => $minPrice,
+        'max' => $maxPrice,
+        'average' => $avgPrice,
+        'cosmashop_price' => $cosmashopPrice,
+        'count' => count($prices),
+        'below_cosmashop' => $belowCosmashop,
+        'above_cosmashop' => $aboveCosmashop,
+        'cosmashop_position' => $cosmashopPrice <= $avgPrice ? 'competitive' : 'above_average'
+    ];
+}
 }; ?>
 
 <div>
