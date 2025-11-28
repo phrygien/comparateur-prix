@@ -261,11 +261,11 @@ new class extends Component {
                             <span class="font-semibold">SKU:</span> {{ $this->product->sku }}
                         </p>
                         @endif
-                        @if($this->product->capacity)
+                        {{-- @if($this->product->capacity)
                         <p class="text-xs text-gray-600">
                             <span class="font-semibold">Capacité:</span> {{ $this->product->capacity }} ml
                         </p>
-                        @endif
+                        @endif --}}
                     </div>
                 </div>
 
