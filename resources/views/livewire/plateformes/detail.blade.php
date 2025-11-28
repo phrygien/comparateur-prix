@@ -101,20 +101,15 @@ new class extends Component {
     scrollTimeout: null,
     handleScroll() {
         let currentScroll = window.pageYOffset || document.documentElement.scrollTop;
+        const scrollThreshold = 100; // Seuil en pixels depuis le haut
         
-        // Masquer la barre quand on arrive tout en haut de la page
-        if (currentScroll <= 0) {
-            this.showBar = false;
-            return;
-        }
-        
-        // Afficher la barre lors du scroll vers le bas
-        if (currentScroll > this.lastScroll) {
+        // Toujours afficher la barre si on est assez bas dans la page
+        if (currentScroll > scrollThreshold) {
             this.showBar = true;
             clearTimeout(this.scrollTimeout);
-        } 
-        // Cacher la barre uniquement lors du scroll vers le haut
-        else if (currentScroll < this.lastScroll) {
+        }
+        // Cacher seulement quand on arrive tout en haut
+        else if (currentScroll <= scrollThreshold) {
             clearTimeout(this.scrollTimeout);
             this.scrollTimeout = setTimeout(() => {
                 this.showBar = false;
@@ -125,6 +120,7 @@ new class extends Component {
     }
 }" 
 @scroll.window.throttle.50ms="handleScroll()">
+    <!-- Le reste de votre contenu reste identique -->
     <div class="w-full px-4 py-6 sm:px-6 lg:grid lg:grid-cols-2 lg:gap-x-10 lg:px-10 pb-24">
 
         <x-header title="{{ utf8_encode($this->product->title) ?? 'N/A' }}" subtitle="{{ utf8_encode($this->product->vendor) ?? 'N/A' }}" no-separator />
