@@ -590,13 +590,39 @@ new class extends Component {
     /**
      * Formate le prix pour l'affichage
      */
-    public function formatPrice($price)
-    {
-        if (is_numeric($price)) {
-            return number_format($price, 2, ',', ' ') . ' €';
-        }
-        return 'N/A';
+    // public function formatPrice($price)
+    // {
+    //     if (is_numeric($price)) {
+    //         return number_format($price, 2, ',', ' ') . ' €';
+    //     }
+    //     return 'N/A';
+    // }
+/**
+ * Formate le prix pour l'affichage
+ */
+public function formatPrice($price)
+{
+    // Si le prix est déjà numérique, on le formate directement
+    if (is_numeric($price)) {
+        return number_format($price, 2, ',', ' ') . ' €';
     }
+    
+    // Si le prix contient des caractères non numériques, on les enlève
+    if (is_string($price)) {
+        // Enlever les symboles de devise courants et les espaces
+        $cleanPrice = preg_replace('/[^\d,.-]/', '', $price);
+        
+        // Remplacer la virgule par un point pour la conversion
+        $cleanPrice = str_replace(',', '.', $cleanPrice);
+        
+        // Vérifier si le résultat est numérique
+        if (is_numeric($cleanPrice)) {
+            return number_format((float)$cleanPrice, 2, ',', ' ') . ' €';
+        }
+    }
+    
+    return 'N/A';
+}
 
     /**
      * Extrait le domaine d'une URL
@@ -1511,7 +1537,7 @@ new class extends Component {
                                                                 <td class="px-6 py-4 whitespace-nowrap">
                                                                     <div class="text-sm font-semibold text-green-600">
                                                                         {{-- {{ $this->formatPrice($product->price_ht ?? $product->prix_ht) }} --}}
-                                                                        {{ $this->formatPrice($product->prix_ht) }}
+                                                                        {{ $this->formatPrice($product->price_ht ?? $product->prix_ht) }}
                                                                     </div>
                                                                 </td>
 
