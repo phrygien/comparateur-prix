@@ -95,7 +95,7 @@ new class extends Component {
 
 }; ?>
 
-<div class="w-full px-4 py-6 sm:px-6 lg:grid lg:grid-cols-2 lg:gap-x-10 lg:px-10">
+<div class="w-full px-4 py-6 sm:px-6 lg:grid lg:grid-cols-2 lg:gap-x-10 lg:px-10 pb-24">
 
 
 <x-header title="{{ utf8_encode($this->product->title) ?? 'N/A' }}" subtitle="{{ utf8_encode($this->product->vendor) ?? 'N/A' }}" no-separator />
@@ -205,5 +205,30 @@ new class extends Component {
             </div>
         </details>
         @endif
+    </div>
+</div>
+
+<!-- Floating Product Name Bar -->
+<div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50 px-4 py-3 sm:px-6 lg:px-10">
+    <div class="flex items-center justify-between max-w-7xl mx-auto">
+        <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-gray-900 truncate">
+                {{ utf8_encode($this->product->title) ?? 'N/A' }}
+            </p>
+            <p class="text-xs text-gray-500 truncate">
+                {{ utf8_encode($this->product->vendor) ?? 'N/A' }}
+            </p>
+        </div>
+        <div class="ml-4 flex-shrink-0">
+            @if($this->product->special_price)
+                <p class="text-lg font-bold text-red-600">
+                    {{ number_format($this->product->special_price, 2) }} €
+                </p>
+            @else
+                <p class="text-lg font-bold text-gray-900">
+                    {{ $this->product->price ? number_format($this->product->price, 2) . ' €' : 'N/A' }}
+                </p>
+            @endif
+        </div>
     </div>
 </div>
