@@ -152,78 +152,42 @@ new class extends Component {
                 $this->hasData = false;
                 return null;
             }
-
+            
             $this->extractSearchVolumes($search);
             $this->extractSearchVariationKeywords($search);
-
-            $searchQuery = $this->prepareEnhancedSearchTerms($search);
-
+            
+            $searchQuery = $this->prepareSearchTerms($search);
+            
             if (empty($searchQuery)) {
                 $this->products = [];
                 $this->hasData = false;
                 return null;
             }
-
+            
             $sql = "SELECT *, 
                            prix_ht,
                            image_url as image,
                            url as product_url
                     FROM last_price_scraped_product 
-                    WHERE (
-                        MATCH (name, vendor, type, variation) 
-                        AGAINST (? IN BOOLEAN MODE)
-                        OR name LIKE ?
-                        OR vendor LIKE ?
-                        OR variation LIKE ?
-                    )
-                    AND prix_ht IS NOT NULL 
-                    AND prix_ht > 0
-                    ORDER BY 
-                        CASE 
-                            WHEN name LIKE ? THEN 1
-                            WHEN vendor LIKE ? THEN 2
-                            WHEN variation LIKE ? THEN 3
-                            ELSE 4
-                        END,
-                        prix_ht DESC 
-                    LIMIT 100";
-
-            $likeTerm = '%' . $this->extractMainProductName($search) . '%';
+                    WHERE MATCH (name, vendor, type, variation) 
+                    AGAINST (? IN BOOLEAN MODE)
+                    ORDER BY prix_ht DESC";
             
-            \Log::info('Enhanced SQL Query:', [
+            \Log::info('SQL Query:', [
                 'original_search' => $search,
                 'search_query' => $searchQuery,
-                'like_term' => $likeTerm,
                 'search_volumes' => $this->searchVolumes,
                 'search_variation_keywords' => $this->searchVariationKeywords
             ]);
-
-            $result = DB::connection('mysql')->select($sql, [
-                $searchQuery, 
-                $likeTerm, 
-                $likeTerm, 
-                $likeTerm,
-                $likeTerm,
-                $likeTerm,
-                $likeTerm
+            
+            $result = DB::connection('mysql')->select($sql, [$searchQuery]);
+            
+            \Log::info('Query result:', [
+                'count' => count($result)
             ]);
-
-            foreach ($result as $product) {
-                if (isset($product->prix_ht)) {
-                    $originalPrice = $product->prix_ht;
-                    $cleanedPrice = $this->cleanPrice($product->prix_ht);
-                    $product->prix_ht = $cleanedPrice;
-                }
-            }
-
-            \Log::info('Enhanced query result:', [
-                'count' => count($result),
-                'first_products' => array_slice($result, 0, 3)
-            ]);
-
-            $this->matchedProducts = $this->calculateEnhancedSimilarity($result, $search);
-            $this->products = $result;
-            $this->originalProducts = $result; // Stocker les produits originaux
+            
+            $this->matchedProducts = $this->calculateSimilarity($result, $search);
+            $this->products = $this->matchedProducts;
             $this->hasData = !empty($result);
 
             return [
@@ -235,17 +199,17 @@ new class extends Component {
                 'volumes' => $this->searchVolumes,
                 'variation_keywords' => $this->searchVariationKeywords
             ];
-
+            
         } catch (\Throwable $e) {
             \Log::error('Error loading products:', [
                 'message' => $e->getMessage(),
                 'search' => $search ?? null,
                 'trace' => $e->getTraceAsString()
             ]);
-
+            
             $this->products = [];
             $this->hasData = false;
-
+            
             return [
                 'error' => $e->getMessage()
             ];
