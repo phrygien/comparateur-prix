@@ -98,17 +98,28 @@ new class extends Component {
 <div x-data="{ 
     showBar: false, 
     lastScroll: 0,
+    scrollTimeout: null,
     handleScroll() {
         let currentScroll = window.pageYOffset || document.documentElement.scrollTop;
+        
         if (currentScroll <= 0) {
             this.showBar = false;
             return;
         }
+        
+        // Afficher la barre lors du scroll vers le bas
         if (currentScroll > this.lastScroll) {
             this.showBar = true;
-        } else {
-            this.showBar = false;
+            clearTimeout(this.scrollTimeout);
+        } 
+        // Lors du scroll vers le haut, attendre que le scroll se termine
+        else {
+            clearTimeout(this.scrollTimeout);
+            this.scrollTimeout = setTimeout(() => {
+                this.showBar = false;
+            }, 150);
         }
+        
         this.lastScroll = currentScroll;
     }
 }" 
