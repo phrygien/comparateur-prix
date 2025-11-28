@@ -280,7 +280,7 @@ new class extends Component {
                         </p>
                     @else
                         <p class="text-lg font-bold text-gray-900">
-                            {{ $this->product->price ? number_format($this->product->price, 2) . ' €' : 'N/A' }}
+                           Prix : {{ $this->product->price ? number_format($this->product->price, 2) . ' €' : 'N/A' }}
                         </p>
                     @endif
                 </div>
