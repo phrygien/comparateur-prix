@@ -32,6 +32,7 @@ new class extends Component {
 
     // AJOUTEZ CES NOUVELLES PROPRIÉTÉS POUR LES FILTRES
     public $filters = [
+        'vendor' => '', // AJOUTÉ: Filtre vendor
         'name' => '',
         'variation' => '',
         'type' => '',
@@ -39,6 +40,9 @@ new class extends Component {
     ];
 
     public $sites = []; // Pour stocker la liste des sites
+
+    // NOUVELLE PROPRIÉTÉ pour suivre si on doit montrer le tableau même sans résultats
+    public $showTable = false;
 
     public function mount($name, $id, $price)
     {
@@ -51,9 +55,69 @@ new class extends Component {
         // STOCKEZ LA REQUÊTE DE RECHERCHE
         $this->searchQuery = $name;   
         
+        // Extraire le vendor par défaut depuis la recherche
+        $this->extractDefaultVendor($name);
+        
         // Charger la liste des sites
         $this->loadSites();
 
+        // Toujours afficher le tableau pour permettre le filtrage manuel
+        $this->showTable = true;
+
+    }
+
+    /**
+     * Extrait le vendor par défaut depuis la recherche
+     */
+    private function extractDefaultVendor(string $search): void
+    {
+        $vendor = '';
+        
+        // Pattern pour extraire le vendor (marque) de la recherche
+        // Format typique: "VENDOR - Nom produit - Variation"
+        if (preg_match('/^([^-]+)/', $search, $matches)) {
+            $vendor = trim($matches[1]);
+            
+            // Nettoyer les chiffres et caractères spéciaux
+            $vendor = preg_replace('/[0-9]+ml/i', '', $vendor);
+            $vendor = trim($vendor);
+        }
+        
+        // Si on n'a pas trouvé de vendor, essayer d'autres méthodes
+        if (empty($vendor)) {
+            $vendor = $this->guessVendorFromSearch($search);
+        }
+        
+        // Définir le vendor comme filtre par défaut
+        if (!empty($vendor)) {
+            $this->filters['vendor'] = $vendor;
+            \Log::info('Default vendor extracted:', ['vendor' => $vendor, 'search' => $search]);
+        }
+    }
+
+    /**
+     * Devine le vendor à partir de la recherche
+     */
+    private function guessVendorFromSearch(string $search): string
+    {
+        // Liste des marques communes
+        $commonVendors = [
+            'Dior', 'Chanel', 'Yves Saint Laurent', 'Guerlain', 'Lancôme',
+            'Hermès', 'Prada', 'Armani', 'Versace', 'Dolce & Gabbana',
+            'Givenchy', 'Jean Paul Gaultier', 'Bvlgari', 'Cartier',
+            'Montblanc', 'Burberry', 'Calvin Klein', 'Paco Rabanne',
+            'Carolina Herrera', 'Viktor & Rolf', 'Mugler', 'Narciso Rodriguez'
+        ];
+        
+        $searchLower = strtolower($search);
+        
+        foreach ($commonVendors as $vendor) {
+            if (stripos($searchLower, strtolower($vendor)) !== false) {
+                return $vendor;
+            }
+        }
+        
+        return '';
     }
 
     /**
@@ -76,114 +140,123 @@ new class extends Component {
     }
 
     /**
-     * Méthode pour appliquer les filtres
+     * NOUVELLE MÉTHODE: Recherche manuelle sans FULLTEXT
      */
-public function applyFilters()
-{
-    try {
-        // Vérifier si on a une recherche initiale
-        if (empty($this->searchQuery)) {
-            return null;
-        }
+    public function searchManual()
+    {
+        try {
+            // Réinitialiser le flag de données
+            $this->hasData = false;
+            $this->matchedProducts = [];
+            $this->products = [];
+            
+            // Construire la requête SQL avec les filtres manuels
+            $sql = "SELECT sp.*, ws.name as site_name, sp.url as product_url
+                    FROM scraped_product sp
+                    LEFT JOIN web_site ws ON sp.web_site_id = ws.id
+                    WHERE 1=1";
+            
+            $params = [];
+            
+            // AJOUTER LE FILTRE VENDOR
+            if (!empty($this->filters['vendor'])) {
+                $sql .= " AND sp.vendor LIKE ?";
+                $params[] = '%' . $this->filters['vendor'] . '%';
+            }
+            
+            // Ajouter les filtres si spécifiés
+            if (!empty($this->filters['name'])) {
+                $sql .= " AND sp.name LIKE ?";
+                $params[] = '%' . $this->filters['name'] . '%';
+            }
+            
+            if (!empty($this->filters['variation'])) {
+                $sql .= " AND sp.variation LIKE ?";
+                $params[] = '%' . $this->filters['variation'] . '%';
+            }
+            
+            if (!empty($this->filters['type'])) {
+                $sql .= " AND sp.type LIKE ?";
+                $params[] = '%' . $this->filters['type'] . '%';
+            }
+            
+            if (!empty($this->filters['site_source'])) {
+                $sql .= " AND ws.id = ?";
+                $params[] = $this->filters['site_source'];
+            }
+            
+            // Limiter à 20 résultats comme demandé
+            $sql .= " ORDER BY sp.prix_ht DESC LIMIT 20";
 
-        $this->extractSearchVolumes($this->searchQuery);
-        $this->extractSearchVariationKeywords($this->searchQuery);
-        $searchQuery = $this->prepareSearchTerms($this->searchQuery);
+            \Log::info('Manual search SQL:', [
+                'filters' => $this->filters,
+                'sql' => $sql,
+                'params' => $params
+            ]);
 
-        if (empty($searchQuery)) {
+            $result = DB::connection('mysql')->select($sql, $params);
+
+            // Nettoyer les prix
+            foreach ($result as $product) {
+                if (isset($product->prix_ht)) {
+                    $product->prix_ht = $this->cleanPrice($product->prix_ht);
+                }
+                
+                // S'assurer que product_url est défini
+                if (!isset($product->product_url) && isset($product->url)) {
+                    $product->product_url = $product->url;
+                }
+                
+                // S'assurer que image est défini
+                if (!isset($product->image) && isset($product->image_url)) {
+                    $product->image = $product->image_url;
+                }
+            }
+
+            $this->products = $result;
+            $this->matchedProducts = $result;
+            $this->hasData = !empty($result);
+
+            \Log::info('Manual search results:', [
+                'count' => count($result),
+                'has_data' => $this->hasData
+            ]);
+
+        } catch (\Throwable $e) {
+            \Log::error('Error in manual search:', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
             $this->products = [];
             $this->hasData = false;
-            return null;
         }
-
-        // Construire la requête SQL avec les filtres
-        $sql = "SELECT lp.*, ws.name as site_name, lp.url as product_url, lp.image_url as image
-                FROM last_price_scraped_product lp
-                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-                WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
-                AGAINST (? IN BOOLEAN MODE)";
-        
-        $params = [$searchQuery];
-        
-        // Ajouter les filtres si spécifiés
-        if (!empty($this->filters['name'])) {
-            $sql .= " AND lp.name LIKE ?";
-            $params[] = '%' . $this->filters['name'] . '%';
-        }
-        
-        if (!empty($this->filters['variation'])) {
-            $sql .= " AND lp.variation LIKE ?";
-            $params[] = '%' . $this->filters['variation'] . '%';
-        }
-        
-        if (!empty($this->filters['type'])) {
-            $sql .= " AND lp.type LIKE ?";
-            $params[] = '%' . $this->filters['type'] . '%';
-        }
-        
-        if (!empty($this->filters['site_source'])) {
-            $sql .= " AND ws.id = ?";
-            $params[] = $this->filters['site_source'];
-        }
-        
-        $sql .= " ORDER BY lp.prix_ht DESC LIMIT 50";
-
-        \Log::info('Filtered SQL Query:', [
-            'filters' => $this->filters,
-            'sql' => $sql,
-            'params' => $params
-        ]);
-
-        $result = DB::connection('mysql')->select($sql, $params);
-
-        // Nettoyer les prix
-        foreach ($result as $product) {
-            if (isset($product->prix_ht)) {
-                $product->prix_ht = $this->cleanPrice($product->prix_ht);
-            }
-            
-            // S'assurer que product_url est défini
-            if (!isset($product->product_url) && isset($product->url)) {
-                $product->product_url = $product->url;
-            }
-            
-            // S'assurer que image est défini
-            if (!isset($product->image) && isset($product->image_url)) {
-                $product->image = $product->image_url;
-            }
-        }
-
-        $this->matchedProducts = $this->calculateSimilarity($result, $this->searchQuery);
-        $this->products = $this->matchedProducts;
-        $this->hasData = !empty($result);
-
-    } catch (\Throwable $e) {
-        \Log::error('Error applying filters:', [
-            'message' => $e->getMessage(),
-            'trace' => $e->getTraceAsString()
-        ]);
-
-        $this->products = [];
-        $this->hasData = false;
     }
-}
+
+    /**
+     * Méthode pour appliquer les filtres (recherche manuelle)
+     */
+    public function applyFilters()
+    {
+        $this->searchManual();
+    }
     
     /**
      * Méthode pour réinitialiser les filtres
      */
     public function resetFilters()
     {
+        // Réinitialiser tous les filtres sauf le vendor qui garde sa valeur par défaut
         $this->filters = [
+            'vendor' => $this->filters['vendor'], // Garder le vendor actuel
             'name' => '',
             'variation' => '',
             'type' => '',
             'site_source' => ''
         ];
         
-        // Recharger les données avec la recherche initiale
-        if (!empty($this->searchQuery)) {
-            $this->getCompetitorPrice($this->searchQuery);
-        }
+        // Exécuter la recherche avec les filtres réinitialisés
+        $this->searchManual();
     }
     
     /**
@@ -194,6 +267,7 @@ public function applyFilters()
         // Débouncer pour éviter trop d'appels
         $this->applyFilters();
     }
+    
     /**
      * Nettoie et convertit un prix en nombre décimal
      * Enlève tous les symboles de devise et caractères non numériques
@@ -309,103 +383,109 @@ public function applyFilters()
     }
 
     /**
-     * Récupère les prix des concurrents
+     * Récupère les prix des concurrents (recherche automatique)
      */
-public function getCompetitorPrice($search)
-{
-    try {
-        if (empty($search)) {
-            $this->products = [];
-            $this->hasData = false;
-            return null;
-        }
+    public function getCompetitorPrice($search)
+    {
+        try {
+            if (empty($search)) {
+                $this->products = [];
+                $this->hasData = false;
+                return null;
+            }
 
-        $this->extractSearchVolumes($search);
-        $this->extractSearchVariationKeywords($search);
+            $this->extractSearchVolumes($search);
+            $this->extractSearchVariationKeywords($search);
 
-        $searchQuery = $this->prepareSearchTerms($search);
+            $searchQuery = $this->prepareSearchTerms($search);
 
-        if (empty($searchQuery)) {
-            $this->products = [];
-            $this->hasData = false;
-            return null;
-        }
+            if (empty($searchQuery)) {
+                $this->products = [];
+                $this->hasData = false;
+                return null;
+            }
 
-        // MODIFIEZ CETTE REQUÊTE POUR ÊTRE COHÉRENTE
-        $sql = "SELECT lp.*, ws.name as site_name, lp.url as product_url, lp.image_url as image
-                FROM last_price_scraped_product lp
-                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-                WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
-                AGAINST (? IN BOOLEAN MODE)
-                ORDER BY lp.prix_ht DESC LIMIT 50";
+            // MODIFIEZ CETTE REQUÊTE POUR ÊTRE COHÉRENTE
+            $sql = "SELECT lp.*, ws.name as site_name, lp.url as product_url, lp.image_url as image
+                    FROM last_price_scraped_product lp
+                    LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+                    WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
+                    AGAINST (? IN BOOLEAN MODE)
+                    ORDER BY lp.prix_ht DESC LIMIT 50";
 
-        \Log::info('SQL Query:', [
-            'original_search' => $search,
-            'search_query' => $searchQuery,
-            'search_volumes' => $this->searchVolumes,
-            'search_variation_keywords' => $this->searchVariationKeywords
-        ]);
+            \Log::info('SQL Query:', [
+                'original_search' => $search,
+                'search_query' => $searchQuery,
+                'search_volumes' => $this->searchVolumes,
+                'search_variation_keywords' => $this->searchVariationKeywords
+            ]);
 
-        $result = DB::connection('mysql')->select($sql, [$searchQuery]);
+            $result = DB::connection('mysql')->select($sql, [$searchQuery]);
 
-        // NETTOYER LE PRIX_HT DÈS LA RÉCUPÉRATION
-        foreach ($result as $product) {
-            if (isset($product->prix_ht)) {
-                $originalPrice = $product->prix_ht;
-                $cleanedPrice = $this->cleanPrice($product->prix_ht);
-                $product->prix_ht = $cleanedPrice;
+            // NETTOYER LE PRIX_HT DÈS LA RÉCUPÉRATION
+            foreach ($result as $product) {
+                if (isset($product->prix_ht)) {
+                    $originalPrice = $product->prix_ht;
+                    $cleanedPrice = $this->cleanPrice($product->prix_ht);
+                    $product->prix_ht = $cleanedPrice;
+                    
+                    // Log pour vérifier le nettoyage
+                    \Log::info('Prix nettoyé:', [
+                        'original' => $originalPrice,
+                        'cleaned' => $cleanedPrice
+                    ]);
+                }
                 
-                // Log pour vérifier le nettoyage
-                \Log::info('Prix nettoyé:', [
-                    'original' => $originalPrice,
-                    'cleaned' => $cleanedPrice
-                ]);
+                // S'assurer que product_url est défini
+                if (!isset($product->product_url) && isset($product->url)) {
+                    $product->product_url = $product->url;
+                }
+                
+                // S'assurer que image est défini
+                if (!isset($product->image) && isset($product->image_url)) {
+                    $product->image = $product->image_url;
+                }
             }
-            
-            // S'assurer que product_url est défini
-            if (!isset($product->product_url) && isset($product->url)) {
-                $product->product_url = $product->url;
+
+            \Log::info('Query result:', [
+                'count' => count($result)
+            ]);
+
+            $this->matchedProducts = $this->calculateSimilarity($result, $search);
+            $this->products = $this->matchedProducts;
+            $this->hasData = !empty($result);
+
+            // Si pas de résultats automatiques, on affiche le tableau quand même
+            if (!$this->hasData) {
+                $this->showTable = true;
             }
-            
-            // S'assurer que image est défini
-            if (!isset($product->image) && isset($product->image_url)) {
-                $product->image = $product->image_url;
-            }
+
+            return [
+                'count' => count($result),
+                'has_data' => $this->hasData,
+                'products' => $this->matchedProducts,
+                'product' => $this->getOneProductDetails($this->id),
+                'query' => $searchQuery,
+                'volumes' => $this->searchVolumes,
+                'variation_keywords' => $this->searchVariationKeywords
+            ];
+
+        } catch (\Throwable $e) {
+            \Log::error('Error loading products:', [
+                'message' => $e->getMessage(),
+                'search' => $search ?? null,
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            $this->products = [];
+            $this->hasData = false;
+            $this->showTable = true; // Afficher le tableau même en cas d'erreur
+
+            return [
+                'error' => $e->getMessage()
+            ];
         }
-
-        \Log::info('Query result:', [
-            'count' => count($result)
-        ]);
-
-        $this->matchedProducts = $this->calculateSimilarity($result, $search);
-        $this->products = $this->matchedProducts;
-        $this->hasData = !empty($result);
-
-        return [
-            'count' => count($result),
-            'has_data' => $this->hasData,
-            'products' => $this->matchedProducts,
-            'product' => $this->getOneProductDetails($this->id),
-            'query' => $searchQuery,
-            'volumes' => $this->searchVolumes,
-            'variation_keywords' => $this->searchVariationKeywords
-        ];
-
-    } catch (\Throwable $e) {
-        \Log::error('Error loading products:', [
-            'message' => $e->getMessage(),
-            'search' => $search ?? null,
-            'trace' => $e->getTraceAsString()
-        ]);
-
-        $this->products = [];
-        $this->hasData = false;
-
-        return [
-            'error' => $e->getMessage()
-        ];
     }
-}
 
     /**
      * Calcule la similarité entre la recherche et chaque produit
@@ -1034,14 +1114,6 @@ public function getCompetitorPrice($search)
         return $text;
     }
 
-    // /**
-    //  * Ajuste le seuil de similarité
-    //  */
-    // public function adjustSimilarityThreshold($threshold)
-    // {
-    //     $this->similarityThreshold = $threshold;
-    //     $this->getCompetitorPrice($this->search ?? '');
-    // }
     /**
      * Ajuste le seuil de similarité - MÉTHODE CORRIGÉE
      */
@@ -1087,10 +1159,6 @@ public function getCompetitorPrice($search)
 
     /**
      * Détermine le statut de compétitivité de notre prix
-     */
-
-    /**
-     * Détermine le statut de compétitivité de notre prix
      * LOGIQUE CORRIGÉE: difference = notre_prix - concurrent_prix
      * Si difference > 0 : nous sommes PLUS CHER
      * Si difference < 0 : nous sommes MOINS CHER
@@ -1120,27 +1188,6 @@ public function getCompetitorPrice($search)
     /**
      * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
      */
-    // public function getPriceStatusLabel($competitorPrice)
-    // {
-    //     $status = $this->getPriceCompetitiveness($competitorPrice);
-
-    //     $labels = [
-    //         'very_competitive' => 'Nous sommes beaucoup - cher',
-    //         'competitive' => 'Nous sommes - cher', 
-    //         'same' => 'Prix identique',
-    //         'slightly_higher' => 'Nous sommes + cher',
-    //         'higher' => 'Nous sommes beaucoup + cher',
-    //         'unknown' => 'Non comparable'
-    //     ];
-
-    //     return $labels[$status] ?? $labels['unknown'];
-    // }
-    /**
-     * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
-     */
-    /**
-     * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
-     */
     public function getPriceStatusLabel($competitorPrice)
     {
         $status = $this->getPriceCompetitiveness($competitorPrice);
@@ -1156,6 +1203,7 @@ public function getCompetitorPrice($search)
 
         return $labels[$status] ?? $labels['unknown'];
     }
+    
     /**
      * Retourne la classe CSS pour le statut de prix
      */
@@ -1238,24 +1286,6 @@ public function getCompetitorPrice($search)
     /**
      * Retourne le libellé pour le statut Cosmashop
      */
-    // public function getCosmashopPriceStatusLabel($competitorPrice)
-    // {
-    //     $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
-
-    //     $labels = [
-    //         'very_competitive' => 'Cosmashop serait beaucoup - cher',
-    //         'competitive' => 'Cosmashop serait - cher',
-    //         'same' => 'Prix identique à Cosmashop', 
-    //         'slightly_higher' => 'Cosmashop serait + cher',
-    //         'higher' => 'Cosmashop serait beaucoup + cher',
-    //         'unknown' => 'Non comparable'
-    //     ];
-
-    //     return $labels[$status] ?? $labels['unknown'];
-    // }
-    /**
-     * Retourne le libellé pour le statut Cosmashop
-     */
     public function getCosmashopPriceStatusLabel($competitorPrice)
     {
         $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
@@ -1271,6 +1301,7 @@ public function getCompetitorPrice($search)
 
         return $labels[$status] ?? $labels['unknown'];
     }
+    
     /**
      * Retourne la classe CSS pour le statut Cosmashop
      */
@@ -1457,7 +1488,7 @@ public function getProductImage($product)
     </div>
 
     <!-- Indicateur de chargement pour les filtres - Uniquement lors du filtrage -->
-    <div wire:loading.delay.flex wire:target="filters.name, filters.variation, filters.type, filters.site_source" class="hidden fixed top-4 right-4 z-40 items-center justify-center">
+    <div wire:loading.delay.flex wire:target="filters.vendor, filters.name, filters.variation, filters.type, filters.site_source" class="hidden fixed top-4 right-4 z-40 items-center justify-center">
         <div class="bg-blue-500/90 backdrop-blur-sm text-white px-4 py-2 rounded-lg shadow-lg flex items-center space-x-2">
             <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
             <span class="text-sm">Filtrage en cours...</span>
@@ -1466,8 +1497,8 @@ public function getProductImage($product)
 
     <livewire:plateformes.detail :id="$id"/>
 
-    <!-- Section d'analyse des prix -->
-    @if($hasData && $referencePrice)
+    <!-- Section d'analyse des prix (uniquement si on a des données) -->
+    @if($hasData && $referencePrice && count($matchedProducts) > 0)
         @php
             $priceAnalysis = $this->getPriceAnalysis();
             $cosmashopAnalysis = $this->getCosmashopPriceAnalysis();
@@ -1562,10 +1593,27 @@ public function getProductImage($product)
         @endif
     @endif
 
-    <!-- Section des résultats -->
+    <!-- Section des résultats - TOUJOURS AFFICHÉE -->
     <div class="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">
+        <!-- Message d'information si pas de résultats automatiques -->
+        @if(!$hasData && $showTable)
+            <div class="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <div class="flex items-center">
+                    <svg class="w-5 h-5 text-yellow-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <span class="text-sm font-medium text-yellow-800">
+                        Aucun résultat trouvé automatiquement. Utilisez les filtres ci-dessous pour rechercher manuellement.
+                    </span>
+                </div>
+                <p class="mt-2 text-sm text-yellow-700">
+                    Le vendor a été pré-rempli à partir de votre recherche. Vous pouvez ajuster les autres filtres pour trouver des produits.
+                </p>
+            </div>
+        @endif
+
         @if($hasData)
-            <!-- Indicateur de similarité -->
+            <!-- Indicateur de similarité (uniquement si on a des résultats automatiques) -->
             <div class="mb-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border">
                 <div class="flex flex-col space-y-3">
                     <div class="flex items-center justify-between">
@@ -1658,136 +1706,176 @@ public function getProductImage($product)
                     </div>
                 </div>
             @endif
+        @endif
 
-            <!-- Indicateur des filtres actifs -->
-            @if(array_filter($filters))
-                <div class="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center">
-                            <svg class="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
+        <!-- Indicateur des filtres actifs -->
+        @if(array_filter($filters))
+            <div class="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
+                        </svg>
+                        <span class="text-sm font-medium text-blue-800">Filtres actifs :</span>
+                    </div>
+                    <!-- Bouton Réinitialiser avec indicateur de chargement -->
+                    <button wire:click="resetFilters" 
+                            class="px-3 py-1.5 text-sm bg-red-50 text-red-700 hover:bg-red-100 rounded-md transition-colors duration-200 flex items-center border border-red-200"
+                            wire:loading.attr="disabled">
+                        <span wire:loading.remove wire:target="resetFilters">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                             </svg>
-                            <span class="text-sm font-medium text-blue-800">Filtres actifs :</span>
-                        </div>
-                        <!-- Bouton Réinitialiser avec indicateur de chargement -->
-                        <button wire:click="resetFilters" 
-                                class="px-3 py-1.5 text-sm bg-red-50 text-red-700 hover:bg-red-100 rounded-md transition-colors duration-200 flex items-center border border-red-200"
-                                wire:loading.attr="disabled">
-                            <span wire:loading.remove wire:target="resetFilters">
-                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                                </svg>
-                                Réinitialiser tous les filtres
-                            </span>
-                            <span wire:loading wire:target="resetFilters">
-                                <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600 mr-1"></div>
-                                Réinitialisation...
-                            </span>
-                        </button>
-                    </div>
-                    
-                    <div class="mt-2 flex flex-wrap gap-2">
-                        @if($filters['name'])
-                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
-                                Nom: {{ $filters['name'] }}
-                                <button wire:click="$set('filters.name', '')" 
-                                        class="ml-2 text-blue-600 hover:text-blue-800 flex items-center"
-                                        wire:loading.attr="disabled">
-                                    <span wire:loading.remove wire:target="$set('filters.name', '')">×</span>
-                                    <span wire:loading wire:target="$set('filters.name', '')">
-                                        <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
-                                    </span>
-                                </button>
-                            </span>
-                        @endif
-                        
-                        @if($filters['variation'])
-                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">
-                                Variation: {{ $filters['variation'] }}
-                                <button wire:click="$set('filters.variation', '')" 
-                                        class="ml-2 text-green-600 hover:text-green-800 flex items-center"
-                                        wire:loading.attr="disabled">
-                                    <span wire:loading.remove wire:target="$set('filters.variation', '')">×</span>
-                                    <span wire:loading wire:target="$set('filters.variation', '')">
-                                        <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-green-600"></div>
-                                    </span>
-                                </button>
-                            </span>
-                        @endif
-                        
-                        @if($filters['type'])
-                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200">
-                                Type: {{ $filters['type'] }}
-                                <button wire:click="$set('filters.type', '')" 
-                                        class="ml-2 text-purple-600 hover:text-purple-800 flex items-center"
-                                        wire:loading.attr="disabled">
-                                    <span wire:loading.remove wire:target="$set('filters.type', '')">×</span>
-                                    <span wire:loading wire:target="$set('filters.type', '')">
-                                        <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-purple-600"></div>
-                                    </span>
-                                </button>
-                            </span>
-                        @endif
-                        
-                        @if($filters['site_source'])
-                            @php
-                                $selectedSite = $sites->firstWhere('id', $filters['site_source']);
-                                $siteName = $selectedSite ? $selectedSite->name : 'Site ID: ' . $filters['site_source'];
-                            @endphp
-                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200">
-                                Site: {{ $siteName }}
-                                <button wire:click="$set('filters.site_source', '')" 
-                                        class="ml-2 text-orange-600 hover:text-orange-800 flex items-center"
-                                        wire:loading.attr="disabled">
-                                    <span wire:loading.remove wire:target="$set('filters.site_source', '')">×</span>
-                                    <span wire:loading wire:target="$set('filters.site_source', '')">
-                                        <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-orange-600"></div>
-                                    </span>
-                                </button>
-                            </span>
-                        @endif
-                    </div>
+                            Réinitialiser les filtres
+                        </span>
+                        <span wire:loading wire:target="resetFilters">
+                            <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600 mr-1"></div>
+                            Réinitialisation...
+                        </span>
+                    </button>
                 </div>
-            @endif
+                
+                <div class="mt-2 flex flex-wrap gap-2">
+                    <!-- FILTRE VENDOR AJOUTÉ -->
+                    @if($filters['vendor'])
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
+                            Marque: {{ $filters['vendor'] }}
+                            <button wire:click="$set('filters.vendor', '')" 
+                                    class="ml-2 text-blue-600 hover:text-blue-800 flex items-center"
+                                    wire:loading.attr="disabled">
+                                <span wire:loading.remove wire:target="$set('filters.vendor', '')">×</span>
+                                <span wire:loading wire:target="$set('filters.vendor', '')">
+                                    <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
+                                </span>
+                            </button>
+                        </span>
+                    @endif
+                    
+                    @if($filters['name'])
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">
+                            Nom: {{ $filters['name'] }}
+                            <button wire:click="$set('filters.name', '')" 
+                                    class="ml-2 text-green-600 hover:text-green-800 flex items-center"
+                                    wire:loading.attr="disabled">
+                                <span wire:loading.remove wire:target="$set('filters.name', '')">×</span>
+                                <span wire:loading wire:target="$set('filters.name', '')">
+                                    <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-green-600"></div>
+                                </span>
+                            </button>
+                        </span>
+                    @endif
+                    
+                    @if($filters['variation'])
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200">
+                            Variation: {{ $filters['variation'] }}
+                            <button wire:click="$set('filters.variation', '')" 
+                                    class="ml-2 text-purple-600 hover:text-purple-800 flex items-center"
+                                    wire:loading.attr="disabled">
+                                <span wire:loading.remove wire:target="$set('filters.variation', '')">×</span>
+                                <span wire:loading wire:target="$set('filters.variation', '')">
+                                    <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-purple-600"></div>
+                                </span>
+                            </button>
+                        </span>
+                    @endif
+                    
+                    @if($filters['type'])
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200">
+                            Type: {{ $filters['type'] }}
+                            <button wire:click="$set('filters.type', '')" 
+                                    class="ml-2 text-orange-600 hover:text-orange-800 flex items-center"
+                                    wire:loading.attr="disabled">
+                                <span wire:loading.remove wire:target="$set('filters.type', '')">×</span>
+                                <span wire:loading wire:target="$set('filters.type', '')">
+                                    <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-orange-600"></div>
+                                </span>
+                            </button>
+                        </span>
+                    @endif
+                    
+                    @if($filters['site_source'])
+                        @php
+                            $selectedSite = $sites->firstWhere('id', $filters['site_source']);
+                            $siteName = $selectedSite ? $selectedSite->name : 'Site ID: ' . $filters['site_source'];
+                        @endphp
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
+                            Site: {{ $siteName }}
+                            <button wire:click="$set('filters.site_source', '')" 
+                                    class="ml-2 text-indigo-600 hover:text-indigo-800 flex items-center"
+                                    wire:loading.attr="disabled">
+                                <span wire:loading.remove wire:target="$set('filters.site_source', '')">×</span>
+                                <span wire:loading wire:target="$set('filters.site_source', '')">
+                                    <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-indigo-600"></div>
+                                </span>
+                            </button>
+                        </span>
+                    @endif
+                </div>
+            </div>
+        @endif
 
-            <!-- Tableau des résultats avec indicateur de chargement -->
+        <!-- Tableau des résultats - TOUJOURS AFFICHÉ -->
+        @if($showTable)
             <div class="bg-white shadow-sm rounded-lg overflow-hidden" wire:loading.class="opacity-50" wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
                 <div class="px-6 py-4 border-b border-gray-200">
-                    <h3 class="text-lg font-medium text-gray-900">Résultats de la recherche</h3>
+                    <h3 class="text-lg font-medium text-gray-900">
+                        @if($hasData)
+                            Résultats de la recherche ({{ count($matchedProducts) }} produit(s))
+                        @else
+                            Recherche manuelle - Utilisez les filtres
+                        @endif
+                    </h3>
                     <p class="mt-1 text-sm text-gray-500">
-                        <span wire:loading.remove wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
-                            {{ count($matchedProducts) }} produit(s) correspondant(s)
-                        </span>
-                        {{-- <span wire:loading wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
-                            <div class="inline-flex items-center text-blue-600">
-                                <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600 mr-2"></div>
-                                Mise à jour des résultats...
-                            </div>
-                        </span> --}}
+                        @if($hasData)
+                            <span wire:loading.remove wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
+                                {{ count($matchedProducts) }} produit(s) correspondant(s)
+                            </span>
+                        @else
+                            Aucun résultat automatique. Utilisez les filtres pour rechercher manuellement.
+                        @endif
                     </p>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
                             <tr>
-                                <!-- Colonne Score -->
+                                @if($hasData)
+                                <!-- Colonne Score (uniquement si résultats automatiques) -->
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     <div class="flex flex-col">
                                         <span>Score</span>
                                     </div>
                                 </th>
                                 
-                                <!-- Colonne Correspondance -->
+                                <!-- Colonne Correspondance (uniquement si résultats automatiques) -->
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     <div class="flex flex-col">
                                         <span>Correspondance</span>
                                     </div>
                                 </th>
                                 
-                                <!-- Colonne Image -->
+                                <!-- Colonne Image (uniquement si résultats automatiques) -->
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     <div class="flex flex-col">
                                         <span>Image</span>
+                                    </div>
+                                </th>
+                                @endif
+                                
+                                <!-- Colonne Vendor avec filtre AJOUTÉE -->
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-48">
+                                    <div class="flex flex-col space-y-2">
+                                        <span class="whitespace-nowrap">Marque/Vendor</span>
+                                        <div class="relative">
+                                            <input type="text" 
+                                                   wire:model.live.debounce.300ms="filters.vendor"
+                                                   placeholder="Filtrer par marque..."
+                                                   class="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
+                                                   wire:loading.attr="disabled">
+                                            <div wire:loading wire:target="filters.vendor" class="absolute right-3 top-1/2 transform -translate-y-1/2">
+                                                <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </th>
                                 
@@ -1860,19 +1948,21 @@ public function getProductImage($product)
                                     </div>
                                 </th>
                                 
-                                <!-- Colonne Vs Cosmaparfumerie -->
+                                @if($hasData && $referencePrice)
+                                <!-- Colonne Vs Cosmaparfumerie (uniquement si on a un prix de référence) -->
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     <div class="flex flex-col">
                                         <span>Vs Cosmaparfumerie</span>
                                     </div>
                                 </th>
                                 
-                                <!-- Colonne Vs Cosmashop -->
+                                <!-- Colonne Vs Cosmashop (uniquement si on a un prix de référence) -->
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     <div class="flex flex-col">
                                         <span>Vs Cosmashop</span>
                                     </div>
                                 </th>
+                                @endif
                                 
                                 <!-- Colonne Type avec filtre -->
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1903,32 +1993,37 @@ public function getProductImage($product)
                             @if(count($matchedProducts) > 0)
                                 @foreach($matchedProducts as $product)
                                     @php
-                                        $matchClass = [
-                                            'excellent' => 'bg-green-100 text-green-800 border-green-300',
-                                            'bon' => 'bg-blue-100 text-blue-800 border-blue-300',
-                                            'moyen' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
-                                            'faible' => 'bg-gray-100 text-gray-800 border-gray-300'
-                                        ][$product->match_level ?? 'faible'];
+                                        if ($hasData) {
+                                            $matchClass = [
+                                                'excellent' => 'bg-green-100 text-green-800 border-green-300',
+                                                'bon' => 'bg-blue-100 text-blue-800 border-blue-300',
+                                                'moyen' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
+                                                'faible' => 'bg-gray-100 text-gray-800 border-gray-300'
+                                            ][$product->match_level ?? 'faible'];
+                                        }
 
                                         $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
                                         $hasMatchingVolume = $this->hasMatchingVolume($product);
                                         $hasExactVariation = $this->hasExactVariationMatch($product);
 
-                                        // Données pour la comparaison de prix
-                                        $competitorPrice = $product->price_ht ?? $product->prix_ht;
-                                        $priceDifference = $this->calculatePriceDifference($competitorPrice);
-                                        $priceDifferencePercent = $this->calculatePriceDifferencePercentage($competitorPrice);
-                                        $priceStatusClass = $this->getPriceStatusClass($competitorPrice);
-                                        $priceStatusLabel = $this->getPriceStatusLabel($competitorPrice);
+                                        // Données pour la comparaison de prix (uniquement si référencePrice)
+                                        if ($hasData && $referencePrice) {
+                                            $competitorPrice = $product->price_ht ?? $product->prix_ht;
+                                            $priceDifference = $this->calculatePriceDifference($competitorPrice);
+                                            $priceDifferencePercent = $this->calculatePriceDifferencePercentage($competitorPrice);
+                                            $priceStatusClass = $this->getPriceStatusClass($competitorPrice);
+                                            $priceStatusLabel = $this->getPriceStatusLabel($competitorPrice);
 
-                                        // Données pour Cosmashop
-                                        $cosmashopDifference = $this->calculateCosmashopPriceDifference($competitorPrice);
-                                        $cosmashopDifferencePercent = $this->calculateCosmashopPriceDifferencePercentage($competitorPrice);
-                                        $cosmashopStatusClass = $this->getCosmashopPriceStatusClass($competitorPrice);
-                                        $cosmashopStatusLabel = $this->getCosmashopPriceStatusLabel($competitorPrice);
+                                            // Données pour Cosmashop
+                                            $cosmashopDifference = $this->calculateCosmashopPriceDifference($competitorPrice);
+                                            $cosmashopDifferencePercent = $this->calculateCosmashopPriceDifferencePercentage($competitorPrice);
+                                            $cosmashopStatusClass = $this->getCosmashopPriceStatusClass($competitorPrice);
+                                            $cosmashopStatusLabel = $this->getCosmashopPriceStatusLabel($competitorPrice);
+                                        }
                                     @endphp
                                     <tr class="hover:bg-gray-50 transition-colors duration-150">
-                                        <!-- Colonne Score -->
+                                        @if($hasData)
+                                        <!-- Colonne Score (uniquement si résultats automatiques) -->
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             <div class="flex items-center">
                                                 <div class="w-16 bg-gray-200 rounded-full h-2 mr-3">
@@ -1950,7 +2045,7 @@ public function getProductImage($product)
                                             </div>
                                         </td>
 
-                                        <!-- Colonne Correspondance -->
+                                        <!-- Colonne Correspondance (uniquement si résultats automatiques) -->
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border {{ $matchClass }}">
                                                 @if($product->match_level === 'excellent')
@@ -1962,7 +2057,7 @@ public function getProductImage($product)
                                             </span>
                                         </td>
 
-                                        <!-- Colonne Image -->
+                                        <!-- Colonne Image (uniquement si résultats automatiques) -->
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             @php
                                                 $productImage = $this->getProductImage($product);
@@ -1978,17 +2073,24 @@ public function getProductImage($product)
                                                 </div>
                                             @endif
                                         </td>
+                                        @endif
+
+                                        <!-- Colonne Vendor AJOUTÉE -->
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <div class="text-sm font-medium text-gray-900">
+                                                {{ $product->vendor ?? 'N/A' }}
+                                            </div>
+                                        </td>
 
                                         <!-- Colonne Nom -->
                                         <td class="px-6 py-4">
                                             <div class="text-sm font-medium text-gray-900 max-w-xs" title="{{ $product->name ?? 'N/A' }}">
-                                                {!! $this->highlightMatchingTerms($product->name) !!}
+                                                @if($hasData)
+                                                    {!! $this->highlightMatchingTerms($product->name) !!}
+                                                @else
+                                                    {{ $product->name ?? 'N/A' }}
+                                                @endif
                                             </div>
-                                            @if(!empty($product->vendor))
-                                                <div class="text-xs text-gray-500 mt-1">
-                                                    {{ $product->vendor }}
-                                                </div>
-                                            @endif
                                             <!-- Badges des volumes du produit -->
                                             @if(!empty($productVolumes))
                                                 <div class="mt-2 flex flex-wrap gap-1">
@@ -2014,9 +2116,13 @@ public function getProductImage($product)
                                         <!-- Colonne Variation -->
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             <div class="text-sm text-gray-900 max-w-xs" title="{{ $product->variation ?? 'Standard' }}">
-                                                {!! $this->highlightMatchingTerms($product->variation ?? 'Standard') !!}
+                                                @if($hasData)
+                                                    {!! $this->highlightMatchingTerms($product->variation ?? 'Standard') !!}
+                                                @else
+                                                    {{ $product->variation ?? 'Standard' }}
+                                                @endif
                                             </div>
-                                            @if($hasExactVariation)
+                                            @if($hasData && $hasExactVariation)
                                                 <div class="mt-1">
                                                     <span class="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
                                                         <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
@@ -2067,7 +2173,8 @@ public function getProductImage($product)
                                             </div>
                                         </td>
 
-                                        <!-- Colonne Vs Cosmaparfumerie -->
+                                        @if($hasData && $referencePrice)
+                                        <!-- Colonne Vs Cosmaparfumerie (uniquement si référencePrice) -->
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             @if(is_numeric($competitorPrice) && is_numeric($referencePrice))
                                                 <div class="space-y-1">
@@ -2097,7 +2204,7 @@ public function getProductImage($product)
                                             @endif
                                         </td>
 
-                                        <!-- Colonne Vs Cosmashop -->
+                                        <!-- Colonne Vs Cosmashop (uniquement si référencePrice) -->
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             @if(is_numeric($competitorPrice) && is_numeric($cosmashopPrice))
                                                 <div class="space-y-1">
@@ -2126,6 +2233,7 @@ public function getProductImage($product)
                                                 <span class="text-xs text-gray-400">N/A</span>
                                             @endif
                                         </td>
+                                        @endif
 
                                         <!-- Colonne Type -->
                                         <td class="px-6 py-4 whitespace-nowrap">
@@ -2164,13 +2272,23 @@ public function getProductImage($product)
                             @else
                                 <!-- Aucun résultat avec les filtres appliqués -->
                                 <tr>
-                                    <td colspan="12" class="px-6 py-12 text-center">
+                                    <td colspan="{{ $hasData ? 13 : 11 }}" class="px-6 py-12 text-center">
                                         <svg class="mx-auto h-16 w-16 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                         </svg>
-                                        <h3 class="mt-4 text-lg font-medium text-gray-900">Aucun résultat trouvé</h3>
+                                        <h3 class="mt-4 text-lg font-medium text-gray-900">
+                                            @if(array_filter($filters))
+                                                Aucun résultat avec les filtres actuels
+                                            @else
+                                                Aucun produit trouvé
+                                            @endif
+                                        </h3>
                                         <p class="mt-2 text-sm text-gray-500">
-                                            Aucun produit ne correspond à vos critères de recherche.
+                                            @if(array_filter($filters))
+                                                Aucun produit ne correspond à vos critères de recherche. Essayez de modifier les filtres.
+                                            @else
+                                                Ajustez les filtres pour trouver des produits.
+                                            @endif
                                         </p>
                                         @if(array_filter($filters))
                                             <div class="mt-4 flex justify-center space-x-3">
@@ -2189,32 +2307,6 @@ public function getProductImage($product)
                                                         Réinitialisation...
                                                     </span>
                                                 </button>
-                                                <!-- Bouton Baisser le seuil avec loading -->
-                                                <button wire:click="adjustSimilarityThreshold(0.5)" 
-                                                        class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200"
-                                                        wire:loading.attr="disabled">
-                                                    <span wire:loading.remove wire:target="adjustSimilarityThreshold(0.5)">
-                                                        Baisser le seuil à 50%
-                                                    </span>
-                                                    <span wire:loading wire:target="adjustSimilarityThreshold(0.5)">
-                                                        <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600 mr-2"></div>
-                                                        Mise à jour...
-                                                    </span>
-                                                </button>
-                                            </div>
-                                        @else
-                                            <div class="mt-4">
-                                                <button wire:click="adjustSimilarityThreshold(0.5)" 
-                                                        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200"
-                                                        wire:loading.attr="disabled">
-                                                    <span wire:loading.remove wire:target="adjustSimilarityThreshold(0.5)">
-                                                        Baisser le seuil à 50%
-                                                    </span>
-                                                    <span wire:loading wire:target="adjustSimilarityThreshold(0.5)">
-                                                        <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                                                        Mise à jour...
-                                                    </span>
-                                                </button>
                                             </div>
                                         @endif
                                     </td>
@@ -2222,30 +2314,6 @@ public function getProductImage($product)
                             @endif
                         </tbody>
                     </table>
-                </div>
-            </div>
-        @else
-            <!-- Empty State - Pas de données du tout -->
-            <div class="text-center py-12">
-                <svg class="mx-auto h-24 w-24 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <h3 class="mt-4 text-lg font-medium text-gray-900">Aucun résultat trouvé</h3>
-                <p class="mt-2 text-sm text-gray-500">
-                    Aucun produit ne correspond au seuil de similarité de {{ $similarityThreshold * 100 }}%
-                </p>
-                <div class="mt-4">
-                    <button wire:click="adjustSimilarityThreshold(0.5)" 
-                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200"
-                            wire:loading.attr="disabled">
-                        <span wire:loading.remove wire:target="adjustSimilarityThreshold(0.5)">
-                            Reinitialiser
-                        </span>
-                        <span wire:loading wire:target="adjustSimilarityThreshold(0.5)">
-                            <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                            Chargement...
-                        </span>
-                    </button>
                 </div>
             </div>
         @endif
@@ -2393,4 +2461,4 @@ public function getProductImage($product)
         });
     });
 </script>
-@endpush
+@endpush>
