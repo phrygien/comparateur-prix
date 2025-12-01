@@ -754,96 +754,60 @@ public function getCompetitorPrice($search)
     /**
      * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
      */
-    // private function prepareSearchTerms(string $search): string
-    // {
-    //     $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ\s]/', ' ', $search);
-    //     $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
-    //     $searchClean = mb_strtolower($searchClean);
+    private function prepareSearchTerms(string $search): string
+    {
+        $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ\s]/', ' ', $search);
+        $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
+        $searchClean = mb_strtolower($searchClean);
 
-    //     $words = explode(" ", $searchClean);
+        $words = explode(" ", $searchClean);
 
-    //     $stopWords = [
-    //         'de',
-    //         'le',
-    //         'la',
-    //         'les',
-    //         'un',
-    //         'une',
-    //         'des',
-    //         'du',
-    //         'et',
-    //         'ou',
-    //         'pour',
-    //         'avec',
-    //         'the',
-    //         'a',
-    //         'an',
-    //         'and',
-    //         'or',
-    //         'eau',
-    //         'ml',
-    //         'edition',
-    //         'édition',
-    //         'coffret'
-    //     ];
+        $stopWords = [
+            'de',
+            'le',
+            'la',
+            'les',
+            'un',
+            'une',
+            'des',
+            'du',
+            'et',
+            'ou',
+            'pour',
+            'avec',
+            'the',
+            'a',
+            'an',
+            'and',
+            'or',
+            'eau',
+            'ml',
+            'edition',
+            'édition',
+            'coffret'
+        ];
 
-    //     $significantWords = [];
+        $significantWords = [];
 
-    //     foreach ($words as $word) {
-    //         $word = trim($word);
+        foreach ($words as $word) {
+            $word = trim($word);
 
-    //         if (strlen($word) > 2 && !in_array($word, $stopWords)) {
-    //             $significantWords[] = $word;
-    //         }
+            if (strlen($word) > 2 && !in_array($word, $stopWords)) {
+                $significantWords[] = $word;
+            }
 
-    //         if (count($significantWords) >= 3) {
-    //             break;
-    //         }
-    //     }
-
-    //     $booleanTerms = array_map(function ($word) {
-    //         return '+' . $word . '*';
-    //     }, $significantWords);
-
-    //     return implode(' ', $booleanTerms);
-    // }
-private function prepareSearchTerms(string $search): string
-{
-    $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ\s]/', ' ', $search);
-    $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
-    $searchClean = mb_strtolower($searchClean);
-
-    $words = explode(" ", $searchClean);
-
-    $stopWords = [
-        'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou',
-        'pour', 'avec', 'the', 'a', 'an', 'and', 'or', 'eau', 'ml',
-        'edition', 'édition', 'coffret', 'parfum', 'vaporisateur'
-    ];
-
-    $significantWords = [];
-
-    foreach ($words as $word) {
-        $word = trim($word);
-        
-        // Augmentez la limite de caractères et excluez les stop words
-        if (strlen($word) > 1 && !in_array($word, $stopWords)) {
-            $significantWords[] = $word;
+            if (count($significantWords) >= 3) {
+                break;
+            }
         }
-        
-        // Augmentez la limite de mots significatifs
-        if (count($significantWords) >= 5) {
-            break;
-        }
+
+        $booleanTerms = array_map(function ($word) {
+            return '+' . $word . '*';
+        }, $significantWords);
+
+        return implode(' ', $booleanTerms);
     }
 
-    // Utilisez + devant chaque mot pour requérir TOUS les mots
-    $booleanTerms = array_map(function ($word) {
-        return '+' . $word . '*';
-    }, $significantWords);
-
-    return implode(' ', $booleanTerms);
-}
     /**
      * Formate le prix pour l'affichage
      */
