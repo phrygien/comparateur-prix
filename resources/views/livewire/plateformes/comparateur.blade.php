@@ -311,105 +311,6 @@ public function applyFilters()
     /**
      * Récupère les prix des concurrents
      */
-// public function getCompetitorPrice($search)
-// {
-//     try {
-//         if (empty($search)) {
-//             $this->products = [];
-//             $this->hasData = false;
-//             return null;
-//         }
-
-//         $this->extractSearchVolumes($search);
-//         $this->extractSearchVariationKeywords($search);
-
-//         $searchQuery = $this->prepareSearchTerms($search);
-
-//         if (empty($searchQuery)) {
-//             $this->products = [];
-//             $this->hasData = false;
-//             return null;
-//         }
-
-//         // MODIFIEZ CETTE REQUÊTE POUR ÊTRE COHÉRENTE
-//         $sql = "SELECT lp.*, ws.name as site_name, lp.url as product_url, lp.image_url as image
-//                 FROM last_price_scraped_product lp
-//                 LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-//                 WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
-//                 AGAINST (? IN BOOLEAN MODE)
-//                 ORDER BY lp.prix_ht DESC LIMIT 50";
-
-//         \Log::info('SQL Query:', [
-//             'original_search' => $search,
-//             'search_query' => $searchQuery,
-//             'search_volumes' => $this->searchVolumes,
-//             'search_variation_keywords' => $this->searchVariationKeywords
-//         ]);
-
-//         $result = DB::connection('mysql')->select($sql, [$searchQuery]);
-
-//         // NETTOYER LE PRIX_HT DÈS LA RÉCUPÉRATION
-//         foreach ($result as $product) {
-//             if (isset($product->prix_ht)) {
-//                 $originalPrice = $product->prix_ht;
-//                 $cleanedPrice = $this->cleanPrice($product->prix_ht);
-//                 $product->prix_ht = $cleanedPrice;
-                
-//                 // Log pour vérifier le nettoyage
-//                 \Log::info('Prix nettoyé:', [
-//                     'original' => $originalPrice,
-//                     'cleaned' => $cleanedPrice
-//                 ]);
-//             }
-            
-//             // S'assurer que product_url est défini
-//             if (!isset($product->product_url) && isset($product->url)) {
-//                 $product->product_url = $product->url;
-//             }
-            
-//             // S'assurer que image est défini
-//             if (!isset($product->image) && isset($product->image_url)) {
-//                 $product->image = $product->image_url;
-//             }
-//         }
-
-//         \Log::info('Query result:', [
-//             'count' => count($result)
-//         ]);
-
-//         $this->matchedProducts = $this->calculateSimilarity($result, $search);
-//         $this->products = $this->matchedProducts;
-//         $this->hasData = !empty($result);
-
-//         return [
-//             'count' => count($result),
-//             'has_data' => $this->hasData,
-//             'products' => $this->matchedProducts,
-//             'product' => $this->getOneProductDetails($this->id),
-//             'query' => $searchQuery,
-//             'volumes' => $this->searchVolumes,
-//             'variation_keywords' => $this->searchVariationKeywords
-//         ];
-
-//     } catch (\Throwable $e) {
-//         \Log::error('Error loading products:', [
-//             'message' => $e->getMessage(),
-//             'search' => $search ?? null,
-//             'trace' => $e->getTraceAsString()
-//         ]);
-
-//         $this->products = [];
-//         $this->hasData = false;
-
-//         return [
-//             'error' => $e->getMessage()
-//         ];
-//     }
-// }
-
-/**
- * Récupère les prix des concurrents avec recherche améliorée
- */
 public function getCompetitorPrice($search)
 {
     try {
@@ -419,151 +320,45 @@ public function getCompetitorPrice($search)
             return null;
         }
 
-        // Stocker la requête de recherche
-        $this->searchQuery = $search;
-        
         $this->extractSearchVolumes($search);
         $this->extractSearchVariationKeywords($search);
 
-        // Préparer la recherche FullText
         $searchQuery = $this->prepareSearchTerms($search);
-        
-        // Préparer une recherche LIKE alternative
-        $searchLike = '%' . strtolower($search) . '%';
-        
-        // Recherche simplifiée pour "La Vie Est Belle"
-        $simpleSearch = $this->prepareSimpleSearch($search);
 
-        \Log::info('Recherche lancée:', [
+        if (empty($searchQuery)) {
+            $this->products = [];
+            $this->hasData = false;
+            return null;
+        }
+
+        // MODIFIEZ CETTE REQUÊTE POUR ÊTRE COHÉRENTE
+        $sql = "SELECT lp.*, ws.name as site_name, lp.url as product_url, lp.image_url as image
+                FROM last_price_scraped_product lp
+                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+                WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
+                AGAINST (? IN BOOLEAN MODE)
+                ORDER BY lp.prix_ht DESC LIMIT 50";
+
+        \Log::info('SQL Query:', [
             'original_search' => $search,
-            'fulltext_query' => $searchQuery,
-            'simple_search' => $simpleSearch,
-            'search_like' => $searchLike,
+            'search_query' => $searchQuery,
             'search_volumes' => $this->searchVolumes,
             'search_variation_keywords' => $this->searchVariationKeywords
         ]);
 
-        $products = [];
-        
-        // ESSAI 1: Recherche FullText standard
-        if (!empty($searchQuery)) {
-            $sql1 = "SELECT lp.*, ws.name as site_name, lp.url as product_url, lp.image_url as image
-                    FROM last_price_scraped_product lp
-                    LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-                    WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
-                    AGAINST (? IN BOOLEAN MODE)
-                    ORDER BY lp.prix_ht DESC LIMIT 50";
-            
-            $result1 = DB::connection('mysql')->select($sql1, [$searchQuery]);
-            $products = array_merge($products, $result1);
-            
-            \Log::info('Résultat recherche FullText:', [
-                'count' => count($result1),
-                'query' => $searchQuery
-            ]);
-        }
+        $result = DB::connection('mysql')->select($sql, [$searchQuery]);
 
-        // ESSAI 2: Recherche LIKE si FullText ne donne rien
-        if (empty($products)) {
-            $sql2 = "SELECT lp.*, ws.name as site_name, lp.url as product_url, lp.image_url as image
-                    FROM last_price_scraped_product lp
-                    LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-                    WHERE (LOWER(lp.name) LIKE LOWER(?)
-                           OR LOWER(lp.vendor) LIKE LOWER(?)
-                           OR LOWER(lp.variation) LIKE LOWER(?))
-                    ORDER BY lp.prix_ht DESC LIMIT 50";
-            
-            $likePattern = '%' . str_replace(' ', '%', strtolower($search)) . '%';
-            $result2 = DB::connection('mysql')->select($sql2, [$likePattern, $likePattern, $likePattern]);
-            $products = array_merge($products, $result2);
-            
-            \Log::info('Résultat recherche LIKE:', [
-                'count' => count($result2),
-                'pattern' => $likePattern
-            ]);
-        }
-
-        // ESSAI 3: Recherche par mots clés individuels
-        if (empty($products)) {
-            $keywords = $this->extractKeywords($search);
-            if (!empty($keywords)) {
-                $sql3 = "SELECT lp.*, ws.name as site_name, lp.url as product_url, lp.image_url as image
-                        FROM last_price_scraped_product lp
-                        LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-                        WHERE ";
-                
-                $conditions = [];
-                $params = [];
-                
-                foreach ($keywords as $keyword) {
-                    $conditions[] = "(LOWER(lp.name) LIKE LOWER(?) OR LOWER(lp.variation) LIKE LOWER(?))";
-                    $params[] = '%' . $keyword . '%';
-                    $params[] = '%' . $keyword . '%';
-                }
-                
-                $sql3 .= implode(' AND ', $conditions) . " ORDER BY lp.prix_ht DESC LIMIT 50";
-                
-                $result3 = DB::connection('mysql')->select($sql3, $params);
-                $products = array_merge($products, $result3);
-                
-                \Log::info('Résultat recherche par mots clés:', [
-                    'count' => count($result3),
-                    'keywords' => $keywords
-                ]);
-            }
-        }
-
-        // ESSAI 4: Recherche spécifique pour "La Vie Est Belle"
-        if (empty($products) && stripos($search, 'vie est belle') !== false) {
-            $sql4 = "SELECT lp.*, ws.name as site_name, lp.url as product_url, lp.image_url as image
-                    FROM last_price_scraped_product lp
-                    LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-                    WHERE (LOWER(lp.name) LIKE LOWER(?)
-                           OR LOWER(lp.name) LIKE LOWER(?)
-                           OR LOWER(lp.variation) LIKE LOWER(?)
-                           OR LOWER(lp.variation) LIKE LOWER(?))
-                    ORDER BY lp.prix_ht DESC LIMIT 50";
-            
-            $result4 = DB::connection('mysql')->select($sql4, [
-                '%vie%belle%',
-                '%la%vie%est%belle%',
-                '%vie%belle%',
-                '%la%vie%est%belle%'
-            ]);
-            $products = array_merge($products, $result4);
-            
-            \Log::info('Résultat recherche spécifique "La Vie Est Belle":', [
-                'count' => count($result4)
-            ]);
-        }
-
-        // Éliminer les doublons
-        $uniqueProducts = [];
-        $seenIds = [];
-        
-        foreach ($products as $product) {
-            $id = $product->id ?? md5(serialize($product));
-            if (!in_array($id, $seenIds)) {
-                $seenIds[] = $id;
-                $uniqueProducts[] = $product;
-            }
-        }
-
-        \Log::info('Produits uniques après fusion:', [
-            'total' => count($uniqueProducts)
-        ]);
-
-        // NETTOYER LE PRIX_HT
-        foreach ($uniqueProducts as $product) {
+        // NETTOYER LE PRIX_HT DÈS LA RÉCUPÉRATION
+        foreach ($result as $product) {
             if (isset($product->prix_ht)) {
                 $originalPrice = $product->prix_ht;
                 $cleanedPrice = $this->cleanPrice($product->prix_ht);
                 $product->prix_ht = $cleanedPrice;
                 
-                \Log::debug('Prix nettoyé:', [
+                // Log pour vérifier le nettoyage
+                \Log::info('Prix nettoyé:', [
                     'original' => $originalPrice,
-                    'cleaned' => $cleanedPrice,
-                    'name' => $product->name ?? 'N/A'
+                    'cleaned' => $cleanedPrice
                 ]);
             }
             
@@ -578,39 +373,26 @@ public function getCompetitorPrice($search)
             }
         }
 
-        $this->matchedProducts = $this->calculateSimilarity($uniqueProducts, $search);
-        $this->products = $this->matchedProducts;
-        $this->hasData = !empty($uniqueProducts);
-
-        \Log::info('Résultat final de la recherche:', [
-            'search_query' => $search,
-            'total_products' => count($uniqueProducts),
-            'matched_products' => count($this->matchedProducts),
-            'has_data' => $this->hasData
+        \Log::info('Query result:', [
+            'count' => count($result)
         ]);
 
-        // Afficher les premiers produits pour débogage
-        foreach (array_slice($uniqueProducts, 0, 5) as $index => $product) {
-            \Log::debug("Produit {$index}:", [
-                'name' => $product->name ?? 'N/A',
-                'variation' => $product->variation ?? 'N/A',
-                'vendor' => $product->vendor ?? 'N/A',
-                'prix_ht' => $product->prix_ht ?? 'N/A'
-            ]);
-        }
+        $this->matchedProducts = $this->calculateSimilarity($result, $search);
+        $this->products = $this->matchedProducts;
+        $this->hasData = !empty($result);
 
         return [
-            'count' => count($uniqueProducts),
+            'count' => count($result),
             'has_data' => $this->hasData,
             'products' => $this->matchedProducts,
             'product' => $this->getOneProductDetails($this->id),
-            'query' => $search,
+            'query' => $searchQuery,
             'volumes' => $this->searchVolumes,
             'variation_keywords' => $this->searchVariationKeywords
         ];
 
     } catch (\Throwable $e) {
-        \Log::error('Erreur lors du chargement des produits:', [
+        \Log::error('Error loading products:', [
             'message' => $e->getMessage(),
             'search' => $search ?? null,
             'trace' => $e->getTraceAsString()
@@ -624,62 +406,6 @@ public function getCompetitorPrice($search)
         ];
     }
 }
-
-/**
- * Extrait les mots clés importants d'une recherche
- */
-private function extractKeywords($search)
-{
-    $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ\s]/', ' ', $search);
-    $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
-    $searchClean = mb_strtolower($searchClean);
-
-    $words = explode(" ", $searchClean);
-
-    $stopWords = [
-        'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou',
-        'pour', 'avec', 'the', 'a', 'an', 'and', 'or', 'eau', 'ml',
-        'edition', 'édition', 'coffret', 'parfum', 'vaporisateur',
-        'lancôme', 'lancome'
-    ];
-
-    $keywords = [];
-
-    foreach ($words as $word) {
-        $word = trim($word);
-        
-        // Garder les mots significatifs
-        if (strlen($word) > 2 && !in_array($word, $stopWords)) {
-            $keywords[] = $word;
-        }
-    }
-
-    return $keywords;
-}
-
-/**
- * Prépare une recherche simplifiée
- */
-private function prepareSimpleSearch($search)
-{
-    // Pour "La Vie Est Belle", on veut chercher "vie belle"
-    $search = preg_replace('/\bla\b/i', '', $search);
-    $search = preg_replace('/\best\b/i', '', $search);
-    $search = trim(preg_replace('/\s+/', ' ', $search));
-    
-    $words = explode(' ', $search);
-    $significantWords = [];
-    
-    foreach ($words as $word) {
-        $word = trim($word);
-        if (strlen($word) > 1) {
-            $significantWords[] = '+' . $word . '*';
-        }
-    }
-    
-    return implode(' ', $significantWords);
-}
-
 
     /**
      * Calcule la similarité entre la recherche et chaque produit
