@@ -15,7 +15,7 @@ new class extends Component {
     public $id;
     public $mydata;
 
-    public $similarityThreshold = 0.6;
+    public $similarityThreshold = 0.5; // Réduit pour mieux matcher les noms partiels
     public $matchedProducts = [];
 
     public $searchQuery = '';
@@ -298,53 +298,58 @@ new class extends Component {
             $this->extractSearchVolumes($search);
             $this->extractSearchVariationKeywords($search);
 
-            $searchQuery = $this->prepareSearchTerms($search);
+            // Essayer plusieurs stratégies de recherche
+            $searchQueries = $this->prepareMultipleSearchStrategies($search);
 
-            if (empty($searchQuery)) {
-                $this->products = [];
-                $this->hasData = false;
-                return null;
-            }
+            $allResults = [];
+            
+            foreach ($searchQueries as $strategyName => $searchQuery) {
+                if (empty($searchQuery)) {
+                    continue;
+                }
 
-            $sql = "SELECT lp.*, ws.name as site_name, lp.url as product_url, lp.image_url as image
-                    FROM last_price_scraped_product lp
-                    LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-                    WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
-                    AGAINST (? IN BOOLEAN MODE)
-                    ORDER BY lp.prix_ht DESC LIMIT 50";
+                \Log::info("Trying search strategy: {$strategyName}", [
+                    'query' => $searchQuery
+                ]);
 
-            \Log::info('SQL Query:', [
-                'original_search' => $search,
-                'search_query' => $searchQuery,
-                'search_volumes' => $this->searchVolumes,
-                'search_variation_keywords' => $this->searchVariationKeywords
-            ]);
+                $sql = "SELECT lp.*, ws.name as site_name, lp.url as product_url, lp.image_url as image
+                        FROM last_price_scraped_product lp
+                        LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+                        WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
+                        AGAINST (? IN BOOLEAN MODE)
+                        ORDER BY lp.prix_ht DESC LIMIT 50";
 
-            $result = DB::connection('mysql')->select($sql, [$searchQuery]);
+                $result = DB::connection('mysql')->select($sql, [$searchQuery]);
 
-            foreach ($result as $product) {
-                if (isset($product->prix_ht)) {
-                    $originalPrice = $product->prix_ht;
-                    $cleanedPrice = $this->cleanPrice($product->prix_ht);
-                    $product->prix_ht = $cleanedPrice;
+                foreach ($result as $product) {
+                    if (isset($product->prix_ht)) {
+                        $product->prix_ht = $this->cleanPrice($product->prix_ht);
+                    }
                     
-                    \Log::info('Prix nettoyé:', [
-                        'original' => $originalPrice,
-                        'cleaned' => $cleanedPrice
-                    ]);
-                }
-                
-                if (!isset($product->product_url) && isset($product->url)) {
-                    $product->product_url = $product->url;
-                }
-                
-                if (!isset($product->image) && isset($product->image_url)) {
-                    $product->image = $product->image_url;
+                    if (!isset($product->product_url) && isset($product->url)) {
+                        $product->product_url = $product->url;
+                    }
+                    
+                    if (!isset($product->image) && isset($product->image_url)) {
+                        $product->image = $product->image_url;
+                    }
+                    
+                    // Marquer la stratégie utilisée
+                    $product->search_strategy = $strategyName;
+                    
+                    // Ajouter au tableau global si pas déjà présent
+                    $key = $product->id ?? ($product->product_url ?? uniqid());
+                    if (!isset($allResults[$key])) {
+                        $allResults[$key] = $product;
+                    }
                 }
             }
+
+            $result = array_values($allResults);
 
             \Log::info('Query result:', [
-                'count' => count($result)
+                'strategies_used' => count($searchQueries),
+                'total_results' => count($result)
             ]);
 
             $this->matchedProducts = $this->calculateSimilarity($result, $search);
@@ -356,7 +361,7 @@ new class extends Component {
                 'has_data' => $this->hasData,
                 'products' => $this->matchedProducts,
                 'product' => $this->getOneProductDetails($this->id),
-                'query' => $searchQuery,
+                'strategies' => array_keys($searchQueries),
                 'volumes' => $this->searchVolumes,
                 'variation_keywords' => $this->searchVariationKeywords
             ];
@@ -375,6 +380,498 @@ new class extends Component {
                 'error' => $e->getMessage()
             ];
         }
+    }
+
+    /**
+     * Prépare plusieurs stratégies de recherche pour couvrir différents cas
+     */
+    private function prepareMultipleSearchStrategies(string $search): array
+    {
+        $strategies = [];
+        
+        // Stratégie 1: Recherche complète avec segmentation
+        $strategies['full_segmented'] = $this->prepareSearchTerms($search);
+        
+        // Stratégie 2: Recherche simplifiée (sans segmentation)
+        $strategies['simplified'] = $this->prepareSimplifiedSearch($search);
+        
+        // Stratégie 3: Recherche par nom principal seulement
+        $strategies['name_only'] = $this->prepareNameOnlySearch($search);
+        
+        // Stratégie 4: Recherche par mots clés essentiels
+        $strategies['essential_keywords'] = $this->prepareEssentialKeywordsSearch($search);
+        
+        // Stratégie 5: Recherche par vendor seulement
+        $strategies['vendor_only'] = $this->prepareVendorOnlySearch($search);
+        
+        // Filtrer les stratégies vides
+        return array_filter($strategies);
+    }
+
+    /**
+     * Prépare une recherche simplifiée
+     */
+    private function prepareSimplifiedSearch(string $search): string
+    {
+        $words = $this->extractAllSignificantWords($search);
+        
+        if (empty($words)) {
+            return '';
+        }
+        
+        $terms = [];
+        foreach ($words as $word) {
+            if (strlen($word) > 2) {
+                $terms[] = '+' . $word . '*';
+            }
+        }
+        
+        return implode(' ', array_slice($terms, 0, 10));
+    }
+
+    /**
+     * Prépare une recherche par nom seulement
+     */
+    private function prepareNameOnlySearch(string $search): string
+    {
+        $name = $this->extractProductNameFromSearch($search);
+        
+        if (empty($name)) {
+            $name = $this->extractCoreProductName($search);
+        }
+        
+        if (empty($name)) {
+            return '';
+        }
+        
+        $words = $this->extractSignificantWords($name);
+        $terms = [];
+        
+        foreach ($words as $word) {
+            if (strlen($word) > 2) {
+                $terms[] = '+' . $word . '*';
+            }
+        }
+        
+        // Ajouter le nom complet comme phrase
+        if (count($terms) > 1) {
+            $terms[] = '"' . mb_strtolower($this->cleanSearchTerm($name)) . '"';
+        }
+        
+        return implode(' ', array_slice($terms, 0, 8));
+    }
+
+    /**
+     * Extrait le nom du produit de la recherche
+     */
+    private function extractProductNameFromSearch(string $search): string
+    {
+        // Format attendu: Vendor - Name - Type
+        // Exemple: Lancôme - Lancôme La Vie Est Belle Vanille Nude - Eau de Parfum
+        
+        // Supprimer le vendor au début
+        $withoutVendor = preg_replace('/^[^-]+\s*-\s*/i', '', $search);
+        
+        // Supprimer le type à la fin (si présent)
+        $pattern = '/\s*-\s*[^-]+$/i';
+        $name = preg_replace($pattern, '', $withoutVendor);
+        
+        // Nettoyer les numéros de volume
+        $name = preg_replace('/\s*\d+\s*ml\b/i', '', $name);
+        
+        $name = trim($name);
+        
+        // Si le nom est vide, essayer de l'extraire différemment
+        if (empty($name)) {
+            $name = $this->extractCoreProductName($search);
+        }
+        
+        return $name;
+    }
+
+    /**
+     * Extrait le nom principal du produit (version courte)
+     */
+    private function extractCoreProductName(string $search): string
+    {
+        // Enlever le vendor s'il est répété au début
+        $vendor = $this->extractVendorFromSearch($search);
+        if (!empty($vendor)) {
+            $search = preg_replace('/^' . preg_quote($vendor, '/') . '\s*-\s*/i', '', $search);
+        }
+        
+        // Enlever le type à la fin
+        $types = ['eau de parfum', 'eau de toilette', 'parfum', 'coffret', 'gel douche', 'lotion', 'vaporisateur'];
+        foreach ($types as $type) {
+            $pattern = '/\s*-\s*' . preg_quote($type, '/') . '$/i';
+            $search = preg_replace($pattern, '', $search);
+        }
+        
+        // Enlever les volumes
+        $search = preg_replace('/\s*\d+\s*ml\b/i', '', $search);
+        
+        // Enlever les mots génériques
+        $genericWords = ['edition', 'édition', 'limited', 'spéciale', 'spray', 'flacon'];
+        foreach ($genericWords as $word) {
+            $search = preg_replace('/\b' . preg_quote($word, '/') . '\b/i', '', $search);
+        }
+        
+        // Nettoyer les espaces multiples
+        $search = preg_replace('/\s+/', ' ', $search);
+        
+        return trim($search);
+    }
+
+    /**
+     * Prépare une recherche par mots clés essentiels
+     */
+    private function prepareEssentialKeywordsSearch(string $search): string
+    {
+        // Extraire les mots clés les plus importants
+        $keywords = $this->extractEssentialKeywords($search);
+        
+        if (empty($keywords)) {
+            return '';
+        }
+        
+        $terms = [];
+        foreach ($keywords as $keyword) {
+            $terms[] = '+' . $keyword . '*';
+        }
+        
+        return implode(' ', $terms);
+    }
+
+    /**
+     * Extrait les mots clés essentiels d'une recherche
+     */
+    private function extractEssentialKeywords(string $search): array
+    {
+        $words = $this->extractAllSignificantWords($search);
+        
+        if (empty($words)) {
+            return [];
+        }
+        
+        // Prioriser les mots plus longs et moins communs
+        $scoredWords = [];
+        $commonWords = ['la', 'le', 'de', 'est', 'and', 'the', 'parfum', 'eau', 'toilette'];
+        
+        foreach ($words as $word) {
+            $word = trim($word);
+            
+            if (strlen($word) < 3) {
+                continue;
+            }
+            
+            $score = 0;
+            
+            // Plus le mot est long, plus il est important
+            $score += strlen($word) * 2;
+            
+            // Moins le mot est commun, plus il est important
+            if (!in_array(mb_strtolower($word), $commonWords)) {
+                $score += 10;
+            }
+            
+            // Les mots avec majuscules sont souvent des noms propres
+            if (preg_match('/[A-Z]/', $word)) {
+                $score += 5;
+            }
+            
+            $scoredWords[$word] = $score;
+        }
+        
+        // Trier par score décroissant
+        arsort($scoredWords);
+        
+        // Prendre les 5 meilleurs mots
+        return array_slice(array_keys($scoredWords), 0, 5);
+    }
+
+    /**
+     * Prépare une recherche par vendor seulement
+     */
+    private function prepareVendorOnlySearch(string $search): string
+    {
+        $vendor = $this->extractVendorFromSearch($search);
+        
+        if (empty($vendor)) {
+            return '';
+        }
+        
+        $vendorCleaned = $this->cleanSearchTerm($vendor);
+        $vendorLower = mb_strtolower($vendorCleaned);
+        $vendorNoAccent = $this->removeAccents($vendorCleaned);
+        
+        $terms = [];
+        $terms[] = '+' . $vendorCleaned . '*';
+        
+        if ($vendorLower !== $vendorCleaned) {
+            $terms[] = '+' . $vendorLower . '*';
+        }
+        
+        if ($vendorNoAccent !== $vendorCleaned) {
+            $terms[] = '+' . $vendorNoAccent . '*';
+        }
+        
+        return implode(' ', $terms);
+    }
+
+    /**
+     * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
+     */
+    private function prepareSearchTerms(string $search): string
+    {
+        // Nettoyage initial
+        $search = trim($search);
+        
+        // Extraction des composants selon le format: Vendor - Name - Type
+        $vendor = $this->extractVendorFromSearch($search);
+        $type = $this->extractProductTypeFromSearch($search);
+        $name = $this->extractProductNameFromSearch($search);
+        
+        // Si le nom est vide, utiliser la recherche complète moins le vendor
+        if (empty($name)) {
+            $name = $this->extractCoreProductName($search);
+        }
+        
+        \Log::info('Search components extracted:', [
+            'original' => $search,
+            'vendor' => $vendor,
+            'name' => $name,
+            'type' => $type
+        ]);
+        
+        // Construire les termes de recherche avec priorité
+        $searchTerms = [];
+        
+        // 1. Priorité au vendor (exact match boosté)
+        if (!empty($vendor)) {
+            $vendorCleaned = $this->cleanSearchTerm($vendor);
+            $searchTerms[] = '+' . $vendorCleaned . '*';
+            
+            // Ajouter aussi le vendor en minuscule
+            $vendorLower = mb_strtolower($vendorCleaned);
+            if ($vendorLower !== $vendorCleaned) {
+                $searchTerms[] = '+' . $vendorLower . '*';
+            }
+            
+            // Ajouter sans accents
+            $vendorNoAccent = $this->removeAccents($vendorCleaned);
+            if ($vendorNoAccent !== $vendorCleaned) {
+                $searchTerms[] = '+' . $vendorNoAccent . '*';
+            }
+        }
+        
+        // 2. Termes du nom du produit (optimisé pour noms courts)
+        if (!empty($name)) {
+            // Extraire tous les mots significatifs
+            $nameWords = $this->extractAllSignificantWords($name);
+            
+            foreach ($nameWords as $word) {
+                if (strlen($word) > 1) {
+                    // Ajouter le mot tel quel
+                    $searchTerms[] = '+' . $word . '*';
+                    
+                    // Ajouter aussi en minuscule si différent
+                    $wordLower = mb_strtolower($word);
+                    if ($wordLower !== $word) {
+                        $searchTerms[] = '+' . $wordLower . '*';
+                    }
+                    
+                    // Ajouter sans accents
+                    $wordNoAccent = $this->removeAccents($word);
+                    if ($wordNoAccent !== $word) {
+                        $searchTerms[] = '+' . $wordNoAccent . '*';
+                    }
+                }
+            }
+            
+            // Pour les noms courts comme "LA VIE EST BELLE", ajouter la phrase complète
+            if (count($nameWords) <= 5) {
+                $nameCleaned = $this->cleanSearchTerm($name);
+                $searchTerms[] = '"' . mb_strtolower($nameCleaned) . '"';
+                
+                // Ajouter aussi sans accents
+                $nameNoAccent = $this->removeAccents($nameCleaned);
+                if ($nameNoAccent !== $nameCleaned) {
+                    $searchTerms[] = '"' . mb_strtolower($nameNoAccent) . '"';
+                }
+            }
+        }
+        
+        // 3. Type de produit
+        if (!empty($type)) {
+            $typeWords = $this->extractAllSignificantWords($type);
+            foreach ($typeWords as $word) {
+                if (strlen($word) > 2) {
+                    $searchTerms[] = '+' . $word . '*';
+                    
+                    // Ajouter aussi en minuscule
+                    $wordLower = mb_strtolower($word);
+                    if ($wordLower !== $word) {
+                        $searchTerms[] = '+' . $wordLower . '*';
+                    }
+                }
+            }
+        }
+        
+        // 4. Termes supplémentaires de la recherche complète
+        $additionalTerms = $this->extractAdditionalSearchTerms($search);
+        foreach ($additionalTerms as $term) {
+            if (!in_array($term, $searchTerms)) {
+                $searchTerms[] = $term;
+            }
+        }
+        
+        // Éliminer les doublons
+        $searchTerms = array_unique($searchTerms);
+        
+        // Limiter le nombre de termes
+        $searchTerms = array_slice($searchTerms, 0, 20);
+        
+        $finalQuery = implode(' ', $searchTerms);
+        
+        \Log::info('Final search query:', ['query' => $finalQuery]);
+        
+        return $finalQuery;
+    }
+
+    /**
+     * Extrait TOUS les mots significatifs d'un texte (sans filtrer les stop words courts)
+     */
+    private function extractAllSignificantWords(string $text): array
+    {
+        $text = trim($text);
+        $text = preg_replace('/[^a-zA-ZÀ-ÿ0-9\s]/', ' ', $text);
+        $text = preg_replace('/\s+/', ' ', $text);
+        
+        $words = explode(' ', $text);
+        
+        $significantWords = [];
+        
+        foreach ($words as $word) {
+            $word = trim($word);
+            
+            if (empty($word)) {
+                continue;
+            }
+            
+            // Conserver tous les mots non numériques de 2+ caractères
+            if (strlen($word) >= 2 && !is_numeric($word)) {
+                $significantWords[] = $word;
+            }
+        }
+        
+        return array_unique($significantWords);
+    }
+
+    /**
+     * Extrait des termes supplémentaires significatifs de la recherche
+     */
+    private function extractAdditionalSearchTerms(string $search): array
+    {
+        $terms = [];
+        
+        // Supprimer les parties déjà traitées
+        $search = preg_replace('/^[^-]+\s*-\s*/i', '', $search); // Vendor
+        $search = preg_replace('/\s*-\s*[^-]+$/i', '', $search); // Type
+        
+        // Extraire les mots significatifs
+        $words = $this->extractAllSignificantWords($search);
+        
+        foreach ($words as $word) {
+            if (strlen($word) > 1) {
+                $terms[] = '+' . $word . '*';
+                
+                // Ajouter aussi la version minuscule si différente
+                $wordLower = mb_strtolower($word);
+                if ($wordLower !== $word) {
+                    $terms[] = '+' . $wordLower . '*';
+                }
+            }
+        }
+        
+        return $terms;
+    }
+
+    /**
+     * Extrait les mots significatifs d'un texte (version filtrée)
+     */
+    private function extractSignificantWords(string $text): array
+    {
+        $text = trim($text);
+        $text = preg_replace('/[^a-zA-ZÀ-ÿ0-9\s]/', ' ', $text);
+        $text = preg_replace('/\s+/', ' ', $text);
+        
+        $words = explode(' ', $text);
+        
+        $stopWords = [
+            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou',
+            'pour', 'avec', 'dans', 'sur', 'sous', 'vers', 'par', 'chez',
+            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to',
+            'ml', 'edition', 'édition', 'coffret', 'vaporisateur', 'spray',
+            'eau', 'parfum', 'toilette', 'lotion', 'gel', 'douche'
+        ];
+        
+        $significantWords = [];
+        
+        foreach ($words as $word) {
+            $word = trim($word);
+            
+            if (empty($word)) {
+                continue;
+            }
+            
+            $wordLower = mb_strtolower($word);
+            
+            // Conserver les mots de 3+ caractères qui ne sont pas des stop words
+            if (strlen($word) >= 3 && !in_array($wordLower, $stopWords) && !is_numeric($word)) {
+                $significantWords[] = $word;
+            }
+            
+            // Conserver aussi les nombres
+            if (is_numeric($word) && $word > 0) {
+                $significantWords[] = $word;
+            }
+        }
+        
+        return array_unique($significantWords);
+    }
+
+    /**
+     * Nettoie un terme pour la recherche
+     */
+    private function cleanSearchTerm(string $term): string
+    {
+        $term = preg_replace('/[^a-zA-ZÀ-ÿ0-9]/', ' ', $term);
+        $term = trim(preg_replace('/\s+/', ' ', $term));
+        return $term;
+    }
+
+    /**
+     * Supprime les accents d'une chaîne
+     */
+    private function removeAccents(string $string): string
+    {
+        $search = [
+            'À', 'Á', 'Â', 'Ã', 'Ä', 'Å', 'Æ', 'Ç', 'È', 'É', 'Ê', 'Ë',
+            'Ì', 'Í', 'Î', 'Ï', 'Ð', 'Ñ', 'Ò', 'Ó', 'Ô', 'Õ', 'Ö', 'Ø',
+            'Ù', 'Ú', 'Û', 'Ü', 'Ý', 'ß', 'à', 'á', 'â', 'ã', 'ä', 'å',
+            'æ', 'ç', 'è', 'é', 'ê', 'ë', 'ì', 'í', 'î', 'ï', 'ñ', 'ò',
+            'ó', 'ô', 'õ', 'ö', 'ø', 'ù', 'ú', 'û', 'ü', 'ý', 'ÿ', 'œ'
+        ];
+        
+        $replace = [
+            'A', 'A', 'A', 'A', 'A', 'A', 'AE', 'C', 'E', 'E', 'E', 'E',
+            'I', 'I', 'I', 'I', 'D', 'N', 'O', 'O', 'O', 'O', 'O', 'O',
+            'U', 'U', 'U', 'U', 'Y', 's', 'a', 'a', 'a', 'a', 'a', 'a',
+            'ae', 'c', 'e', 'e', 'e', 'e', 'i', 'i', 'i', 'i', 'n', 'o',
+            'o', 'o', 'o', 'o', 'o', 'u', 'u', 'u', 'u', 'y', 'y', 'oe'
+        ];
+        
+        return str_replace($search, $replace, $string);
     }
 
     /**
@@ -402,21 +899,23 @@ new class extends Component {
     }
 
     /**
-     * Calcule le score de similarité global
+     * Calcule le score de similarité global (version améliorée)
      */
     private function computeOverallSimilarity($product, $search)
     {
         $weights = [
-            'name' => 0.3,
-            'vendor' => 0.2,
-            'variation' => 0.25,
+            'name' => 0.35,  // Augmenté car c'est le critère principal
+            'vendor' => 0.15, // Réduit car parfois absent
+            'variation' => 0.2,
             'volumes' => 0.15,
-            'type' => 0.1
+            'type' => 0.1,
+            'keywords' => 0.05 // Nouveau critère pour les mots clés
         ];
 
         $totalScore = 0;
 
-        $nameScore = $this->computeStringSimilarity($search, $product->name ?? '');
+        // Score du nom (amélioré pour les noms courts)
+        $nameScore = $this->computeNameSimilarity($product, $search);
         $totalScore += $nameScore * $weights['name'];
 
         $vendorScore = $this->computeVendorSimilarity($product, $search);
@@ -431,7 +930,60 @@ new class extends Component {
         $typeScore = $this->computeTypeSimilarity($product, $search);
         $totalScore += $typeScore * $weights['type'];
 
+        // Score des mots clés
+        $keywordScore = $this->computeKeywordSimilarity($product, $search);
+        $totalScore += $keywordScore * $weights['keywords'];
+
         return min(1.0, $totalScore);
+    }
+
+    /**
+     * Similarité du nom (version améliorée)
+     */
+    private function computeNameSimilarity($product, $search)
+    {
+        $productName = $product->name ?? '';
+        $searchName = $this->extractProductNameFromSearch($search);
+        
+        if (empty($searchName)) {
+            $searchName = $this->extractCoreProductName($search);
+        }
+        
+        if (empty($productName) || empty($searchName)) {
+            return 0;
+        }
+        
+        // Score de base
+        $baseScore = $this->computeStringSimilarity($searchName, $productName);
+        
+        // Bonus si le nom du produit est inclus dans le nom de recherche
+        $productNameLower = mb_strtolower($productName);
+        $searchNameLower = mb_strtolower($searchName);
+        
+        if (strpos($searchNameLower, $productNameLower) !== false) {
+            $baseScore += 0.3;
+        }
+        
+        // Bonus si le nom de recherche est inclus dans le nom du produit
+        if (strpos($productNameLower, $searchNameLower) !== false) {
+            $baseScore += 0.2;
+        }
+        
+        // Vérifier les mots communs
+        $productWords = $this->extractAllSignificantWords($productName);
+        $searchWords = $this->extractAllSignificantWords($searchName);
+        
+        $commonWords = array_intersect(
+            array_map('mb_strtolower', $productWords),
+            array_map('mb_strtolower', $searchWords)
+        );
+        
+        if (!empty($commonWords)) {
+            $commonRatio = count($commonWords) / max(1, count($searchWords));
+            $baseScore += $commonRatio * 0.2;
+        }
+        
+        return min(1.0, $baseScore);
     }
 
     /**
@@ -598,6 +1150,31 @@ new class extends Component {
     }
 
     /**
+     * Similarité des mots clés
+     */
+    private function computeKeywordSimilarity($product, $search)
+    {
+        $productText = ($product->name ?? '') . ' ' . ($product->variation ?? '') . ' ' . ($product->type ?? '');
+        $productText = mb_strtolower($productText);
+        
+        $keywords = $this->extractEssentialKeywords($search);
+        
+        if (empty($keywords)) {
+            return 0;
+        }
+        
+        $matches = 0;
+        foreach ($keywords as $keyword) {
+            $keywordLower = mb_strtolower($keyword);
+            if (strpos($productText, $keywordLower) !== false) {
+                $matches++;
+            }
+        }
+        
+        return $matches / count($keywords);
+    }
+
+    /**
      * Extrait la marque de la recherche
      */
     private function extractVendorFromSearch($search)
@@ -634,20 +1211,6 @@ new class extends Component {
         }
 
         return '';
-    }
-
-    /**
-     * Détermine le niveau de correspondance
-     */
-    private function getMatchLevel($similarityScore)
-    {
-        if ($similarityScore >= 0.9)
-            return 'excellent';
-        if ($similarityScore >= 0.7)
-            return 'bon';
-        if ($similarityScore >= 0.6)
-            return 'moyen';
-        return 'faible';
     }
 
     /**
@@ -722,229 +1285,17 @@ new class extends Component {
     }
 
     /**
-     * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
+     * Détermine le niveau de correspondance
      */
-    private function prepareSearchTerms(string $search): string
+    private function getMatchLevel($similarityScore)
     {
-        // Nettoyage initial
-        $search = trim($search);
-        
-        // Extraction des composants selon le format: Vendor - Name - Type
-        $vendor = $this->extractVendorFromSearch($search);
-        $type = $this->extractProductTypeFromSearch($search);
-        $name = $this->extractProductNameFromSearch($search);
-        
-        \Log::info('Search components extracted:', [
-            'original' => $search,
-            'vendor' => $vendor,
-            'name' => $name,
-            'type' => $type
-        ]);
-        
-        // Construire les termes de recherche avec priorité
-        $searchTerms = [];
-        
-        // 1. Priorité au vendor (exact match boosté)
-        if (!empty($vendor)) {
-            // Recherche exacte du vendor
-            $vendorCleaned = $this->cleanSearchTerm($vendor);
-            $searchTerms[] = '+' . $vendorCleaned . '*';
-            
-            // Ajouter aussi le vendor en minuscule
-            $vendorLower = mb_strtolower($vendorCleaned);
-            if ($vendorLower !== $vendorCleaned) {
-                $searchTerms[] = '+' . $vendorLower . '*';
-            }
-        }
-        
-        // 2. Termes du nom du produit
-        if (!empty($name)) {
-            $nameWords = $this->extractSignificantWords($name);
-            foreach ($nameWords as $word) {
-                if (strlen($word) > 1) {
-                    // Priorité aux mots du nom
-                    $searchTerms[] = '+' . $word . '*';
-                    
-                    // Ajouter aussi en minuscule si différent
-                    $wordLower = mb_strtolower($word);
-                    if ($wordLower !== $word) {
-                        $searchTerms[] = '+' . $wordLower . '*';
-                    }
-                }
-            }
-            
-            // Ajouter le nom complet comme terme optionnel
-            $nameCleaned = $this->cleanSearchTerm($name);
-            $searchTerms[] = '"' . mb_strtolower($nameCleaned) . '"';
-        }
-        
-        // 3. Type de produit (eau de parfum, etc.)
-        if (!empty($type)) {
-            $typeWords = $this->extractSignificantWords($type);
-            foreach ($typeWords as $word) {
-                if (strlen($word) > 2) {
-                    $searchTerms[] = '+' . $word . '*';
-                    
-                    // Ajouter aussi en minuscule
-                    $wordLower = mb_strtolower($word);
-                    if ($wordLower !== $word) {
-                        $searchTerms[] = '+' . $wordLower . '*';
-                    }
-                }
-            }
-        }
-        
-        // 4. Termes supplémentaires de la recherche complète
-        $additionalTerms = $this->extractAdditionalSearchTerms($search);
-        foreach ($additionalTerms as $term) {
-            if (!in_array($term, $searchTerms)) {
-                $searchTerms[] = $term;
-            }
-        }
-        
-        // 5. Ajouter les versions avec et sans accents pour le vendor
-        if (!empty($vendor)) {
-            $vendorNoAccent = $this->removeAccents($vendor);
-            if ($vendorNoAccent !== $vendor) {
-                $searchTerms[] = '+' . $this->cleanSearchTerm($vendorNoAccent) . '*';
-            }
-        }
-        
-        // Limiter le nombre de termes pour éviter la surcharge
-        $searchTerms = array_slice(array_unique($searchTerms), 0, 15);
-        
-        $finalQuery = implode(' ', $searchTerms);
-        
-        \Log::info('Final search query:', ['query' => $finalQuery]);
-        
-        return $finalQuery;
-    }
-
-    /**
-     * Extrait le nom du produit de la recherche
-     */
-    private function extractProductNameFromSearch(string $search): string
-    {
-        // Format attendu: Vendor - Name - Type
-        // Exemple: Lancôme - Lancôme La Vie Est Belle Vanille Nude - Eau de Parfum Vaporisateur 50 ml
-        
-        // Supprimer le vendor au début
-        $withoutVendor = preg_replace('/^[^-]+\s*-\s*/i', '', $search);
-        
-        // Supprimer le type à la fin (si présent)
-        $pattern = '/\s*-\s*[^-]+$/i';
-        $name = preg_replace($pattern, '', $withoutVendor);
-        
-        // Nettoyer les numéros de volume
-        $name = preg_replace('/\s*\d+\s*ml\b/i', '', $name);
-        
-        return trim($name);
-    }
-
-    /**
-     * Extrait des termes supplémentaires significatifs de la recherche
-     */
-    private function extractAdditionalSearchTerms(string $search): array
-    {
-        $terms = [];
-        
-        // Supprimer les parties déjà traitées
-        $search = preg_replace('/^[^-]+\s*-\s*/i', '', $search); // Vendor
-        $search = preg_replace('/\s*-\s*[^-]+$/i', '', $search); // Type
-        
-        // Extraire les mots significatifs
-        $words = $this->extractSignificantWords($search);
-        
-        foreach ($words as $word) {
-            if (strlen($word) > 1) {
-                $terms[] = '+' . $word . '*';
-                
-                // Ajouter aussi la version minuscule si différente
-                $wordLower = mb_strtolower($word);
-                if ($wordLower !== $word) {
-                    $terms[] = '+' . $wordLower . '*';
-                }
-            }
-        }
-        
-        return $terms;
-    }
-
-    /**
-     * Extrait les mots significatifs d'un texte
-     */
-    private function extractSignificantWords(string $text): array
-    {
-        $text = trim($text);
-        $text = preg_replace('/[^a-zA-ZÀ-ÿ0-9\s]/', ' ', $text);
-        $text = preg_replace('/\s+/', ' ', $text);
-        
-        $words = explode(' ', $text);
-        
-        $stopWords = [
-            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou',
-            'pour', 'avec', 'dans', 'sur', 'sous', 'vers', 'par', 'chez',
-            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to',
-            'ml', 'edition', 'édition', 'coffret', 'vaporisateur', 'spray',
-            'eau', 'parfum', 'toilette', 'lotion', 'gel', 'douche'
-        ];
-        
-        $significantWords = [];
-        
-        foreach ($words as $word) {
-            $word = trim($word);
-            
-            if (empty($word)) {
-                continue;
-            }
-            
-            // Conserver les mots de 2+ caractères qui ne sont pas des stop words
-            $wordLower = mb_strtolower($word);
-            if (strlen($word) >= 2 && !in_array($wordLower, $stopWords) && !is_numeric($word)) {
-                $significantWords[] = $word;
-            }
-            
-            // Conserver aussi les nombres (volumes, etc.)
-            if (is_numeric($word) && $word > 0) {
-                $significantWords[] = $word;
-            }
-        }
-        
-        return array_unique($significantWords);
-    }
-
-    /**
-     * Nettoie un terme pour la recherche
-     */
-    private function cleanSearchTerm(string $term): string
-    {
-        $term = preg_replace('/[^a-zA-ZÀ-ÿ0-9]/', ' ', $term);
-        $term = trim(preg_replace('/\s+/', ' ', $term));
-        return $term;
-    }
-
-    /**
-     * Supprime les accents d'une chaîne
-     */
-    private function removeAccents(string $string): string
-    {
-        $search = [
-            'À', 'Á', 'Â', 'Ã', 'Ä', 'Å', 'Æ', 'Ç', 'È', 'É', 'Ê', 'Ë',
-            'Ì', 'Í', 'Î', 'Ï', 'Ð', 'Ñ', 'Ò', 'Ó', 'Ô', 'Õ', 'Ö', 'Ø',
-            'Ù', 'Ú', 'Û', 'Ü', 'Ý', 'ß', 'à', 'á', 'â', 'ã', 'ä', 'å',
-            'æ', 'ç', 'è', 'é', 'ê', 'ë', 'ì', 'í', 'î', 'ï', 'ñ', 'ò',
-            'ó', 'ô', 'õ', 'ö', 'ø', 'ù', 'ú', 'û', 'ü', 'ý', 'ÿ', 'œ'
-        ];
-        
-        $replace = [
-            'A', 'A', 'A', 'A', 'A', 'A', 'AE', 'C', 'E', 'E', 'E', 'E',
-            'I', 'I', 'I', 'I', 'D', 'N', 'O', 'O', 'O', 'O', 'O', 'O',
-            'U', 'U', 'U', 'U', 'Y', 's', 'a', 'a', 'a', 'a', 'a', 'a',
-            'ae', 'c', 'e', 'e', 'e', 'e', 'i', 'i', 'i', 'i', 'n', 'o',
-            'o', 'o', 'o', 'o', 'o', 'u', 'u', 'u', 'u', 'y', 'y', 'oe'
-        ];
-        
-        return str_replace($search, $replace, $string);
+        if ($similarityScore >= 0.8)
+            return 'excellent';
+        if ($similarityScore >= 0.6)
+            return 'bon';
+        if ($similarityScore >= 0.5)
+            return 'moyen';
+        return 'faible';
     }
 
     /**
