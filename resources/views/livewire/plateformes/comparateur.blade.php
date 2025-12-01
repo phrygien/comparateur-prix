@@ -1792,17 +1792,18 @@ public function getProductImage($product)
                                 </th>
                                 
                                 <!-- Colonne Nom avec filtre -->
-<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style="width: 300px;">
-    <div class="flex flex-col space-y-1">
-        <span>Nom</span>
+<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-64" style="width: 35%;">
+    <!-- Augmentation significative de la largeur -->
+    <div class="flex flex-col space-y-2">
+        <span class="whitespace-nowrap">Nom</span>
         <div class="relative">
             <input type="text" 
                    wire:model.live.debounce.300ms="filters.name"
                    placeholder="Filtrer..."
-                   class="px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-full"
+                   class="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
                    wire:loading.attr="disabled">
-            <div wire:loading wire:target="filters.name" class="absolute right-2 top-1/2 transform -translate-y-1/2">
-                <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
+            <div wire:loading wire:target="filters.name" class="absolute right-3 top-1/2 transform -translate-y-1/2">
+                <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
             </div>
         </div>
     </div>
