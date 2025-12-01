@@ -2,6 +2,7 @@
 
 use Livewire\Volt\Component;
 use Illuminate\Support\Facades\DB;
+use App\Models\Site as WebSite;
 
 new class extends Component {
     public $products = [];
@@ -28,6 +29,17 @@ new class extends Component {
     // price cosmashop
     public $cosmashopPrice;
 
+
+    // AJOUTEZ CES NOUVELLES PROPRIÉTÉS POUR LES FILTRES
+    public $filters = [
+        'name' => '',
+        'variation' => '',
+        'type' => '',
+        'site_source' => ''
+    ];
+
+    public $sites = []; // Pour stocker la liste des sites
+
     public function mount($name, $id, $price)
     {
         $this->getCompetitorPrice($name);
@@ -37,10 +49,141 @@ new class extends Component {
         $this->cosmashopPrice = $this->cleanPrice($price) * 1.05; // Prix majoré de 5% pour Cosmashop
 
         // STOCKEZ LA REQUÊTE DE RECHERCHE
-        $this->searchQuery = $name;        
+        $this->searchQuery = $name;   
+        
+        // Charger la liste des sites
+        $this->loadSites();
+
     }
 
+    /**
+     * Charge la liste des sites
+     */
+    public function loadSites()
+    {
+        try {
+            // Récupérer tous les sites web
+            $this->sites = WebSite::orderBy('name')->get();
+            
+            \Log::info('Sites loaded:', ['count' => count($this->sites)]);
+        } catch (\Throwable $e) {
+            \Log::error('Error loading sites:', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            $this->sites = [];
+        }
+    }
 
+    /**
+     * Méthode pour appliquer les filtres
+     */
+    public function applyFilters()
+    {
+        try {
+            // Vérifier si on a une recherche initiale
+            if (empty($this->searchQuery)) {
+                return null;
+            }
+
+            $this->extractSearchVolumes($this->searchQuery);
+            $this->extractSearchVariationKeywords($this->searchQuery);
+            $searchQuery = $this->prepareSearchTerms($this->searchQuery);
+
+            if (empty($searchQuery)) {
+                $this->products = [];
+                $this->hasData = false;
+                return null;
+            }
+
+            // Construire la requête SQL avec les filtres
+            $sql = "SELECT lp.*, ws.name as site_name 
+                    FROM last_price_scraped_product lp
+                    LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+                    WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
+                    AGAINST (? IN BOOLEAN MODE)";
+            
+            $params = [$searchQuery];
+            
+            // Ajouter les filtres si spécifiés
+            if (!empty($this->filters['name'])) {
+                $sql .= " AND lp.name LIKE ?";
+                $params[] = '%' . $this->filters['name'] . '%';
+            }
+            
+            if (!empty($this->filters['variation'])) {
+                $sql .= " AND lp.variation LIKE ?";
+                $params[] = '%' . $this->filters['variation'] . '%';
+            }
+            
+            if (!empty($this->filters['type'])) {
+                $sql .= " AND lp.type LIKE ?";
+                $params[] = '%' . $this->filters['type'] . '%';
+            }
+            
+            if (!empty($this->filters['site_source'])) {
+                $sql .= " AND ws.id = ?";
+                $params[] = $this->filters['site_source'];
+            }
+            
+            $sql .= " ORDER BY lp.prix_ht DESC LIMIT 50";
+
+            \Log::info('Filtered SQL Query:', [
+                'filters' => $this->filters,
+                'sql' => $sql,
+                'params' => $params
+            ]);
+
+            $result = DB::connection('mysql')->select($sql, $params);
+
+            // Nettoyer les prix
+            foreach ($result as $product) {
+                if (isset($product->prix_ht)) {
+                    $product->prix_ht = $this->cleanPrice($product->prix_ht);
+                }
+            }
+
+            $this->matchedProducts = $this->calculateSimilarity($result, $this->searchQuery);
+            $this->products = $this->matchedProducts;
+            $this->hasData = !empty($result);
+
+        } catch (\Throwable $e) {
+            \Log::error('Error applying filters:', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            $this->products = [];
+            $this->hasData = false;
+        }
+    }
+    
+    /**
+     * Méthode pour réinitialiser les filtres
+     */
+    public function resetFilters()
+    {
+        $this->filters = [
+            'name' => '',
+            'variation' => '',
+            'type' => '',
+            'site_source' => ''
+        ];
+        
+        // Recharger les données avec la recherche initiale
+        if (!empty($this->searchQuery)) {
+            $this->getCompetitorPrice($this->searchQuery);
+        }
+    }
+    
+    /**
+     * Méthode appelée quand un filtre change
+     */
+    public function updatedFilters($value, $key)
+    {
+        // Débouncer pour éviter trop d'appels
+        $this->applyFilters();
+    }
     /**
      * Nettoie et convertit un prix en nombre décimal
      * Enlève tous les symboles de devise et caractères non numériques
@@ -1482,6 +1625,70 @@ public function getCosmashopPriceAnalysis()
                                     $cosmashopStatusClass = $this->getCosmashopPriceStatusClass($competitorPrice);
                                     $cosmashopStatusLabel = $this->getCosmashopPriceStatusLabel($competitorPrice);
                                                             @endphp
+                                                                <tr class="bg-blue-50">
+        <th class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" colspan="12">
+            <div class="flex flex-wrap gap-4 items-center">
+                <!-- Titre des filtres -->
+                <div class="flex items-center">
+                    <svg class="w-5 h-5 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
+                    </svg>
+                    <span class="text-sm font-medium text-blue-800">Filtres :</span>
+                </div>
+                
+                <!-- Filtre par Nom -->
+                <div class="flex flex-col">
+                    <label class="text-xs text-gray-600 mb-1">Nom</label>
+                    <input type="text" 
+                           wire:model.live.debounce.300ms="filters.name"
+                           placeholder="Filtrer par nom..."
+                           class="px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-40">
+                </div>
+                
+                <!-- Filtre par Variation -->
+                <div class="flex flex-col">
+                    <label class="text-xs text-gray-600 mb-1">Variation</label>
+                    <input type="text" 
+                           wire:model.live.debounce.300ms="filters.variation"
+                           placeholder="Filtrer par variation..."
+                           class="px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-40">
+                </div>
+                
+                <!-- Filtre par Type -->
+                <div class="flex flex-col">
+                    <label class="text-xs text-gray-600 mb-1">Type</label>
+                    <input type="text" 
+                           wire:model.live.debounce.300ms="filters.type"
+                           placeholder="Filtrer par type..."
+                           class="px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-40">
+                </div>
+                
+                <!-- Filtre par Site Source (Select) -->
+                <div class="flex flex-col">
+                    <label class="text-xs text-gray-600 mb-1">Site Source</label>
+                    <select wire:model.live="filters.site_source"
+                            class="px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-48">
+                        <option value="">Tous les sites</option>
+                        @foreach($sites as $site)
+                            <option value="{{ $site->id }}">{{ $site->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                
+                <!-- Bouton Réinitialiser -->
+                <div class="flex flex-col justify-end">
+                    <button wire:click="resetFilters"
+                            class="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-md transition-colors duration-200 flex items-center">
+                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                        </svg>
+                        Réinitialiser
+                    </button>
+                </div>
+            </div>
+        </th>
+    </tr>
+
                                                             <tr class="hover:bg-gray-50 transition-colors duration-150">
                                                                 <!-- Colonne Score -->
                                                                 <td class="px-6 py-4 whitespace-nowrap">
