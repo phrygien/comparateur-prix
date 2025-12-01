@@ -1,10 +1,7 @@
 <?php
 
-namespace App\Livewire\Components;
-
 use Livewire\Volt\Component;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 new class extends Component {
     public $products = [];
@@ -19,293 +16,56 @@ new class extends Component {
 
     public $similarityThreshold = 0.6;
     public $matchedProducts = [];
-    public $searchQuery = '';
-    
-    public $price;
-    public $referencePrice;
-    public $cosmashopPrice;
 
-    // Propriété pour stocker les informations extraites de la recherche
-    public $extractedData = [
-        'vendor' => '',
-        'name' => '',
-        'type' => '',
-        'variation' => '',
-        'volume_ml' => null,
-        'full_variation' => ''
-    ];
+    // AJOUTEZ CETTE PROPRIÉTÉ MANQUANTE
+    public $searchQuery = ''; // Pour stocker la requête de recherche
+
+    // prix a comparer
+    public $price;
+    // Ajoutez cette propriété dans la classe
+    public $referencePrice;
+
+    // price cosmashop
+    public $cosmashopPrice;
 
     public function mount($name, $id, $price)
     {
-        // Extrait les informations structurées de la recherche
-        $this->extractProductInfoFromSearch($name);
-        
         $this->getCompetitorPrice($name);
         $this->id = $id;
         $this->price = $this->cleanPrice($price);
-        $this->referencePrice = $this->cleanPrice($price);
-        $this->cosmashopPrice = $this->cleanPrice($price) * 1.05;
-        $this->searchQuery = $name;
+        $this->referencePrice = $this->cleanPrice($price); // Prix de référence pour la comparaison
+        $this->cosmashopPrice = $this->cleanPrice($price) * 1.05; // Prix majoré de 5% pour Cosmashop
+
+        // STOCKEZ LA REQUÊTE DE RECHERCHE
+        $this->searchQuery = $name;        
     }
 
-    /**
-     * Extrait les informations structurées du terme de recherche
-     * Format: VENDOR - NOM - TYPE/VARIATION (VOLUME ML)
-     * Exemple: "Jean Paul Gaultier - Scandal Le Parfum - Eau de Parfum Vaporisateur 80 ml"
-     */
-    private function extractProductInfoFromSearch(string $search): void
-    {
-        // Réinitialiser les données extraites
-        $this->extractedData = [
-            'vendor' => '',
-            'name' => '',
-            'type' => '',
-            'variation' => '',
-            'volume_ml' => null,
-            'full_variation' => ''
-        ];
-
-        \Log::info('Début extraction recherche:', ['recherche' => $search]);
-
-        // 1. Extraire d'abord le volume en ML
-        if (preg_match('/(\d+)\s*ml/i', $search, $volumeMatches)) {
-            $this->extractedData['volume_ml'] = (int)$volumeMatches[1];
-            \Log::info('Volume extrait:', ['volume' => $this->extractedData['volume_ml']]);
-            
-            // Supprimer le volume pour faciliter l'extraction d'autres parties
-            $search = preg_replace('/(\d+)\s*ml/i', '', $search);
-        }
-
-        // 2. Découper par séparateur "-"
-        $parts = array_map('trim', explode('-', $search));
-        $parts = array_filter($parts, function($part) {
-            return !empty($part);
-        });
-        
-        \Log::info('Parties après découpage:', ['parts' => $parts, 'count' => count($parts)]);
-
-        // 3. Assigner les parties selon leur position et contenu
-        if (count($parts) >= 1) {
-            $this->extractedData['vendor'] = $parts[0];
-            \Log::info('Vendor extrait:', ['vendor' => $this->extractedData['vendor']]);
-        }
-        
-        if (count($parts) >= 2) {
-            $this->extractedData['name'] = $parts[1];
-            \Log::info('Nom extrait:', ['name' => $this->extractedData['name']]);
-        }
-        
-        // 4. Gestion spéciale pour la troisième partie qui peut contenir type + variation
-        if (count($parts) >= 3) {
-            $typeVariationPart = $parts[2];
-            \Log::info('Partie type/variation originale:', ['part' => $typeVariationPart]);
-            
-            // Extraire le type de produit
-            $this->extractedData['type'] = $this->extractProductTypeFromString($typeVariationPart);
-            \Log::info('Type extrait:', ['type' => $this->extractedData['type']]);
-            
-            // Ce qui reste après extraction du type est la variation
-            $variation = $this->removeProductTypeFromString($typeVariationPart, $this->extractedData['type']);
-            $this->extractedData['variation'] = trim($variation);
-            \Log::info('Variation extraite:', ['variation' => $this->extractedData['variation']]);
-            
-            // Stocker aussi la variation complète
-            $this->extractedData['full_variation'] = $typeVariationPart;
-        } elseif (count($parts) == 2) {
-            // Si seulement 2 parties, la variation peut être dans le nom
-            $this->extractedData['variation'] = $this->extractedData['name'];
-        }
-
-        // 5. Si on a plus de parties, les ajouter à la variation
-        if (count($parts) > 3) {
-            $extraParts = array_slice($parts, 3);
-            $extraVariation = implode(' - ', $extraParts);
-            if (!empty($this->extractedData['variation'])) {
-                $this->extractedData['variation'] .= ' - ' . $extraVariation;
-            } else {
-                $this->extractedData['variation'] = $extraVariation;
-            }
-        }
-
-        // 6. Nettoyer et valider les données extraites
-        $this->cleanExtractedData();
-
-        \Log::info('Données finales extraites:', $this->extractedData);
-    }
-
-    /**
-     * Extrait le type de produit d'une chaîne avec une logique améliorée
-     */
-    private function extractProductTypeFromString(string $text): string
-    {
-        $text = trim($text);
-        $textLower = mb_strtolower($text);
-        
-        // Liste des types avec leurs variations et priorités
-        $typePatterns = [
-            'eau de parfum vaporisateur' => ['eau de parfum vaporisateur', 'edp vaporisateur'],
-            'eau de parfum' => ['eau de parfum', 'edp', 'parfum vaporisateur'],
-            'eau de toilette vaporisateur' => ['eau de toilette vaporisateur', 'edt vaporisateur'],
-            'eau de toilette' => ['eau de toilette', 'edt'],
-            'eau de cologne' => ['eau de cologne', 'edc'],
-            'parfum' => ['parfum', 'extrait de parfum'],
-            'coffret' => ['coffret', 'set', 'kit', 'collection', 'coffret cadeau'],
-            'gel douche' => ['gel douche', 'shower gel', 'gel lavant'],
-            'lotion' => ['lotion', 'body lotion', 'lotion pour le corps'],
-            'crème' => ['crème', 'cream', 'body cream'],
-            'savon' => ['savon', 'soap'],
-            'baume' => ['baume', 'balm'],
-            'déodorant' => ['déodorant', 'deodorant'],
-            'shampooing' => ['shampooing', 'shampoo'],
-            'après-rasage' => ['après-rasage', 'after shave']
-        ];
-
-        // Chercher d'abord les types les plus spécifiques
-        foreach ($typePatterns as $typeName => $patterns) {
-            foreach ($patterns as $pattern) {
-                if (strpos($textLower, $pattern) !== false) {
-                    \Log::info('Type détecté:', [
-                        'texte' => $text,
-                        'type_trouve' => $typeName,
-                        'pattern' => $pattern
-                    ]);
-                    return $typeName;
-                }
-            }
-        }
-
-        // Si aucun type spécifique n'est trouvé, chercher des mots-clés génériques
-        $genericKeywords = [
-            'vaporisateur', 'spray', 'flacon', 'bottle', 'roll-on',
-            'stick', 'tube', 'pot', 'atomiseur'
-        ];
-
-        foreach ($genericKeywords as $keyword) {
-            if (strpos($textLower, $keyword) !== false) {
-                \Log::info('Mot-clé générique détecté:', [
-                    'texte' => $text,
-                    'mot_cle' => $keyword
-                ]);
-                return $keyword;
-            }
-        }
-
-        return '';
-    }
-
-    /**
-     * Retire le type de produit d'une chaîne
-     */
-    private function removeProductTypeFromString(string $text, string $type): string
-    {
-        if (empty($type)) {
-            return $text;
-        }
-
-        $textLower = mb_strtolower($text);
-        $typeLower = mb_strtolower($type);
-
-        // Liste des patterns pour ce type
-        $typePatterns = [
-            'eau de parfum vaporisateur' => ['eau de parfum vaporisateur', 'edp vaporisateur'],
-            'eau de parfum' => ['eau de parfum', 'edp', 'parfum vaporisateur'],
-            'eau de toilette vaporisateur' => ['eau de toilette vaporisateur', 'edt vaporisateur'],
-            'eau de toilette' => ['eau de toilette', 'edt'],
-            'eau de cologne' => ['eau de cologne', 'edc'],
-            'parfum' => ['parfum', 'extrait de parfum'],
-            'coffret' => ['coffret', 'set', 'kit', 'collection'],
-            'gel douche' => ['gel douche', 'shower gel'],
-            'lotion' => ['lotion', 'body lotion'],
-            'crème' => ['crème', 'cream'],
-            'savon' => ['savon', 'soap'],
-            'baume' => ['baume', 'balm']
-        ];
-
-        // Supprimer tous les patterns correspondant au type
-        $patterns = $typePatterns[$type] ?? [$type];
-        
-        foreach ($patterns as $pattern) {
-            $patternLower = mb_strtolower($pattern);
-            $textLower = str_replace($patternLower, '', $textLower);
-        }
-
-        // Nettoyer les espaces multiples
-        $result = preg_replace('/\s+/', ' ', $textLower);
-        return trim($result);
-    }
-
-    /**
-     * Nettoie les données extraites
-     */
-    private function cleanExtractedData(): void
-    {
-        foreach ($this->extractedData as $key => $value) {
-            if (is_string($value)) {
-                $this->extractedData[$key] = trim($value);
-                
-                // Capitaliser correctement les noms propres pour le vendor
-                if ($key === 'vendor') {
-                    $this->extractedData[$key] = $this->formatVendorName($value);
-                }
-            }
-        }
-
-        // Si la variation est vide mais qu'on a full_variation, l'utiliser
-        if (empty($this->extractedData['variation']) && !empty($this->extractedData['full_variation'])) {
-            $this->extractedData['variation'] = $this->extractedData['full_variation'];
-        }
-
-        // Si le type est dans la variation, l'en retirer
-        if (!empty($this->extractedData['type']) && !empty($this->extractedData['variation'])) {
-            $variationWithoutType = $this->removeProductTypeFromString(
-                $this->extractedData['variation'],
-                $this->extractedData['type']
-            );
-            if (!empty($variationWithoutType)) {
-                $this->extractedData['variation'] = $variationWithoutType;
-            }
-        }
-    }
-
-    /**
-     * Formate correctement le nom du vendeur
-     */
-    private function formatVendorName(string $vendor): string
-    {
-        // Mots à ne pas capitaliser entièrement
-        $smallWords = ['de', 'la', 'le', 'et', '&', 'and', 'or', 'for', 'the'];
-        
-        $words = explode(' ', $vendor);
-        $formattedWords = [];
-        
-        foreach ($words as $word) {
-            if (in_array(mb_strtolower($word), $smallWords)) {
-                $formattedWords[] = mb_strtolower($word);
-            } else {
-                $formattedWords[] = mb_convert_case($word, MB_CASE_TITLE, 'UTF-8');
-            }
-        }
-        
-        return implode(' ', $formattedWords);
-    }
 
     /**
      * Nettoie et convertit un prix en nombre décimal
+     * Enlève tous les symboles de devise et caractères non numériques
      */
     private function cleanPrice($price)
     {
+        // Si null ou vide, retourner null
         if ($price === null || $price === '') {
             return null;
         }
         
+        // Si déjà numérique, retourner tel quel
         if (is_numeric($price)) {
             return (float) $price;
         }
         
+        // Si string, nettoyer
         if (is_string($price)) {
+            // Enlever symboles de devise et espaces (garder seulement chiffres, virgule, point, tiret)
             $cleanPrice = preg_replace('/[^\d,.-]/', '', $price);
+            
+            // Remplacer virgule par point pour conversion
             $cleanPrice = str_replace(',', '.', $cleanPrice);
             
+            // Vérifier si numérique après nettoyage
             if (is_numeric($cleanPrice)) {
                 return (float) $cleanPrice;
             }
@@ -314,9 +74,7 @@ new class extends Component {
         return null;
     }
 
-    /**
-     * Récupère les détails d'un produit
-     */
+
     public function getOneProductDetails($entity_id)
     {
         try {
@@ -388,12 +146,17 @@ new class extends Component {
                 'trace' => $e->getTraceAsString()
             ]);
 
-            return ['error' => $e->getMessage()];
+            $this->products = [];
+            $this->hasData = false;
+
+            return [
+                'error' => $e->getMessage()
+            ];
         }
     }
 
     /**
-     * Récupère les prix des concurrents avec recherche améliorée
+     * Récupère les prix des concurrents
      */
     public function getCompetitorPrice($search)
     {
@@ -404,30 +167,55 @@ new class extends Component {
                 return null;
             }
 
-            // Extraire les informations structurées
-            $this->extractProductInfoFromSearch($search);
-            
-            // Préparer la requête de recherche optimisée SANS WILDCARDS
-            $searchQuery = $this->buildOptimizedSearchQuery();
-            
-            \Log::info('Recherche SQL optimisée SANS WILDCARDS:', [
-                'recherche_originale' => $search,
-                'donnees_extrait' => $this->extractedData,
-                'requete_sql' => $searchQuery['sql'],
-                'parametres' => $searchQuery['params']
+            $this->extractSearchVolumes($search);
+            $this->extractSearchVariationKeywords($search);
+
+            $searchQuery = $this->prepareSearchTerms($search);
+
+            if (empty($searchQuery)) {
+                $this->products = [];
+                $this->hasData = false;
+                return null;
+            }
+
+            $sql = "SELECT *, 
+                           prix_ht,
+                           image_url as image,
+                           url as product_url
+                    FROM last_price_scraped_product 
+                    WHERE MATCH (name, vendor, type, variation) 
+                    AGAINST (? IN BOOLEAN MODE)
+                    ORDER BY prix_ht DESC LIMIT 50";
+
+            \Log::info('SQL Query:', [
+                'original_search' => $search,
+                'search_query' => $searchQuery,
+                'search_volumes' => $this->searchVolumes,
+                'search_variation_keywords' => $this->searchVariationKeywords
             ]);
 
-            $result = DB::connection('mysql')->select($searchQuery['sql'], $searchQuery['params']);
+            $result = DB::connection('mysql')->select($sql, [$searchQuery]);
 
-            // Nettoyer les prix
+            // NETTOYER LE PRIX_HT DÈS LA RÉCUPÉRATION
             foreach ($result as $product) {
                 if (isset($product->prix_ht)) {
-                    $product->prix_ht = $this->cleanPrice($product->prix_ht);
+                    $originalPrice = $product->prix_ht;
+                    $cleanedPrice = $this->cleanPrice($product->prix_ht);
+                    $product->prix_ht = $cleanedPrice;
+                    
+                    // Log pour vérifier le nettoyage
+                    \Log::info('Prix nettoyé:', [
+                        'original' => $originalPrice,
+                        'cleaned' => $cleanedPrice
+                    ]);
                 }
             }
 
-            // Calculer la similarité avec les données structurées
-            $this->matchedProducts = $this->calculateSimilarityWithExtractedData($result);
+            \Log::info('Query result:', [
+                'count' => count($result)
+            ]);
+
+            $this->matchedProducts = $this->calculateSimilarity($result, $search);
             $this->products = $this->matchedProducts;
             $this->hasData = !empty($result);
 
@@ -436,7 +224,9 @@ new class extends Component {
                 'has_data' => $this->hasData,
                 'products' => $this->matchedProducts,
                 'product' => $this->getOneProductDetails($this->id),
-                'extracted_data' => $this->extractedData
+                'query' => $searchQuery,
+                'volumes' => $this->searchVolumes,
+                'variation_keywords' => $this->searchVariationKeywords
             ];
 
         } catch (\Throwable $e) {
@@ -449,236 +239,29 @@ new class extends Component {
             $this->products = [];
             $this->hasData = false;
 
-            return ['error' => $e->getMessage()];
+            return [
+                'error' => $e->getMessage()
+            ];
         }
     }
 
     /**
-     * Construit une requête de recherche optimisée SANS WILDCARDS
+     * Calcule la similarité entre la recherche et chaque produit
      */
-    private function buildOptimizedSearchQuery(): array
-    {
-        $conditions = [];
-        $params = [];
-        
-        // 1. Recherche par vendor (sans wildcards, recherche exacte ou mots-clés)
-        if (!empty($this->extractedData['vendor'])) {
-            $vendorKeywords = $this->extractKeywordsFromVendor($this->extractedData['vendor']);
-            foreach ($vendorKeywords as $keyword) {
-                if (strlen($keyword) > 2) {
-                    // Recherche exacte du mot-clé dans le vendor
-                    $conditions[] = "vendor LIKE ?";
-                    $params[] = "%{$keyword}%";
-                }
-            }
-        }
-        
-        // 2. Recherche par nom du produit (sans wildcards)
-        if (!empty($this->extractedData['name'])) {
-            $nameKeywords = $this->extractKeywords($this->extractedData['name']);
-            foreach ($nameKeywords as $keyword) {
-                if (strlen($keyword) > 2) {
-                    $conditions[] = "name LIKE ?";
-                    $params[] = "%{$keyword}%";
-                }
-            }
-        }
-        
-        // 3. Recherche par volume (sans wildcards, recherche exacte)
-        if (!empty($this->extractedData['volume_ml'])) {
-            $volume = $this->extractedData['volume_ml'];
-            // Recherche exacte du volume
-            $conditions[] = "(name LIKE ? OR variation LIKE ?)";
-            $params[] = "%{$volume} ml%";
-            $params[] = "%{$volume}ml%";
-        }
-        
-        // 4. Recherche par type (sans wildcards)
-        if (!empty($this->extractedData['type'])) {
-            $typeKeywords = $this->extractTypeKeywords($this->extractedData['type']);
-            foreach ($typeKeywords as $keyword) {
-                if (strlen($keyword) > 2) {
-                    $conditions[] = "type LIKE ?";
-                    $params[] = "%{$keyword}%";
-                }
-            }
-        }
-        
-        // 5. Recherche par variation (sans wildcards)
-        if (!empty($this->extractedData['variation'])) {
-            $variationKeywords = $this->extractKeywords($this->extractedData['variation']);
-            foreach ($variationKeywords as $keyword) {
-                if (strlen($keyword) > 2) {
-                    $conditions[] = "variation LIKE ?";
-                    $params[] = "%{$keyword}%";
-                }
-            }
-        }
-
-        // Construire la requête SQL
-        $sql = "SELECT *, 
-                       prix_ht,
-                       image_url as image,
-                       url as product_url,
-                       vendor,
-                       name,
-                       type,
-                       variation
-                FROM last_price_scraped_product 
-                WHERE 1=1 ";
-        
-        if (!empty($conditions)) {
-            $sql .= " AND (" . implode(" OR ", $conditions) . ")";
-        }
-        
-        // Ajouter un ordre de priorité SANS WILDCARDS DANS LE ORDER BY
-        $sql .= " ORDER BY ";
-        
-        $orderConditions = [];
-        
-        // Priorité 1: Correspondance exacte du vendor
-        if (!empty($this->extractedData['vendor'])) {
-            $vendor = addslashes($this->extractedData['vendor']);
-            $orderConditions[] = "vendor = '{$vendor}' DESC";
-        }
-        
-        // Priorité 2: Correspondance du volume (recherche exacte)
-        if (!empty($this->extractedData['volume_ml'])) {
-            $volume = $this->extractedData['volume_ml'];
-            $orderConditions[] = "(name LIKE '%{$volume} ml%' OR variation LIKE '%{$volume}ml%') DESC";
-        }
-        
-        // Priorité 3: Correspondance du type
-        if (!empty($this->extractedData['type'])) {
-            $type = addslashes($this->extractedData['type']);
-            $orderConditions[] = "type LIKE '%{$type}%' DESC";
-        }
-        
-        // Priorité 4: Correspondance du nom
-        if (!empty($this->extractedData['name'])) {
-            $name = addslashes($this->extractedData['name']);
-            $orderConditions[] = "name LIKE '%{$name}%' DESC";
-        }
-        
-        if (!empty($orderConditions)) {
-            $sql .= implode(", ", $orderConditions) . ", ";
-        }
-        
-        $sql .= "prix_ht DESC LIMIT 50";
-        
-        return [
-            'sql' => $sql,
-            'params' => $params
-        ];
-    }
-
-    /**
-     * Extrait les mots-clés d'un vendeur
-     */
-    private function extractKeywordsFromVendor(string $vendor): array
-    {
-        $vendor = trim($vendor);
-        $keywords = [];
-        
-        // Pour les vendeurs multi-mots, prendre chaque mot significatif
-        $words = explode(' ', $vendor);
-        $stopWords = ['&', 'and', 'de', 'la', 'le', 'the'];
-        
-        foreach ($words as $word) {
-            $word = trim($word);
-            if (!empty($word) && !in_array(mb_strtolower($word), $stopWords) && strlen($word) > 1) {
-                $keywords[] = $word;
-            }
-        }
-        
-        // Ajouter aussi le nom complet du vendeur si significatif
-        if (count($keywords) > 1 && strlen($vendor) > 3) {
-            $keywords[] = $vendor;
-        }
-        
-        return array_unique($keywords);
-    }
-
-    /**
-     * Extrait les mots-clés d'un type
-     */
-    private function extractTypeKeywords(string $type): array
-    {
-        $keywords = [];
-        
-        // Ajouter seulement le type lui-même s'il est significatif
-        if (strlen($type) > 2) {
-            $keywords[] = mb_strtolower($type);
-        }
-        
-        // Ajouter des variations du type seulement si elles sont significatives
-        $typeVariations = [
-            'eau de parfum' => ['edp', 'parfum'],
-            'eau de toilette' => ['edt'],
-            'eau de cologne' => ['edc'],
-            'parfum' => ['extrait'],
-            'coffret' => ['set', 'kit'],
-            'vaporisateur' => ['spray', 'atomiseur']
-        ];
-        
-        $typeLower = mb_strtolower($type);
-        foreach ($typeVariations as $mainType => $variations) {
-            if ($typeLower === $mainType || strpos($typeLower, $mainType) !== false) {
-                foreach ($variations as $variation) {
-                    if (strlen($variation) > 2) {
-                        $keywords[] = $variation;
-                    }
-                }
-            }
-        }
-        
-        return array_unique($keywords);
-    }
-
-    /**
-     * Extrait les mots-clés significatifs d'un texte SANS WILDCARDS
-     */
-    private function extractKeywords(string $text): array
-    {
-        $text = preg_replace('/[^a-zA-ZÀ-ÿ0-9\s]/', ' ', $text);
-        $words = explode(' ', $text);
-        
-        $stopWords = [
-            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou',
-            'pour', 'avec', 'the', 'a', 'an', 'and', 'or', 'ml', 'edition',
-            'édition', 'coffret', 'vaporisateur', 'spray', 'flacon', 'bottle'
-        ];
-        
-        $keywords = [];
-        foreach ($words as $word) {
-            $word = trim($word);
-            if (!empty($word) && strlen($word) > 2 && !in_array(mb_strtolower($word), $stopWords)) {
-                $keywords[] = $word;
-            }
-        }
-        
-        return array_unique($keywords);
-    }
-
-    /**
-     * Calcule la similarité avec les données structurées extraites
-     */
-    private function calculateSimilarityWithExtractedData($products)
+    private function calculateSimilarity($products, $search)
     {
         $scoredProducts = [];
 
         foreach ($products as $product) {
-            $similarityScore = $this->computeEnhancedSimilarity($product);
+            $similarityScore = $this->computeOverallSimilarity($product, $search);
 
             if ($similarityScore >= $this->similarityThreshold) {
                 $product->similarity_score = $similarityScore;
                 $product->match_level = $this->getMatchLevel($similarityScore);
-                $product->match_details = $this->getMatchDetails($product);
                 $scoredProducts[] = $product;
             }
         }
 
-        // Trier par score de similarité
         usort($scoredProducts, function ($a, $b) {
             return $b->similarity_score <=> $a->similarity_score;
         });
@@ -687,353 +270,42 @@ new class extends Component {
     }
 
     /**
-     * Calcule la similarité améliorée avec pondération
+     * Calcule le score de similarité global
      */
-    private function computeEnhancedSimilarity($product): float
+    private function computeOverallSimilarity($product, $search)
     {
         $weights = [
-            'vendor' => 0.25,
-            'name' => 0.25,
-            'type' => 0.15,
-            'variation' => 0.15,
-            'volume' => 0.20
+            'name' => 0.3,
+            'vendor' => 0.2,
+            'variation' => 0.25,
+            'volumes' => 0.15,
+            'type' => 0.1
         ];
 
-        $scores = [];
-        
-        // Score pour le vendor
-        $scores['vendor'] = $this->computeVendorSimilarity($product);
-        
-        // Score pour le nom
-        $scores['name'] = $this->computeNameSimilarity($product);
-        
-        // Score pour le type
-        $scores['type'] = $this->computeTypeSimilarity($product);
-        
-        // Score pour la variation
-        $scores['variation'] = $this->computeVariationSimilarity($product);
-        
-        // Score pour le volume
-        $scores['volume'] = $this->computeVolumeSimilarity($product);
-        
-        // Calcul du score total pondéré
         $totalScore = 0;
-        foreach ($weights as $field => $weight) {
-            $totalScore += ($scores[$field] ?? 0) * $weight;
-        }
-        
-        // Bonus pour les correspondances exactes
-        $bonus = $this->calculateExactMatchBonus($product);
-        $totalScore = min(1.0, $totalScore + $bonus);
-        
-        \Log::info('Score de similarité calculé:', [
-            'produit' => $product->name ?? 'N/A',
-            'scores' => $scores,
-            'total' => $totalScore,
-            'bonus' => $bonus
-        ]);
-        
-        return $totalScore;
-    }
 
-    /**
-     * Calcule la similarité du vendeur
-     */
-    private function computeVendorSimilarity($product): float
-    {
-        $searchVendor = $this->extractedData['vendor'] ?? '';
-        $productVendor = $product->vendor ?? '';
-        
-        if (empty($searchVendor) || empty($productVendor)) {
-            return 0;
-        }
-        
-        $searchVendorLower = mb_strtolower(trim($searchVendor));
-        $productVendorLower = mb_strtolower(trim($productVendor));
-        
-        // Correspondance exacte
-        if ($searchVendorLower === $productVendorLower) {
-            return 1.0;
-        }
-        
-        // Le vendeur recherché est contenu dans le vendeur du produit
-        if (strpos($productVendorLower, $searchVendorLower) !== false) {
-            return 0.8;
-        }
-        
-        // Le vendeur du produit est contenu dans le vendeur recherché
-        if (strpos($searchVendorLower, $productVendorLower) !== false) {
-            return 0.7;
-        }
-        
-        // Vérifier les mots-clés du vendeur
-        $searchKeywords = $this->extractKeywordsFromVendor($searchVendor);
-        $productKeywords = $this->extractKeywordsFromVendor($productVendor);
-        
-        $matchingKeywords = array_intersect($searchKeywords, $productKeywords);
-        if (!empty($matchingKeywords)) {
-            $matchRatio = count($matchingKeywords) / max(1, count($searchKeywords));
-            return $matchRatio * 0.7;
-        }
-        
-        // Similarité textuelle de base
-        return $this->computeStringSimilarity($searchVendor, $productVendor);
-    }
+        $nameScore = $this->computeStringSimilarity($search, $product->name ?? '');
+        $totalScore += $nameScore * $weights['name'];
 
-    /**
-     * Calcule la similarité du nom
-     */
-    private function computeNameSimilarity($product): float
-    {
-        $searchName = $this->extractedData['name'] ?? '';
-        $productName = $product->name ?? '';
-        
-        if (empty($searchName) || empty($productName)) {
-            return 0;
-        }
-        
-        $searchNameLower = mb_strtolower(trim($searchName));
-        $productNameLower = mb_strtolower(trim($productName));
-        
-        // Correspondance exacte
-        if ($searchNameLower === $productNameLower) {
-            return 1.0;
-        }
-        
-        // Le nom recherché est contenu dans le nom du produit
-        if (strpos($productNameLower, $searchNameLower) !== false) {
-            return 0.9;
-        }
-        
-        // Le nom du produit est contenu dans le nom recherché
-        if (strpos($searchNameLower, $productNameLower) !== false) {
-            return 0.8;
-        }
-        
-        // Extraire les mots-clés et vérifier les correspondances
-        $searchKeywords = $this->extractKeywords($searchName);
-        $productKeywords = $this->extractKeywords($productName);
-        
-        $matchingKeywords = array_intersect($searchKeywords, $productKeywords);
-        $matchRatio = count($matchingKeywords) / max(1, count($searchKeywords));
-        
-        return $matchRatio * 0.8;
-    }
+        $vendorScore = $this->computeVendorSimilarity($product, $search);
+        $totalScore += $vendorScore * $weights['vendor'];
 
-    /**
-     * Calcule la similarité du type
-     */
-    private function computeTypeSimilarity($product): float
-    {
-        $searchType = $this->extractedData['type'] ?? '';
-        $productType = $product->type ?? '';
-        
-        if (empty($searchType) || empty($productType)) {
-            return 0;
-        }
-        
-        $searchTypeLower = mb_strtolower(trim($searchType));
-        $productTypeLower = mb_strtolower(trim($productType));
-        
-        // Correspondance exacte
-        if ($searchTypeLower === $productTypeLower) {
-            return 1.0;
-        }
-        
-        // Vérifier les variations de type
-        $searchTypeKeywords = $this->extractTypeKeywords($searchType);
-        $productTypeKeywords = $this->extractTypeKeywords($productType);
-        
-        $matchingKeywords = array_intersect($searchTypeKeywords, $productTypeKeywords);
-        if (!empty($matchingKeywords)) {
-            $matchRatio = count($matchingKeywords) / max(1, count($searchTypeKeywords));
-            return $matchRatio * 0.8;
-        }
-        
-        // Similarité textuelle
-        return $this->computeStringSimilarity($searchType, $productType);
-    }
+        $variationScore = $this->computeVariationSimilarity($product, $search);
+        $totalScore += $variationScore * $weights['variation'];
 
-    /**
-     * Calcule la similarité de la variation
-     */
-    private function computeVariationSimilarity($product): float
-    {
-        $searchVariation = $this->extractedData['variation'] ?? '';
-        $productVariation = $product->variation ?? '';
-        
-        if (empty($searchVariation) || empty($productVariation)) {
-            return 0;
-        }
-        
-        // Extraire les volumes des variations
-        $searchVolume = $this->extractedData['volume_ml'];
-        $productVolume = $this->extractVolumeFromText($productVariation);
-        
-        // Bonus si les volumes correspondent
-        $volumeBonus = 0;
-        if ($searchVolume && $productVolume && $searchVolume == $productVolume) {
-            $volumeBonus = 0.3;
-        }
-        
-        // Similarité de base
-        $baseSimilarity = $this->computeStringSimilarity($searchVariation, $productVariation);
-        
-        return min(1.0, $baseSimilarity + $volumeBonus);
-    }
+        $volumeScore = $this->computeVolumeSimilarity($product);
+        $totalScore += $volumeScore * $weights['volumes'];
 
-    /**
-     * Calcule la similarité du volume
-     */
-    private function computeVolumeSimilarity($product): float
-    {
-        $searchVolume = $this->extractedData['volume_ml'];
-        
-        if (!$searchVolume) {
-            return 0;
-        }
-        
-        // Extraire le volume du produit
-        $productVolume = $this->extractVolumeFromProduct($product);
-        
-        if (!$productVolume) {
-            return 0;
-        }
-        
-        // Correspondance exacte
-        if ($searchVolume == $productVolume) {
-            return 1.0;
-        }
-        
-        // Correspondance approximative
-        $difference = abs($searchVolume - $productVolume);
-        $percentageDiff = ($difference / $searchVolume) * 100;
-        
-        if ($percentageDiff <= 10) {
-            return 0.8;
-        } elseif ($percentageDiff <= 25) {
-            return 0.5;
-        }
-        
-        return 0.1;
-    }
+        $typeScore = $this->computeTypeSimilarity($product, $search);
+        $totalScore += $typeScore * $weights['type'];
 
-    /**
-     * Extrait le volume d'un produit
-     */
-    private function extractVolumeFromProduct($product): ?int
-    {
-        $textToSearch = implode(' ', [
-            $product->name ?? '',
-            $product->variation ?? ''
-        ]);
-        
-        return $this->extractVolumeFromText($textToSearch);
-    }
-
-    /**
-     * Extrait un volume d'un texte
-     */
-    private function extractVolumeFromText(string $text): ?int
-    {
-        if (preg_match('/(\d+)\s*ml/i', $text, $matches)) {
-            return (int)$matches[1];
-        }
-        
-        return null;
-    }
-
-    /**
-     * Calcule le bonus pour les correspondances exactes
-     */
-    private function calculateExactMatchBonus($product): float
-    {
-        $bonus = 0;
-        
-        // Bonus pour correspondance exacte du vendor
-        $searchVendor = $this->extractedData['vendor'] ?? '';
-        $productVendor = $product->vendor ?? '';
-        
-        if (!empty($searchVendor) && !empty($productVendor) &&
-            strcasecmp(trim($searchVendor), trim($productVendor)) === 0) {
-            $bonus += 0.15;
-        }
-        
-        // Bonus pour correspondance exacte du volume
-        $searchVolume = $this->extractedData['volume_ml'];
-        $productVolume = $this->extractVolumeFromProduct($product);
-        
-        if ($searchVolume && $productVolume && $searchVolume == $productVolume) {
-            $bonus += 0.20;
-        }
-        
-        // Bonus pour correspondance exacte du type
-        $searchType = $this->extractedData['type'] ?? '';
-        $productType = $product->type ?? '';
-        
-        if (!empty($searchType) && !empty($productType) &&
-            strcasecmp(trim($searchType), trim($productType)) === 0) {
-            $bonus += 0.10;
-        }
-        
-        return $bonus;
-    }
-
-    /**
-     * Obtient les détails de la correspondance
-     */
-    private function getMatchDetails($product): array
-    {
-        $details = [];
-        
-        $searchVendor = $this->extractedData['vendor'] ?? '';
-        $productVendor = $product->vendor ?? '';
-        if (!empty($searchVendor) && !empty($productVendor)) {
-            similar_text(
-                mb_strtolower($searchVendor),
-                mb_strtolower($productVendor),
-                $vendorPercent
-            );
-            $details['vendor_similarity'] = $vendorPercent;
-            $details['vendor_match'] = strcasecmp(trim($searchVendor), trim($productVendor)) === 0;
-        }
-        
-        $searchName = $this->extractedData['name'] ?? '';
-        $productName = $product->name ?? '';
-        if (!empty($searchName) && !empty($productName)) {
-            similar_text(
-                mb_strtolower($searchName),
-                mb_strtolower($productName),
-                $namePercent
-            );
-            $details['name_similarity'] = $namePercent;
-        }
-        
-        // Volume matching
-        $searchVolume = $this->extractedData['volume_ml'];
-        $productVolume = $this->extractVolumeFromProduct($product);
-        
-        if ($searchVolume && $productVolume) {
-            $details['volume_match'] = $searchVolume == $productVolume;
-            $details['search_volume'] = $searchVolume;
-            $details['product_volume'] = $productVolume;
-            $details['volume_difference'] = abs($searchVolume - $productVolume);
-        }
-        
-        // Type matching
-        $searchType = $this->extractedData['type'] ?? '';
-        $productType = $product->type ?? '';
-        if (!empty($searchType) && !empty($productType)) {
-            $details['type_match'] = strcasecmp(trim($searchType), trim($productType)) === 0;
-        }
-        
-        return $details;
+        return min(1.0, $totalScore);
     }
 
     /**
      * Similarité de chaîne (algorithme de Jaro-Winkler amélioré)
      */
-    private function computeStringSimilarity($str1, $str2): float
+    private function computeStringSimilarity($str1, $str2)
     {
         $str1 = mb_strtolower(trim($str1));
         $str2 = mb_strtolower(trim($str2));
@@ -1105,18 +377,149 @@ new class extends Component {
     }
 
     /**
+     * Similarité du vendeur
+     */
+    private function computeVendorSimilarity($product, $search)
+    {
+        $vendor = $product->vendor ?? '';
+        if (empty($vendor)) {
+            return 0;
+        }
+
+        $searchVendor = $this->extractVendorFromSearch($search);
+
+        if (empty($searchVendor)) {
+            return 0;
+        }
+
+        return $this->computeStringSimilarity($searchVendor, $vendor);
+    }
+
+    /**
+     * Similarité de la variation
+     */
+    private function computeVariationSimilarity($product, $search)
+    {
+        $productVariation = $product->variation ?? '';
+        $searchVariation = $this->extractSearchVariationFromSearch($search);
+
+        if (empty($productVariation) || empty($searchVariation)) {
+            return 0;
+        }
+
+        $baseScore = $this->computeStringSimilarity($searchVariation, $productVariation);
+
+        $keywordMatches = 0;
+        foreach ($this->searchVariationKeywords as $keyword) {
+            if (stripos($productVariation, $keyword) !== false) {
+                $keywordMatches++;
+            }
+        }
+
+        $keywordBonus = $keywordMatches / max(1, count($this->searchVariationKeywords)) * 0.3;
+
+        return min(1.0, $baseScore + $keywordBonus);
+    }
+
+    /**
+     * Similarité des volumes
+     */
+    private function computeVolumeSimilarity($product)
+    {
+        if (empty($this->searchVolumes)) {
+            return 0;
+        }
+
+        $productVolumes = $this->extractVolumesFromText($product->name . ' ' . ($product->variation ?? ''));
+
+        if (empty($productVolumes)) {
+            return 0;
+        }
+
+        $matches = array_intersect($this->searchVolumes, $productVolumes);
+        $matchRatio = count($matches) / count($this->searchVolumes);
+
+        if ($matchRatio === 1.0) {
+            $matchRatio = 1.0;
+        }
+
+        return $matchRatio;
+    }
+
+    /**
+     * Similarité du type de produit
+     */
+    private function computeTypeSimilarity($product, $search)
+    {
+        $productType = $product->type ?? '';
+        if (empty($productType)) {
+            return 0;
+        }
+
+        $searchType = $this->extractProductTypeFromSearch($search);
+
+        if (empty($searchType)) {
+            return 0;
+        }
+
+        return $this->computeStringSimilarity($searchType, $productType);
+    }
+
+    /**
+     * Extrait la marque de la recherche
+     */
+    private function extractVendorFromSearch($search)
+    {
+        if (preg_match('/^([^-]+)/', $search, $matches)) {
+            return trim($matches[1]);
+        }
+
+        return '';
+    }
+
+    /**
+     * Extrait la variation de la recherche
+     */
+    private function extractSearchVariationFromSearch($search)
+    {
+        $pattern = '/^[^-]+\s*-\s*[^-]+\s*-\s*/i';
+        $variation = preg_replace($pattern, '', $search);
+
+        return trim($variation);
+    }
+
+    /**
+     * Extrait le type de produit de la recherche
+     */
+    private function extractProductTypeFromSearch($search)
+    {
+        $types = ['parfum', 'eau de parfum', 'eau de toilette', 'coffret', 'gel douche', 'lotion'];
+
+        foreach ($types as $type) {
+            if (stripos($search, $type) !== false) {
+                return $type;
+            }
+        }
+
+        return '';
+    }
+
+    /**
      * Détermine le niveau de correspondance
      */
     private function getMatchLevel($similarityScore)
     {
-        if ($similarityScore >= 0.9) return 'excellent';
-        if ($similarityScore >= 0.7) return 'bon';
-        if ($similarityScore >= 0.6) return 'moyen';
+        if ($similarityScore >= 0.9)
+            return 'excellent';
+        if ($similarityScore >= 0.7)
+            return 'bon';
+        if ($similarityScore >= 0.6)
+            return 'moyen';
         return 'faible';
     }
 
     /**
-     * Extrait les volumes de la recherche
+     * Extrait les volumes (ml) de la recherche
      */
     private function extractSearchVolumes(string $search): void
     {
@@ -1125,10 +528,15 @@ new class extends Component {
         if (preg_match_all('/(\d+)\s*ml/i', $search, $matches)) {
             $this->searchVolumes = $matches[1];
         }
+
+        \Log::info('Extracted search volumes:', [
+            'search' => $search,
+            'volumes' => $this->searchVolumes
+        ]);
     }
 
     /**
-     * Extrait les mots clés de la variation
+     * Extrait les mots clés de la variation de la recherche
      */
     private function extractSearchVariationKeywords(string $search): void
     {
@@ -1144,20 +552,45 @@ new class extends Component {
         $words = explode(" ", $variationClean);
 
         $stopWords = [
-            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou',
-            'pour', 'avec', 'the', 'a', 'an', 'and', 'or', 'ml', 'edition', 'édition'
+            'de',
+            'le',
+            'la',
+            'les',
+            'un',
+            'une',
+            'des',
+            'du',
+            'et',
+            'ou',
+            'pour',
+            'avec',
+            'the',
+            'a',
+            'an',
+            'and',
+            'or',
+            'ml',
+            'edition',
+            'édition'
         ];
 
         foreach ($words as $word) {
             $word = trim($word);
+
             if ((strlen($word) > 1 && !in_array($word, $stopWords)) || is_numeric($word)) {
                 $this->searchVariationKeywords[] = $word;
             }
         }
+
+        \Log::info('Extracted search variation keywords:', [
+            'search' => $search,
+            'variation' => $variation,
+            'keywords' => $this->searchVariationKeywords
+        ]);
     }
 
     /**
-     * Prépare les termes de recherche pour FULLTEXT SANS WILDCARDS
+     * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
      */
     private function prepareSearchTerms(string $search): string
     {
@@ -1168,33 +601,62 @@ new class extends Component {
         $words = explode(" ", $searchClean);
 
         $stopWords = [
-            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou',
-            'pour', 'avec', 'the', 'a', 'an', 'and', 'or', 'eau', 'ml',
-            'edition', 'édition', 'coffret'
+            'de',
+            'le',
+            'la',
+            'les',
+            'un',
+            'une',
+            'des',
+            'du',
+            'et',
+            'ou',
+            'pour',
+            'avec',
+            'the',
+            'a',
+            'an',
+            'and',
+            'or',
+            'eau',
+            'ml',
+            'edition',
+            'édition',
+            'coffret'
         ];
 
         $significantWords = [];
+
         foreach ($words as $word) {
             $word = trim($word);
+
             if (strlen($word) > 2 && !in_array($word, $stopWords)) {
                 $significantWords[] = $word;
             }
-            if (count($significantWords) >= 3) break;
+
+            if (count($significantWords) >= 3) {
+                break;
+            }
         }
 
-        // RETIRÉ LES WILDCARDS - Utiliser seulement les mots exacts
-        return implode(' ', $significantWords);
+        $booleanTerms = array_map(function ($word) {
+            return '+' . $word . '*';
+        }, $significantWords);
+
+        return implode(' ', $booleanTerms);
     }
 
     /**
-     * Formate le prix
+     * Formate le prix pour l'affichage
      */
     public function formatPrice($price)
     {
         $cleanPrice = $this->cleanPrice($price);
+        
         if ($cleanPrice !== null) {
             return number_format($cleanPrice, 2, ',', ' ') . ' €';
         }
+        
         return 'N/A';
     }
 
@@ -1203,8 +665,10 @@ new class extends Component {
      */
     public function extractDomain($url)
     {
-        if (empty($url)) return 'N/A';
-        
+        if (empty($url)) {
+            return 'N/A';
+        }
+
         try {
             $parsedUrl = parse_url($url);
             if (isset($parsedUrl['host'])) {
@@ -1235,319 +699,6 @@ new class extends Component {
     }
 
     /**
-     * Ajuste le seuil de similarité
-     */
-    public function adjustSimilarityThreshold($threshold)
-    {
-        $this->similarityThreshold = $threshold;
-        if (!empty($this->searchQuery)) {
-            $this->getCompetitorPrice($this->searchQuery);
-        }
-    }
-
-    /**
-     * Calcule la différence de prix
-     */
-    public function calculatePriceDifference($competitorPrice)
-    {
-        $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
-        $cleanReferencePrice = $this->cleanPrice($this->referencePrice);
-        
-        if ($cleanCompetitorPrice === null || $cleanReferencePrice === null) {
-            return null;
-        }
-
-        return $cleanReferencePrice - $cleanCompetitorPrice;
-    }
-
-    /**
-     * Calcule le pourcentage de différence
-     */
-    public function calculatePriceDifferencePercentage($competitorPrice)
-    {
-        $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
-        $cleanReferencePrice = $this->cleanPrice($this->referencePrice);
-        
-        if ($cleanCompetitorPrice === null || $cleanReferencePrice === null || $cleanCompetitorPrice == 0) {
-            return null;
-        }
-
-        return (($cleanReferencePrice - $cleanCompetitorPrice) / $cleanCompetitorPrice) * 100;
-    }
-
-    /**
-     * Détermine le statut de compétitivité
-     */
-    public function getPriceCompetitiveness($competitorPrice)
-    {
-        $difference = $this->calculatePriceDifference($competitorPrice);
-
-        if ($difference === null) {
-            return 'unknown';
-        }
-
-        if ($difference > 10) {
-            return 'higher';
-        } elseif ($difference > 0) {
-            return 'slightly_higher';
-        } elseif ($difference == 0) {
-            return 'same';
-        } elseif ($difference >= -10) {
-            return 'competitive';
-        } else {
-            return 'very_competitive';
-        }
-    }
-
-    /**
-     * Retourne le libellé pour le statut de prix
-     */
-    public function getPriceStatusLabel($competitorPrice)
-    {
-        $status = $this->getPriceCompetitiveness($competitorPrice);
-
-        $labels = [
-            'very_competitive' => 'Nous sommes beaucoup moins cher',
-            'competitive' => 'Nous sommes moins cher',
-            'same' => 'Prix identique',
-            'slightly_higher' => 'Nous sommes légèrement plus cher',
-            'higher' => 'Nous sommes beaucoup plus cher',
-            'unknown' => 'Non comparable'
-        ];
-
-        return $labels[$status] ?? $labels['unknown'];
-    }
-
-    /**
-     * Retourne la classe CSS pour le statut de prix
-     */
-    public function getPriceStatusClass($competitorPrice)
-    {
-        $status = $this->getPriceCompetitiveness($competitorPrice);
-
-        $classes = [
-            'very_competitive' => 'bg-green-100 text-green-800 border-green-300',
-            'competitive' => 'bg-emerald-100 text-emerald-800 border-emerald-300',
-            'same' => 'bg-blue-100 text-blue-800 border-blue-300',
-            'slightly_higher' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
-            'higher' => 'bg-red-100 text-red-800 border-red-300',
-            'unknown' => 'bg-gray-100 text-gray-800 border-gray-300'
-        ];
-
-        return $classes[$status] ?? $classes['unknown'];
-    }
-
-    /**
-     * Calcule la différence de prix Cosmashop
-     */
-    public function calculateCosmashopPriceDifference($competitorPrice)
-    {
-        $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
-        $cleanCosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
-        
-        if ($cleanCompetitorPrice === null || $cleanCosmashopPrice === null) {
-            return null;
-        }
-
-        return $cleanCosmashopPrice - $cleanCompetitorPrice;
-    }
-
-    /**
-     * Calcule le pourcentage de différence Cosmashop
-     */
-    public function calculateCosmashopPriceDifferencePercentage($competitorPrice)
-    {
-        $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
-        $cleanCosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
-        
-        if ($cleanCompetitorPrice === null || $cleanCosmashopPrice === null || $cleanCompetitorPrice == 0) {
-            return null;
-        }
-
-        return (($cleanCosmashopPrice - $cleanCompetitorPrice) / $cleanCompetitorPrice) * 100;
-    }
-
-    /**
-     * Détermine le statut de compétitivité de Cosmashop
-     */
-    public function getCosmashopPriceCompetitiveness($competitorPrice)
-    {
-        $difference = $this->calculateCosmashopPriceDifference($competitorPrice);
-
-        if ($difference === null) {
-            return 'unknown';
-        }
-
-        if ($difference > 10) {
-            return 'higher';
-        } elseif ($difference > 0) {
-            return 'slightly_higher';
-        } elseif ($difference == 0) {
-            return 'same';
-        } elseif ($difference >= -10) {
-            return 'competitive';
-        } else {
-            return 'very_competitive';
-        }
-    }
-
-    /**
-     * Retourne le libellé pour le statut Cosmashop
-     */
-    public function getCosmashopPriceStatusLabel($competitorPrice)
-    {
-        $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
-
-        $labels = [
-            'very_competitive' => 'Cosmashop serait beaucoup moins cher',
-            'competitive' => 'Cosmashop serait moins cher',
-            'same' => 'Prix identique à Cosmashop',
-            'slightly_higher' => 'Cosmashop serait légèrement plus cher',
-            'higher' => 'Cosmashop serait beaucoup plus cher',
-            'unknown' => 'Non comparable'
-        ];
-
-        return $labels[$status] ?? $labels['unknown'];
-    }
-
-    /**
-     * Retourne la classe CSS pour le statut Cosmashop
-     */
-    public function getCosmashopPriceStatusClass($competitorPrice)
-    {
-        $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
-
-        $classes = [
-            'very_competitive' => 'bg-green-100 text-green-800 border-green-300',
-            'competitive' => 'bg-emerald-100 text-emerald-800 border-emerald-300',
-            'same' => 'bg-blue-100 text-blue-800 border-blue-300',
-            'slightly_higher' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
-            'higher' => 'bg-red-100 text-red-800 border-red-300',
-            'unknown' => 'bg-gray-100 text-gray-800 border-gray-300'
-        ];
-
-        return $classes[$status] ?? $classes['unknown'];
-    }
-
-    /**
-     * Formate la différence de prix
-     */
-    public function formatPriceDifference($difference)
-    {
-        if ($difference === null) {
-            return 'N/A';
-        }
-
-        if ($difference == 0) {
-            return '0 €';
-        }
-
-        $formatted = number_format(abs($difference), 2, ',', ' ');
-        return $difference > 0 ? "+{$formatted} €" : "-{$formatted} €";
-    }
-
-    /**
-     * Formate le pourcentage de différence
-     */
-    public function formatPercentageDifference($percentage)
-    {
-        if ($percentage === null) {
-            return 'N/A';
-        }
-
-        if ($percentage == 0) {
-            return '0%';
-        }
-
-        $formatted = number_format(abs($percentage), 1, ',', ' ');
-        return $percentage > 0 ? "+{$formatted}%" : "-{$formatted}%";
-    }
-
-    /**
-     * Analyse globale des prix
-     */
-    public function getPriceAnalysis()
-    {
-        $prices = [];
-
-        foreach ($this->matchedProducts as $product) {
-            $price = $product->price_ht ?? $product->prix_ht;
-            $cleanPrice = $this->cleanPrice($price);
-            
-            if ($cleanPrice !== null) {
-                $prices[] = $cleanPrice;
-            }
-        }
-
-        if (empty($prices)) {
-            return null;
-        }
-
-        $minPrice = min($prices);
-        $maxPrice = max($prices);
-        $avgPrice = array_sum($prices) / count($prices);
-        $ourPrice = $this->cleanPrice($this->referencePrice);
-
-        return [
-            'min' => $minPrice,
-            'max' => $maxPrice,
-            'average' => $avgPrice,
-            'our_price' => $ourPrice,
-            'count' => count($prices),
-            'our_position' => $ourPrice <= $avgPrice ? 'competitive' : 'above_average'
-        ];
-    }
-
-    /**
-     * Analyse globale pour Cosmashop
-     */
-    public function getCosmashopPriceAnalysis()
-    {
-        $prices = [];
-
-        foreach ($this->matchedProducts as $product) {
-            $price = $product->price_ht ?? $product->prix_ht;
-            $cleanPrice = $this->cleanPrice($price);
-            
-            if ($cleanPrice !== null) {
-                $prices[] = $cleanPrice;
-            }
-        }
-
-        if (empty($prices)) {
-            return null;
-        }
-
-        $minPrice = min($prices);
-        $maxPrice = max($prices);
-        $avgPrice = array_sum($prices) / count($prices);
-        $cosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
-
-        // Compter les concurrents en dessous/au-dessus de Cosmashop
-        $belowCosmashop = 0;
-        $aboveCosmashop = 0;
-
-        foreach ($prices as $price) {
-            if ($price < $cosmashopPrice) {
-                $belowCosmashop++;
-            } else {
-                $aboveCosmashop++;
-            }
-        }
-
-        return [
-            'min' => $minPrice,
-            'max' => $maxPrice,
-            'average' => $avgPrice,
-            'cosmashop_price' => $cosmashopPrice,
-            'count' => count($prices),
-            'below_cosmashop' => $belowCosmashop,
-            'above_cosmashop' => $aboveCosmashop,
-            'cosmashop_position' => $cosmashopPrice <= $avgPrice ? 'competitive' : 'above_average'
-        ];
-    }
-
-    /**
      * Formate la variation pour l'affichage
      */
     public function formatVariation($variation)
@@ -1560,7 +711,7 @@ new class extends Component {
     }
 
     /**
-     * Extrait les volumes d'un texte
+     * Extrait les volumes d'un texte (nom ou variation)
      */
     public function extractVolumesFromText($text)
     {
@@ -1618,7 +769,7 @@ new class extends Component {
     }
 
     /**
-     * Vérifie si le produit correspond parfaitement
+     * Vérifie si le produit correspond parfaitement (volumes ET mots clés de variation)
      */
     public function isPerfectMatch($product)
     {
@@ -1626,6 +777,20 @@ new class extends Component {
         $hasMatchingVariationKeyword = $this->hasMatchingVariationKeyword($product);
 
         return $hasMatchingVolume && $hasMatchingVariationKeyword;
+    }
+
+    /**
+     * Vérifie si le produit a exactement la même variation que la recherche
+     */
+    public function hasExactVariationMatch($product)
+    {
+        $searchVariation = $this->extractSearchVariation();
+        $productVariation = $product->variation ?? '';
+
+        $searchNormalized = $this->normalizeVariation($searchVariation);
+        $productNormalized = $this->normalizeVariation($productVariation);
+
+        return $searchNormalized === $productNormalized;
     }
 
     /**
@@ -1656,20 +821,6 @@ new class extends Component {
     }
 
     /**
-     * Vérifie si le produit a exactement la même variation que la recherche
-     */
-    public function hasExactVariationMatch($product)
-    {
-        $searchVariation = $this->extractSearchVariation();
-        $productVariation = $product->variation ?? '';
-
-        $searchNormalized = $this->normalizeVariation($searchVariation);
-        $productNormalized = $this->normalizeVariation($productVariation);
-
-        return $searchNormalized === $productNormalized;
-    }
-
-    /**
      * Vérifie si le produit a le même volume ET la même variation exacte que la recherche
      */
     public function hasSameVolumeAndExactVariation($product)
@@ -1681,7 +832,7 @@ new class extends Component {
     }
 
     /**
-     * Met en évidence les termes correspondants
+     * Met en évidence les volumes et mots clés correspondants dans un texte
      */
     public function highlightMatchingTerms($text)
     {
@@ -1691,34 +842,18 @@ new class extends Component {
 
         $patterns = [];
 
-        // Mettre en évidence le volume
-        if (!empty($this->extractedData['volume_ml'])) {
-            $patterns[] = '\b' . preg_quote($this->extractedData['volume_ml'], '/') . '\s*ml\b';
-        }
-
-        // Mettre en évidence le vendor
-        if (!empty($this->extractedData['vendor'])) {
-            $vendorPatterns = $this->extractKeywordsFromVendor($this->extractedData['vendor']);
-            foreach ($vendorPatterns as $pattern) {
-                $patterns[] = '\b' . preg_quote($pattern, '/') . '\b';
+        if (!empty($this->searchVolumes)) {
+            foreach ($this->searchVolumes as $volume) {
+                $patterns[] = '\b' . preg_quote($volume, '/') . '\s*ml\b';
             }
         }
 
-        // Mettre en évidence le nom
-        if (!empty($this->extractedData['name'])) {
-            $namePatterns = $this->extractKeywords($this->extractedData['name']);
-            foreach ($namePatterns as $pattern) {
-                if (strlen($pattern) > 2) {
-                    $patterns[] = '\b' . preg_quote($pattern, '/') . '\b';
+        if (!empty($this->searchVariationKeywords)) {
+            foreach ($this->searchVariationKeywords as $keyword) {
+                if (empty($keyword) || is_numeric($keyword)) {
+                    continue;
                 }
-            }
-        }
-
-        // Mettre en évidence le type
-        if (!empty($this->extractedData['type'])) {
-            $typePatterns = $this->extractTypeKeywords($this->extractedData['type']);
-            foreach ($typePatterns as $pattern) {
-                $patterns[] = '\b' . preg_quote($pattern, '/') . '\b';
+                $patterns[] = '\b' . preg_quote(trim($keyword), '/') . '\b';
             }
         }
 
@@ -1729,7 +864,7 @@ new class extends Component {
         $pattern = '/(' . implode('|', $patterns) . ')/iu';
 
         $text = preg_replace_callback($pattern, function ($matches) {
-            return '<span class="bg-yellow-100 text-yellow-800 font-semibold px-1 py-0.5 rounded">'
+            return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">'
                 . $matches[0]
                 . '</span>';
         }, $text);
@@ -1737,40 +872,380 @@ new class extends Component {
         return $text;
     }
 
+    // /**
+    //  * Ajuste le seuil de similarité
+    //  */
+    // public function adjustSimilarityThreshold($threshold)
+    // {
+    //     $this->similarityThreshold = $threshold;
+    //     $this->getCompetitorPrice($this->search ?? '');
+    // }
     /**
-     * Vérifie si un produit correspond aux critères extraits
+     * Ajuste le seuil de similarité - MÉTHODE CORRIGÉE
      */
-    public function isProductMatchingExtractedData($product): bool
+    public function adjustSimilarityThreshold($threshold)
     {
-        $matchScore = 0;
-        $requiredScore = 0.7;
+        $this->similarityThreshold = $threshold;
         
-        // Vérifier le vendor
-        if (!empty($this->extractedData['vendor']) && !empty($product->vendor)) {
-            if (strcasecmp(trim($this->extractedData['vendor']), trim($product->vendor)) === 0) {
-                $matchScore += 0.3;
-            } elseif (stripos($product->vendor, $this->extractedData['vendor']) !== false) {
-                $matchScore += 0.2;
-            }
+        // Utilisez $this->searchQuery au lieu de $this->search
+        if (!empty($this->searchQuery)) {
+            $this->getCompetitorPrice($this->searchQuery);
         }
-        
-        // Vérifier le volume
-        $searchVolume = $this->extractedData['volume_ml'];
-        $productVolume = $this->extractVolumeFromProduct($product);
-        
-        if ($searchVolume && $productVolume && $searchVolume == $productVolume) {
-            $matchScore += 0.4;
-        }
-        
-        // Vérifier le type
-        if (!empty($this->extractedData['type']) && !empty($product->type)) {
-            if (strcasecmp(trim($this->extractedData['type']), trim($product->type)) === 0) {
-                $matchScore += 0.2;
-            }
-        }
-        
-        return $matchScore >= $requiredScore;
     }
+    
+    /**
+     * Calcule la différence de prix par rapport au prix du concurrent
+     */
+    public function calculatePriceDifference($competitorPrice)
+    {
+        $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
+        $cleanReferencePrice = $this->cleanPrice($this->referencePrice);
+        
+        if ($cleanCompetitorPrice === null || $cleanReferencePrice === null) {
+            return null;
+        }
+
+        return $cleanReferencePrice - $cleanCompetitorPrice;
+    }
+
+    /**
+     * Calcule le pourcentage de différence par rapport au concurrent
+     */
+    public function calculatePriceDifferencePercentage($competitorPrice)
+    {
+        $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
+        $cleanReferencePrice = $this->cleanPrice($this->referencePrice);
+        
+        if ($cleanCompetitorPrice === null || $cleanReferencePrice === null || $cleanCompetitorPrice == 0) {
+            return null;
+        }
+
+        return (($cleanReferencePrice - $cleanCompetitorPrice) / $cleanCompetitorPrice) * 100;
+    }
+
+    /**
+     * Détermine le statut de compétitivité de notre prix
+     */
+
+    /**
+     * Détermine le statut de compétitivité de notre prix
+     * LOGIQUE CORRIGÉE: difference = notre_prix - concurrent_prix
+     * Si difference > 0 : nous sommes PLUS CHER
+     * Si difference < 0 : nous sommes MOINS CHER
+     */
+    public function getPriceCompetitiveness($competitorPrice)
+    {
+        $difference = $this->calculatePriceDifference($competitorPrice);
+
+        if ($difference === null) {
+            return 'unknown';
+        }
+
+        // CORRECTION: Inverser la logique
+        if ($difference > 10) {
+            return 'higher'; // Nous sommes beaucoup plus cher
+        } elseif ($difference > 0) {
+            return 'slightly_higher'; // Nous sommes légèrement plus cher
+        } elseif ($difference == 0) {
+            return 'same'; // Même prix
+        } elseif ($difference >= -10) {
+            return 'competitive'; // Nous sommes légèrement moins cher
+        } else {
+            return 'very_competitive'; // Nous sommes beaucoup moins cher
+        }
+    }
+
+    /**
+     * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
+     */
+    // public function getPriceStatusLabel($competitorPrice)
+    // {
+    //     $status = $this->getPriceCompetitiveness($competitorPrice);
+
+    //     $labels = [
+    //         'very_competitive' => 'Nous sommes beaucoup - cher',
+    //         'competitive' => 'Nous sommes - cher', 
+    //         'same' => 'Prix identique',
+    //         'slightly_higher' => 'Nous sommes + cher',
+    //         'higher' => 'Nous sommes beaucoup + cher',
+    //         'unknown' => 'Non comparable'
+    //     ];
+
+    //     return $labels[$status] ?? $labels['unknown'];
+    // }
+    /**
+     * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
+     */
+    /**
+     * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
+     */
+    public function getPriceStatusLabel($competitorPrice)
+    {
+        $status = $this->getPriceCompetitiveness($competitorPrice);
+
+        $labels = [
+            'very_competitive' => 'Nous sommes beaucoup moins cher',
+            'competitive' => 'Nous sommes moins cher',
+            'same' => 'Prix identique',
+            'slightly_higher' => 'Nous sommes légèrement plus cher',
+            'higher' => 'Nous sommes beaucoup plus cher',
+            'unknown' => 'Non comparable'
+        ];
+
+        return $labels[$status] ?? $labels['unknown'];
+    }
+    /**
+     * Retourne la classe CSS pour le statut de prix
+     */
+    public function getPriceStatusClass($competitorPrice)
+    {
+        $status = $this->getPriceCompetitiveness($competitorPrice);
+
+        $classes = [
+            'very_competitive' => 'bg-green-100 text-green-800 border-green-300',
+            'competitive' => 'bg-emerald-100 text-emerald-800 border-emerald-300',
+            'same' => 'bg-blue-100 text-blue-800 border-blue-300',
+            'slightly_higher' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
+            'higher' => 'bg-red-100 text-red-800 border-red-300',
+            'unknown' => 'bg-gray-100 text-gray-800 border-gray-300'
+        ];
+
+        return $classes[$status] ?? $classes['unknown'];
+    }
+
+    /**
+     * Calcule la différence de prix Cosmashop par rapport au concurrent
+     */
+    public function calculateCosmashopPriceDifference($competitorPrice)
+    {
+        $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
+        $cleanCosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
+        
+        if ($cleanCompetitorPrice === null || $cleanCosmashopPrice === null) {
+            return null;
+        }
+
+        return $cleanCosmashopPrice - $cleanCompetitorPrice;
+    }
+
+    /**
+     * Calcule le pourcentage de différence Cosmashop par rapport au concurrent
+     */
+    public function calculateCosmashopPriceDifferencePercentage($competitorPrice)
+    {
+        $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
+        $cleanCosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
+        
+        if ($cleanCompetitorPrice === null || $cleanCosmashopPrice === null || $cleanCompetitorPrice == 0) {
+            return null;
+        }
+
+        return (($cleanCosmashopPrice - $cleanCompetitorPrice) / $cleanCompetitorPrice) * 100;
+    }
+
+
+    /**
+     * Détermine le statut de compétitivité de Cosmashop
+     * LOGIQUE CORRIGÉE: difference = cosmashop_prix - concurrent_prix
+     * Si difference > 0 : Cosmashop PLUS CHER
+     * Si difference < 0 : Cosmashop MOINS CHER
+     */
+    public function getCosmashopPriceCompetitiveness($competitorPrice)
+    {
+        $difference = $this->calculateCosmashopPriceDifference($competitorPrice);
+
+        if ($difference === null) {
+            return 'unknown';
+        }
+
+        // CORRECTION: Inverser la logique
+        if ($difference > 10) {
+            return 'higher'; // Cosmashop serait beaucoup plus cher
+        } elseif ($difference > 0) {
+            return 'slightly_higher'; // Cosmashop serait légèrement plus cher
+        } elseif ($difference == 0) {
+            return 'same'; // Même prix que Cosmashop
+        } elseif ($difference >= -10) {
+            return 'competitive'; // Cosmashop serait légèrement moins cher
+        } else {
+            return 'very_competitive'; // Cosmashop serait beaucoup moins cher
+        }
+    }
+
+
+    /**
+     * Retourne le libellé pour le statut Cosmashop
+     */
+    // public function getCosmashopPriceStatusLabel($competitorPrice)
+    // {
+    //     $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
+
+    //     $labels = [
+    //         'very_competitive' => 'Cosmashop serait beaucoup - cher',
+    //         'competitive' => 'Cosmashop serait - cher',
+    //         'same' => 'Prix identique à Cosmashop', 
+    //         'slightly_higher' => 'Cosmashop serait + cher',
+    //         'higher' => 'Cosmashop serait beaucoup + cher',
+    //         'unknown' => 'Non comparable'
+    //     ];
+
+    //     return $labels[$status] ?? $labels['unknown'];
+    // }
+    /**
+     * Retourne le libellé pour le statut Cosmashop
+     */
+    public function getCosmashopPriceStatusLabel($competitorPrice)
+    {
+        $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
+
+        $labels = [
+            'very_competitive' => 'Cosmashop serait beaucoup moins cher',
+            'competitive' => 'Cosmashop serait moins cher',
+            'same' => 'Prix identique à Cosmashop',
+            'slightly_higher' => 'Cosmashop serait légèrement plus cher',
+            'higher' => 'Cosmashop serait beaucoup plus cher',
+            'unknown' => 'Non comparable'
+        ];
+
+        return $labels[$status] ?? $labels['unknown'];
+    }
+    /**
+     * Retourne la classe CSS pour le statut Cosmashop
+     */
+    public function getCosmashopPriceStatusClass($competitorPrice)
+    {
+        $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
+
+        $classes = [
+            'very_competitive' => 'bg-green-100 text-green-800 border-green-300',
+            'competitive' => 'bg-emerald-100 text-emerald-800 border-emerald-300',
+            'same' => 'bg-blue-100 text-blue-800 border-blue-300',
+            'slightly_higher' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
+            'higher' => 'bg-red-100 text-red-800 border-red-300',
+            'unknown' => 'bg-gray-100 text-gray-800 border-gray-300'
+        ];
+
+        return $classes[$status] ?? $classes['unknown'];
+    }
+
+    /**
+     * Formate la différence de prix avec le bon symbole
+     */
+    public function formatPriceDifference($difference)
+    {
+        if ($difference === null) {
+            return 'N/A';
+        }
+
+        if ($difference == 0) {
+            return '0 €';
+        }
+
+        $formatted = number_format(abs($difference), 2, ',', ' ');
+        return $difference > 0 ? "+{$formatted} €" : "-{$formatted} €";
+    }
+
+    /**
+     * Formate le pourcentage de différence avec le bon symbole
+     */
+    public function formatPercentageDifference($percentage)
+    {
+        if ($percentage === null) {
+            return 'N/A';
+        }
+
+        if ($percentage == 0) {
+            return '0%';
+        }
+
+        $formatted = number_format(abs($percentage), 1, ',', ' ');
+        return $percentage > 0 ? "+{$formatted}%" : "-{$formatted}%";
+    }
+
+    /**
+     * Analyse globale des prix des concurrents
+     */
+    public function getPriceAnalysis()
+    {
+        $prices = [];
+
+        foreach ($this->matchedProducts as $product) {
+            $price = $product->price_ht ?? $product->prix_ht;
+            $cleanPrice = $this->cleanPrice($price);
+            
+            if ($cleanPrice !== null) {
+                $prices[] = $cleanPrice;
+            }
+        }
+
+        if (empty($prices)) {
+            return null;
+        }
+
+        $minPrice = min($prices);
+        $maxPrice = max($prices);
+        $avgPrice = array_sum($prices) / count($prices);
+        $ourPrice = $this->cleanPrice($this->referencePrice);
+
+        return [
+            'min' => $minPrice,
+            'max' => $maxPrice,
+            'average' => $avgPrice,
+            'our_price' => $ourPrice,
+            'count' => count($prices),
+            'our_position' => $ourPrice <= $avgPrice ? 'competitive' : 'above_average'
+        ];
+    }
+
+/**
+ * Analyse globale pour Cosmashop
+ */
+public function getCosmashopPriceAnalysis()
+{
+    $prices = [];
+
+    foreach ($this->matchedProducts as $product) {
+        $price = $product->price_ht ?? $product->prix_ht;
+        $cleanPrice = $this->cleanPrice($price);
+        
+        if ($cleanPrice !== null) {
+            $prices[] = $cleanPrice;
+        }
+    }
+
+    if (empty($prices)) {
+        return null;
+    }
+
+    $minPrice = min($prices);
+    $maxPrice = max($prices);
+    $avgPrice = array_sum($prices) / count($prices);
+    $cosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
+
+    // Compter les concurrents en dessous/au-dessus de Cosmashop
+    $belowCosmashop = 0;
+    $aboveCosmashop = 0;
+
+    foreach ($prices as $price) {
+        if ($price < $cosmashopPrice) {
+            $belowCosmashop++;
+        } else {
+            $aboveCosmashop++;
+        }
+    }
+
+    return [
+        'min' => $minPrice,
+        'max' => $maxPrice,
+        'average' => $avgPrice,
+        'cosmashop_price' => $cosmashopPrice,
+        'count' => count($prices),
+        'below_cosmashop' => $belowCosmashop,
+        'above_cosmashop' => $aboveCosmashop,
+        'cosmashop_position' => $cosmashopPrice <= $avgPrice ? 'competitive' : 'above_average'
+    ];
+}
+
 }; ?>
 
 <div>
