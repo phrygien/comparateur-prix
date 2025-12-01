@@ -24,6 +24,7 @@ new class extends Component {
 
     // price cosmashop
     public $cosmashopPrice;
+    public $originalSearch;
 
     public function mount($name, $id, $price)
     {
@@ -32,6 +33,7 @@ new class extends Component {
         $this->price = $this->cleanPrice($price);
         $this->referencePrice = $this->cleanPrice($price); // Prix de référence pour la comparaison
         $this->cosmashopPrice = $this->cleanPrice($price) * 1.05; // Prix majoré de 5% pour Cosmashop
+        $this->originalSearch = $name;
     }
 
 
@@ -866,15 +868,22 @@ new class extends Component {
         return $text;
     }
 
-    /**
-     * Ajuste le seuil de similarité
-     */
+    // /**
+    //  * Ajuste le seuil de similarité
+    //  */
+    // public function adjustSimilarityThreshold($threshold)
+    // {
+    //     $this->similarityThreshold = $threshold;
+    //     $this->getCompetitorPrice($this->search ?? '');
+    // }
+    // CORRECTION de la fonction adjustSimilarityThreshold
     public function adjustSimilarityThreshold($threshold)
     {
         $this->similarityThreshold = $threshold;
-        $this->getCompetitorPrice($this->search ?? '');
+        if ($this->originalSearch) {
+            $this->getCompetitorPrice($this->originalSearch);
+        }
     }
-
     /**
      * Calcule la différence de prix par rapport au prix du concurrent
      */
