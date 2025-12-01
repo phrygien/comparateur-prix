@@ -756,46 +756,55 @@ public function getCompetitorPrice($search)
      */
     private function prepareSearchTerms(string $search): string
     {
-        // Nettoyage agressif : supprimer tous les caractères spéciaux et chiffres
         $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ\s]/', ' ', $search);
-        
-        // Normaliser les espaces multiples
         $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
-        
-        // Convertir en minuscules
         $searchClean = mb_strtolower($searchClean);
-        
-        // Séparer les mots
+
         $words = explode(" ", $searchClean);
-        
-        // Stop words français et anglais à ignorer
+
         $stopWords = [
-            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou', 'pour', 'avec',
-            'the', 'a', 'an', 'and', 'or', 'eau', 'ml', 'edition', 'édition', 'coffret'
+            'de',
+            'le',
+            'la',
+            'les',
+            'un',
+            'une',
+            'des',
+            'du',
+            'et',
+            'ou',
+            'pour',
+            'avec',
+            'the',
+            'a',
+            'an',
+            'and',
+            'or',
+            'eau',
+            'ml',
+            'edition',
+            'édition',
+            'coffret'
         ];
-        
-        // Mots significatifs seulement (marque, gamme, produit)
+
         $significantWords = [];
-        
+
         foreach ($words as $word) {
             $word = trim($word);
-            
-            // Garder uniquement les mots de plus de 2 caractères, non-stop words
+
             if (strlen($word) > 2 && !in_array($word, $stopWords)) {
                 $significantWords[] = $word;
             }
-            
-            // Limiter à 3 mots maximum (marque + gamme + type) SEULEMENT
+
             if (count($significantWords) >= 3) {
                 break;
             }
         }
-        
-        // Construire la requête boolean avec seulement 3 termes
-        $booleanTerms = array_map(function($word) {
+
+        $booleanTerms = array_map(function ($word) {
             return '+' . $word . '*';
         }, $significantWords);
-        
+
         return implode(' ', $booleanTerms);
     }
 
