@@ -1758,12 +1758,12 @@ public function getProductImage($product)
                         <span wire:loading.remove wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
                             {{ count($matchedProducts) }} produit(s) correspondant(s)
                         </span>
-                        <span wire:loading wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
+                        {{-- <span wire:loading wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
                             <div class="inline-flex items-center text-blue-600">
                                 <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600 mr-2"></div>
                                 Mise à jour des résultats...
                             </div>
-                        </span>
+                        </span> --}}
                     </p>
                 </div>
                 <div class="overflow-x-auto">
