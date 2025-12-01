@@ -44,6 +44,9 @@ new class extends Component {
     // NOUVELLE PROPRIÉTÉ pour suivre si on doit montrer le tableau même sans résultats
     public $showTable = false;
 
+    // NOUVELLE PROPRIÉTÉ pour distinguer recherche automatique vs manuelle
+    public $isAutomaticSearch = true;
+
     public function mount($name, $id, $price)
     {
         $this->getCompetitorPrice($name);
@@ -53,11 +56,11 @@ new class extends Component {
         $this->cosmashopPrice = $this->cleanPrice($price) * 1.05; // Prix majoré de 5% pour Cosmashop
 
         // STOCKEZ LA REQUÊTE DE RECHERCHE
-        $this->searchQuery = $name;   
-        
+        $this->searchQuery = $name;
+
         // Extraire le vendor par défaut depuis la recherche
         $this->extractDefaultVendor($name);
-        
+
         // Charger la liste des sites
         $this->loadSites();
 
@@ -72,22 +75,22 @@ new class extends Component {
     private function extractDefaultVendor(string $search): void
     {
         $vendor = '';
-        
+
         // Pattern pour extraire le vendor (marque) de la recherche
         // Format typique: "VENDOR - Nom produit - Variation"
         if (preg_match('/^([^-]+)/', $search, $matches)) {
             $vendor = trim($matches[1]);
-            
+
             // Nettoyer les chiffres et caractères spéciaux
             $vendor = preg_replace('/[0-9]+ml/i', '', $vendor);
             $vendor = trim($vendor);
         }
-        
+
         // Si on n'a pas trouvé de vendor, essayer d'autres méthodes
         if (empty($vendor)) {
             $vendor = $this->guessVendorFromSearch($search);
         }
-        
+
         // Définir le vendor comme filtre par défaut
         if (!empty($vendor)) {
             $this->filters['vendor'] = $vendor;
@@ -102,21 +105,38 @@ new class extends Component {
     {
         // Liste des marques communes
         $commonVendors = [
-            'Dior', 'Chanel', 'Yves Saint Laurent', 'Guerlain', 'Lancôme',
-            'Hermès', 'Prada', 'Armani', 'Versace', 'Dolce & Gabbana',
-            'Givenchy', 'Jean Paul Gaultier', 'Bvlgari', 'Cartier',
-            'Montblanc', 'Burberry', 'Calvin Klein', 'Paco Rabanne',
-            'Carolina Herrera', 'Viktor & Rolf', 'Mugler', 'Narciso Rodriguez'
+            'Dior',
+            'Chanel',
+            'Yves Saint Laurent',
+            'Guerlain',
+            'Lancôme',
+            'Hermès',
+            'Prada',
+            'Armani',
+            'Versace',
+            'Dolce & Gabbana',
+            'Givenchy',
+            'Jean Paul Gaultier',
+            'Bvlgari',
+            'Cartier',
+            'Montblanc',
+            'Burberry',
+            'Calvin Klein',
+            'Paco Rabanne',
+            'Carolina Herrera',
+            'Viktor & Rolf',
+            'Mugler',
+            'Narciso Rodriguez'
         ];
-        
+
         $searchLower = strtolower($search);
-        
+
         foreach ($commonVendors as $vendor) {
             if (stripos($searchLower, strtolower($vendor)) !== false) {
                 return $vendor;
             }
         }
-        
+
         return '';
     }
 
@@ -128,7 +148,7 @@ new class extends Component {
         try {
             // Récupérer tous les sites web
             $this->sites = WebSite::orderBy('name')->get();
-            
+
             \Log::info('Sites loaded:', ['count' => count($this->sites)]);
         } catch (\Throwable $e) {
             \Log::error('Error loading sites:', [
@@ -149,42 +169,42 @@ new class extends Component {
             $this->hasData = false;
             $this->matchedProducts = [];
             $this->products = [];
-            
+
             // Construire la requête SQL avec les filtres manuels
             $sql = "SELECT sp.*, ws.name as site_name, sp.url as product_url
                     FROM scraped_product sp
                     LEFT JOIN web_site ws ON sp.web_site_id = ws.id
                     WHERE 1=1";
-            
+
             $params = [];
-            
+
             // AJOUTER LE FILTRE VENDOR
             if (!empty($this->filters['vendor'])) {
                 $sql .= " AND sp.vendor LIKE ?";
                 $params[] = '%' . $this->filters['vendor'] . '%';
             }
-            
+
             // Ajouter les filtres si spécifiés
             if (!empty($this->filters['name'])) {
                 $sql .= " AND sp.name LIKE ?";
                 $params[] = '%' . $this->filters['name'] . '%';
             }
-            
+
             if (!empty($this->filters['variation'])) {
                 $sql .= " AND sp.variation LIKE ?";
                 $params[] = '%' . $this->filters['variation'] . '%';
             }
-            
+
             if (!empty($this->filters['type'])) {
                 $sql .= " AND sp.type LIKE ?";
                 $params[] = '%' . $this->filters['type'] . '%';
             }
-            
+
             if (!empty($this->filters['site_source'])) {
                 $sql .= " AND ws.id = ?";
                 $params[] = $this->filters['site_source'];
             }
-            
+
             // Limiter à 20 résultats comme demandé
             $sql .= " ORDER BY sp.prix_ht DESC LIMIT 20";
 
@@ -196,26 +216,32 @@ new class extends Component {
 
             $result = DB::connection('mysql')->select($sql, $params);
 
-            // Nettoyer les prix
+            // Nettoyer les prix et ajouter les propriétés manquantes
             foreach ($result as $product) {
                 if (isset($product->prix_ht)) {
                     $product->prix_ht = $this->cleanPrice($product->prix_ht);
                 }
-                
+
                 // S'assurer que product_url est défini
                 if (!isset($product->product_url) && isset($product->url)) {
                     $product->product_url = $product->url;
                 }
-                
+
                 // S'assurer que image est défini
                 if (!isset($product->image) && isset($product->image_url)) {
                     $product->image = $product->image_url;
                 }
+
+                // AJOUTER LES PROPRIÉTÉS POUR LE TABLEAU UNIFIÉ
+                $product->similarity_score = null;
+                $product->match_level = null;
+                $product->is_manual_search = true;
             }
 
             $this->products = $result;
             $this->matchedProducts = $result;
             $this->hasData = !empty($result);
+            $this->isAutomaticSearch = false; // C'est une recherche manuelle
 
             \Log::info('Manual search results:', [
                 'count' => count($result),
@@ -240,7 +266,7 @@ new class extends Component {
     {
         $this->searchManual();
     }
-    
+
     /**
      * Méthode pour réinitialiser les filtres
      */
@@ -254,11 +280,11 @@ new class extends Component {
             'type' => '',
             'site_source' => ''
         ];
-        
+
         // Exécuter la recherche avec les filtres réinitialisés
         $this->searchManual();
     }
-    
+
     /**
      * Méthode appelée quand un filtre change
      */
@@ -267,7 +293,7 @@ new class extends Component {
         // Débouncer pour éviter trop d'appels
         $this->applyFilters();
     }
-    
+
     /**
      * Nettoie et convertit un prix en nombre décimal
      * Enlève tous les symboles de devise et caractères non numériques
@@ -278,26 +304,26 @@ new class extends Component {
         if ($price === null || $price === '') {
             return null;
         }
-        
+
         // Si déjà numérique, retourner tel quel
         if (is_numeric($price)) {
             return (float) $price;
         }
-        
+
         // Si string, nettoyer
         if (is_string($price)) {
             // Enlever symboles de devise et espaces (garder seulement chiffres, virgule, point, tiret)
             $cleanPrice = preg_replace('/[^\d,.-]/', '', $price);
-            
+
             // Remplacer virgule par point pour conversion
             $cleanPrice = str_replace(',', '.', $cleanPrice);
-            
+
             // Vérifier si numérique après nettoyage
             if (is_numeric($cleanPrice)) {
                 return (float) $cleanPrice;
             }
         }
-        
+
         return null;
     }
 
@@ -428,23 +454,26 @@ new class extends Component {
                     $originalPrice = $product->prix_ht;
                     $cleanedPrice = $this->cleanPrice($product->prix_ht);
                     $product->prix_ht = $cleanedPrice;
-                    
+
                     // Log pour vérifier le nettoyage
                     \Log::info('Prix nettoyé:', [
                         'original' => $originalPrice,
                         'cleaned' => $cleanedPrice
                     ]);
                 }
-                
+
                 // S'assurer que product_url est défini
                 if (!isset($product->product_url) && isset($product->url)) {
                     $product->product_url = $product->url;
                 }
-                
+
                 // S'assurer que image est défini
                 if (!isset($product->image) && isset($product->image_url)) {
                     $product->image = $product->image_url;
                 }
+
+                // AJOUTER LA PROPRIÉTÉ POUR DISTINGUER LA RECHERCHE
+                $product->is_manual_search = false;
             }
 
             \Log::info('Query result:', [
@@ -454,6 +483,7 @@ new class extends Component {
             $this->matchedProducts = $this->calculateSimilarity($result, $search);
             $this->products = $this->matchedProducts;
             $this->hasData = !empty($result);
+            $this->isAutomaticSearch = true; // C'est une recherche automatique
 
             // Si pas de résultats automatiques, on affiche le tableau quand même
             if (!$this->hasData) {
@@ -894,11 +924,11 @@ new class extends Component {
     public function formatPrice($price)
     {
         $cleanPrice = $this->cleanPrice($price);
-        
+
         if ($cleanPrice !== null) {
             return number_format($cleanPrice, 2, ',', ' ') . ' €';
         }
-        
+
         return 'N/A';
     }
 
@@ -1120,13 +1150,13 @@ new class extends Component {
     public function adjustSimilarityThreshold($threshold)
     {
         $this->similarityThreshold = $threshold;
-        
+
         // Utilisez $this->searchQuery au lieu de $this->search
         if (!empty($this->searchQuery)) {
             $this->getCompetitorPrice($this->searchQuery);
         }
     }
-    
+
     /**
      * Calcule la différence de prix par rapport au prix du concurrent
      */
@@ -1134,7 +1164,7 @@ new class extends Component {
     {
         $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
         $cleanReferencePrice = $this->cleanPrice($this->referencePrice);
-        
+
         if ($cleanCompetitorPrice === null || $cleanReferencePrice === null) {
             return null;
         }
@@ -1149,7 +1179,7 @@ new class extends Component {
     {
         $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
         $cleanReferencePrice = $this->cleanPrice($this->referencePrice);
-        
+
         if ($cleanCompetitorPrice === null || $cleanReferencePrice === null || $cleanCompetitorPrice == 0) {
             return null;
         }
@@ -1203,7 +1233,7 @@ new class extends Component {
 
         return $labels[$status] ?? $labels['unknown'];
     }
-    
+
     /**
      * Retourne la classe CSS pour le statut de prix
      */
@@ -1230,7 +1260,7 @@ new class extends Component {
     {
         $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
         $cleanCosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
-        
+
         if ($cleanCompetitorPrice === null || $cleanCosmashopPrice === null) {
             return null;
         }
@@ -1245,7 +1275,7 @@ new class extends Component {
     {
         $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
         $cleanCosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
-        
+
         if ($cleanCompetitorPrice === null || $cleanCosmashopPrice === null || $cleanCompetitorPrice == 0) {
             return null;
         }
@@ -1301,7 +1331,7 @@ new class extends Component {
 
         return $labels[$status] ?? $labels['unknown'];
     }
-    
+
     /**
      * Retourne la classe CSS pour le statut Cosmashop
      */
@@ -1365,7 +1395,7 @@ new class extends Component {
         foreach ($this->matchedProducts as $product) {
             $price = $product->price_ht ?? $product->prix_ht;
             $cleanPrice = $this->cleanPrice($price);
-            
+
             if ($cleanPrice !== null) {
                 $prices[] = $cleanPrice;
             }
@@ -1390,87 +1420,117 @@ new class extends Component {
         ];
     }
 
-/**
- * Analyse globale pour Cosmashop
- */
-public function getCosmashopPriceAnalysis()
-{
-    $prices = [];
+    /**
+     * Analyse globale pour Cosmashop
+     */
+    public function getCosmashopPriceAnalysis()
+    {
+        $prices = [];
 
-    foreach ($this->matchedProducts as $product) {
-        $price = $product->price_ht ?? $product->prix_ht;
-        $cleanPrice = $this->cleanPrice($price);
-        
-        if ($cleanPrice !== null) {
-            $prices[] = $cleanPrice;
+        foreach ($this->matchedProducts as $product) {
+            $price = $product->price_ht ?? $product->prix_ht;
+            $cleanPrice = $this->cleanPrice($price);
+
+            if ($cleanPrice !== null) {
+                $prices[] = $cleanPrice;
+            }
         }
+
+        if (empty($prices)) {
+            return null;
+        }
+
+        $minPrice = min($prices);
+        $maxPrice = max($prices);
+        $avgPrice = array_sum($prices) / count($prices);
+        $cosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
+
+        // Compter les concurrents en dessous/au-dessus de Cosmashop
+        $belowCosmashop = 0;
+        $aboveCosmashop = 0;
+
+        foreach ($prices as $price) {
+            if ($price < $cosmashopPrice) {
+                $belowCosmashop++;
+            } else {
+                $aboveCosmashop++;
+            }
+        }
+
+        return [
+            'min' => $minPrice,
+            'max' => $maxPrice,
+            'average' => $avgPrice,
+            'cosmashop_price' => $cosmashopPrice,
+            'count' => count($prices),
+            'below_cosmashop' => $belowCosmashop,
+            'above_cosmashop' => $aboveCosmashop,
+            'cosmashop_position' => $cosmashopPrice <= $avgPrice ? 'competitive' : 'above_average'
+        ];
     }
 
-    if (empty($prices)) {
+
+    /**
+     * Récupère l'URL du produit de manière sécurisée
+     */
+    public function getProductUrl($product)
+    {
+        if (isset($product->product_url)) {
+            return $product->product_url;
+        }
+
+        if (isset($product->url)) {
+            return $product->url;
+        }
+
         return null;
     }
 
-    $minPrice = min($prices);
-    $maxPrice = max($prices);
-    $avgPrice = array_sum($prices) / count($prices);
-    $cosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
-
-    // Compter les concurrents en dessous/au-dessus de Cosmashop
-    $belowCosmashop = 0;
-    $aboveCosmashop = 0;
-
-    foreach ($prices as $price) {
-        if ($price < $cosmashopPrice) {
-            $belowCosmashop++;
-        } else {
-            $aboveCosmashop++;
+    /**
+     * Récupère l'image du produit de manière sécurisée
+     */
+    public function getProductImage($product)
+    {
+        if (isset($product->image)) {
+            return $product->image;
         }
+
+        if (isset($product->image_url)) {
+            return $product->image_url;
+        }
+
+        return null;
     }
 
-    return [
-        'min' => $minPrice,
-        'max' => $maxPrice,
-        'average' => $avgPrice,
-        'cosmashop_price' => $cosmashopPrice,
-        'count' => count($prices),
-        'below_cosmashop' => $belowCosmashop,
-        'above_cosmashop' => $aboveCosmashop,
-        'cosmashop_position' => $cosmashopPrice <= $avgPrice ? 'competitive' : 'above_average'
-    ];
-}
+    /**
+     * Méthode pour calculer la similarité pour la recherche manuelle si nécessaire
+     */
+    public function calculateManualSimilarity($product)
+    {
+        // Si c'est déjà une recherche automatique, retourner les valeurs existantes
+        if (isset($product->similarity_score) && isset($product->match_level)) {
+            return [
+                'similarity_score' => $product->similarity_score,
+                'match_level' => $product->match_level
+            ];
+        }
 
+        // Sinon, calculer la similarité avec la recherche originale
+        if (!empty($this->searchQuery)) {
+            $similarityScore = $this->computeOverallSimilarity($product, $this->searchQuery);
+            $matchLevel = $this->getMatchLevel($similarityScore);
 
-/**
- * Récupère l'URL du produit de manière sécurisée
- */
-public function getProductUrl($product)
-{
-    if (isset($product->product_url)) {
-        return $product->product_url;
-    }
-    
-    if (isset($product->url)) {
-        return $product->url;
-    }
-    
-    return null;
-}
+            return [
+                'similarity_score' => $similarityScore,
+                'match_level' => $matchLevel
+            ];
+        }
 
-/**
- * Récupère l'image du produit de manière sécurisée
- */
-public function getProductImage($product)
-{
-    if (isset($product->image)) {
-        return $product->image;
+        return [
+            'similarity_score' => null,
+            'match_level' => null
+        ];
     }
-    
-    if (isset($product->image_url)) {
-        return $product->image_url;
-    }
-    
-    return null;
-}
 
 }; ?>
 
@@ -1500,8 +1560,8 @@ public function getProductImage($product)
     <!-- Section d'analyse des prix (uniquement si on a des données) -->
     @if($hasData && $referencePrice && count($matchedProducts) > 0)
         @php
-            $priceAnalysis = $this->getPriceAnalysis();
-            $cosmashopAnalysis = $this->getCosmashopPriceAnalysis();
+    $priceAnalysis = $this->getPriceAnalysis();
+    $cosmashopAnalysis = $this->getCosmashopPriceAnalysis();
         @endphp
         @if($priceAnalysis && $cosmashopAnalysis)
             <div class="mx-auto w-full px-4 py-4 sm:px-6 lg:px-8">
@@ -1694,7 +1754,7 @@ public function getProductImage($product)
                                 </div>
                             @endif
                             @php
-                                $searchVariation = $this->extractSearchVariation();
+        $searchVariation = $this->extractSearchVariation();
                             @endphp
                             @if($searchVariation)
                                 <div class="flex items-center">
@@ -1795,8 +1855,8 @@ public function getProductImage($product)
                     
                     @if($filters['site_source'])
                         @php
-                            $selectedSite = $sites->firstWhere('id', $filters['site_source']);
-                            $siteName = $selectedSite ? $selectedSite->name : 'Site ID: ' . $filters['site_source'];
+        $selectedSite = $sites->firstWhere('id', $filters['site_source']);
+        $siteName = $selectedSite ? $selectedSite->name : 'Site ID: ' . $filters['site_source'];
                         @endphp
                         <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
                             Site: {{ $siteName }}
@@ -1993,33 +2053,33 @@ public function getProductImage($product)
                             @if(count($matchedProducts) > 0)
                                 @foreach($matchedProducts as $product)
                                     @php
-                                        if ($hasData) {
-                                            $matchClass = [
-                                                'excellent' => 'bg-green-100 text-green-800 border-green-300',
-                                                'bon' => 'bg-blue-100 text-blue-800 border-blue-300',
-                                                'moyen' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
-                                                'faible' => 'bg-gray-100 text-gray-800 border-gray-300'
-                                            ][$product->match_level ?? 'faible'];
-                                        }
+            if ($hasData) {
+                $matchClass = [
+                    'excellent' => 'bg-green-100 text-green-800 border-green-300',
+                    'bon' => 'bg-blue-100 text-blue-800 border-blue-300',
+                    'moyen' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
+                    'faible' => 'bg-gray-100 text-gray-800 border-gray-300'
+                ][$product->match_level ?? 'faible'];
+            }
 
-                                        $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
-                                        $hasMatchingVolume = $this->hasMatchingVolume($product);
-                                        $hasExactVariation = $this->hasExactVariationMatch($product);
+            $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
+            $hasMatchingVolume = $this->hasMatchingVolume($product);
+            $hasExactVariation = $this->hasExactVariationMatch($product);
 
-                                        // Données pour la comparaison de prix (uniquement si référencePrice)
-                                        if ($hasData && $referencePrice) {
-                                            $competitorPrice = $product->price_ht ?? $product->prix_ht;
-                                            $priceDifference = $this->calculatePriceDifference($competitorPrice);
-                                            $priceDifferencePercent = $this->calculatePriceDifferencePercentage($competitorPrice);
-                                            $priceStatusClass = $this->getPriceStatusClass($competitorPrice);
-                                            $priceStatusLabel = $this->getPriceStatusLabel($competitorPrice);
+            // Données pour la comparaison de prix (uniquement si référencePrice)
+            if ($hasData && $referencePrice) {
+                $competitorPrice = $product->price_ht ?? $product->prix_ht;
+                $priceDifference = $this->calculatePriceDifference($competitorPrice);
+                $priceDifferencePercent = $this->calculatePriceDifferencePercentage($competitorPrice);
+                $priceStatusClass = $this->getPriceStatusClass($competitorPrice);
+                $priceStatusLabel = $this->getPriceStatusLabel($competitorPrice);
 
-                                            // Données pour Cosmashop
-                                            $cosmashopDifference = $this->calculateCosmashopPriceDifference($competitorPrice);
-                                            $cosmashopDifferencePercent = $this->calculateCosmashopPriceDifferencePercentage($competitorPrice);
-                                            $cosmashopStatusClass = $this->getCosmashopPriceStatusClass($competitorPrice);
-                                            $cosmashopStatusLabel = $this->getCosmashopPriceStatusLabel($competitorPrice);
-                                        }
+                // Données pour Cosmashop
+                $cosmashopDifference = $this->calculateCosmashopPriceDifference($competitorPrice);
+                $cosmashopDifferencePercent = $this->calculateCosmashopPriceDifferencePercentage($competitorPrice);
+                $cosmashopStatusClass = $this->getCosmashopPriceStatusClass($competitorPrice);
+                $cosmashopStatusLabel = $this->getCosmashopPriceStatusLabel($competitorPrice);
+            }
                                     @endphp
                                     <tr class="hover:bg-gray-50 transition-colors duration-150">
                                         @if($hasData)
@@ -2060,7 +2120,7 @@ public function getProductImage($product)
                                         <!-- Colonne Image (uniquement si résultats automatiques) -->
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             @php
-                                                $productImage = $this->getProductImage($product);
+                $productImage = $this->getProductImage($product);
                                             @endphp
                                             @if(!empty($productImage))
                                                 <img src="{{ $productImage }}" 
@@ -2140,9 +2200,9 @@ public function getProductImage($product)
                                                 <div class="flex-shrink-0 h-8 w-8 bg-gray-100 rounded-full flex items-center justify-center mr-3">
                                                     <span class="text-xs font-medium text-gray-600">
                                                         @php
-                                                            $productUrl = $this->getProductUrl($product);
-                                                            $domain = $this->extractDomain($productUrl ?? '');
-                                                            echo strtoupper(substr($domain, 0, 2));
+            $productUrl = $this->getProductUrl($product);
+            $domain = $this->extractDomain($productUrl ?? '');
+            echo strtoupper(substr($domain, 0, 2));
                                                         @endphp
                                                     </span>
                                                 </div>
@@ -2246,7 +2306,7 @@ public function getProductImage($product)
                                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                             <div class="flex space-x-2">
                                                 @php
-                                                    $productUrl = $this->getProductUrl($product);
+            $productUrl = $this->getProductUrl($product);
                                                 @endphp
                                                 @if(!empty($productUrl))
                                                     <a href="{{ $productUrl }}" target="_blank" rel="noopener noreferrer"
