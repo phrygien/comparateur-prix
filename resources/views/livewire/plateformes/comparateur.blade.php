@@ -495,201 +495,340 @@ public function applyFilters()
         }
     }
 
-    /**
-     * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT - VERSION STANDARDISÉE
-     */
-    private function prepareSearchTerms(string $search): string
-    {
-        \Log::info('=== DÉBUT prepareSearchTerms ===', ['search_original' => $search]);
+/**
+ * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT - VERSION CORRIGÉE
+ */
+private function prepareSearchTerms(string $search): string
+{
+    \Log::info('=== DÉBUT prepareSearchTerms ===', ['search_original' => $search]);
+    
+    // 1. NETTOYAGE AVANCÉ - Gérer le double "Lancôme - Lancôme"
+    // ----------------------------------------------------------
+    
+    // Supprimer les doublons de marque au début (ex: "Lancôme - Lancôme" → "Lancôme")
+    $searchClean = preg_replace('/^(\w+)\s*-\s*\1\s*-\s*/i', '$1 - ', $search);
+    
+    // Si le remplacement n'a pas fonctionné, utiliser l'original
+    if ($searchClean === $search) {
+        // Essayer un autre pattern pour "Marque - Marque ..."
+        $searchClean = preg_replace('/^([^-]+)\s*-\s*\1\s*-\s*/i', '$1 - ', $search);
+    }
+    
+    \Log::debug('Après suppression doublons:', ['cleaned' => $searchClean]);
+    
+    // Nettoyer mais garder les caractères alphabétiques, tirets, espaces, chiffres
+    $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ0-9\-\s]/', ' ', $searchClean);
+    
+    // Normaliser les espaces multiples
+    $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
+    
+    // Convertir en minuscules
+    $searchClean = mb_strtolower($searchClean);
+    
+    \Log::debug('Phase 1 - Nettoyage complet:', ['cleaned' => $searchClean]);
+    
+    // 2. EXTRACTION DE LA MARQUE ET NORMALISATION
+    // --------------------------------------------
+    
+    // Extraire la marque (premier mot avant le premier tiret)
+    $brand = '';
+    if (preg_match('/^([^-]+)/', $searchClean, $matches)) {
+        $brand = trim($matches[1]);
+        \Log::debug('Marque extraite:', ['brand' => $brand]);
+    }
+    
+    // Si la marque est "lancôme" ou "lancome", standardiser
+    if (in_array($brand, ['lancôme', 'lancome'])) {
+        $brand = 'lancome';
+        // Remplacer toutes les occurrences
+        $searchClean = preg_replace('/\b(lancôme|lancome)\b/i', 'lancome', $searchClean);
+    }
+    
+    // 3. STANDARDISATION DES TERMES TECHNIQUES AMÉLIORÉE
+    // ---------------------------------------------------
+    
+    $standardTerms = [
+        'eau de toilette' => 'edt',
+        'eau de parfum' => 'edp',
+        'parfum' => 'parf',
+        'vaporisateur' => 'vap',
+        'spray' => 'vap',
+        'flacon' => 'flac',
+        'coffret' => 'coff',
+        'édition limitée' => 'edlim',
+        'edition limitee' => 'edlim',
+        'édition' => 'edit',
+        'edition' => 'edit',
+    ];
+    
+    // Appliquer les remplacements en préservant la casse pour le matching
+    foreach ($standardTerms as $original => $standard) {
+        // Version insensible à la casse
+        $searchClean = preg_replace('/\b' . preg_quote($original, '/') . '\b/i', $standard, $searchClean);
+    }
+    
+    \Log::debug('Phase 2 - Standardisation technique:', ['standardized' => $searchClean]);
+    
+    // 4. GESTION SPÉCIFIQUE POUR "LA VIE EST BELLE"
+    // ----------------------------------------------
+    
+    // Détecter et traiter "la vie est belle"
+    if (preg_match('/\bla\s+vie\s+est\s+belle\b/i', $searchClean)) {
+        // Remplacer par une version unique
+        $searchClean = preg_replace('/\bla\s+vie\s+est\s+belle\b/i', 'lavieestbelle', $searchClean);
+        \Log::debug('Détection "La Vie Est Belle":', ['replaced' => $searchClean]);
+    }
+    
+    // Liste étendue des noms composés
+    $commonCompoundNames = [
+        'la vie est belle' => 'lavieestbelle',
+        'vanille nude' => 'vanille-nude',
+        'silver black' => 'silver-black',
+        'bleu electrique' => 'bleu-electrique',
+        'homme sport' => 'homme-sport',
+        'ultra male' => 'ultra-male',
+        'one million' => 'one-million',
+        'sauvage elixir' => 'sauvage-elixir',
+        'good girl' => 'good-girl',
+        'black opium' => 'black-opium',
+        'acqua di gio' => 'acqua-di-gio',
+        'le male' => 'le-male',
+        'bleu de chanel' => 'bleu-de-chanel',
+        'mon guerlain' => 'mon-guerlain',
+        'j\'adore' => 'jadore',
+        'miss dior' => 'miss-dior',
+        'l\'homme idéal' => 'lhomme-ideal',
+        'lhomme ideal' => 'lhomme-ideal',
+    ];
+    
+    // Traiter les noms composés
+    foreach ($commonCompoundNames as $compound => $replacement) {
+        $pattern = '/\b' . str_replace([' ', '\''], ['\s+', '\'?'], preg_quote($compound, '/')) . '\b/i';
+        if (preg_match($pattern, $searchClean)) {
+            $searchClean = preg_replace($pattern, $replacement, $searchClean);
+            \Log::debug("Nom composé détecté '{$compound}':", ['replaced' => $searchClean]);
+        }
+    }
+    
+    \Log::debug('Phase 3 - Noms composés traités:', ['compounded' => $searchClean]);
+    
+    // 5. EXTRACTION DES VOLUMES ET UNITÉS
+    // ------------------------------------
+    
+    // Extraire les volumes (30 ml, 100ml, etc.)
+    $volumes = [];
+    if (preg_match_all('/(\d+)\s*ml/i', $searchClean, $matches)) {
+        $volumes = $matches[1];
+        // Remplacer "30 ml" par "30ml" (sans espace)
+        foreach ($volumes as $volume) {
+            $searchClean = preg_replace('/\b' . $volume . '\s*ml\b/i', $volume . 'ml', $searchClean);
+        }
+    }
+    
+    \Log::debug('Volumes extraits:', ['volumes' => $volumes, 'after_extraction' => $searchClean]);
+    
+    // 6. EXTRACTION ET FILTRAGE DES MOTS
+    // -----------------------------------
+    
+    // Diviser par espaces, tirets, ou slash
+    $words = preg_split('/[\s\-\.\/]+/', $searchClean, -1, PREG_SPLIT_NO_EMPTY);
+    
+    \Log::debug('Mots extraits:', ['words_raw' => $words]);
+    
+    // Stop words adaptés pour la parfumerie
+    $stopWords = [
+        // Articles et prépositions
+        'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou',
+        'pour', 'avec', 'sur', 'sans', 'dans', 'par', 'à', 'au', 'aux',
         
-        // 1. PHASE DE PRÉPARATION
-        $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ\-\s]/', ' ', $search);
-        $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
-        $searchClean = mb_strtolower($searchClean);
+        // Anglais
+        'the', 'a', 'an', 'and', 'or', 'for', 'with', 'by', 'in', 'on',
         
-        \Log::debug('Phase 1 - Nettoyage:', ['cleaned' => $searchClean]);
+        // Termes génériques (peu discriminants)
+        'parfume', 'perfume', 'fragrance', 'scent'
+    ];
+    
+    // Mots toujours significatifs (marques, notes, caractéristiques)
+    $alwaysSignificant = [
+        // Marques
+        'lancome', 'dior', 'chanel', 'ysl', 'guerlain', 'prada',
+        'versace', 'armani', 'dolce', 'gabbana', 'calvin', 'klein', 'hugo',
+        'boss', 'jean', 'paul', 'gaultier', 'pacorabanne', 'azzaro',
+        'valentino', 'bulgari', 'cartier', 'bvlgari', 'hermes', 'burberry',
+        'givenchy', 'rochas', 'montblanc', 'victor', 'rolf', 
         
-        // 2. PHASE DE STANDARDISATION DES TERMES TECHNIQUES
-        $standardTerms = [
-            'eau de toilette' => 'edt',
-            'eau de parfum' => 'edp',
-            'parfum' => 'parf',
-            'vaporisateur' => 'vap',
-            'spray' => 'vap',
-            'flacon' => 'flac',
-            'coffret' => 'coff',
-            'édition limitée' => 'edlim',
-            'edition limitee' => 'edlim',
-        ];
+        // Notes olfactives
+        'vanille', 'ambre', 'musc', 'bois', 'cuir', 'patchouli',
+        'vétiver', 'bergamote', 'citron', 'orange', 'lavande',
+        'cèdre', 'santal', 'oud', 'iris', 'tubéreuse', 'rose', 'jasmin',
         
-        foreach ($standardTerms as $original => $standard) {
-            $searchClean = str_replace($original, $standard, $searchClean);
+        // Caractéristiques produits
+        'edt', 'edp', 'parf', 'vap', 'flac', 'coff', 'edlim', 'edit',
+        'homme', 'femme', 'unisexe', 'nude',
+        
+        // Noms spécifiques
+        'lavieestbelle', 'sauvage', 'eros', 'opium', 'million',
+        
+        // Couleurs
+        'noir', 'blanc', 'bleu', 'rouge', 'vert', 'jaune', 'rose',
+        'argent', 'or', 'gold', 'silver', 'black', 'white', 'blue',
+        'red', 'green', 'yellow', 'pink',
+    ];
+    
+    $significantWords = [];
+    
+    foreach ($words as $word) {
+        $word = trim($word);
+        
+        if (empty($word)) {
+            continue;
         }
         
-        \Log::debug('Phase 2 - Standardisation:', ['standardized' => $searchClean]);
+        // Vérifier si c'est un volume (ex: "30ml", "100")
+        $isVolume = preg_match('/^\d+ml?$/i', $word) || is_numeric($word);
         
-        // 3. PHASE DE GESTION DES NOMS COMPOSÉS
-        $commonCompoundNames = [
-            'la vie est belle' => 'lavieestbelle',
-            'silver black' => 'silver-black',
-            'vanille nude' => 'vanille-nude',
-            'bleu electrique' => 'bleu-electrique',
-            'homme sport' => 'homme-sport',
-            'ultra male' => 'ultra-male',
-            'one million' => 'one-million',
-            'sauvage elixir' => 'sauvage-elixir',
-            'good girl' => 'good-girl',
-            'black opium' => 'black-opium',
-            'acqua di gio' => 'acqua-di-gio',
-            'le male' => 'le-male',
-            'bleu de chanel' => 'bleu-de-chanel',
-        ];
+        // Vérifier si c'est un mot toujours significatif
+        $isAlwaysSignificant = in_array($word, $alwaysSignificant);
         
-        foreach ($commonCompoundNames as $compound => $replacement) {
-            if (str_contains($searchClean, $compound)) {
-                $searchClean = str_replace($compound, $replacement, $searchClean);
-            }
-        }
+        // Vérifier si c'est un stop word
+        $isStopWord = in_array($word, $stopWords);
         
-        \Log::debug('Phase 3 - Noms composés:', ['compounded' => $searchClean]);
-        
-        // 4. PHASE D'EXTRACTION DES MOTS
-        $words = preg_split('/[\s\-]+/', $searchClean, -1, PREG_SPLIT_NO_EMPTY);
-        
-        \Log::debug('Phase 4 - Extraction mots:', ['words_raw' => $words]);
-        
-        // 5. PHASE DE FILTRAGE INTELLIGENT
-        $stopWords = [
-            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou',
-            'pour', 'avec', 'sur', 'sans', 'dans', 'par',
-            'the', 'a', 'an', 'and', 'or', 'for', 'with', 'by',
-        ];
-        
-        $alwaysSignificant = [
-            // Marques
-            'chanel', 'dior', 'ysl', 'lancome', 'lancôme', 'guerlain', 'prada',
-            'versace', 'armani', 'dolce', 'gabbana', 'calvin', 'klein', 'hugo',
-            'boss', 'jean', 'paul', 'gaultier', 'pacorabanne', 'azzaro',
-            'valentino', 'bulgari', 'cartier', 'bvlgari', 'hermes', 'burberry',
-            'givenchy', 'rochas', 'montblanc', 'victor', 'rolf', 'ys', 'jp',
+        // LOGIQUE DE DÉCISION AMÉLIORÉE
+        if ($isVolume) {
+            // Les volumes sont prioritaires
+            $significantWords[] = $word;
+            \Log::debug("Mot ajouté (volume): {$word}");
             
-            // Notes olfactives
-            'rose', 'jasmin', 'vanille', 'ambre', 'musc', 'bois', 'cuir',
-            'patchouli', 'vétiver', 'bergamote', 'citron', 'orange',
-            'lavande', 'cèdre', 'santal', 'oud', 'iris', 'tubéreuse',
+        } elseif ($isAlwaysSignificant) {
+            // Mots toujours significatifs
+            $significantWords[] = $word;
+            \Log::debug("Mot ajouté (toujours significatif): {$word}");
             
-            // Caractéristiques produits
-            'edt', 'edp', 'parf', 'vap', 'flac', 'coff', 'edlim',
-            'homme', 'femme', 'unisexe',
-            
-            // Couleurs
-            'noir', 'blanc', 'bleu', 'rouge', 'vert', 'jaune', 'rose',
-            'argent', 'or', 'gold', 'silver', 'black', 'white', 'blue',
-            'red', 'green', 'yellow', 'pink',
-        ];
-        
-        $significantWords = [];
-        
-        foreach ($words as $word) {
-            $word = trim($word);
-            
-            if (empty($word)) {
-                continue;
-            }
-            
-            $isAlwaysSignificant = in_array($word, $alwaysSignificant);
-            $isStopWord = in_array($word, $stopWords);
-            $isVolume = is_numeric($word) || preg_match('/^\d+ml$/i', $word);
-            
-            if ($isVolume) {
-                $significantWords[] = $word;
-                \Log::debug("Mot ajouté (volume): {$word}");
-                
-            } elseif ($isAlwaysSignificant) {
-                $significantWords[] = $word;
-                \Log::debug("Mot ajouté (toujours significatif): {$word}");
-                
-            } elseif (!$isStopWord) {
-                $wordLength = strlen($word);
-                
-                if ($wordLength >= 3) {
-                    $significantWords[] = $word;
-                    \Log::debug("Mot ajouté (longueur {$wordLength}): {$word}");
-                } elseif ($wordLength == 2) {
-                    $commonTwoLetterWords = ['ed', 'hp', 'xl', 'xs', 'ml', 'oz', 'ed', 'hp'];
-                    if (in_array($word, $commonTwoLetterWords)) {
-                        $significantWords[] = $word;
-                        \Log::debug("Mot ajouté (2 lettres commun): {$word}");
-                    }
-                }
-            } else {
-                \Log::debug("Mot ignoré (stop word): {$word}");
-            }
-            
-            if (count($significantWords) >= 20) {
-                \Log::warning('Limite de mots atteinte');
-                break;
-            }
-        }
-        
-        \Log::debug('Phase 5 - Mots filtrés:', [
-            'significant_words' => $significantWords,
-            'count' => count($significantWords)
-        ]);
-        
-        // 6. PHASE DE CONSTRUCTION DE LA REQUÊTE
-        if (empty($significantWords)) {
-            \Log::warning('Aucun mot significatif trouvé');
-            return '';
-        }
-        
-        $booleanTerms = [];
-        
-        foreach ($significantWords as $word) {
+        } elseif (!$isStopWord) {
+            // Pour les autres mots, règles basées sur la longueur et le contenu
             $wordLength = strlen($word);
             
             if ($wordLength >= 4) {
-                $booleanTerms[] = '+' . $word . '*';
+                // Mots de 4+ caractères : généralement significatifs
+                $significantWords[] = $word;
+                \Log::debug("Mot ajouté (longueur {$wordLength}): {$word}");
             } elseif ($wordLength == 3) {
-                $booleanTerms[] = '>' . $word;
-            } elseif ($wordLength == 2 && is_numeric($word)) {
-                $booleanTerms[] = '+' . $word;
-            } elseif ($wordLength == 2) {
-                $booleanTerms[] = $word . '*';
-            } else {
-                $booleanTerms[] = $word . '*';
+                // Mots de 3 caractères : vérifier s'ils sont pertinents
+                $relevantThreeLetterWords = ['edt', 'edp', 'par', 'vap', 'ml', 'oz', 'eau'];
+                if (in_array($word, $relevantThreeLetterWords)) {
+                    $significantWords[] = $word;
+                    \Log::debug("Mot ajouté (3 lettres pertinent): {$word}");
+                }
             }
+        } else {
+            \Log::debug("Mot ignoré (stop word): {$word}");
         }
         
-        // Ajouter une recherche pour les noms composés
-        foreach ($commonCompoundNames as $compound => $replacement) {
-            if (str_contains(strtolower($search), $compound)) {
-                $compoundWithoutSpaces = str_replace(' ', '', $compound);
-                $booleanTerms[] = '+' . $compoundWithoutSpaces . '*';
-            }
+        // Limite de sécurité
+        if (count($significantWords) >= 15) {
+            \Log::warning('Limite de mots atteinte (15)');
+            break;
         }
-        
-        $finalQuery = implode(' ', $booleanTerms);
-        
-        // 7. PHASE D'OPTIMISATION
-        if (count($booleanTerms) > 10) {
-            \Log::info('Requête trop longue, optimisation...');
-            
-            $optimizedTerms = array_slice($booleanTerms, 0, 8);
-            $optimizedTerms[] = '+parf*';
-            
-            $finalQuery = implode(' ', $optimizedTerms);
-        }
-        
-        \Log::info('=== FIN prepareSearchTerms ===', [
-            'search_original' => $search,
-            'final_query' => $finalQuery,
-            'word_count' => count($significantWords),
-            'query_length' => strlen($finalQuery)
-        ]);
-        
-        return $finalQuery;
     }
+    
+    // Assurer que la marque est incluse si elle n'est pas déjà là
+    if (!empty($brand) && !in_array($brand, $significantWords)) {
+        array_unshift($significantWords, $brand);
+        \Log::debug("Marque ajoutée manuellement:", ['brand' => $brand]);
+    }
+    
+    \Log::debug('Phase 4 - Mots filtrés:', [
+        'significant_words' => $significantWords,
+        'count' => count($significantWords)
+    ]);
+    
+    // 7. CONSTRUCTION DE LA REQUÊTE BOOLEAN INTELLIGENTE
+    // ----------------------------------------------------
+    
+    if (empty($significantWords)) {
+        \Log::warning('Aucun mot significatif trouvé');
+        return '';
+    }
+    
+    $booleanTerms = [];
+    
+    foreach ($significantWords as $index => $word) {
+        $wordLength = strlen($word);
+        
+        // Prioriser les mots importants
+        if ($index < 3) {
+            // Les 3 premiers mots sont obligatoires
+            $booleanTerms[] = '+' . $word . '*';
+        } elseif ($wordLength >= 4) {
+            // Mots longs : recherche par préfixe
+            $booleanTerms[] = $word . '*';
+        } elseif ($wordLength == 3 && preg_match('/^[a-z]{3}$/i', $word)) {
+            // Mots de 3 lettres alphabétiques
+            $booleanTerms[] = '>' . $word;
+        } elseif (is_numeric($word) || preg_match('/^\d+ml$/i', $word)) {
+            // Volumes et nombres
+            $booleanTerms[] = '+' . $word;
+        } else {
+            // Par défaut
+            $booleanTerms[] = $word . '*';
+        }
+    }
+    
+    // Ajouter une recherche spécifique pour les noms composés
+    if (str_contains(strtolower($search), 'la vie est belle')) {
+        $booleanTerms[] = '+lavieestbelle*';
+    }
+    
+    // Ajouter une recherche pour "vanille nude"
+    if (str_contains(strtolower($search), 'vanille nude')) {
+        $booleanTerms[] = '+vanille*';
+        $booleanTerms[] = '+nude*';
+    }
+    
+    $finalQuery = implode(' ', $booleanTerms);
+    
+    \Log::debug('Requête booléenne construite:', ['boolean_terms' => $booleanTerms]);
+    
+    // 8. OPTIMISATION ET VALIDATION
+    // ------------------------------
+    
+    // Limiter la longueur de la requête
+    if (count($booleanTerms) > 12) {
+        \Log::info('Requête trop longue, optimisation...');
+        
+        // Garder les termes les plus importants (marque, nom, variation)
+        $priorityTerms = [];
+        
+        // 1. D'abord la marque
+        foreach ($booleanTerms as $term) {
+            if (str_contains($term, 'lancome') || 
+                str_contains($term, 'lavieestbelle') ||
+                str_contains($term, 'vanille') ||
+                str_contains($term, 'nude')) {
+                $priorityTerms[] = $term;
+            }
+        }
+        
+        // 2. Ajouter d'autres termes jusqu'à 10
+        foreach ($booleanTerms as $term) {
+            if (!in_array($term, $priorityTerms) && count($priorityTerms) < 10) {
+                $priorityTerms[] = $term;
+            }
+        }
+        
+        $finalQuery = implode(' ', $priorityTerms);
+    }
+    
+    \Log::info('=== FIN prepareSearchTerms ===', [
+        'search_original' => $search,
+        'search_cleaned' => $searchClean,
+        'final_query' => $finalQuery,
+        'word_count' => count($significantWords),
+        'query_length' => strlen($finalQuery)
+    ]);
+    
+    return $finalQuery;
+}
 
     /**
      * Calcule la similarité entre la recherche et chaque produit
