@@ -751,80 +751,62 @@ public function getCompetitorPrice($search)
         ]);
     }
 
-/**
- * Version alternative - plus simple et souvent plus efficace
- */
-private function prepareSearchTerms(string $search): string
-{
-    // Nettoyer la chaîne de recherche
-    $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ0-9\s]/', ' ', $search);
-    $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
-    $searchClean = mb_strtolower($searchClean);
-    
-    // Liste de stop words
-    $stopWords = [
-        'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou',
-        'pour', 'avec', 'eau', 'ml', 'parfum', 'vaporisateur', 'spray'
-    ];
-    
-    // Extraire les mots significatifs
-    $words = explode(" ", $searchClean);
-    $significantWords = [];
-    
-    foreach ($words as $word) {
-        $word = trim($word);
-        
-        // Filtrer les mots courts, stop words et nombres simples
-        if (strlen($word) <= 2 || in_array($word, $stopWords) || 
-            (is_numeric($word) && strlen($word) < 3)) {
-            continue;
-        }
-        
-        $significantWords[] = $word;
-    }
-    
-    // Si pas assez de mots significatifs, prendre plus de mots
-    if (count($significantWords) < 3) {
-        // Réessayer avec des critères moins stricts
+    /**
+     * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
+     */
+    private function prepareSearchTerms(string $search): string
+    {
+        $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ\s]/', ' ', $search);
+        $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
+        $searchClean = mb_strtolower($searchClean);
+
+        $words = explode(" ", $searchClean);
+
+        $stopWords = [
+            'de',
+            'le',
+            'la',
+            'les',
+            'un',
+            'une',
+            'des',
+            'du',
+            'et',
+            'ou',
+            'pour',
+            'avec',
+            'the',
+            'a',
+            'an',
+            'and',
+            'or',
+            'eau',
+            'ml',
+            'edition',
+            'édition',
+            'coffret'
+        ];
+
         $significantWords = [];
+
         foreach ($words as $word) {
             $word = trim($word);
-            if (strlen($word) >= 2 && !in_array($word, $stopWords)) {
+
+            if (strlen($word) > 2 && !in_array($word, $stopWords)) {
                 $significantWords[] = $word;
             }
+
+            if (count($significantWords) >= 3) {
+                break;
+            }
         }
+
+        $booleanTerms = array_map(function ($word) {
+            return '+' . $word . '*';
+        }, $significantWords);
+
+        return implode(' ', $booleanTerms);
     }
-    
-    // Limiter à 5-6 mots maximum pour éviter les requêtes trop longues
-    $significantWords = array_slice(array_unique($significantWords), 0, 6);
-    
-    // Créer la requête FULLTEXT
-    // Utiliser + devant chaque mot pour exiger qu'ils apparaissent tous
-    $booleanTerms = array_map(function($word) {
-        return '+' . $word . '*';
-    }, $significantWords);
-    
-    // Ajouter aussi une recherche moins stricte
-    $relaxedTerms = array_map(function($word) {
-        return $word . '*';
-    }, array_slice($significantWords, 0, 3));
-    
-    $searchQuery = implode(' ', $booleanTerms);
-    
-    // Si on a au moins 3 termes, on peut être plus permissif
-    if (count($booleanTerms) >= 3) {
-        // Exiger au moins 2 des 3 termes principaux
-        $searchQuery = '+(>' . implode(' >', array_slice($significantWords, 0, 3)) . ')';
-    }
-    
-    \Log::info('Search terms prepared:', [
-        'original' => $search,
-        'significant_words' => $significantWords,
-        'query' => $searchQuery
-    ]);
-    
-    return $searchQuery;
-}
 
     /**
      * Formate le prix pour l'affichage
