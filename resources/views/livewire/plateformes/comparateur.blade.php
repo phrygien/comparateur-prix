@@ -17,6 +17,9 @@ new class extends Component {
     public $similarityThreshold = 0.6;
     public $matchedProducts = [];
 
+    // AJOUTEZ CETTE PROPRIÉTÉ MANQUANTE
+    public $searchQuery = ''; // Pour stocker la requête de recherche
+
     // prix a comparer
     public $price;
     // Ajoutez cette propriété dans la classe
@@ -32,6 +35,9 @@ new class extends Component {
         $this->price = $this->cleanPrice($price);
         $this->referencePrice = $this->cleanPrice($price); // Prix de référence pour la comparaison
         $this->cosmashopPrice = $this->cleanPrice($price) * 1.05; // Prix majoré de 5% pour Cosmashop
+
+        // STOCKEZ LA REQUÊTE DE RECHERCHE
+        $this->searchQuery = $name;        
     }
 
 
@@ -866,15 +872,27 @@ new class extends Component {
         return $text;
     }
 
+    // /**
+    //  * Ajuste le seuil de similarité
+    //  */
+    // public function adjustSimilarityThreshold($threshold)
+    // {
+    //     $this->similarityThreshold = $threshold;
+    //     $this->getCompetitorPrice($this->search ?? '');
+    // }
     /**
-     * Ajuste le seuil de similarité
+     * Ajuste le seuil de similarité - MÉTHODE CORRIGÉE
      */
     public function adjustSimilarityThreshold($threshold)
     {
         $this->similarityThreshold = $threshold;
-        $this->getCompetitorPrice($this->search ?? '');
+        
+        // Utilisez $this->searchQuery au lieu de $this->search
+        if (!empty($this->searchQuery)) {
+            $this->getCompetitorPrice($this->searchQuery);
+        }
     }
-
+    
     /**
      * Calcule la différence de prix par rapport au prix du concurrent
      */
