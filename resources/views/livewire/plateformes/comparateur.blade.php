@@ -1489,18 +1489,18 @@ new class extends Component {
     /**
      * Récupère l'image du produit de manière sécurisée
      */
-    public function getProductImage($product)
-    {
-        if (isset($product->image)) {
-            return $product->image;
-        }
+    // public function getProductImage($product)
+    // {
+    //     if (isset($product->image)) {
+    //         return $product->image;
+    //     }
 
-        if (isset($product->image_url)) {
-            return $product->image_url;
-        }
+    //     if (isset($product->image_url)) {
+    //         return $product->image_url;
+    //     }
 
-        return null;
-    }
+    //     return null;
+    // }
 
     /**
      * Méthode pour calculer la similarité pour la recherche manuelle si nécessaire
