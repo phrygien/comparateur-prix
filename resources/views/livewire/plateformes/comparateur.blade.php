@@ -1560,8 +1560,8 @@ new class extends Component {
     <!-- Section d'analyse des prix (uniquement si on a des données) -->
     @if($hasData && $referencePrice && count($matchedProducts) > 0)
         @php
-    $priceAnalysis = $this->getPriceAnalysis();
-    $cosmashopAnalysis = $this->getCosmashopPriceAnalysis();
+            $priceAnalysis = $this->getPriceAnalysis();
+            $cosmashopAnalysis = $this->getCosmashopPriceAnalysis();
         @endphp
         @if($priceAnalysis && $cosmashopAnalysis)
             <div class="mx-auto w-full px-4 py-4 sm:px-6 lg:px-8">
@@ -1672,7 +1672,7 @@ new class extends Component {
             </div>
         @endif
 
-        @if($hasData)
+        @if($hasData && $isAutomaticSearch)
             <!-- Indicateur de similarité (uniquement si on a des résultats automatiques) -->
             <div class="mb-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border">
                 <div class="flex flex-col space-y-3">
@@ -1754,7 +1754,7 @@ new class extends Component {
                                 </div>
                             @endif
                             @php
-        $searchVariation = $this->extractSearchVariation();
+                                $searchVariation = $this->extractSearchVariation();
                             @endphp
                             @if($searchVariation)
                                 <div class="flex items-center">
@@ -1855,8 +1855,8 @@ new class extends Component {
                     
                     @if($filters['site_source'])
                         @php
-        $selectedSite = $sites->firstWhere('id', $filters['site_source']);
-        $siteName = $selectedSite ? $selectedSite->name : 'Site ID: ' . $filters['site_source'];
+                            $selectedSite = $sites->firstWhere('id', $filters['site_source']);
+                            $siteName = $selectedSite ? $selectedSite->name : 'Site ID: ' . $filters['site_source'];
                         @endphp
                         <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
                             Site: {{ $siteName }}
@@ -1880,7 +1880,11 @@ new class extends Component {
                 <div class="px-6 py-4 border-b border-gray-200">
                     <h3 class="text-lg font-medium text-gray-900">
                         @if($hasData)
-                            Résultats de la recherche ({{ count($matchedProducts) }} produit(s))
+                            @if($isAutomaticSearch)
+                                Résultats de la recherche automatique ({{ count($matchedProducts) }} produit(s))
+                            @else
+                                Résultats de la recherche manuelle ({{ count($matchedProducts) }} produit(s))
+                            @endif
                         @else
                             Recherche manuelle - Utilisez les filtres
                         @endif
@@ -1888,7 +1892,7 @@ new class extends Component {
                     <p class="mt-1 text-sm text-gray-500">
                         @if($hasData)
                             <span wire:loading.remove wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
-                                {{ count($matchedProducts) }} produit(s) correspondant(s)
+                                {{ count($matchedProducts) }} produit(s) trouvé(s)
                             </span>
                         @else
                             Aucun résultat automatique. Utilisez les filtres pour rechercher manuellement.
@@ -1899,7 +1903,7 @@ new class extends Component {
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
                             <tr>
-                                @if($hasData)
+                                @if($hasData && $isAutomaticSearch)
                                 <!-- Colonne Score (uniquement si résultats automatiques) -->
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     <div class="flex flex-col">
@@ -2053,74 +2057,92 @@ new class extends Component {
                             @if(count($matchedProducts) > 0)
                                 @foreach($matchedProducts as $product)
                                     @php
-            if ($hasData) {
-                $matchClass = [
-                    'excellent' => 'bg-green-100 text-green-800 border-green-300',
-                    'bon' => 'bg-blue-100 text-blue-800 border-blue-300',
-                    'moyen' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
-                    'faible' => 'bg-gray-100 text-gray-800 border-gray-300'
-                ][$product->match_level ?? 'faible'];
-            }
+                                        // Pour la recherche manuelle, on calcule la similarité à la volée si nécessaire
+                                        if ($isAutomaticSearch) {
+                                            $similarityScore = $product->similarity_score ?? null;
+                                            $matchLevel = $product->match_level ?? null;
+                                        } else {
+                                            // Pour la recherche manuelle, on calcule la similarité
+                                            $similarityData = $this->calculateManualSimilarity($product);
+                                            $similarityScore = $similarityData['similarity_score'];
+                                            $matchLevel = $similarityData['match_level'];
+                                        }
+                                        
+                                        // Définir la classe de match si disponible
+                                        if ($matchLevel) {
+                                            $matchClass = [
+                                                'excellent' => 'bg-green-100 text-green-800 border-green-300',
+                                                'bon' => 'bg-blue-100 text-blue-800 border-blue-300',
+                                                'moyen' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
+                                                'faible' => 'bg-gray-100 text-gray-800 border-gray-300'
+                                            ][$matchLevel];
+                                        }
 
-            $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
-            $hasMatchingVolume = $this->hasMatchingVolume($product);
-            $hasExactVariation = $this->hasExactVariationMatch($product);
+                                        $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
+                                        $hasMatchingVolume = $this->hasMatchingVolume($product);
+                                        $hasExactVariation = $this->hasExactVariationMatch($product);
 
-            // Données pour la comparaison de prix (uniquement si référencePrice)
-            if ($hasData && $referencePrice) {
-                $competitorPrice = $product->price_ht ?? $product->prix_ht;
-                $priceDifference = $this->calculatePriceDifference($competitorPrice);
-                $priceDifferencePercent = $this->calculatePriceDifferencePercentage($competitorPrice);
-                $priceStatusClass = $this->getPriceStatusClass($competitorPrice);
-                $priceStatusLabel = $this->getPriceStatusLabel($competitorPrice);
+                                        // Données pour la comparaison de prix (uniquement si référencePrice)
+                                        if ($referencePrice) {
+                                            $competitorPrice = $product->price_ht ?? $product->prix_ht;
+                                            $priceDifference = $this->calculatePriceDifference($competitorPrice);
+                                            $priceDifferencePercent = $this->calculatePriceDifferencePercentage($competitorPrice);
+                                            $priceStatusClass = $this->getPriceStatusClass($competitorPrice);
+                                            $priceStatusLabel = $this->getPriceStatusLabel($competitorPrice);
 
-                // Données pour Cosmashop
-                $cosmashopDifference = $this->calculateCosmashopPriceDifference($competitorPrice);
-                $cosmashopDifferencePercent = $this->calculateCosmashopPriceDifferencePercentage($competitorPrice);
-                $cosmashopStatusClass = $this->getCosmashopPriceStatusClass($competitorPrice);
-                $cosmashopStatusLabel = $this->getCosmashopPriceStatusLabel($competitorPrice);
-            }
+                                            // Données pour Cosmashop
+                                            $cosmashopDifference = $this->calculateCosmashopPriceDifference($competitorPrice);
+                                            $cosmashopDifferencePercent = $this->calculateCosmashopPriceDifferencePercentage($competitorPrice);
+                                            $cosmashopStatusClass = $this->getCosmashopPriceStatusClass($competitorPrice);
+                                            $cosmashopStatusLabel = $this->getCosmashopPriceStatusLabel($competitorPrice);
+                                        }
                                     @endphp
                                     <tr class="hover:bg-gray-50 transition-colors duration-150">
-                                        @if($hasData)
+                                        @if($hasData && $isAutomaticSearch)
                                         <!-- Colonne Score (uniquement si résultats automatiques) -->
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             <div class="flex items-center">
                                                 <div class="w-16 bg-gray-200 rounded-full h-2 mr-3">
                                                     <div class="h-2 rounded-full 
-                                                        @if(($product->similarity_score ?? 0) >= 0.9) bg-green-500
-                                                        @elseif(($product->similarity_score ?? 0) >= 0.7) bg-blue-500
-                                                        @elseif(($product->similarity_score ?? 0) >= 0.6) bg-yellow-500
+                                                        @if($similarityScore >= 0.9) bg-green-500
+                                                        @elseif($similarityScore >= 0.7) bg-blue-500
+                                                        @elseif($similarityScore >= 0.6) bg-yellow-500
                                                         @else bg-gray-500 @endif"
-                                                        style="width: {{ ($product->similarity_score ?? 0) * 100 }}%">
+                                                        style="width: {{ ($similarityScore ?? 0) * 100 }}%">
                                                     </div>
                                                 </div>
                                                 <span class="text-sm font-mono font-semibold 
-                                                    @if(($product->similarity_score ?? 0) >= 0.9) text-green-600
-                                                    @elseif(($product->similarity_score ?? 0) >= 0.7) text-blue-600
-                                                    @elseif(($product->similarity_score ?? 0) >= 0.6) text-yellow-600
+                                                    @if($similarityScore >= 0.9) text-green-600
+                                                    @elseif($similarityScore >= 0.7) text-blue-600
+                                                    @elseif($similarityScore >= 0.6) text-yellow-600
                                                     @else text-gray-600 @endif">
-                                                    {{ number_format(($product->similarity_score ?? 0) * 100, 0) }}%
+                                                    {{ $similarityScore ? number_format($similarityScore * 100, 0) : 'N/A' }}%
                                                 </span>
                                             </div>
                                         </td>
 
                                         <!-- Colonne Correspondance (uniquement si résultats automatiques) -->
                                         <td class="px-6 py-4 whitespace-nowrap">
-                                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border {{ $matchClass }}">
-                                                @if($product->match_level === 'excellent')
-                                                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
-                                                    </svg>
-                                                @endif
-                                                {{ ucfirst($product->match_level) }}
-                                            </span>
+                                            @if($matchLevel)
+                                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border {{ $matchClass ?? '' }}">
+                                                    @if($matchLevel === 'excellent')
+                                                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                                        </svg>
+                                                    @endif
+                                                    {{ ucfirst($matchLevel) }}
+                                                </span>
+                                            @else
+                                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border border-gray-300 bg-gray-100 text-gray-800">
+                                                    N/A
+                                                </span>
+                                            @endif
                                         </td>
 
                                         <!-- Colonne Image (uniquement si résultats automatiques) -->
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             @php
-                $productImage = $this->getProductImage($product);
+                                                $productImage = $this->getProductImage($product);
                                             @endphp
                                             @if(!empty($productImage))
                                                 <img src="{{ $productImage }}" 
@@ -2145,7 +2167,7 @@ new class extends Component {
                                         <!-- Colonne Nom -->
                                         <td class="px-6 py-4">
                                             <div class="text-sm font-medium text-gray-900 max-w-xs" title="{{ $product->name ?? 'N/A' }}">
-                                                @if($hasData)
+                                                @if($isAutomaticSearch && !empty($searchVolumes))
                                                     {!! $this->highlightMatchingTerms($product->name) !!}
                                                 @else
                                                     {{ $product->name ?? 'N/A' }}
@@ -2176,7 +2198,7 @@ new class extends Component {
                                         <!-- Colonne Variation -->
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             <div class="text-sm text-gray-900 max-w-xs" title="{{ $product->variation ?? 'Standard' }}">
-                                                @if($hasData)
+                                                @if($isAutomaticSearch && !empty($searchVariationKeywords))
                                                     {!! $this->highlightMatchingTerms($product->variation ?? 'Standard') !!}
                                                 @else
                                                     {{ $product->variation ?? 'Standard' }}
@@ -2200,9 +2222,9 @@ new class extends Component {
                                                 <div class="flex-shrink-0 h-8 w-8 bg-gray-100 rounded-full flex items-center justify-center mr-3">
                                                     <span class="text-xs font-medium text-gray-600">
                                                         @php
-            $productUrl = $this->getProductUrl($product);
-            $domain = $this->extractDomain($productUrl ?? '');
-            echo strtoupper(substr($domain, 0, 2));
+                                                            $productUrl = $this->getProductUrl($product);
+                                                            $domain = $this->extractDomain($productUrl ?? '');
+                                                            echo strtoupper(substr($domain, 0, 2));
                                                         @endphp
                                                     </span>
                                                 </div>
@@ -2233,13 +2255,13 @@ new class extends Component {
                                             </div>
                                         </td>
 
-                                        @if($hasData && $referencePrice)
+                                        @if($referencePrice)
                                         <!-- Colonne Vs Cosmaparfumerie (uniquement si référencePrice) -->
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             @if(is_numeric($competitorPrice) && is_numeric($referencePrice))
                                                 <div class="space-y-1">
                                                     <div class="text-xs text-gray-500">
-                                                        prix cosma-parfumerie: {{ number_format($price, 2, ',', ' ') }} €
+                                                        prix cosma-parfumerie: {{ number_format($referencePrice, 2, ',', ' ') }} €
                                                     </div>
                                                     <!-- Statut -->
                                                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $priceStatusClass }}">
@@ -2306,7 +2328,7 @@ new class extends Component {
                                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                             <div class="flex space-x-2">
                                                 @php
-            $productUrl = $this->getProductUrl($product);
+                                                    $productUrl = $this->getProductUrl($product);
                                                 @endphp
                                                 @if(!empty($productUrl))
                                                     <a href="{{ $productUrl }}" target="_blank" rel="noopener noreferrer"
@@ -2332,7 +2354,7 @@ new class extends Component {
                             @else
                                 <!-- Aucun résultat avec les filtres appliqués -->
                                 <tr>
-                                    <td colspan="{{ $hasData ? 13 : 11 }}" class="px-6 py-12 text-center">
+                                    <td colspan="{{ $hasData && $isAutomaticSearch ? 13 : 11 }}" class="px-6 py-12 text-center">
                                         <svg class="mx-auto h-16 w-16 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                         </svg>
