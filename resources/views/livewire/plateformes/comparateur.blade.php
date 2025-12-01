@@ -1444,22 +1444,6 @@ public function getProductImage($product)
 }; ?>
 
 <div>
-    <!-- Overlay de chargement global -->
-    <div wire:loading.delay class="fixed inset-0 bg-gray-500 bg-opacity-50 z-50 flex items-center justify-center">
-        <div class="bg-white p-6 rounded-lg shadow-xl flex flex-col items-center">
-            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-            <p class="text-gray-700 font-medium">Chargement...</p>
-        </div>
-    </div>
-
-    <!-- Indicateur de chargement pour les filtres -->
-    <div wire:loading.delay.class.remove="hidden" class="hidden">
-        <div class="fixed top-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center space-x-2 z-40">
-            <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-            <span class="text-sm">Filtrage en cours...</span>
-        </div>
-    </div>
-
     <livewire:plateformes.detail :id="$id"/>
 
     <!-- Section d'analyse des prix -->
@@ -1576,30 +1560,17 @@ public function getProductImage($product)
                         </div>
                         <div class="flex items-center space-x-2">
                             <span class="text-xs text-blue-600 font-semibold">Ajuster le seuil :</span>
-                            <!-- Boutons avec indicateurs de chargement -->
                             <button wire:click="adjustSimilarityThreshold(0.5)" 
-                                    class="px-2 py-1 text-xs {{ $similarityThreshold == 0.5 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors flex items-center justify-center min-w-[50px]"
-                                    wire:loading.attr="disabled">
-                                <span wire:loading.remove wire:target="adjustSimilarityThreshold(0.5)">50%</span>
-                                <span wire:loading wire:target="adjustSimilarityThreshold(0.5)">
-                                    <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
-                                </span>
+                                    class="px-2 py-1 text-xs {{ $similarityThreshold == 0.5 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors">
+                                50%
                             </button>
                             <button wire:click="adjustSimilarityThreshold(0.6)" 
-                                    class="px-2 py-1 text-xs {{ $similarityThreshold == 0.6 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors flex items-center justify-center min-w-[50px]"
-                                    wire:loading.attr="disabled">
-                                <span wire:loading.remove wire:target="adjustSimilarityThreshold(0.6)">60%</span>
-                                <span wire:loading wire:target="adjustSimilarityThreshold(0.6)">
-                                    <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
-                                </span>
+                                    class="px-2 py-1 text-xs {{ $similarityThreshold == 0.6 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors">
+                                60%
                             </button>
                             <button wire:click="adjustSimilarityThreshold(0.7)" 
-                                    class="px-2 py-1 text-xs {{ $similarityThreshold == 0.7 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors flex items-center justify-center min-w-[50px]"
-                                    wire:loading.attr="disabled">
-                                <span wire:loading.remove wire:target="adjustSimilarityThreshold(0.7)">70%</span>
-                                <span wire:loading wire:target="adjustSimilarityThreshold(0.7)">
-                                    <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
-                                </span>
+                                    class="px-2 py-1 text-xs {{ $similarityThreshold == 0.7 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors">
+                                70%
                             </button>
                         </div>
                     </div>
@@ -1665,20 +1636,12 @@ public function getProductImage($product)
                             </svg>
                             <span class="text-sm font-medium text-blue-800">Filtres actifs :</span>
                         </div>
-                        <!-- Bouton Réinitialiser avec indicateur de chargement -->
                         <button wire:click="resetFilters" 
-                                class="px-3 py-1.5 text-sm bg-red-50 text-red-700 hover:bg-red-100 rounded-md transition-colors duration-200 flex items-center border border-red-200"
-                                wire:loading.attr="disabled">
-                            <span wire:loading.remove wire:target="resetFilters">
-                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                                </svg>
-                                Réinitialiser tous les filtres
-                            </span>
-                            <span wire:loading wire:target="resetFilters">
-                                <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600 mr-1"></div>
-                                Réinitialisation...
-                            </span>
+                                class="px-3 py-1.5 text-sm bg-red-50 text-red-700 hover:bg-red-100 rounded-md transition-colors duration-200 flex items-center border border-red-200">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                            Réinitialiser tous les filtres
                         </button>
                     </div>
                     
@@ -1686,13 +1649,8 @@ public function getProductImage($product)
                         @if($filters['name'])
                             <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
                                 Nom: {{ $filters['name'] }}
-                                <button wire:click="$set('filters.name', '')" 
-                                        class="ml-2 text-blue-600 hover:text-blue-800 flex items-center"
-                                        wire:loading.attr="disabled">
-                                    <span wire:loading.remove wire:target="$set('filters.name', '')">×</span>
-                                    <span wire:loading wire:target="$set('filters.name', '')">
-                                        <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
-                                    </span>
+                                <button wire:click="$set('filters.name', '')" class="ml-2 text-blue-600 hover:text-blue-800">
+                                    ×
                                 </button>
                             </span>
                         @endif
@@ -1700,13 +1658,8 @@ public function getProductImage($product)
                         @if($filters['variation'])
                             <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">
                                 Variation: {{ $filters['variation'] }}
-                                <button wire:click="$set('filters.variation', '')" 
-                                        class="ml-2 text-green-600 hover:text-green-800 flex items-center"
-                                        wire:loading.attr="disabled">
-                                    <span wire:loading.remove wire:target="$set('filters.variation', '')">×</span>
-                                    <span wire:loading wire:target="$set('filters.variation', '')">
-                                        <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-green-600"></div>
-                                    </span>
+                                <button wire:click="$set('filters.variation', '')" class="ml-2 text-green-600 hover:text-green-800">
+                                    ×
                                 </button>
                             </span>
                         @endif
@@ -1714,13 +1667,8 @@ public function getProductImage($product)
                         @if($filters['type'])
                             <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200">
                                 Type: {{ $filters['type'] }}
-                                <button wire:click="$set('filters.type', '')" 
-                                        class="ml-2 text-purple-600 hover:text-purple-800 flex items-center"
-                                        wire:loading.attr="disabled">
-                                    <span wire:loading.remove wire:target="$set('filters.type', '')">×</span>
-                                    <span wire:loading wire:target="$set('filters.type', '')">
-                                        <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-purple-600"></div>
-                                    </span>
+                                <button wire:click="$set('filters.type', '')" class="ml-2 text-purple-600 hover:text-purple-800">
+                                    ×
                                 </button>
                             </span>
                         @endif
@@ -1732,13 +1680,8 @@ public function getProductImage($product)
                             @endphp
                             <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200">
                                 Site: {{ $siteName }}
-                                <button wire:click="$set('filters.site_source', '')" 
-                                        class="ml-2 text-orange-600 hover:text-orange-800 flex items-center"
-                                        wire:loading.attr="disabled">
-                                    <span wire:loading.remove wire:target="$set('filters.site_source', '')">×</span>
-                                    <span wire:loading wire:target="$set('filters.site_source', '')">
-                                        <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-orange-600"></div>
-                                    </span>
+                                <button wire:click="$set('filters.site_source', '')" class="ml-2 text-orange-600 hover:text-orange-800">
+                                    ×
                                 </button>
                             </span>
                         @endif
@@ -1746,21 +1689,11 @@ public function getProductImage($product)
                 </div>
             @endif
 
-            <!-- Tableau des résultats avec indicateur de chargement -->
-            <div class="bg-white shadow-sm rounded-lg overflow-hidden" wire:loading.class="opacity-50" wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
+            <!-- Tableau des résultats -->
+            <div class="bg-white shadow-sm rounded-lg overflow-hidden">
                 <div class="px-6 py-4 border-b border-gray-200">
                     <h3 class="text-lg font-medium text-gray-900">Résultats de la recherche</h3>
-                    <p class="mt-1 text-sm text-gray-500">
-                        <span wire:loading.remove wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
-                            {{ count($matchedProducts) }} produit(s) correspondant(s)
-                        </span>
-                        <span wire:loading wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
-                            <div class="inline-flex items-center text-blue-600">
-                                <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600 mr-2"></div>
-                                Mise à jour des résultats...
-                            </div>
-                        </span>
-                    </p>
+                    <p class="mt-1 text-sm text-gray-500">{{ count($matchedProducts) }} produit(s) correspondant(s)</p>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
@@ -1791,16 +1724,10 @@ public function getProductImage($product)
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     <div class="flex flex-col space-y-1">
                                         <span>Nom</span>
-                                        <div class="relative">
-                                            <input type="text" 
-                                                   wire:model.live.debounce.300ms="filters.name"
-                                                   placeholder="Filtrer..."
-                                                   class="px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-full"
-                                                   wire:loading.attr="disabled">
-                                            <div wire:loading wire:target="filters.name" class="absolute right-2 top-1/2 transform -translate-y-1/2">
-                                                <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
-                                            </div>
-                                        </div>
+                                        <input type="text" 
+                                               wire:model.live.debounce.300ms="filters.name"
+                                               placeholder="Filtrer..."
+                                               class="px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                                     </div>
                                 </th>
                                 
@@ -1808,16 +1735,10 @@ public function getProductImage($product)
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     <div class="flex flex-col space-y-1">
                                         <span>Variation</span>
-                                        <div class="relative">
-                                            <input type="text" 
-                                                   wire:model.live.debounce.300ms="filters.variation"
-                                                   placeholder="Filtrer..."
-                                                   class="px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-full"
-                                                   wire:loading.attr="disabled">
-                                            <div wire:loading wire:target="filters.variation" class="absolute right-2 top-1/2 transform -translate-y-1/2">
-                                                <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
-                                            </div>
-                                        </div>
+                                        <input type="text" 
+                                               wire:model.live.debounce.300ms="filters.variation"
+                                               placeholder="Filtrer..."
+                                               class="px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                                     </div>
                                 </th>
                                 
@@ -1825,19 +1746,13 @@ public function getProductImage($product)
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     <div class="flex flex-col space-y-1">
                                         <span>Site Source</span>
-                                        <div class="relative">
-                                            <select wire:model.live="filters.site_source"
-                                                    class="px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-full"
-                                                    wire:loading.attr="disabled">
-                                                <option value="">Tous</option>
-                                                @foreach($sites as $site)
-                                                    <option value="{{ $site->id }}">{{ $site->name }}</option>
-                                                @endforeach
-                                            </select>
-                                            <div wire:loading wire:target="filters.site_source" class="absolute right-2 top-1/2 transform -translate-y-1/2">
-                                                <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
-                                            </div>
-                                        </div>
+                                        <select wire:model.live="filters.site_source"
+                                                class="px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                                            <option value="">Tous</option>
+                                            @foreach($sites as $site)
+                                                <option value="{{ $site->id }}">{{ $site->name }}</option>
+                                            @endforeach
+                                        </select>
                                     </div>
                                 </th>
                                 
@@ -1873,16 +1788,10 @@ public function getProductImage($product)
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                     <div class="flex flex-col space-y-1">
                                         <span>Type</span>
-                                        <div class="relative">
-                                            <input type="text" 
-                                                   wire:model.live.debounce.300ms="filters.type"
-                                                   placeholder="Filtrer..."
-                                                   class="px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-full"
-                                                   wire:loading.attr="disabled">
-                                            <div wire:loading wire:target="filters.type" class="absolute right-2 top-1/2 transform -translate-y-1/2">
-                                                <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
-                                            </div>
-                                        </div>
+                                        <input type="text" 
+                                               wire:model.live.debounce.300ms="filters.type"
+                                               placeholder="Filtrer..."
+                                               class="px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                                     </div>
                                 </th>
                                 
@@ -2169,46 +2078,23 @@ public function getProductImage($product)
                                         </p>
                                         @if(array_filter($filters))
                                             <div class="mt-4 flex justify-center space-x-3">
-                                                <!-- Bouton Réinitialiser avec loading -->
                                                 <button wire:click="resetFilters" 
-                                                        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors duration-200"
-                                                        wire:loading.attr="disabled">
-                                                    <span wire:loading.remove wire:target="resetFilters">
-                                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                                                        </svg>
-                                                        Réinitialiser les filtres
-                                                    </span>
-                                                    <span wire:loading wire:target="resetFilters">
-                                                        <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                                                        Réinitialisation...
-                                                    </span>
+                                                        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors duration-200">
+                                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                                    </svg>
+                                                    Réinitialiser les filtres
                                                 </button>
-                                                <!-- Bouton Baisser le seuil avec loading -->
                                                 <button wire:click="adjustSimilarityThreshold(0.5)" 
-                                                        class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200"
-                                                        wire:loading.attr="disabled">
-                                                    <span wire:loading.remove wire:target="adjustSimilarityThreshold(0.5)">
-                                                        Baisser le seuil à 50%
-                                                    </span>
-                                                    <span wire:loading wire:target="adjustSimilarityThreshold(0.5)">
-                                                        <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600 mr-2"></div>
-                                                        Mise à jour...
-                                                    </span>
+                                                        class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200">
+                                                    Baisser le seuil à 50%
                                                 </button>
                                             </div>
                                         @else
                                             <div class="mt-4">
                                                 <button wire:click="adjustSimilarityThreshold(0.5)" 
-                                                        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200"
-                                                        wire:loading.attr="disabled">
-                                                    <span wire:loading.remove wire:target="adjustSimilarityThreshold(0.5)">
-                                                        Baisser le seuil à 50%
-                                                    </span>
-                                                    <span wire:loading wire:target="adjustSimilarityThreshold(0.5)">
-                                                        <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                                                        Mise à jour...
-                                                    </span>
+                                                        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200">
+                                                    Baisser le seuil à 50%
                                                 </button>
                                             </div>
                                         @endif
@@ -2231,15 +2117,8 @@ public function getProductImage($product)
                 </p>
                 <div class="mt-4">
                     <button wire:click="adjustSimilarityThreshold(0.5)" 
-                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200"
-                            wire:loading.attr="disabled">
-                        <span wire:loading.remove wire:target="adjustSimilarityThreshold(0.5)">
-                            Reinitialiser
-                        </span>
-                        <span wire:loading wire:target="adjustSimilarityThreshold(0.5)">
-                            <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                            Chargement...
-                        </span>
+                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                        Reinitialiser
                     </button>
                 </div>
             </div>
@@ -2290,69 +2169,9 @@ public function getProductImage($product)
         transform: translateY(-1px);
     }
     
-    button:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-        transform: none;
-    }
-    
     /* Style pour les colonnes avec filtres */
     th.with-filter {
         background-color: #f9fafb;
     }
-    
-    /* Animation de spin pour les loaders */
-    @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-    }
-    
-    .animate-spin {
-        animation: spin 1s linear infinite;
-    }
-    
-    /* Style pour les indicateurs de chargement dans les inputs */
-    .relative .animate-spin {
-        position: absolute;
-        right: 8px;
-        top: 50%;
-        transform: translateY(-50%);
-    }
-    
-    /* Style pour l'overlay de chargement global */
-    .fixed.inset-0 {
-        z-index: 9999;
-    }
-    
-    /* Style pour le loader des filtres */
-    .fixed.top-4.right-4 {
-        z-index: 9998;
-    }
-    
-    /* Transition pour l'opacité du tableau */
-    .opacity-50 {
-        transition: opacity 0.3s ease;
-    }
 </style>
-@endpush
-
-@push('scripts')
-<script>
-    // Script pour gérer les indicateurs de chargement
-    document.addEventListener('livewire:init', () => {
-        // Désactiver les inputs pendant le chargement
-        Livewire.hook('request', ({ fail }) => {
-            // Ajouter un indicateur visuel
-            document.body.style.cursor = 'wait';
-            
-            fail(() => {
-                document.body.style.cursor = 'default';
-            });
-        });
-        
-        Livewire.hook('response', ({ component }) => {
-            document.body.style.cursor = 'default';
-        });
-    });
-</script>
 @endpush
