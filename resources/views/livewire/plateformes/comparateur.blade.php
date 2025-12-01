@@ -2,6 +2,7 @@
 
 use Livewire\Volt\Component;
 use Illuminate\Support\Facades\DB;
+use App\Models\Site as WebSite;
 
 new class extends Component {
     public $products = [];
