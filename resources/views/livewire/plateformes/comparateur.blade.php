@@ -160,7 +160,8 @@ new class extends Component {
     }
 
     /**
-     * NOUVELLE MÉTHODE: Recherche manuelle sans FULLTEXT
+     * NOUVELLE MÉTHODE: Recherche manuelle sans FULLTEXT (VERSION CORRIGÉE ET OPTIMISÉE)
+     * Retourne uniquement le dernier produit inséré par site
      */
     public function searchManual()
     {
@@ -170,45 +171,57 @@ new class extends Component {
             $this->matchedProducts = [];
             $this->products = [];
 
-            // Construire la requête SQL avec les filtres manuels
-            $sql = "SELECT sp.*, ws.name as site_name, sp.url as product_url
-                    FROM scraped_product sp
-                    LEFT JOIN web_site ws ON sp.web_site_id = ws.id
-                    WHERE 1=1";
+            // ÉTAPE 1: Trouver les IDs des derniers produits par site selon les filtres
+            $subquery = "SELECT 
+                            MAX(id) as latest_id
+                        FROM scraped_product sp
+                        WHERE 1=1";
 
             $params = [];
 
             // AJOUTER LE FILTRE VENDOR
             if (!empty($this->filters['vendor'])) {
-                $sql .= " AND sp.vendor LIKE ?";
+                $subquery .= " AND sp.vendor LIKE ?";
                 $params[] = '%' . $this->filters['vendor'] . '%';
             }
 
             // Ajouter les filtres si spécifiés
             if (!empty($this->filters['name'])) {
-                $sql .= " AND sp.name LIKE ?";
+                $subquery .= " AND sp.name LIKE ?";
                 $params[] = '%' . $this->filters['name'] . '%';
             }
 
             if (!empty($this->filters['variation'])) {
-                $sql .= " AND sp.variation LIKE ?";
+                $subquery .= " AND sp.variation LIKE ?";
                 $params[] = '%' . $this->filters['variation'] . '%';
             }
 
             if (!empty($this->filters['type'])) {
-                $sql .= " AND sp.type LIKE ?";
+                $subquery .= " AND sp.type LIKE ?";
                 $params[] = '%' . $this->filters['type'] . '%';
             }
 
+            $subquery .= " GROUP BY web_site_id";
+
+            // ÉTAPE 2: Récupérer les données complètes des derniers produits
+            $sql = "SELECT 
+                        sp.*, 
+                        ws.name as site_name, 
+                        sp.url as product_url,
+                        sp.image_url as image
+                    FROM scraped_product sp
+                    LEFT JOIN web_site ws ON sp.web_site_id = ws.id
+                    WHERE sp.id IN ($subquery)";
+
+            // Ajouter le filtre site_source si spécifié (doit être après le WHERE)
             if (!empty($this->filters['site_source'])) {
                 $sql .= " AND ws.id = ?";
                 $params[] = $this->filters['site_source'];
             }
 
-            // Limiter à 20 résultats comme demandé
             $sql .= " ORDER BY sp.prix_ht DESC LIMIT 20";
 
-            \Log::info('Manual search SQL:', [
+            \Log::info('Manual search SQL (optimized):', [
                 'filters' => $this->filters,
                 'sql' => $sql,
                 'params' => $params
@@ -241,11 +254,12 @@ new class extends Component {
             $this->products = $result;
             $this->matchedProducts = $result;
             $this->hasData = !empty($result);
-            $this->isAutomaticSearch = false; // C'est une recherche manuelle
+            $this->isAutomaticSearch = false;
 
-            \Log::info('Manual search results:', [
+            \Log::info('Manual search results (optimized):', [
                 'count' => count($result),
-                'has_data' => $this->hasData
+                'has_data' => $this->hasData,
+                'unique_sites' => array_unique(array_column($result, 'web_site_id'))
             ]);
 
         } catch (\Throwable $e) {
