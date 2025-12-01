@@ -29,6 +29,13 @@ new class extends Component {
     public $cosmashopPrice;
 
     
+    // AJOUTER CES PROPRIÉTÉS POUR LA RECHERCHE APPROFONDIE
+    public $advancedSearchVendor = '';
+    public $advancedSearchVariation = '';
+    public $advancedSearchType = '';
+    public $advancedSearchKeywords = ''; // REMPLACER les champs prix par un champ keywords
+    public $isAdvancedSearchActive = false;
+
     public function mount($name, $id, $price)
     {
         $this->getCompetitorPrice($name);
@@ -38,9 +45,165 @@ new class extends Component {
         $this->cosmashopPrice = $this->cleanPrice($price) * 1.05; // Prix majoré de 5% pour Cosmashop
 
         // STOCKEZ LA REQUÊTE DE RECHERCHE
-        $this->searchQuery = $name;        
+        $this->searchQuery = $name;       
+        
+        // EXTRACTION AUTOMATIQUE DU VENDOR ET VARIATION POUR LES CHAMPS DE RECHERCHE
+        $this->extractVendorAndVariationForAdvancedSearch($name);
     }
 
+
+
+
+     // AJOUTER CETTE MÉTHODE POUR EXTRACTOR VENDOR ET VARIATION
+    private function extractVendorAndVariationForAdvancedSearch($search)
+    {
+        // Extraire le vendor (première partie avant le premier tiret)
+        if (preg_match('/^([^-]+)/', $search, $matches)) {
+            $this->advancedSearchVendor = trim($matches[1]);
+        }
+        
+        // Extraire la variation (après le deuxième tiret)
+        $pattern = '/^[^-]+\s*-\s*[^-]+\s*-\s*/i';
+        $variation = preg_replace($pattern, '', $search);
+        $this->advancedSearchVariation = trim($variation);
+        
+        // Extraire le type si présent
+        $types = ['parfum', 'eau de parfum', 'eau de toilette', 'coffret', 'gel douche', 'lotion'];
+        foreach ($types as $type) {
+            if (stripos($search, $type) !== false) {
+                $this->advancedSearchType = $type;
+                break;
+            }
+        }
+    }
+
+    // AJOUTER CETTE MÉTHODE POUR LA RECHERCHE APPROFONDIE (MODIFIÉE)
+    public function performAdvancedSearch()
+    {
+        try {
+            $this->isAdvancedSearchActive = true;
+            
+            $conditions = [];
+            $params = [];
+            
+            // Construire les conditions dynamiquement
+            if (!empty($this->advancedSearchVendor)) {
+                $conditions[] = "vendor LIKE ?";
+                $params[] = '%' . $this->advancedSearchVendor . '%';
+            }
+            
+            if (!empty($this->advancedSearchVariation)) {
+                $conditions[] = "variation LIKE ?";
+                $params[] = '%' . $this->advancedSearchVariation . '%';
+            }
+            
+            if (!empty($this->advancedSearchType)) {
+                $conditions[] = "type LIKE ?";
+                $params[] = '%' . $this->advancedSearchType . '%';
+            }
+            
+            // Gérer les mots-clés globaux - recherche dans plusieurs champs
+            if (!empty($this->advancedSearchKeywords)) {
+                $keywords = trim($this->advancedSearchKeywords);
+                
+                // Si on a des mots-clés, on utilise la recherche FULLTEXT
+                $keywordConditions = [];
+                $keywordParams = [];
+                
+                // Séparer les mots-clés
+                $words = preg_split('/\s+/', $keywords);
+                foreach ($words as $word) {
+                    if (strlen($word) > 2) {
+                        $keywordConditions[] = "(name LIKE ? OR vendor LIKE ? OR variation LIKE ? OR type LIKE ?)";
+                        $likePattern = '%' . $word . '%';
+                        $keywordParams = array_merge($keywordParams, [$likePattern, $likePattern, $likePattern, $likePattern]);
+                    }
+                }
+                
+                if (!empty($keywordConditions)) {
+                    $conditions[] = "(" . implode(" AND ", $keywordConditions) . ")";
+                    $params = array_merge($params, $keywordParams);
+                }
+            }
+            
+            // Si aucune condition, on fait une recherche générale
+            if (empty($conditions)) {
+                $sql = "SELECT *, 
+                               prix_ht,
+                               image_url as image,
+                               url as product_url
+                        FROM last_price_scraped_product 
+                        WHERE MATCH (name, vendor, type, variation) 
+                        AGAINST (? IN BOOLEAN MODE)
+                        ORDER BY prix_ht DESC LIMIT 50";
+                
+                $params = [$this->prepareSearchTerms($this->searchQuery)];
+            } else {
+                // Construire la requête avec les conditions
+                $sql = "SELECT *, 
+                               prix_ht,
+                               image_url as image,
+                               url as product_url
+                        FROM last_price_scraped_product 
+                        WHERE " . implode(' AND ', $conditions) . "
+                        ORDER BY prix_ht DESC LIMIT 50";
+            }
+            
+            \Log::info('Advanced search SQL:', [
+                'sql' => $sql,
+                'params' => $params,
+                'conditions' => $conditions
+            ]);
+            
+            $result = DB::connection('mysql')->select($sql, $params);
+            
+            // Nettoyer les prix comme avant
+            foreach ($result as $product) {
+                if (isset($product->prix_ht)) {
+                    $product->prix_ht = $this->cleanPrice($product->prix_ht);
+                }
+            }
+            
+            $this->matchedProducts = $this->calculateSimilarity($result, $this->searchQuery);
+            $this->products = $this->matchedProducts;
+            $this->hasData = !empty($result);
+            
+        } catch (\Throwable $e) {
+            \Log::error('Error in advanced search:', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            session()->flash('error', 'Erreur lors de la recherche approfondie');
+        }
+    }
+    
+    // AJOUTER CETTE MÉTHODE POUR RÉINITIALISER LA RECHERCHE
+    public function resetAdvancedSearch()
+    {
+        $this->isAdvancedSearchActive = false;
+        $this->advancedSearchKeywords = '';
+        $this->advancedSearchType = '';
+        
+        // Conserver les valeurs vendor et variation extraites
+        // Revenir à la recherche initiale
+        $this->getCompetitorPrice($this->searchQuery);
+    }
+    
+    // AJOUTER CETTE MÉTHODE POUR RECHERCHER PAR VARIATION SEULEMENT
+    public function searchByVariationOnly()
+    {
+        $this->advancedSearchKeywords = '';
+        $this->advancedSearchType = '';
+        $this->performAdvancedSearch();
+    }
+    
+    // AJOUTER CETTE MÉTHODE POUR RECHERCHER PAR MOTS-CLÉS SEULEMENT
+    public function searchByKeywordsOnly()
+    {
+        // Garder le vendor et la variation extraits
+        $this->performAdvancedSearch();
+    }   
 
     /**
      * Nettoie et convertit un prix en nombre décimal
@@ -1251,7 +1414,195 @@ public function getCosmashopPriceAnalysis()
 
 <div>
     <livewire:plateformes.detail :id="$id"/>
-
+<!-- AJOUTER CETTE SECTION POUR LA RECHERCHE APPROFONDIE -->
+    <div class="mx-auto w-full px-4 py-4 sm:px-6 lg:px-8">
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-medium text-gray-900">
+                    <svg class="w-5 h-5 inline mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                    Recherche approfondie sur les résultats
+                </h3>
+                @if($isAdvancedSearchActive)
+                    <button wire:click="resetAdvancedSearch" 
+                            class="text-sm text-gray-600 hover:text-gray-900 flex items-center">
+                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                        Réinitialiser
+                    </button>
+                @endif
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- Champ Vendor (DÉSACTIVÉ) -->
+                <div>
+                    <label for="vendor" class="block text-sm font-medium text-gray-700 mb-1">
+                        <span class="flex items-center">
+                            <svg class="w-4 h-4 mr-1 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                            </svg>
+                            Marque / Vendor
+                        </span>
+                    </label>
+                    <div class="flex space-x-2">
+                        <input type="text" 
+                               id="vendor" 
+                               wire:model.defer="advancedSearchVendor"
+                               disabled
+                               class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 text-gray-700 cursor-not-allowed sm:text-sm"
+                               placeholder="Marque extraite automatiquement">
+                        <div class="px-3 py-2 bg-gray-100 text-gray-500 rounded-md text-sm font-medium flex items-center">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        </div>
+                    </div>
+                    <p class="mt-1 text-xs text-gray-500">Valeur extraite automatiquement</p>
+                </div>
+                
+                <!-- Champ Variation -->
+                <div>
+                    <label for="variation" class="block text-sm font-medium text-gray-700 mb-1">
+                        <span class="flex items-center">
+                            <svg class="w-4 h-4 mr-1 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"></path>
+                            </svg>
+                            Variation
+                        </span>
+                    </label>
+                    <div class="flex space-x-2">
+                        <input type="text" 
+                               id="variation" 
+                               wire:model.defer="advancedSearchVariation"
+                               class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                               placeholder="Ex: Eau de Parfum, 100ml...">
+                        <button wire:click="searchByVariationOnly"
+                                class="px-3 py-2 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-md text-sm font-medium transition-colors flex items-center justify-center"
+                                title="Rechercher uniquement par variation"
+                                style="min-width: 42px;">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    <p class="mt-1 text-xs text-gray-500">Valeur extraite: {{ $advancedSearchVariation ?: 'Non détectée' }}</p>
+                </div>
+                
+                <!-- Champ Type -->
+                <div>
+                    <label for="type" class="block text-sm font-medium text-gray-700 mb-1">
+                        <span class="flex items-center">
+                            <svg class="w-4 h-4 mr-1 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
+                            </svg>
+                            Type de produit
+                        </span>
+                    </label>
+                    <select id="type" 
+                            wire:model.defer="advancedSearchType"
+                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                        <option value="">Tous les types</option>
+                        <option value="parfum">Parfum</option>
+                        <option value="eau de parfum">Eau de Parfum</option>
+                        <option value="eau de toilette">Eau de Toilette</option>
+                        <option value="coffret">Coffret</option>
+                        <option value="gel douche">Gel Douche</option>
+                        <option value="lotion">Lotion</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- NOUVEAU CHAMP : Recherche globale par mots-clés -->
+            <div class="mt-4">
+                <label for="keywords" class="block text-sm font-medium text-gray-700 mb-1">
+                    <span class="flex items-center">
+                        <svg class="w-4 h-4 mr-1 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                        </svg>
+                        Recherche globale par mots-clés
+                    </span>
+                </label>
+                <div class="flex space-x-2">
+                    <input type="text" 
+                           id="keywords" 
+                           wire:model.defer="advancedSearchKeywords"
+                           class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                           placeholder="Rechercher des mots dans le nom, marque, variation, type..."
+                           wire:keydown.enter="performAdvancedSearch">
+                    <button wire:click="searchByKeywordsOnly"
+                            class="px-4 py-2 bg-green-600 text-white hover:bg-green-700 rounded-md text-sm font-medium transition-colors flex items-center justify-center"
+                            title="Rechercher par mots-clés">
+                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        </svg>
+                        <span class="hidden sm:inline">Rechercher</span>
+                        <span class="sm:hidden">🔍</span>
+                    </button>
+                </div>
+                <p class="mt-1 text-xs text-gray-500">
+                    Recherche dans tous les champs (nom, marque, variation, type). Tapez "Entrée" ou cliquez sur le bouton.
+                </p>
+            </div>
+            
+            <!-- Bouton de recherche avancée (tous les filtres) -->
+            <div class="mt-4 flex justify-between items-center">
+                <div class="text-sm text-gray-600">
+                    @if($advancedSearchVendor)
+                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800 mr-2">
+                            Marque: {{ $advancedSearchVendor }}
+                        </span>
+                    @endif
+                    @if($advancedSearchVariation)
+                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800 mr-2">
+                            Variation: {{ $advancedSearchVariation }}
+                        </span>
+                    @endif
+                </div>
+                
+                <button wire:click="performAdvancedSearch"
+                        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
+                    </svg>
+                    Appliquer tous les filtres
+                </button>
+            </div>
+            
+            <!-- Indicateur de recherche active -->
+            @if($isAdvancedSearchActive)
+                <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <span class="text-sm text-blue-700">
+                                Filtres actifs :
+                                @if($advancedSearchVendor)
+                                    <span class="font-semibold">Marque: {{ $advancedSearchVendor }}</span>
+                                @endif
+                                @if($advancedSearchVariation)
+                                    <span class="font-semibold ml-2">Variation: {{ $advancedSearchVariation }}</span>
+                                @endif
+                                @if($advancedSearchType)
+                                    <span class="font-semibold ml-2">Type: {{ $advancedSearchType }}</span>
+                                @endif
+                                @if($advancedSearchKeywords)
+                                    <span class="font-semibold ml-2">Mots-clés: "{{ $advancedSearchKeywords }}"</span>
+                                @endif
+                            </span>
+                        </div>
+                        <span class="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full">
+                            {{ count($matchedProducts) }} résultat(s)
+                        </span>
+                    </div>
+                </div>
+            @endif
+        </div>
+    </div>
+    
     <!-- Section d'analyse des prix -->
     @if($hasData && $referencePrice)
         @php
