@@ -160,8 +160,7 @@ new class extends Component {
     }
 
     /**
-     * NOUVELLE MÉTHODE: Recherche manuelle sans FULLTEXT (VERSION CORRIGÉE ET OPTIMISÉE)
-     * Retourne uniquement le dernier produit inséré par site
+     * NOUVELLE MÉTHODE: Recherche manuelle sans FULLTEXT
      */
     public function searchManual()
     {
@@ -171,57 +170,45 @@ new class extends Component {
             $this->matchedProducts = [];
             $this->products = [];
 
-            // ÉTAPE 1: Trouver les IDs des derniers produits par site selon les filtres
-            $subquery = "SELECT 
-                            MAX(id) as latest_id
-                        FROM scraped_product sp
-                        WHERE 1=1";
+            // Construire la requête SQL avec les filtres manuels
+            $sql = "SELECT sp.*, ws.name as site_name, sp.url as product_url
+                    FROM scraped_product sp
+                    LEFT JOIN web_site ws ON sp.web_site_id = ws.id
+                    WHERE 1=1";
 
             $params = [];
 
             // AJOUTER LE FILTRE VENDOR
             if (!empty($this->filters['vendor'])) {
-                $subquery .= " AND sp.vendor LIKE ?";
+                $sql .= " AND sp.vendor LIKE ?";
                 $params[] = '%' . $this->filters['vendor'] . '%';
             }
 
             // Ajouter les filtres si spécifiés
             if (!empty($this->filters['name'])) {
-                $subquery .= " AND sp.name LIKE ?";
+                $sql .= " AND sp.name LIKE ?";
                 $params[] = '%' . $this->filters['name'] . '%';
             }
 
             if (!empty($this->filters['variation'])) {
-                $subquery .= " AND sp.variation LIKE ?";
+                $sql .= " AND sp.variation LIKE ?";
                 $params[] = '%' . $this->filters['variation'] . '%';
             }
 
             if (!empty($this->filters['type'])) {
-                $subquery .= " AND sp.type LIKE ?";
+                $sql .= " AND sp.type LIKE ?";
                 $params[] = '%' . $this->filters['type'] . '%';
             }
 
-            $subquery .= " GROUP BY web_site_id";
-
-            // ÉTAPE 2: Récupérer les données complètes des derniers produits
-            $sql = "SELECT 
-                        sp.*, 
-                        ws.name as site_name, 
-                        sp.url as product_url,
-                        sp.image_url as image
-                    FROM scraped_product sp
-                    LEFT JOIN web_site ws ON sp.web_site_id = ws.id
-                    WHERE sp.id IN ($subquery)";
-
-            // Ajouter le filtre site_source si spécifié (doit être après le WHERE)
             if (!empty($this->filters['site_source'])) {
                 $sql .= " AND ws.id = ?";
                 $params[] = $this->filters['site_source'];
             }
 
+            // Limiter à 20 résultats comme demandé
             $sql .= " ORDER BY sp.prix_ht DESC LIMIT 20";
 
-            \Log::info('Manual search SQL (optimized):', [
+            \Log::info('Manual search SQL:', [
                 'filters' => $this->filters,
                 'sql' => $sql,
                 'params' => $params
@@ -254,12 +241,11 @@ new class extends Component {
             $this->products = $result;
             $this->matchedProducts = $result;
             $this->hasData = !empty($result);
-            $this->isAutomaticSearch = false;
+            $this->isAutomaticSearch = false; // C'est une recherche manuelle
 
-            \Log::info('Manual search results (optimized):', [
+            \Log::info('Manual search results:', [
                 'count' => count($result),
-                'has_data' => $this->hasData,
-                'unique_sites' => array_unique(array_column($result, 'web_site_id'))
+                'has_data' => $this->hasData
             ]);
 
         } catch (\Throwable $e) {
@@ -2005,7 +1991,6 @@ new class extends Component {
                                 <span class="whitespace-nowrap">Marque/Vendor</span>
                                 <div class="relative">
                                     <input type="text" 
-                                           disabled
                                            wire:model.live.debounce.300ms="filters.vendor"
                                            placeholder="Filtrer par marque..."
                                            class="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
