@@ -2005,7 +2005,8 @@ new class extends Component {
                                 <span class="whitespace-nowrap">Marque/Vendor</span>
                                 <div class="relative">
                                     <input type="text" 
-                                           wire:model.live.debounce.300ms="filters.vendor"
+                                           disabled
+                                           wire:model.live.debounce.800ms="filters.vendor"
                                            placeholder="Filtrer par marque..."
                                            class="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
                                            wire:loading.attr="disabled">
@@ -2023,7 +2024,7 @@ new class extends Component {
                                 <span class="whitespace-nowrap">Nom</span>
                                 <div class="relative">
                                     <input type="text" 
-                                        wire:model.live.debounce.300ms="filters.name"
+                                        wire:model.live.debounce.800ms="filters.name"
                                         placeholder="Filtrer..."
                                         class="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
                                         wire:loading.attr="disabled">
@@ -2040,7 +2041,7 @@ new class extends Component {
                                 <span>Variation</span>
                                 <div class="relative">
                                     <input type="text" 
-                                           wire:model.live.debounce.300ms="filters.variation"
+                                           wire:model.live.debounce.800ms="filters.variation"
                                            placeholder="Filtrer..."
                                            class="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
                                            wire:loading.attr="disabled">
@@ -2107,7 +2108,7 @@ new class extends Component {
                                 <span>Type</span>
                                 <div class="relative">
                                     <input type="text" 
-                                           wire:model.live.debounce.300ms="filters.type"
+                                           wire:model.live.debounce.800ms="filters.type"
                                            placeholder="Filtrer..."
                                            class="px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-full"
                                            wire:loading.attr="disabled">
