@@ -260,149 +260,193 @@ new class extends Component {
         }
     }
 
-    /**
-     * Recherche manuelle sans FULLTEXT avec gestion des abréviations
-     * Retourne uniquement le dernier produit inséré par site
-     */
-    public function searchManual()
-    {
-        try {
-            // Réinitialiser le flag de données
-            $this->hasData = false;
-            $this->matchedProducts = [];
-            $this->products = [];
+/**
+ * Recherche manuelle sans FULLTEXT avec gestion des abréviations
+ * Retourne les produits correspondant aux critères de recherche du dernier scrap_reference_id par site
+ */
+public function searchManual()
+{
+    try {
+        // Réinitialiser le flag de données
+        $this->hasData = false;
+        $this->matchedProducts = [];
+        $this->products = [];
 
-            // ÉTAPE 1: Trouver les derniers scrap_reference_id par site web
-            $latestScrapReferences = DB::connection('mysql')->select("
-                SELECT 
-                    web_site_id,
-                    MAX(id) as latest_scrap_reference_id
-                FROM scrap_reference
-                GROUP BY web_site_id
-            ");
-
-            // Convertir en tableau pour utilisation facile
-            $latestRefsBySite = [];
-            foreach ($latestScrapReferences as $ref) {
-                $latestRefsBySite[$ref->web_site_id] = $ref->latest_scrap_reference_id;
-            }
-
-            // Si aucun scrap_reference trouvé, retourner vide
-            if (empty($latestRefsBySite)) {
-                $this->products = [];
-                $this->hasData = false;
-                return;
-            }
-
-            // ÉTAPE 2: Construire la requête pour les produits avec les derniers scrap_reference_id
-            $sql = "SELECT 
-                        sp.*, 
-                        ws.name as site_name, 
-                        sp.url as product_url,
-                        sp.image_url as image
-                    FROM scraped_product sp
-                    LEFT JOIN web_site ws ON sp.web_site_id = ws.id
-                    WHERE sp.scrap_reference_id IN (" . implode(',', array_values($latestRefsBySite)) . ")";
-
-            $params = [];
-
-            // AJOUTER LE FILTRE VENDOR AVEC GESTION DES ABRÉVIATIONS
-            if (!empty($this->filters['vendor'])) {
-                $vendorVariations = $this->getVendorVariations($this->filters['vendor']);
-                
-                if (!empty($vendorVariations)) {
-                    $sql .= " AND (";
-                    $conditions = [];
-                    
-                    foreach ($vendorVariations as $variation) {
-                        $conditions[] = "sp.vendor LIKE ?";
-                        $params[] = '%' . $variation . '%';
-                    }
-                    
-                    $sql .= implode(' OR ', $conditions) . ")";
+        // ÉTAPE 1: Construire les conditions de filtre pour les vendor variations
+        $vendorConditions = [];
+        $vendorParams = [];
+        
+        if (!empty($this->filters['vendor'])) {
+            $vendorVariations = $this->getVendorVariations($this->filters['vendor']);
+            
+            if (!empty($vendorVariations)) {
+                foreach ($vendorVariations as $variation) {
+                    $vendorConditions[] = "sp.vendor LIKE ?";
+                    $vendorParams[] = '%' . $variation . '%';
                 }
             }
-
-            // Ajouter les autres filtres si spécifiés
-            if (!empty($this->filters['name'])) {
-                $sql .= " AND sp.name LIKE ?";
-                $params[] = '%' . $this->filters['name'] . '%';
-            }
-
-            if (!empty($this->filters['variation'])) {
-                $sql .= " AND sp.variation LIKE ?";
-                $params[] = '%' . $this->filters['variation'] . '%';
-            }
-
-            if (!empty($this->filters['type'])) {
-                $sql .= " AND sp.type LIKE ?";
-                $params[] = '%' . $this->filters['type'] . '%';
-            }
-
-            // Ajouter le filtre site_source si spécifié
-            if (!empty($this->filters['site_source'])) {
-                $sql .= " AND ws.id = ?";
-                $params[] = $this->filters['site_source'];
-            }
-
-            $sql .= " ORDER BY sp.prix_ht DESC LIMIT 20";
-
-            \Log::info('Manual search SQL with latest scrap references:', [
-                'filters' => $this->filters,
-                'vendor_variations' => $vendorVariations ?? [],
-                'latest_scrap_references' => $latestRefsBySite,
-                'sql' => $sql,
-                'params' => $params
-            ]);
-
-            $result = DB::connection('mysql')->select($sql, $params);
-
-            // Nettoyer les prix et ajouter les propriétés manquantes
-            foreach ($result as $product) {
-                if (isset($product->prix_ht)) {
-                    $product->prix_ht = $this->cleanPrice($product->prix_ht);
-                }
-
-                // S'assurer que product_url est défini
-                if (!isset($product->product_url) && isset($product->url)) {
-                    $product->product_url = $product->url;
-                }
-
-                // S'assurer que image est défini
-                if (!isset($product->image) && isset($product->image_url)) {
-                    $product->image = $product->image_url;
-                }
-
-                // AJOUTER LES PROPRIÉTÉS POUR LE TABLEAU UNIFIÉ
-                $product->similarity_score = null;
-                $product->match_level = null;
-                $product->is_manual_search = true;
-            }
-
-            $this->products = $result;
-            $this->matchedProducts = $result;
-            $this->hasData = !empty($result);
-            $this->isAutomaticSearch = false;
-            $this->hasAppliedFilters = true; // Marquer que des filtres ont été appliqués
-
-            \Log::info('Manual search results with latest scrap references:', [
-                'count' => count($result),
-                'has_data' => $this->hasData,
-                'unique_sites' => array_unique(array_column($result, 'web_site_id')),
-                'latest_scrap_references_used' => $latestRefsBySite
-            ]);
-
-        } catch (\Throwable $e) {
-            \Log::error('Error in manual search:', [
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-
-            $this->products = [];
-            $this->hasData = false;
         }
-    }
 
+        // ÉTAPE 2: Trouver les derniers scrap_reference_id par site avec les critères de recherche
+        $latestScrapSql = "
+            SELECT 
+                sp.web_site_id,
+                MAX(sr.id) as latest_scrap_reference_id
+            FROM scraped_product sp
+            INNER JOIN scrap_reference sr ON sp.scrap_reference_id = sr.id
+            WHERE 1=1";
+        
+        $latestScrapParams = [];
+
+        // Appliquer les filtres vendor
+        if (!empty($vendorConditions)) {
+            $latestScrapSql .= " AND (" . implode(' OR ', $vendorConditions) . ")";
+            $latestScrapParams = array_merge($latestScrapParams, $vendorParams);
+        }
+
+        // Appliquer les autres filtres
+        if (!empty($this->filters['name'])) {
+            $latestScrapSql .= " AND sp.name LIKE ?";
+            $latestScrapParams[] = '%' . $this->filters['name'] . '%';
+        }
+
+        if (!empty($this->filters['variation'])) {
+            $latestScrapSql .= " AND sp.variation LIKE ?";
+            $latestScrapParams[] = '%' . $this->filters['variation'] . '%';
+        }
+
+        if (!empty($this->filters['type'])) {
+            $latestScrapSql .= " AND sp.type LIKE ?";
+            $latestScrapParams[] = '%' . $this->filters['type'] . '%';
+        }
+
+        // Filtre par site source si spécifié
+        if (!empty($this->filters['site_source'])) {
+            $latestScrapSql .= " AND sp.web_site_id = ?";
+            $latestScrapParams[] = $this->filters['site_source'];
+        }
+
+        $latestScrapSql .= " GROUP BY sp.web_site_id";
+
+        \Log::info('Finding latest scrap_reference_id per site with filters:', [
+            'sql' => $latestScrapSql,
+            'params' => $latestScrapParams,
+            'filters' => $this->filters
+        ]);
+
+        $latestScrapReferences = DB::connection('mysql')->select($latestScrapSql, $latestScrapParams);
+
+        // Convertir en tableau pour utilisation facile
+        $latestRefsBySite = [];
+        foreach ($latestScrapReferences as $ref) {
+            $latestRefsBySite[$ref->web_site_id] = $ref->latest_scrap_reference_id;
+        }
+
+        // Si aucun scrap_reference trouvé, retourner vide
+        if (empty($latestRefsBySite)) {
+            \Log::info('No matching scrap_reference found with applied filters');
+            $this->products = [];
+            $this->hasData = false;
+            return;
+        }
+
+        // ÉTAPE 3: Récupérer tous les produits correspondants aux critères avec les derniers scrap_reference_id
+        $sql = "SELECT 
+                    sp.*, 
+                    ws.name as site_name, 
+                    sp.url as product_url,
+                    sp.image_url as image
+                FROM scraped_product sp
+                LEFT JOIN web_site ws ON sp.web_site_id = ws.id
+                WHERE sp.scrap_reference_id IN (" . implode(',', array_values($latestRefsBySite)) . ")";
+
+        $params = [];
+
+        // Réappliquer les mêmes filtres pour obtenir les produits
+        if (!empty($vendorConditions)) {
+            $sql .= " AND (" . implode(' OR ', $vendorConditions) . ")";
+            $params = array_merge($params, $vendorParams);
+        }
+
+        if (!empty($this->filters['name'])) {
+            $sql .= " AND sp.name LIKE ?";
+            $params[] = '%' . $this->filters['name'] . '%';
+        }
+
+        if (!empty($this->filters['variation'])) {
+            $sql .= " AND sp.variation LIKE ?";
+            $params[] = '%' . $this->filters['variation'] . '%';
+        }
+
+        if (!empty($this->filters['type'])) {
+            $sql .= " AND sp.type LIKE ?";
+            $params[] = '%' . $this->filters['type'] . '%';
+        }
+
+        if (!empty($this->filters['site_source'])) {
+            $sql .= " AND ws.id = ?";
+            $params[] = $this->filters['site_source'];
+        }
+
+        $sql .= " ORDER BY sp.prix_ht DESC LIMIT 20";
+
+        \Log::info('Manual search SQL with filtered latest scrap_reference_id per site:', [
+            'filters' => $this->filters,
+            'vendor_variations' => $vendorVariations ?? [],
+            'latest_scrap_references' => $latestRefsBySite,
+            'sql' => $sql,
+            'params' => $params
+        ]);
+
+        $result = DB::connection('mysql')->select($sql, $params);
+
+        // Nettoyer les prix et ajouter les propriétés manquantes
+        foreach ($result as $product) {
+            if (isset($product->prix_ht)) {
+                $product->prix_ht = $this->cleanPrice($product->prix_ht);
+            }
+
+            // S'assurer que product_url est défini
+            if (!isset($product->product_url) && isset($product->url)) {
+                $product->product_url = $product->url;
+            }
+
+            // S'assurer que image est défini
+            if (!isset($product->image) && isset($product->image_url)) {
+                $product->image = $product->image_url;
+            }
+
+            // AJOUTER LES PROPRIÉTÉS POUR LE TABLEAU UNIFIÉ
+            $product->similarity_score = null;
+            $product->match_level = null;
+            $product->is_manual_search = true;
+        }
+
+        $this->products = $result;
+        $this->matchedProducts = $result;
+        $this->hasData = !empty($result);
+        $this->isAutomaticSearch = false;
+        $this->hasAppliedFilters = true;
+
+        \Log::info('Manual search results with filtered latest scrap_reference_id per site:', [
+            'count' => count($result),
+            'has_data' => $this->hasData,
+            'unique_sites' => array_unique(array_column($result, 'web_site_id')),
+            'products_per_site' => array_count_values(array_column($result, 'web_site_id')),
+            'latest_scrap_references_used' => $latestRefsBySite
+        ]);
+
+    } catch (\Throwable $e) {
+        \Log::error('Error in manual search:', [
+            'message' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+            'filters' => $this->filters ?? []
+        ]);
+
+        $this->products = [];
+        $this->hasData = false;
+    }
+}
     /**
      * Méthode pour appliquer les filtres
      */
