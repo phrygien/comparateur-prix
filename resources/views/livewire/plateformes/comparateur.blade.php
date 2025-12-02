@@ -396,40 +396,50 @@ new class extends Component {
         }
     }
 
-    /**
-     * Méthode pour appliquer les filtres (recherche manuelle)
-     */
-    public function applyFilters()
-    {
+/**
+ * Méthode pour appliquer les filtres
+ */
+public function applyFilters()
+{
+    if ($this->isAutomaticSearch && !empty($this->matchedProducts)) {
+        // Filtrer les résultats existants de la recherche automatique
+        $this->filterExistingResults();
+    } else {
+        // Faire une nouvelle recherche manuelle
         $this->searchManual();
     }
+}
+/**
+ * Méthode pour réinitialiser les filtres
+ */
+public function resetFilters()
+{
+    // Réinitialiser tous les filtres sauf le vendor qui garde sa valeur par défaut
+    $this->filters = [
+        'vendor' => $this->filters['vendor'], // Garder le vendor actuel
+        'name' => '',
+        'variation' => '',
+        'type' => '',
+        'site_source' => ''
+    ];
 
-    /**
-     * Méthode pour réinitialiser les filtres
-     */
-    public function resetFilters()
-    {
-        // Réinitialiser tous les filtres sauf le vendor qui garde sa valeur par défaut
-        $this->filters = [
-            'vendor' => $this->filters['vendor'], // Garder le vendor actuel
-            'name' => '',
-            'variation' => '',
-            'type' => '',
-            'site_source' => ''
-        ];
-
-        // Exécuter la recherche avec les filtres réinitialisés
+    if ($this->isAutomaticSearch && !empty($this->searchQuery)) {
+        // Recharger la recherche automatique initiale
+        $this->getCompetitorPrice($this->searchQuery);
+    } else {
+        // Exécuter la recherche manuelle
         $this->searchManual();
     }
+}
 
-    /**
-     * Méthode appelée quand un filtre change
-     */
-    public function updatedFilters($value, $key)
-    {
-        // Débouncer pour éviter trop d'appels
-        $this->applyFilters();
-    }
+/**
+ * Méthode appelée quand un filtre change
+ */
+public function updatedFilters($value, $key)
+{
+    // Débouncer pour éviter trop d'appels
+    $this->applyFilters();
+}
 
     /**
      * Nettoie et convertit un prix en nombre décimal
@@ -1726,6 +1736,73 @@ new class extends Component {
 
         return in_array(strtolower($extension), $imageExtensions);
     }
+
+
+ /**
+ * Applique les filtres sur les résultats existants (pour recherche automatique)
+ */
+public function filterExistingResults()
+{
+    try {
+        if ($this->isAutomaticSearch && !empty($this->matchedProducts)) {
+            $filteredProducts = collect($this->matchedProducts);
+            
+            // Appliquer les filtres
+            if (!empty($this->filters['vendor'])) {
+                $vendorVariations = $this->getVendorVariations($this->filters['vendor']);
+                $filteredProducts = $filteredProducts->filter(function ($product) use ($vendorVariations) {
+                    $productVendor = $product->vendor ?? '';
+                    foreach ($vendorVariations as $variation) {
+                        if (stripos($productVendor, $variation) !== false) {
+                            return true;
+                        }
+                    }
+                    return false;
+                });
+            }
+
+            if (!empty($this->filters['name'])) {
+                $filteredProducts = $filteredProducts->filter(function ($product) {
+                    $productName = $product->name ?? '';
+                    return stripos($productName, $this->filters['name']) !== false;
+                });
+            }
+
+            if (!empty($this->filters['variation'])) {
+                $filteredProducts = $filteredProducts->filter(function ($product) {
+                    $productVariation = $product->variation ?? '';
+                    return stripos($productVariation, $this->filters['variation']) !== false;
+                });
+            }
+
+            if (!empty($this->filters['type'])) {
+                $filteredProducts = $filteredProducts->filter(function ($product) {
+                    $productType = $product->type ?? '';
+                    return stripos($productType, $this->filters['type']) !== false;
+                });
+            }
+
+            if (!empty($this->filters['site_source'])) {
+                $filteredProducts = $filteredProducts->filter(function ($product) {
+                    return ($product->web_site_id ?? null) == $this->filters['site_source'];
+                });
+            }
+
+            $this->matchedProducts = $filteredProducts->values()->all();
+            $this->products = $this->matchedProducts;
+            $this->hasData = count($this->matchedProducts) > 0;
+        } else {
+            // Si pas de recherche automatique ou pas de résultats, faire une recherche manuelle
+            $this->searchManual();
+        }
+
+    } catch (\Throwable $e) {
+        \Log::error('Error filtering results:', [
+            'message' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+    }
+}   
 }; ?>
 
 <div>
