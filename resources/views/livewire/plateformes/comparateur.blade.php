@@ -1,5 +1,7 @@
 <?php
 
+namespace App\Livewire;
+
 use Livewire\Volt\Component;
 use Illuminate\Support\Facades\DB;
 use App\Models\Site as WebSite;
@@ -18,21 +20,19 @@ new class extends Component {
     public $similarityThreshold = 0.6;
     public $matchedProducts = [];
 
-    // AJOUTEZ CETTE PROPRIÉTÉ MANQUANTE
-    public $searchQuery = ''; // Pour stocker la requête de recherche
+    // Pour stocker la requête de recherche
+    public $searchQuery = '';
 
     // prix a comparer
     public $price;
-    // Ajoutez cette propriété dans la classe
     public $referencePrice;
 
     // price cosmashop
     public $cosmashopPrice;
 
-
-    // AJOUTEZ CES NOUVELLES PROPRIÉTÉS POUR LES FILTRES
+    // Filtres
     public $filters = [
-        'vendor' => '', // AJOUTÉ: Filtre vendor
+        'vendor' => '',
         'name' => '',
         'variation' => '',
         'type' => '',
@@ -40,20 +40,43 @@ new class extends Component {
     ];
 
     public $sites = []; // Pour stocker la liste des sites
+    public $showTable = false; // Pour suivre si on doit montrer le tableau même sans résultats
+    public $isAutomaticSearch = true; // Pour distinguer recherche automatique vs manuelle
 
-    // NOUVELLE PROPRIÉTÉ pour suivre si on doit montrer le tableau même sans résultats
-    public $showTable = false;
-
-    // NOUVELLE PROPRIÉTÉ pour distinguer recherche automatique vs manuelle
-    public $isAutomaticSearch = true;
+    // Mapping des abréviations des marques
+    private array $brandAbbreviations = [
+        'YSL' => 'Yves Saint Laurent',
+        'D&G' => 'Dolce & Gabbana',
+        'CK' => 'Calvin Klein',
+        'JPG' => 'Jean Paul Gaultier',
+        'PR' => 'Paco Rabanne',
+        'CH' => 'Carolina Herrera',
+        'V&R' => 'Viktor & Rolf',
+        'BVLGARI' => 'Bvlgari',
+        'HERMES' => 'Hermès',
+        'GUERLAIN' => 'Guerlain',
+        'LANCOME' => 'Lancôme',
+        'DIOR' => 'Dior',
+        'CHANEL' => 'Chanel',
+        'ARMANI' => 'Armani',
+        'PRADA' => 'Prada',
+        'VERSACE' => 'Versace',
+        'GIVENCHY' => 'Givenchy',
+        'BURBERRY' => 'Burberry',
+        'MUGLER' => 'Mugler',
+        'NR' => 'Narciso Rodriguez',
+        'MB' => 'Montblanc',
+        'CARTIER' => 'Cartier',
+        // Ajoutez d'autres mappings selon vos besoins
+    ];
 
     public function mount($name, $id, $price)
     {
         $this->getCompetitorPrice($name);
         $this->id = $id;
         $this->price = $this->cleanPrice($price);
-        $this->referencePrice = $this->cleanPrice($price); // Prix de référence pour la comparaison
-        $this->cosmashopPrice = $this->cleanPrice($price) * 1.05; // Prix majoré de 5% pour Cosmashop
+        $this->referencePrice = $this->cleanPrice($price);
+        $this->cosmashopPrice = $this->cleanPrice($price) * 1.05;
 
         // STOCKEZ LA REQUÊTE DE RECHERCHE
         $this->searchQuery = $name;
@@ -66,24 +89,25 @@ new class extends Component {
 
         // Toujours afficher le tableau pour permettre le filtrage manuel
         $this->showTable = true;
-
     }
 
     /**
-     * Extrait le vendor par défaut depuis la recherche
+     * Extrait le vendor par défaut depuis la recherche avec gestion des abréviations
      */
     private function extractDefaultVendor(string $search): void
     {
         $vendor = '';
 
         // Pattern pour extraire le vendor (marque) de la recherche
-        // Format typique: "VENDOR - Nom produit - Variation"
         if (preg_match('/^([^-]+)/', $search, $matches)) {
             $vendor = trim($matches[1]);
 
             // Nettoyer les chiffres et caractères spéciaux
             $vendor = preg_replace('/[0-9]+ml/i', '', $vendor);
             $vendor = trim($vendor);
+            
+            // Vérifier si c'est une abréviation connue
+            $vendor = $this->normalizeVendor($vendor);
         }
 
         // Si on n'a pas trouvé de vendor, essayer d'autres méthodes
@@ -99,11 +123,44 @@ new class extends Component {
     }
 
     /**
-     * Devine le vendor à partir de la recherche
+     * Normalise un nom de vendor (convertit les abréviations en noms complets)
+     */
+    private function normalizeVendor(string $vendor): string
+    {
+        if (empty(trim($vendor))) {
+            return '';
+        }
+        
+        $vendorUpper = strtoupper(trim($vendor));
+        
+        // Si le vendor est une abréviation connue, retourner le nom complet
+        if (array_key_exists($vendorUpper, $this->brandAbbreviations)) {
+            return $this->brandAbbreviations[$vendorUpper];
+        }
+        
+        // Vérifier également les correspondances partielles
+        foreach ($this->brandAbbreviations as $abbreviation => $fullName) {
+            if (str_contains($vendorUpper, $abbreviation) || 
+                str_contains(strtoupper($fullName), $vendorUpper)) {
+                return $fullName;
+            }
+        }
+        
+        // Vérifier aussi dans l'autre sens (nom complet vers abréviation)
+        foreach ($this->brandAbbreviations as $abbreviation => $fullName) {
+            if (strcasecmp(trim($vendor), $fullName) === 0) {
+                return $fullName;
+            }
+        }
+        
+        return trim($vendor);
+    }
+
+    /**
+     * Devine le vendor à partir de la recherche avec gestion des abréviations
      */
     private function guessVendorFromSearch(string $search): string
     {
-        // Liste des marques communes
         $commonVendors = [
             'Dior',
             'Chanel',
@@ -130,7 +187,15 @@ new class extends Component {
         ];
 
         $searchLower = strtolower($search);
+        
+        // Vérifier d'abord les abréviations
+        foreach ($this->brandAbbreviations as $abbreviation => $fullName) {
+            if (stripos($searchLower, strtolower($abbreviation)) !== false) {
+                return $fullName;
+            }
+        }
 
+        // Vérifier les noms complets
         foreach ($commonVendors as $vendor) {
             if (stripos($searchLower, strtolower($vendor)) !== false) {
                 return $vendor;
@@ -138,6 +203,36 @@ new class extends Component {
         }
 
         return '';
+    }
+
+    /**
+     * Récupère toutes les variations d'une marque (nom complet, abréviation)
+     */
+    private function getVendorVariations(string $vendor): array
+    {
+        $variations = [trim($vendor)];
+        
+        // Normaliser d'abord
+        $normalized = $this->normalizeVendor($vendor);
+        if ($normalized !== $vendor && !in_array($normalized, $variations)) {
+            $variations[] = $normalized;
+        }
+        
+        // Trouver l'abréviation correspondante
+        foreach ($this->brandAbbreviations as $abbreviation => $fullName) {
+            if (strcasecmp($normalized, $fullName) === 0) {
+                $variations[] = $abbreviation;
+                $variations[] = strtoupper($abbreviation);
+                $variations[] = strtolower($abbreviation);
+            }
+        }
+        
+        // Ajouter aussi les versions en majuscule/minuscule
+        $variations[] = strtoupper($vendor);
+        $variations[] = strtolower($vendor);
+        $variations[] = ucwords(strtolower($vendor));
+        
+        return array_unique(array_filter($variations));
     }
 
     /**
@@ -160,134 +255,146 @@ new class extends Component {
     }
 
     /**
-     * NOUVELLE MÉTHODE: Recherche manuelle sans FULLTEXT (VERSION CORRIGÉE ET OPTIMISÉE)
+     * Recherche manuelle sans FULLTEXT avec gestion des abréviations
      * Retourne uniquement le dernier produit inséré par site
      */
-public function searchManual()
-{
-    try {
-        // Réinitialiser le flag de données
-        $this->hasData = false;
-        $this->matchedProducts = [];
-        $this->products = [];
+    public function searchManual()
+    {
+        try {
+            // Réinitialiser le flag de données
+            $this->hasData = false;
+            $this->matchedProducts = [];
+            $this->products = [];
 
-        // ÉTAPE 1: Trouver les derniers scrap_reference_id par site web
-        $latestScrapReferences = DB::connection('mysql')->select("
-            SELECT 
-                web_site_id,
-                MAX(id) as latest_scrap_reference_id
-            FROM scrap_reference
-            GROUP BY web_site_id
-        ");
+            // ÉTAPE 1: Trouver les derniers scrap_reference_id par site web
+            $latestScrapReferences = DB::connection('mysql')->select("
+                SELECT 
+                    web_site_id,
+                    MAX(id) as latest_scrap_reference_id
+                FROM scrap_reference
+                GROUP BY web_site_id
+            ");
 
-        // Convertir en tableau pour utilisation facile
-        $latestRefsBySite = [];
-        foreach ($latestScrapReferences as $ref) {
-            $latestRefsBySite[$ref->web_site_id] = $ref->latest_scrap_reference_id;
-        }
+            // Convertir en tableau pour utilisation facile
+            $latestRefsBySite = [];
+            foreach ($latestScrapReferences as $ref) {
+                $latestRefsBySite[$ref->web_site_id] = $ref->latest_scrap_reference_id;
+            }
 
-        // Si aucun scrap_reference trouvé, retourner vide
-        if (empty($latestRefsBySite)) {
+            // Si aucun scrap_reference trouvé, retourner vide
+            if (empty($latestRefsBySite)) {
+                $this->products = [];
+                $this->hasData = false;
+                return;
+            }
+
+            // ÉTAPE 2: Construire la requête pour les produits avec les derniers scrap_reference_id
+            $sql = "SELECT 
+                        sp.*, 
+                        ws.name as site_name, 
+                        sp.url as product_url,
+                        sp.image_url as image
+                    FROM scraped_product sp
+                    LEFT JOIN web_site ws ON sp.web_site_id = ws.id
+                    WHERE sp.scrap_reference_id IN (" . implode(',', array_values($latestRefsBySite)) . ")";
+
+            $params = [];
+
+            // AJOUTER LE FILTRE VENDOR AVEC GESTION DES ABRÉVIATIONS
+            if (!empty($this->filters['vendor'])) {
+                $vendorVariations = $this->getVendorVariations($this->filters['vendor']);
+                
+                if (!empty($vendorVariations)) {
+                    $sql .= " AND (";
+                    $conditions = [];
+                    
+                    foreach ($vendorVariations as $variation) {
+                        $conditions[] = "sp.vendor LIKE ?";
+                        $params[] = '%' . $variation . '%';
+                    }
+                    
+                    $sql .= implode(' OR ', $conditions) . ")";
+                }
+            }
+
+            // Ajouter les autres filtres si spécifiés
+            if (!empty($this->filters['name'])) {
+                $sql .= " AND sp.name LIKE ?";
+                $params[] = '%' . $this->filters['name'] . '%';
+            }
+
+            if (!empty($this->filters['variation'])) {
+                $sql .= " AND sp.variation LIKE ?";
+                $params[] = '%' . $this->filters['variation'] . '%';
+            }
+
+            if (!empty($this->filters['type'])) {
+                $sql .= " AND sp.type LIKE ?";
+                $params[] = '%' . $this->filters['type'] . '%';
+            }
+
+            // Ajouter le filtre site_source si spécifié
+            if (!empty($this->filters['site_source'])) {
+                $sql .= " AND ws.id = ?";
+                $params[] = $this->filters['site_source'];
+            }
+
+            $sql .= " ORDER BY sp.prix_ht DESC LIMIT 20";
+
+            \Log::info('Manual search SQL with latest scrap references:', [
+                'filters' => $this->filters,
+                'vendor_variations' => $vendorVariations ?? [],
+                'latest_scrap_references' => $latestRefsBySite,
+                'sql' => $sql,
+                'params' => $params
+            ]);
+
+            $result = DB::connection('mysql')->select($sql, $params);
+
+            // Nettoyer les prix et ajouter les propriétés manquantes
+            foreach ($result as $product) {
+                if (isset($product->prix_ht)) {
+                    $product->prix_ht = $this->cleanPrice($product->prix_ht);
+                }
+
+                // S'assurer que product_url est défini
+                if (!isset($product->product_url) && isset($product->url)) {
+                    $product->product_url = $product->url;
+                }
+
+                // S'assurer que image est défini
+                if (!isset($product->image) && isset($product->image_url)) {
+                    $product->image = $product->image_url;
+                }
+
+                // AJOUTER LES PROPRIÉTÉS POUR LE TABLEAU UNIFIÉ
+                $product->similarity_score = null;
+                $product->match_level = null;
+                $product->is_manual_search = true;
+            }
+
+            $this->products = $result;
+            $this->matchedProducts = $result;
+            $this->hasData = !empty($result);
+            $this->isAutomaticSearch = false;
+
+            \Log::info('Manual search results with latest scrap references:', [
+                'count' => count($result),
+                'has_data' => $this->hasData,
+                'unique_sites' => array_unique(array_column($result, 'web_site_id')),
+                'latest_scrap_references_used' => $latestRefsBySite
+            ]);
+
+        } catch (\Throwable $e) {
+            \Log::error('Error in manual search:', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
             $this->products = [];
             $this->hasData = false;
-            return;
         }
-
-        // ÉTAPE 2: Construire la requête pour les produits avec les derniers scrap_reference_id
-        $sql = "SELECT 
-                    sp.*, 
-                    ws.name as site_name, 
-                    sp.url as product_url,
-                    sp.image_url as image
-                FROM scraped_product sp
-                LEFT JOIN web_site ws ON sp.web_site_id = ws.id
-                WHERE sp.scrap_reference_id IN (" . implode(',', array_values($latestRefsBySite)) . ")";
-
-        $params = [];
-
-        // AJOUTER LE FILTRE VENDOR
-        if (!empty($this->filters['vendor'])) {
-            $sql .= " AND sp.vendor LIKE ?";
-            $params[] = '%' . $this->filters['vendor'] . '%';
-        }
-
-        // Ajouter les autres filtres si spécifiés
-        if (!empty($this->filters['name'])) {
-            $sql .= " AND sp.name LIKE ?";
-            $params[] = '%' . $this->filters['name'] . '%';
-        }
-
-        if (!empty($this->filters['variation'])) {
-            $sql .= " AND sp.variation LIKE ?";
-            $params[] = '%' . $this->filters['variation'] . '%';
-        }
-
-        if (!empty($this->filters['type'])) {
-            $sql .= " AND sp.type LIKE ?";
-            $params[] = '%' . $this->filters['type'] . '%';
-        }
-
-        // Ajouter le filtre site_source si spécifié
-        if (!empty($this->filters['site_source'])) {
-            $sql .= " AND ws.id = ?";
-            $params[] = $this->filters['site_source'];
-        }
-
-        $sql .= " ORDER BY sp.prix_ht DESC LIMIT 20";
-
-        \Log::info('Manual search SQL with latest scrap references:', [
-            'filters' => $this->filters,
-            'latest_scrap_references' => $latestRefsBySite,
-            'sql' => $sql,
-            'params' => $params
-        ]);
-
-        $result = DB::connection('mysql')->select($sql, $params);
-
-        // Nettoyer les prix et ajouter les propriétés manquantes
-        foreach ($result as $product) {
-            if (isset($product->prix_ht)) {
-                $product->prix_ht = $this->cleanPrice($product->prix_ht);
-            }
-
-            // S'assurer que product_url est défini
-            if (!isset($product->product_url) && isset($product->url)) {
-                $product->product_url = $product->url;
-            }
-
-            // S'assurer que image est défini
-            if (!isset($product->image) && isset($product->image_url)) {
-                $product->image = $product->image_url;
-            }
-
-            // AJOUTER LES PROPRIÉTÉS POUR LE TABLEAU UNIFIÉ
-            $product->similarity_score = null;
-            $product->match_level = null;
-            $product->is_manual_search = true;
-        }
-
-        $this->products = $result;
-        $this->matchedProducts = $result;
-        $this->hasData = !empty($result);
-        $this->isAutomaticSearch = false;
-
-        \Log::info('Manual search results with latest scrap references:', [
-            'count' => count($result),
-            'has_data' => $this->hasData,
-            'unique_sites' => array_unique(array_column($result, 'web_site_id')),
-            'latest_scrap_references_used' => $latestRefsBySite
-        ]);
-
-    } catch (\Throwable $e) {
-        \Log::error('Error in manual search:', [
-            'message' => $e->getMessage(),
-            'trace' => $e->getTraceAsString()
-        ]);
-
-        $this->products = [];
-        $this->hasData = false;
     }
-}
 
     /**
      * Méthode pour appliquer les filtres (recherche manuelle)
@@ -326,7 +433,6 @@ public function searchManual()
 
     /**
      * Nettoie et convertit un prix en nombre décimal
-     * Enlève tous les symboles de devise et caractères non numériques
      */
     private function cleanPrice($price)
     {
@@ -342,7 +448,7 @@ public function searchManual()
 
         // Si string, nettoyer
         if (is_string($price)) {
-            // Enlever symboles de devise et espaces (garder seulement chiffres, virgule, point, tiret)
+            // Enlever symboles de devise et espaces
             $cleanPrice = preg_replace('/[^\d,.-]/', '', $price);
 
             // Remplacer virgule par point pour conversion
@@ -357,7 +463,9 @@ public function searchManual()
         return null;
     }
 
-
+    /**
+     * Récupère les détails d'un produit depuis Magento
+     */
     public function getOneProductDetails($entity_id)
     {
         try {
@@ -439,7 +547,7 @@ public function searchManual()
     }
 
     /**
-     * Récupère les prix des concurrents (recherche automatique)
+     * Récupère les prix des concurrents (recherche automatique) avec gestion des abréviations
      */
     public function getCompetitorPrice($search)
     {
@@ -461,7 +569,7 @@ public function searchManual()
                 return null;
             }
 
-            // MODIFIEZ CETTE REQUÊTE POUR ÊTRE COHÉRENTE
+            // MODIFIEZ CETTE REQUÊTE POUR INCLURE LA GESTION DES ABRÉVIATIONS
             $sql = "SELECT lp.*, ws.name as site_name, lp.url as product_url, lp.image_url as image
                     FROM last_price_scraped_product lp
                     LEFT JOIN web_site ws ON lp.web_site_id = ws.id
@@ -485,11 +593,23 @@ public function searchManual()
                     $cleanedPrice = $this->cleanPrice($product->prix_ht);
                     $product->prix_ht = $cleanedPrice;
 
-                    // Log pour vérifier le nettoyage
                     \Log::info('Prix nettoyé:', [
                         'original' => $originalPrice,
                         'cleaned' => $cleanedPrice
                     ]);
+                }
+
+                // Normaliser le vendor pour une meilleure comparaison
+                if (isset($product->vendor)) {
+                    $originalVendor = $product->vendor;
+                    $product->vendor = $this->normalizeVendor($originalVendor);
+                    
+                    if ($originalVendor !== $product->vendor) {
+                        \Log::info('Vendor normalisé:', [
+                            'original' => $originalVendor,
+                            'normalized' => $product->vendor
+                        ]);
+                    }
                 }
 
                 // S'assurer que product_url est défini
@@ -513,7 +633,7 @@ public function searchManual()
             $this->matchedProducts = $this->calculateSimilarity($result, $search);
             $this->products = $this->matchedProducts;
             $this->hasData = !empty($result);
-            $this->isAutomaticSearch = true; // C'est une recherche automatique
+            $this->isAutomaticSearch = true;
 
             // Si pas de résultats automatiques, on affiche le tableau quand même
             if (!$this->hasData) {
@@ -539,7 +659,7 @@ public function searchManual()
 
             $this->products = [];
             $this->hasData = false;
-            $this->showTable = true; // Afficher le tableau même en cas d'erreur
+            $this->showTable = true;
 
             return [
                 'error' => $e->getMessage()
@@ -679,7 +799,7 @@ public function searchManual()
     }
 
     /**
-     * Similarité du vendeur
+     * Similarité du vendeur avec gestion des abréviations
      */
     private function computeVendorSimilarity($product, $search)
     {
@@ -694,7 +814,30 @@ public function searchManual()
             return 0;
         }
 
-        return $this->computeStringSimilarity($searchVendor, $vendor);
+        // Normaliser les deux vendors
+        $normalizedProductVendor = $this->normalizeVendor($vendor);
+        $normalizedSearchVendor = $this->normalizeVendor($searchVendor);
+
+        // Calculer la similarité entre les noms normalisés
+        $similarity = $this->computeStringSimilarity($normalizedSearchVendor, $normalizedProductVendor);
+        
+        // Bonus si c'est une correspondance exacte (même après normalisation)
+        if (strcasecmp($normalizedProductVendor, $normalizedSearchVendor) === 0) {
+            $similarity = min(1.0, $similarity + 0.2);
+        }
+        
+        // Bonus si l'abréviation correspond
+        $productVendorUpper = strtoupper($vendor);
+        $searchVendorUpper = strtoupper($searchVendor);
+        foreach ($this->brandAbbreviations as $abbreviation => $fullName) {
+            if (($productVendorUpper === $abbreviation && strtoupper($normalizedSearchVendor) === strtoupper($fullName)) ||
+                ($searchVendorUpper === $abbreviation && strtoupper($normalizedProductVendor) === strtoupper($fullName))) {
+                $similarity = min(1.0, $similarity + 0.15);
+                break;
+            }
+        }
+
+        return $similarity;
     }
 
     /**
@@ -768,12 +911,14 @@ public function searchManual()
     }
 
     /**
-     * Extrait la marque de la recherche
+     * Extrait la marque de la recherche avec gestion des abréviations
      */
     private function extractVendorFromSearch($search)
     {
         if (preg_match('/^([^-]+)/', $search, $matches)) {
-            return trim($matches[1]);
+            $vendor = trim($matches[1]);
+            // Normaliser pour convertir les abréviations
+            return $this->normalizeVendor($vendor);
         }
 
         return '';
@@ -1175,13 +1320,12 @@ public function searchManual()
     }
 
     /**
-     * Ajuste le seuil de similarité - MÉTHODE CORRIGÉE
+     * Ajuste le seuil de similarité
      */
     public function adjustSimilarityThreshold($threshold)
     {
         $this->similarityThreshold = $threshold;
 
-        // Utilisez $this->searchQuery au lieu de $this->search
         if (!empty($this->searchQuery)) {
             $this->getCompetitorPrice($this->searchQuery);
         }
@@ -1219,9 +1363,6 @@ public function searchManual()
 
     /**
      * Détermine le statut de compétitivité de notre prix
-     * LOGIQUE CORRIGÉE: difference = notre_prix - concurrent_prix
-     * Si difference > 0 : nous sommes PLUS CHER
-     * Si difference < 0 : nous sommes MOINS CHER
      */
     public function getPriceCompetitiveness($competitorPrice)
     {
@@ -1231,17 +1372,16 @@ public function searchManual()
             return 'unknown';
         }
 
-        // CORRECTION: Inverser la logique
         if ($difference > 10) {
-            return 'higher'; // Nous sommes beaucoup plus cher
+            return 'higher';
         } elseif ($difference > 0) {
-            return 'slightly_higher'; // Nous sommes légèrement plus cher
+            return 'slightly_higher';
         } elseif ($difference == 0) {
-            return 'same'; // Même prix
+            return 'same';
         } elseif ($difference >= -10) {
-            return 'competitive'; // Nous sommes légèrement moins cher
+            return 'competitive';
         } else {
-            return 'very_competitive'; // Nous sommes beaucoup moins cher
+            return 'very_competitive';
         }
     }
 
@@ -1313,12 +1453,8 @@ public function searchManual()
         return (($cleanCosmashopPrice - $cleanCompetitorPrice) / $cleanCompetitorPrice) * 100;
     }
 
-
     /**
      * Détermine le statut de compétitivité de Cosmashop
-     * LOGIQUE CORRIGÉE: difference = cosmashop_prix - concurrent_prix
-     * Si difference > 0 : Cosmashop PLUS CHER
-     * Si difference < 0 : Cosmashop MOINS CHER
      */
     public function getCosmashopPriceCompetitiveness($competitorPrice)
     {
@@ -1328,20 +1464,18 @@ public function searchManual()
             return 'unknown';
         }
 
-        // CORRECTION: Inverser la logique
         if ($difference > 10) {
-            return 'higher'; // Cosmashop serait beaucoup plus cher
+            return 'higher';
         } elseif ($difference > 0) {
-            return 'slightly_higher'; // Cosmashop serait légèrement plus cher
+            return 'slightly_higher';
         } elseif ($difference == 0) {
-            return 'same'; // Même prix que Cosmashop
+            return 'same';
         } elseif ($difference >= -10) {
-            return 'competitive'; // Cosmashop serait légèrement moins cher
+            return 'competitive';
         } else {
-            return 'very_competitive'; // Cosmashop serait beaucoup moins cher
+            return 'very_competitive';
         }
     }
-
 
     /**
      * Retourne le libellé pour le statut Cosmashop
@@ -1475,7 +1609,6 @@ public function searchManual()
         $avgPrice = array_sum($prices) / count($prices);
         $cosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
 
-        // Compter les concurrents en dessous/au-dessus de Cosmashop
         $belowCosmashop = 0;
         $aboveCosmashop = 0;
 
@@ -1499,7 +1632,6 @@ public function searchManual()
         ];
     }
 
-
     /**
      * Récupère l'URL du produit de manière sécurisée
      */
@@ -1517,27 +1649,10 @@ public function searchManual()
     }
 
     /**
-     * Récupère l'image du produit de manière sécurisée
-     */
-    // public function getProductImage($product)
-    // {
-    //     if (isset($product->image)) {
-    //         return $product->image;
-    //     }
-
-    //     if (isset($product->image_url)) {
-    //         return $product->image_url;
-    //     }
-
-    //     return null;
-    // }
-
-    /**
      * Méthode pour calculer la similarité pour la recherche manuelle si nécessaire
      */
     public function calculateManualSimilarity($product)
     {
-        // Si c'est déjà une recherche automatique, retourner les valeurs existantes
         if (isset($product->similarity_score) && isset($product->match_level)) {
             return [
                 'similarity_score' => $product->similarity_score,
@@ -1545,7 +1660,6 @@ public function searchManual()
             ];
         }
 
-        // Sinon, calculer la similarité avec la recherche originale
         if (!empty($this->searchQuery)) {
             $similarityScore = $this->computeOverallSimilarity($product, $this->searchQuery);
             $matchLevel = $this->getMatchLevel($similarityScore);
@@ -1567,27 +1681,22 @@ public function searchManual()
      */
     public function getProductImage($product)
     {
-        // Priorité 1: Image depuis la propriété image
         if (isset($product->image) && !empty($product->image)) {
             return $product->image;
         }
 
-        // Priorité 2: Image depuis la propriété image_url
         if (isset($product->image_url) && !empty($product->image_url)) {
             return $product->image_url;
         }
 
-        // Priorité 3: Image depuis la propriété thumbnail
         if (isset($product->thumbnail) && !empty($product->thumbnail)) {
             return $product->thumbnail;
         }
 
-        // Priorité 4: Image depuis la propriété swatch_image
         if (isset($product->swatch_image) && !empty($product->swatch_image)) {
             return $product->swatch_image;
         }
 
-        // Priorité 5: Image depuis media_gallery (première image)
         if (isset($product->media_gallery) && !empty($product->media_gallery)) {
             $images = json_decode($product->media_gallery, true);
             if (is_array($images) && !empty($images)) {
@@ -1595,7 +1704,6 @@ public function searchManual()
             }
         }
 
-        // Image par défaut
         return 'https://placehold.co/400x400/cccccc/999999?text=No+Image';
     }
 
@@ -1608,19 +1716,16 @@ public function searchManual()
             return false;
         }
 
-        // Vérifier si c'est une URL valide
         if (!filter_var($url, FILTER_VALIDATE_URL)) {
             return false;
         }
 
-        // Vérifier les extensions d'image courantes
         $imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
         $path = parse_url($url, PHP_URL_PATH);
         $extension = pathinfo($path, PATHINFO_EXTENSION);
 
         return in_array(strtolower($extension), $imageExtensions);
     }
-
 }; ?>
 
 <div>
