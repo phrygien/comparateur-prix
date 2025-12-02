@@ -43,11 +43,8 @@ new class extends Component {
     public $showTable = false; // Pour suivre si on doit montrer le tableau même sans résultats
     public $isAutomaticSearch = true; // Pour distinguer recherche automatique vs manuelle
     
-    // Pour stocker les résultats originaux de la recherche automatique
-    public $originalAutomaticResults = [];
-    
-    // Pour stocker si un filtre a été appliqué après la recherche automatique
-    public $hasAppliedFilters = false;
+    // Pour stocker les résultats originaux
+    public $originalResults = [];
 
     // Mapping des abréviations des marques
     private array $brandAbbreviations = [
@@ -291,6 +288,7 @@ new class extends Component {
             if (empty($latestRefsBySite)) {
                 $this->products = [];
                 $this->hasData = false;
+                $this->originalResults = [];
                 return;
             }
 
@@ -381,9 +379,9 @@ new class extends Component {
 
             $this->products = $result;
             $this->matchedProducts = $result;
+            $this->originalResults = $result; // Stocker les résultats originaux
             $this->hasData = !empty($result);
             $this->isAutomaticSearch = false;
-            $this->hasAppliedFilters = true; // Marquer que des filtres ont été appliqués
 
             \Log::info('Manual search results with latest scrap references:', [
                 'count' => count($result),
@@ -400,6 +398,102 @@ new class extends Component {
 
             $this->products = [];
             $this->hasData = false;
+            $this->originalResults = [];
+        }
+    }
+
+    /**
+     * Méthode pour appliquer ou supprimer les filtres sur les résultats
+     */
+    public function applyOrRemoveFilters()
+    {
+        try {
+            // Si c'est une recherche automatique et qu'on a des résultats originaux
+            if ($this->isAutomaticSearch && !empty($this->originalResults)) {
+                $filteredProducts = collect($this->originalResults);
+                
+                // Vérifier si des filtres sont actifs
+                $hasActiveFilters = !empty($this->filters['vendor']) || 
+                                    !empty($this->filters['name']) || 
+                                    !empty($this->filters['variation']) || 
+                                    !empty($this->filters['type']) || 
+                                    !empty($this->filters['site_source']);
+                
+                // Si aucun filtre actif, retourner aux résultats originaux
+                if (!$hasActiveFilters) {
+                    $this->matchedProducts = $this->originalResults;
+                    $this->products = $this->matchedProducts;
+                    $this->hasData = !empty($this->matchedProducts);
+                    
+                    \Log::info('No active filters, returning to original results:', [
+                        'original_count' => count($this->originalResults)
+                    ]);
+                    
+                    return;
+                }
+                
+                // Appliquer les filtres
+                if (!empty($this->filters['vendor'])) {
+                    $vendorVariations = $this->getVendorVariations($this->filters['vendor']);
+                    $filteredProducts = $filteredProducts->filter(function ($product) use ($vendorVariations) {
+                        $productVendor = $product->vendor ?? '';
+                        foreach ($vendorVariations as $variation) {
+                            if (stripos($productVendor, $variation) !== false) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    });
+                }
+
+                if (!empty($this->filters['name'])) {
+                    $filteredProducts = $filteredProducts->filter(function ($product) {
+                        $productName = $product->name ?? '';
+                        return stripos($productName, $this->filters['name']) !== false;
+                    });
+                }
+
+                if (!empty($this->filters['variation'])) {
+                    $filteredProducts = $filteredProducts->filter(function ($product) {
+                        $productVariation = $product->variation ?? '';
+                        return stripos($productVariation, $this->filters['variation']) !== false;
+                    });
+                }
+
+                if (!empty($this->filters['type'])) {
+                    $filteredProducts = $filteredProducts->filter(function ($product) {
+                        $productType = $product->type ?? '';
+                        return stripos($productType, $this->filters['type']) !== false;
+                    });
+                }
+
+                if (!empty($this->filters['site_source'])) {
+                    $filteredProducts = $filteredProducts->filter(function ($product) {
+                        return ($product->web_site_id ?? null) == $this->filters['site_source'];
+                    });
+                }
+
+                $this->matchedProducts = $filteredProducts->values()->all();
+                $this->products = $this->matchedProducts;
+                $this->hasData = count($this->matchedProducts) > 0;
+                
+                \Log::info('Filters applied to existing results:', [
+                    'original_count' => count($this->originalResults),
+                    'filtered_count' => count($this->matchedProducts),
+                    'filters' => $this->filters,
+                    'has_active_filters' => $hasActiveFilters
+                ]);
+                
+            } else {
+                // Si pas de recherche automatique ou pas de résultats originaux, faire une recherche manuelle
+                $this->searchManual();
+            }
+
+        } catch (\Throwable $e) {
+            \Log::error('Error filtering results:', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
         }
     }
 
@@ -408,14 +502,7 @@ new class extends Component {
      */
     public function applyFilters()
     {
-        // Si on est en recherche automatique et qu'on applique un filtre,
-        // on passe en mode recherche manuelle
-        if ($this->isAutomaticSearch && $this->hasData) {
-            $this->searchManual();
-        } else {
-            // Si déjà en recherche manuelle, on fait une nouvelle recherche avec les filtres
-            $this->searchManual();
-        }
+        $this->applyOrRemoveFilters();
     }
 
     /**
@@ -432,24 +519,23 @@ new class extends Component {
             'site_source' => ''
         ];
 
-        // Réinitialiser le flag de filtres appliqués
-        $this->hasAppliedFilters = false;
-
-        // Si on avait des résultats automatiques stockés, on les restaure
-        if (!empty($this->originalAutomaticResults) && !$this->hasAppliedFilters) {
-            $this->matchedProducts = $this->originalAutomaticResults;
-            $this->products = $this->matchedProducts;
-            $this->hasData = !empty($this->matchedProducts);
-            $this->isAutomaticSearch = true;
-            
-            \Log::info('Reset filters - restored original automatic results:', [
-                'original_count' => count($this->originalAutomaticResults)
-            ]);
-        } else {
-            // Sinon, on recharge la recherche automatique
-            if (!empty($this->searchQuery)) {
+        if ($this->isAutomaticSearch && !empty($this->searchQuery)) {
+            // Si on a des résultats originaux, les réutiliser
+            if (!empty($this->originalResults)) {
+                $this->matchedProducts = $this->originalResults;
+                $this->products = $this->matchedProducts;
+                $this->hasData = !empty($this->matchedProducts);
+                
+                \Log::info('Reset filters - returning to original results:', [
+                    'original_count' => count($this->originalResults)
+                ]);
+            } else {
+                // Sinon recharger la recherche automatique
                 $this->getCompetitorPrice($this->searchQuery);
             }
+        } else {
+            // Exécuter la recherche manuelle
+            $this->searchManual();
         }
     }
 
@@ -458,14 +544,6 @@ new class extends Component {
      */
     public function updatedFilters($value, $key)
     {
-        // Vérifier si le filtre n'est pas vide
-        if (!empty($value)) {
-            // Si on était en recherche automatique, on passe en manuelle
-            if ($this->isAutomaticSearch && $this->hasData) {
-                $this->hasAppliedFilters = true;
-            }
-        }
-        
         // Débouncer pour éviter trop d'appels
         $this->applyFilters();
     }
@@ -594,8 +672,7 @@ new class extends Component {
             if (empty($search)) {
                 $this->products = [];
                 $this->hasData = false;
-                $this->originalAutomaticResults = [];
-                $this->hasAppliedFilters = false;
+                $this->originalResults = [];
                 return null;
             }
 
@@ -607,8 +684,7 @@ new class extends Component {
             if (empty($searchQuery)) {
                 $this->products = [];
                 $this->hasData = false;
-                $this->originalAutomaticResults = [];
-                $this->hasAppliedFilters = false;
+                $this->originalResults = [];
                 return null;
             }
 
@@ -676,11 +752,8 @@ new class extends Component {
             $this->matchedProducts = $this->calculateSimilarity($result, $search);
             $this->products = $this->matchedProducts;
             
-            // STOCKER LES RÉSULTATS ORIGINAUX DE LA RECHERCHE AUTOMATIQUE
-            $this->originalAutomaticResults = $this->matchedProducts;
-            
-            // Réinitialiser le flag de filtres appliqués
-            $this->hasAppliedFilters = false;
+            // STOCKER LES RÉSULTATS ORIGINAUX
+            $this->originalResults = $this->matchedProducts;
             
             $this->hasData = !empty($result);
             $this->isAutomaticSearch = true;
@@ -709,8 +782,7 @@ new class extends Component {
 
             $this->products = [];
             $this->hasData = false;
-            $this->originalAutomaticResults = [];
-            $this->hasAppliedFilters = false;
+            $this->originalResults = [];
             $this->showTable = true;
 
             return [
