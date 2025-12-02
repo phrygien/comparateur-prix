@@ -262,7 +262,7 @@ new class extends Component {
 
 /**
  * Recherche manuelle sans FULLTEXT avec gestion des abréviations
- * Retourne uniquement les produits du DERNIER scrap_reference_id (global)
+ * Retourne les produits correspondant aux critères de recherche du dernier scrap_reference_id par site
  */
 public function searchManual()
 {
@@ -272,23 +272,85 @@ public function searchManual()
         $this->matchedProducts = [];
         $this->products = [];
 
-        // ÉTAPE 1: Trouver le DERNIER scrap_reference_id (global, pas par site)
-        $latestScrapReference = DB::connection('mysql')->select("
-            SELECT MAX(id) as latest_scrap_reference_id
-            FROM scrap_reference
-            LIMIT 1
-        ");
+        // ÉTAPE 1: Construire les conditions de filtre pour les vendor variations
+        $vendorConditions = [];
+        $vendorParams = [];
+        
+        if (!empty($this->filters['vendor'])) {
+            $vendorVariations = $this->getVendorVariations($this->filters['vendor']);
+            
+            if (!empty($vendorVariations)) {
+                foreach ($vendorVariations as $variation) {
+                    $vendorConditions[] = "sp.vendor LIKE ?";
+                    $vendorParams[] = '%' . $variation . '%';
+                }
+            }
+        }
+
+        // ÉTAPE 2: Trouver les derniers scrap_reference_id par site avec les critères de recherche
+        $latestScrapSql = "
+            SELECT 
+                sp.web_site_id,
+                MAX(sr.id) as latest_scrap_reference_id
+            FROM scraped_product sp
+            INNER JOIN scrap_reference sr ON sp.scrap_reference_id = sr.id
+            WHERE 1=1";
+        
+        $latestScrapParams = [];
+
+        // Appliquer les filtres vendor
+        if (!empty($vendorConditions)) {
+            $latestScrapSql .= " AND (" . implode(' OR ', $vendorConditions) . ")";
+            $latestScrapParams = array_merge($latestScrapParams, $vendorParams);
+        }
+
+        // Appliquer les autres filtres
+        if (!empty($this->filters['name'])) {
+            $latestScrapSql .= " AND sp.name LIKE ?";
+            $latestScrapParams[] = '%' . $this->filters['name'] . '%';
+        }
+
+        if (!empty($this->filters['variation'])) {
+            $latestScrapSql .= " AND sp.variation LIKE ?";
+            $latestScrapParams[] = '%' . $this->filters['variation'] . '%';
+        }
+
+        if (!empty($this->filters['type'])) {
+            $latestScrapSql .= " AND sp.type LIKE ?";
+            $latestScrapParams[] = '%' . $this->filters['type'] . '%';
+        }
+
+        // Filtre par site source si spécifié
+        if (!empty($this->filters['site_source'])) {
+            $latestScrapSql .= " AND sp.web_site_id = ?";
+            $latestScrapParams[] = $this->filters['site_source'];
+        }
+
+        $latestScrapSql .= " GROUP BY sp.web_site_id";
+
+        \Log::info('Finding latest scrap_reference_id per site with filters:', [
+            'sql' => $latestScrapSql,
+            'params' => $latestScrapParams,
+            'filters' => $this->filters
+        ]);
+
+        $latestScrapReferences = DB::connection('mysql')->select($latestScrapSql, $latestScrapParams);
+
+        // Convertir en tableau pour utilisation facile
+        $latestRefsBySite = [];
+        foreach ($latestScrapReferences as $ref) {
+            $latestRefsBySite[$ref->web_site_id] = $ref->latest_scrap_reference_id;
+        }
 
         // Si aucun scrap_reference trouvé, retourner vide
-        if (empty($latestScrapReference) || !$latestScrapReference[0]->latest_scrap_reference_id) {
+        if (empty($latestRefsBySite)) {
+            \Log::info('No matching scrap_reference found with applied filters');
             $this->products = [];
             $this->hasData = false;
             return;
         }
 
-        $latestRefId = $latestScrapReference[0]->latest_scrap_reference_id;
-
-        // ÉTAPE 2: Chercher tous les produits avec ce dernier scrap_reference_id
+        // ÉTAPE 3: Récupérer tous les produits correspondants aux critères avec les derniers scrap_reference_id
         $sql = "SELECT 
                     sp.*, 
                     ws.name as site_name, 
@@ -296,28 +358,16 @@ public function searchManual()
                     sp.image_url as image
                 FROM scraped_product sp
                 LEFT JOIN web_site ws ON sp.web_site_id = ws.id
-                WHERE sp.scrap_reference_id = ?";
+                WHERE sp.scrap_reference_id IN (" . implode(',', array_values($latestRefsBySite)) . ")";
 
-        $params = [$latestRefId];
+        $params = [];
 
-        // AJOUTER LE FILTRE VENDOR AVEC GESTION DES ABRÉVIATIONS
-        if (!empty($this->filters['vendor'])) {
-            $vendorVariations = $this->getVendorVariations($this->filters['vendor']);
-            
-            if (!empty($vendorVariations)) {
-                $sql .= " AND (";
-                $conditions = [];
-                
-                foreach ($vendorVariations as $variation) {
-                    $conditions[] = "sp.vendor LIKE ?";
-                    $params[] = '%' . $variation . '%';
-                }
-                
-                $sql .= implode(' OR ', $conditions) . ")";
-            }
+        // Réappliquer les mêmes filtres pour obtenir les produits
+        if (!empty($vendorConditions)) {
+            $sql .= " AND (" . implode(' OR ', $vendorConditions) . ")";
+            $params = array_merge($params, $vendorParams);
         }
 
-        // Ajouter les autres filtres si spécifiés
         if (!empty($this->filters['name'])) {
             $sql .= " AND sp.name LIKE ?";
             $params[] = '%' . $this->filters['name'] . '%';
@@ -333,7 +383,6 @@ public function searchManual()
             $params[] = '%' . $this->filters['type'] . '%';
         }
 
-        // Ajouter le filtre site_source si spécifié
         if (!empty($this->filters['site_source'])) {
             $sql .= " AND ws.id = ?";
             $params[] = $this->filters['site_source'];
@@ -341,10 +390,10 @@ public function searchManual()
 
         $sql .= " ORDER BY sp.prix_ht DESC LIMIT 20";
 
-        \Log::info('Manual search SQL with latest scrap_reference_id (global):', [
+        \Log::info('Manual search SQL with filtered latest scrap_reference_id per site:', [
             'filters' => $this->filters,
             'vendor_variations' => $vendorVariations ?? [],
-            'latest_scrap_reference_id' => $latestRefId,
+            'latest_scrap_references' => $latestRefsBySite,
             'sql' => $sql,
             'params' => $params
         ]);
@@ -379,17 +428,19 @@ public function searchManual()
         $this->isAutomaticSearch = false;
         $this->hasAppliedFilters = true;
 
-        \Log::info('Manual search results with latest scrap_reference_id (global):', [
+        \Log::info('Manual search results with filtered latest scrap_reference_id per site:', [
             'count' => count($result),
             'has_data' => $this->hasData,
-            'latest_scrap_reference_id' => $latestRefId,
-            'unique_sites' => array_unique(array_column($result, 'web_site_id'))
+            'unique_sites' => array_unique(array_column($result, 'web_site_id')),
+            'products_per_site' => array_count_values(array_column($result, 'web_site_id')),
+            'latest_scrap_references_used' => $latestRefsBySite
         ]);
 
     } catch (\Throwable $e) {
         \Log::error('Error in manual search:', [
             'message' => $e->getMessage(),
-            'trace' => $e->getTraceAsString()
+            'trace' => $e->getTraceAsString(),
+            'filters' => $this->filters ?? []
         ]);
 
         $this->products = [];
