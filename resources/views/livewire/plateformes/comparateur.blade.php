@@ -2729,8 +2729,9 @@ public function searchManual()
             </div>
         @endif
     </div>
-</div>
 
+
+  
 @push('styles')
     <style>
         /* Style pour les filtres dans le thead */
@@ -2872,4 +2873,5 @@ public function searchManual()
             });
         });
     </script>
-@endpush>
+@endpush>  
+</div>
