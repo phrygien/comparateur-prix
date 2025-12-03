@@ -97,19 +97,19 @@ new class extends Component {
 
 <div x-data="{ 
     showBar: false, 
-    isBarVisible: true, // Nouvelle variable pour contrôler la visibilité manuelle
+    isBarVisible: true,
     lastScroll: 0,
     scrollTimeout: null,
+    barHeight: 140, // Hauteur estimée de la floating bar
+    
     handleScroll() {
         let currentScroll = window.pageYOffset || document.documentElement.scrollTop;
-        const scrollThreshold = 100; // Seuil en pixels depuis le haut
+        const scrollThreshold = 100;
         
-        // Toujours afficher la barre si on est assez bas dans la page ET si elle n'est pas masquée manuellement
         if (currentScroll > scrollThreshold && this.isBarVisible) {
             this.showBar = true;
             clearTimeout(this.scrollTimeout);
         }
-        // Cacher seulement quand on arrive tout en haut
         else if (currentScroll <= scrollThreshold) {
             clearTimeout(this.scrollTimeout);
             this.scrollTimeout = setTimeout(() => {
@@ -119,39 +119,40 @@ new class extends Component {
         
         this.lastScroll = currentScroll;
     },
+    
     toggleBarVisibility() {
         this.isBarVisible = !this.isBarVisible;
         if (!this.isBarVisible) {
             this.showBar = false;
         } else {
-            // Si on réactive la barre et qu'on est assez bas dans la page, l'afficher
             let currentScroll = window.pageYOffset || document.documentElement.scrollTop;
             if (currentScroll > 100) {
                 this.showBar = true;
             }
         }
         
-        // Sauvegarder la préférence dans localStorage
         localStorage.setItem('floatingBarVisible', this.isBarVisible);
+    },
+    
+    init() {
+        // Récupérer la préférence depuis localStorage
+        const savedVisibility = localStorage.getItem('floatingBarVisible');
+        if (savedVisibility !== null) {
+            this.isBarVisible = savedVisibility === 'true';
+        }
     }
 }" 
-x-init="
-    // Récupérer la préférence depuis localStorage au chargement
-    const savedVisibility = localStorage.getItem('floatingBarVisible');
-    if (savedVisibility !== null) {
-        isBarVisible = savedVisibility === 'true';
-    }
-"
 @scroll.window.throttle.50ms="handleScroll()">
-    <!-- Le reste de votre contenu reste identique -->
-    <div class="w-full px-4 py-6 sm:px-6 lg:grid lg:grid-cols-2 lg:gap-x-10 lg:px-10 pb-24">
+    
+    <!-- Conteneur principal avec padding-bottom pour éviter que la floating bar cache les données -->
+    <div class="w-full px-4 py-6 sm:px-6 lg:grid lg:grid-cols-2 lg:gap-x-10 lg:px-10 pb-40">
+        <!-- Augmenté le padding-bottom de pb-24 à pb-40 pour laisser plus d'espace -->
 
         <x-header title="{{ utf8_encode($this->product->title) ?? 'N/A' }}" subtitle="{{ utf8_encode($this->product->vendor) ?? 'N/A' }}" no-separator />
 
         <!-- Product image - Left column -->
         <div class="lg:col-start-1 flex items-start justify-center">
             <div class="hover-3d">
-                <!-- content -->
                 <figure class="w-80 rounded-2xl">
                     <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $this->product->thumbnail) }}" 
                          alt="{{ utf8_encode($this->product->title) ?? 'Product image' }}" 
@@ -245,7 +246,7 @@ x-init="
         </div>
     </div>
 
-    <!-- Floating Product Name Bar avec blur gris -->
+    <!-- Floating Product Name Bar - Positionné en fixed mais avec conteneur qui a du padding -->
     <div x-show="showBar && isBarVisible" 
          x-transition:enter="transition ease-out duration-300"
          x-transition:enter-start="translate-y-full"
@@ -253,12 +254,14 @@ x-init="
          x-transition:leave="transition ease-in duration-300"
          x-transition:leave-start="translate-y-0"
          x-transition:leave-end="translate-y-full"
-         class="fixed bottom-0 left-0 right-0 z-50">
-        <!-- Fond avec dégradé gris sur les côtés et blur renforcé -->
+         class="fixed bottom-0 left-0 right-0 z-50"
+         style="height: 140px;"> <!-- Hauteur fixe pour référence -->
+        
+        <!-- Fond avec blur -->
         <div class="absolute inset-0 bg-gradient-to-r from-gray-400/10 via-white/85 to-gray-400/10 backdrop-blur-xl border-t border-gray-300/50 shadow-2xl"></div>
         
         <!-- Contenu de la barre -->
-        <div class="relative px-4 py-4 sm:px-6 lg:px-10">
+        <div class="relative px-4 py-5 sm:px-6 lg:px-10">
             <div class="flex flex-col max-w-7xl mx-auto">
                 <!-- En-tête avec titre et bouton de masquage -->
                 <div class="mb-2 pb-2 border-b border-gray-200 flex justify-between items-center">
@@ -293,7 +296,7 @@ x-init="
                             {{ utf8_encode($this->product->vendor) ?? 'N/A' }}
                         </p>
                         
-                        <!-- Additional info always visible -->
+                        <!-- Additional info -->
                         <div class="mt-1 space-y-0.5">
                             @if($this->product->sku)
                             <p class="text-xs text-gray-600">
@@ -320,7 +323,7 @@ x-init="
                     </div>
                 </div>
                 
-                <!-- Texte d'aide en rouge -->
+                <!-- Texte d'aide -->
                 <div class="mt-3 pt-2 border-t border-gray-100">
                     <p class="text-xs text-red-600 font-medium">
                         ⓘ Vous pouvez effectuer une recherche manuelle à partir du nom du produit ou de mots-clés spécifiques.
@@ -338,7 +341,7 @@ x-init="
          x-transition:leave="transition ease-in duration-300"
          x-transition:leave-start="opacity-100 scale-100"
          x-transition:leave-end="opacity-0 scale-95"
-         class="fixed bottom-4 right-4 z-40">
+         class="fixed bottom-6 right-6 z-40"> <!-- Changé de bottom-4 à bottom-6 -->
         <button @click="toggleBarVisibility()"
                 class="bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition-colors flex items-center justify-center"
                 title="Afficher la barre de comparaison">
