@@ -244,7 +244,7 @@ new class extends Component {
         </div>
     </div>
 
-    <!-- Floating Product Name Bar -->
+    <!-- Floating Product Name Bar (LARGUEUR AUGMENTÉE) -->
     <div x-show="showBar && isBarVisible" 
          x-transition:enter="transition ease-out duration-300"
          x-transition:enter-start="translate-y-full"
@@ -253,7 +253,7 @@ new class extends Component {
          x-transition:leave-start="translate-y-0"
          x-transition:leave-end="translate-y-full"
          class="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50 rounded-2xl overflow-hidden"
-         style="height: 140px; width: 75%; max-width: 700px;">
+         style="height: 140px; width: 88%; max-width: 1000px;">
         
         <!-- Fond avec blur et bordure gradient -->
         <div class="absolute inset-0 backdrop-blur-xl rounded-2xl shadow-2xl">
