@@ -97,14 +97,15 @@ new class extends Component {
 
 <div x-data="{ 
     showBar: false, 
+    isBarVisible: true, // Nouvelle variable pour contrôler la visibilité manuelle
     lastScroll: 0,
     scrollTimeout: null,
     handleScroll() {
         let currentScroll = window.pageYOffset || document.documentElement.scrollTop;
         const scrollThreshold = 100; // Seuil en pixels depuis le haut
         
-        // Toujours afficher la barre si on est assez bas dans la page
-        if (currentScroll > scrollThreshold) {
+        // Toujours afficher la barre si on est assez bas dans la page ET si elle n'est pas masquée manuellement
+        if (currentScroll > scrollThreshold && this.isBarVisible) {
             this.showBar = true;
             clearTimeout(this.scrollTimeout);
         }
@@ -117,8 +118,30 @@ new class extends Component {
         }
         
         this.lastScroll = currentScroll;
+    },
+    toggleBarVisibility() {
+        this.isBarVisible = !this.isBarVisible;
+        if (!this.isBarVisible) {
+            this.showBar = false;
+        } else {
+            // Si on réactive la barre et qu'on est assez bas dans la page, l'afficher
+            let currentScroll = window.pageYOffset || document.documentElement.scrollTop;
+            if (currentScroll > 100) {
+                this.showBar = true;
+            }
+        }
+        
+        // Sauvegarder la préférence dans localStorage
+        localStorage.setItem('floatingBarVisible', this.isBarVisible);
     }
 }" 
+x-init="
+    // Récupérer la préférence depuis localStorage au chargement
+    const savedVisibility = localStorage.getItem('floatingBarVisible');
+    if (savedVisibility !== null) {
+        isBarVisible = savedVisibility === 'true';
+    }
+"
 @scroll.window.throttle.50ms="handleScroll()">
     <!-- Le reste de votre contenu reste identique -->
     <div class="w-full px-4 py-6 sm:px-6 lg:grid lg:grid-cols-2 lg:gap-x-10 lg:px-10 pb-24">
@@ -223,7 +246,7 @@ new class extends Component {
     </div>
 
     <!-- Floating Product Name Bar avec blur gris -->
-    <div x-show="showBar" 
+    <div x-show="showBar && isBarVisible" 
          x-transition:enter="transition ease-out duration-300"
          x-transition:enter-start="translate-y-full"
          x-transition:enter-end="translate-y-0"
@@ -237,11 +260,18 @@ new class extends Component {
         <!-- Contenu de la barre -->
         <div class="relative px-4 py-4 sm:px-6 lg:px-10">
             <div class="flex flex-col max-w-7xl mx-auto">
-                <!-- Titre "Produit à comparer sur le concurrent" -->
-                <div class="mb-2 pb-2 border-b border-gray-200">
+                <!-- En-tête avec titre et bouton de masquage -->
+                <div class="mb-2 pb-2 border-b border-gray-200 flex justify-between items-center">
                     <h3 class="text-base font-bold text-gray-900">
                         Produit à comparer sur le concurrent
                     </h3>
+                    <button @click="toggleBarVisibility()" 
+                            class="text-gray-500 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100 transition-colors"
+                            title="Masquer la barre flottante">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                        </svg>
+                    </button>
                 </div>
                 
                 <div class="flex items-center justify-between">
@@ -293,11 +323,28 @@ new class extends Component {
                 <!-- Texte d'aide en rouge -->
                 <div class="mt-3 pt-2 border-t border-gray-100">
                     <p class="text-xs text-red-600 font-medium">
-                        ⓘ Si le résultat n'est pas correct, vous pouvez effectuer une recherche manuelle 
-                        à partir du nom du produit ou de mots-clés spécifiques.
+                        ⓘ Vous pouvez effectuer une recherche manuelle à partir du nom du produit ou de mots-clés spécifiques.
                     </p>
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- Bouton flottant pour réafficher la barre lorsqu'elle est masquée -->
+    <div x-show="!isBarVisible" 
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0 scale-95"
+         x-transition:enter-end="opacity-100 scale-100"
+         x-transition:leave="transition ease-in duration-300"
+         x-transition:leave-start="opacity-100 scale-100"
+         x-transition:leave-end="opacity-0 scale-95"
+         class="fixed bottom-4 right-4 z-40">
+        <button @click="toggleBarVisibility()"
+                class="bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition-colors flex items-center justify-center"
+                title="Afficher la barre de comparaison">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+        </button>
     </div>
 </div>
