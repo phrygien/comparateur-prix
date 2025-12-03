@@ -100,7 +100,7 @@ new class extends Component {
     isBarVisible: true,
     lastScroll: 0,
     scrollTimeout: null,
-    barHeight: 140, // Hauteur estimée de la floating bar
+    barHeight: 140,
     
     handleScroll() {
         let currentScroll = window.pageYOffset || document.documentElement.scrollTop;
@@ -135,7 +135,6 @@ new class extends Component {
     },
     
     init() {
-        // Récupérer la préférence depuis localStorage
         const savedVisibility = localStorage.getItem('floatingBarVisible');
         if (savedVisibility !== null) {
             this.isBarVisible = savedVisibility === 'true';
@@ -144,9 +143,7 @@ new class extends Component {
 }" 
 @scroll.window.throttle.50ms="handleScroll()">
     
-    <!-- Conteneur principal avec padding-bottom pour éviter que la floating bar cache les données -->
     <div class="w-full px-4 py-6 sm:px-6 lg:grid lg:grid-cols-2 lg:gap-x-10 lg:px-10 pb-40">
-        <!-- Augmenté le padding-bottom de pb-24 à pb-40 pour laisser plus d'espace -->
 
         <x-header title="{{ utf8_encode($this->product->title) ?? 'N/A' }}" subtitle="{{ utf8_encode($this->product->vendor) ?? 'N/A' }}" no-separator />
 
@@ -246,7 +243,7 @@ new class extends Component {
         </div>
     </div>
 
-    <!-- Floating Product Name Bar - Positionné en fixed mais avec conteneur qui a du padding -->
+    <!-- Floating Product Name Bar -->
     <div x-show="showBar && isBarVisible" 
          x-transition:enter="transition ease-out duration-300"
          x-transition:enter-start="translate-y-full"
@@ -255,7 +252,7 @@ new class extends Component {
          x-transition:leave-start="translate-y-0"
          x-transition:leave-end="translate-y-full"
          class="fixed bottom-0 left-0 right-0 z-50"
-         style="height: 140px;"> <!-- Hauteur fixe pour référence -->
+         style="height: 140px;">
         
         <!-- Fond avec blur -->
         <div class="absolute inset-0 bg-gradient-to-r from-gray-400/10 via-white/85 to-gray-400/10 backdrop-blur-xl border-t border-gray-300/50 shadow-2xl"></div>
@@ -263,18 +260,24 @@ new class extends Component {
         <!-- Contenu de la barre -->
         <div class="relative px-4 py-5 sm:px-6 lg:px-10">
             <div class="flex flex-col max-w-7xl mx-auto">
-                <!-- En-tête avec titre et bouton de masquage -->
+                <!-- En-tête avec titre -->
                 <div class="mb-2 pb-2 border-b border-gray-200 flex justify-between items-center">
                     <h3 class="text-base font-bold text-gray-900">
                         Produit à comparer sur le concurrent
                     </h3>
-                    <button @click="toggleBarVisibility()" 
-                            class="text-gray-500 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100 transition-colors"
-                            title="Masquer la barre flottante">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-                        </svg>
-                    </button>
+                    
+                    <!-- Badge "hide" comme ul badge -->
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xs text-gray-500">Masquer la barre</span>
+                        <button @click="toggleBarVisibility()" 
+                                class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 hover:bg-red-200 transition-colors"
+                                title="Masquer la barre flottante">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                            </svg>
+                            Hide
+                        </button>
+                    </div>
                 </div>
                 
                 <div class="flex items-center justify-between">
@@ -333,7 +336,7 @@ new class extends Component {
         </div>
     </div>
 
-    <!-- Bouton flottant pour réafficher la barre lorsqu'elle est masquée -->
+    <!-- Bouton flottant pour réafficher la barre -->
     <div x-show="!isBarVisible" 
          x-transition:enter="transition ease-out duration-300"
          x-transition:enter-start="opacity-0 scale-95"
@@ -341,13 +344,19 @@ new class extends Component {
          x-transition:leave="transition ease-in duration-300"
          x-transition:leave-start="opacity-100 scale-100"
          x-transition:leave-end="opacity-0 scale-95"
-         class="fixed bottom-6 right-6 z-40"> <!-- Changé de bottom-4 à bottom-6 -->
+         class="fixed bottom-6 right-6 z-40">
+        <!-- Bouton avec badge intégré -->
         <button @click="toggleBarVisibility()"
-                class="bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition-colors flex items-center justify-center"
+                class="relative bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition-colors flex items-center justify-center group"
                 title="Afficher la barre de comparaison">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
+            
+            <!-- Petit badge "show" -->
+            <span class="absolute -top-1 -right-1 inline-flex items-center justify-center px-1.5 py-0.5 text-xs font-medium leading-none text-white bg-green-500 rounded-full">
+                Show
+            </span>
         </button>
     </div>
 </div>
