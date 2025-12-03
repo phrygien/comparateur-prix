@@ -2729,7 +2729,7 @@ public function searchManual()
             </div>
         @endif
     </div>
-</div>
+
 
   
 @push('styles')
