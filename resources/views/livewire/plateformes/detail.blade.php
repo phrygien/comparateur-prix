@@ -143,7 +143,8 @@ new class extends Component {
 }" 
 @scroll.window.throttle.50ms="handleScroll()">
     
-    <div class="w-full px-4 py-6 sm:px-6 lg:grid lg:grid-cols-2 lg:gap-x-10 lg:px-10 pb-40">
+    <div class="w-full px-4 py-6 sm:px-6 lg:grid lg:grid-cols-2 lg:gap-x-10 lg:px-10" 
+         :style="isBarVisible ? 'padding-bottom: 180px' : 'padding-bottom: 40px'">
 
         <x-header title="{{ utf8_encode($this->product->title) ?? 'N/A' }}" subtitle="{{ utf8_encode($this->product->vendor) ?? 'N/A' }}" no-separator />
 
