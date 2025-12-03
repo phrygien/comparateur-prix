@@ -1866,7 +1866,7 @@ public function searchManual()
         </div>
     </div>
 
-    {{-- <livewire:plateformes.detail :id="$id"/> --}}
+    <livewire:plateformes.detail :id="$id"/>
 
     <!-- Section d'analyse des prix (uniquement si on a des données) -->
     @if($hasData && $referencePrice && count($matchedProducts) > 0)
