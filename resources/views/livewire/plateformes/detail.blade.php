@@ -237,13 +237,6 @@ new class extends Component {
         <!-- Contenu de la barre -->
         <div class="relative px-4 py-4 sm:px-6 lg:px-10">
             <div class="flex items-center justify-between max-w-7xl mx-auto">
-                <!-- Titre "Produit à comparer sur le concurrent" -->
-                <div class="absolute top-0 left-0 right-0 text-center -mt-7">
-                    <div class="inline-block bg-blue-600 text-white px-4 py-1.5 rounded-t-lg text-sm font-semibold shadow-lg">
-                        Produit à comparer sur le concurrent
-                    </div>
-                </div>
-                
                 <!-- Product Image -->
                 <div class="flex-shrink-0 mr-4">
                     @if($this->product->thumbnail)
