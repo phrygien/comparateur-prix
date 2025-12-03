@@ -244,7 +244,7 @@ new class extends Component {
         </div>
     </div>
 
-    <!-- Floating Product Name Bar (LARGUEUR AUGMENTÉE) -->
+    <!-- Floating Product Name Bar avec bordure crystal -->
     <div x-show="showBar && isBarVisible" 
          x-transition:enter="transition ease-out duration-300"
          x-transition:enter-start="translate-y-full"
@@ -255,28 +255,43 @@ new class extends Component {
          class="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50 rounded-2xl overflow-hidden"
          style="height: 140px; width: 88%; max-width: 1000px;">
         
-        <!-- Fond avec blur et bordure gradient ÉPAISSE -->
-        <div class="absolute inset-0 backdrop-blur-xl rounded-2xl shadow-2xl">
-            <!-- Background white -->
-            <div class="absolute inset-0 bg-white/80 rounded-2xl"></div>
-            <!-- Border gradient gray - AUGMENTER L'ÉPAISSEUR DE 2px à 4px -->
-            <div class="absolute inset-0 rounded-2xl p-[4px] bg-gradient-to-r from-gray-300 via-gray-400 to-gray-300">
-                <div class="h-full w-full bg-white/85 rounded-2xl backdrop-blur-xl"></div>
+        <!-- Fond avec bordure crystal effet -->
+        <div class="absolute inset-0 backdrop-blur-xl rounded-2xl">
+            <!-- Background avec effet glass -->
+            <div class="absolute inset-0 bg-gradient-to-br from-white/90 via-white/80 to-white/90 rounded-2xl border border-white/30"></div>
+            
+            <!-- Bordure crystal avec effet de brillance -->
+            <div class="absolute inset-0 rounded-2xl p-[3px]">
+                <!-- Gradient principal crystal -->
+                <div class="absolute inset-0 rounded-2xl bg-gradient-to-r from-blue-50/50 via-white/60 to-blue-50/50"></div>
+                
+                <!-- Effet de brillance -->
+                <div class="absolute inset-0 rounded-2xl bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
+                
+                <!-- Contour lumineux -->
+                <div class="absolute inset-0 rounded-2xl bg-gradient-to-r from-blue-100/40 via-purple-100/30 to-blue-100/40 shadow-[inset_0_0_20px_rgba(147,197,253,0.3)]"></div>
+                
+                <!-- Bordure interne blanche pour effet cristal -->
+                <div class="absolute inset-[3px] rounded-2xl bg-white/85 backdrop-blur-xl border border-white/40 shadow-sm"></div>
             </div>
+            
+            <!-- Effets de lumière supplémentaires -->
+            <div class="absolute top-0 left-0 w-20 h-20 bg-gradient-to-br from-white/30 to-transparent rounded-full blur-xl -translate-x-10 -translate-y-10"></div>
+            <div class="absolute bottom-0 right-0 w-20 h-20 bg-gradient-to-tl from-white/30 to-transparent rounded-full blur-xl translate-x-10 translate-y-10"></div>
         </div>
         
         <!-- Contenu de la barre -->
         <div class="relative px-3 py-4 sm:px-4">
             <div class="flex flex-col mx-auto">
                 <!-- En-tête avec titre -->
-                <div class="mb-2 pb-2 border-b border-gray-200 flex justify-between items-center">
+                <div class="mb-2 pb-2 border-b border-gray-200/50 flex justify-between items-center">
                     <h3 class="text-base font-bold text-gray-900">
                         Produit à comparer sur le concurrent
                     </h3>
                     
                     <!-- Badge "hide" positionné à droite -->
                     <button @click="toggleBarVisibility()" 
-                            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 hover:bg-red-200 transition-colors"
+                            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 hover:bg-red-200 transition-colors shadow-sm"
                             title="Masquer la barre flottante">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" viewBox="0 0 20 20" fill="currentColor">
                             <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
@@ -291,7 +306,7 @@ new class extends Component {
                         @if($this->product->thumbnail)
                         <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $this->product->thumbnail) }}" 
                              alt="{{ utf8_encode($this->product->title) ?? 'Product' }}" 
-                             class="w-16 h-16 object-contain rounded-lg border border-gray-300 shadow-sm" />
+                             class="w-16 h-16 object-contain rounded-lg border border-gray-300/50 shadow-sm bg-white/50" />
                         @endif
                     </div>
 
@@ -332,7 +347,7 @@ new class extends Component {
                 </div>
                 
                 <!-- Texte d'aide -->
-                <div class="mt-3 pt-2 border-t border-gray-100">
+                <div class="mt-3 pt-2 border-t border-gray-100/50">
                     <p class="text-xs text-red-600 font-medium">
                         ⓘ Vous pouvez effectuer une recherche manuelle à partir du nom du produit ou de mots-clés spécifiques.
                     </p>
@@ -352,14 +367,14 @@ new class extends Component {
          class="fixed bottom-6 right-6 z-40">
         <!-- Bouton avec badge intégré -->
         <button @click="toggleBarVisibility()"
-                class="relative bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition-colors flex items-center justify-center group"
+                class="relative bg-gradient-to-r from-blue-500 to-blue-600 text-white p-3 rounded-full shadow-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-300 flex items-center justify-center group shadow-blue-500/30"
                 title="Afficher la barre de comparaison">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
             
             <!-- Petit badge "show" -->
-            <span class="absolute -top-1 -right-1 inline-flex items-center justify-center px-1.5 py-0.5 text-xs font-medium leading-none text-white bg-green-500 rounded-full">
+            <span class="absolute -top-1 -right-1 inline-flex items-center justify-center px-1.5 py-0.5 text-xs font-medium leading-none text-white bg-gradient-to-r from-green-500 to-emerald-500 rounded-full shadow-sm">
                 Show
             </span>
         </button>
