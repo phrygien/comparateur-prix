@@ -255,12 +255,12 @@ new class extends Component {
          class="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50 rounded-2xl overflow-hidden"
          style="height: 140px; width: 88%; max-width: 1000px;">
         
-        <!-- Fond avec blur et bordure gradient -->
+        <!-- Fond avec blur et bordure gradient ÉPAISSE -->
         <div class="absolute inset-0 backdrop-blur-xl rounded-2xl shadow-2xl">
             <!-- Background white -->
             <div class="absolute inset-0 bg-white/80 rounded-2xl"></div>
-            <!-- Border gradient gray -->
-            <div class="absolute inset-0 rounded-2xl p-[2px] bg-gradient-to-r from-gray-300 via-gray-400 to-gray-300">
+            <!-- Border gradient gray - AUGMENTER L'ÉPAISSEUR DE 2px à 4px -->
+            <div class="absolute inset-0 rounded-2xl p-[4px] bg-gradient-to-r from-gray-300 via-gray-400 to-gray-300">
                 <div class="h-full w-full bg-white/85 rounded-2xl backdrop-blur-xl"></div>
             </div>
         </div>
