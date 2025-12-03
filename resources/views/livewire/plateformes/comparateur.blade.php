@@ -1866,7 +1866,7 @@ public function searchManual()
         </div>
     </div>
 
-    {{-- <livewire:plateformes.detail :id="$id"/> --}}
+    <livewire:plateformes.detail :id="$id"/>
 
     <!-- Section d'analyse des prix (uniquement si on a des données) -->
     @if($hasData && $referencePrice && count($matchedProducts) > 0)
@@ -2106,7 +2106,7 @@ public function searchManual()
                     </button>
                 </div>
 
-                <div class="mt-2 flex flex-wrap gap-2">
+                {{-- <div class="mt-2 flex flex-wrap gap-2">
                     <!-- FILTRE VENDOR AJOUTÉ -->
                     @if($filters['vendor'])
                         <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
@@ -2181,7 +2181,7 @@ public function searchManual()
                             </button>
                         </span>
                     @endif
-                </div>
+                </div> --}}
             </div>
         @endif
 
