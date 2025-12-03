@@ -252,15 +252,15 @@ new class extends Component {
          x-transition:leave="transition ease-in duration-300"
          x-transition:leave-start="translate-y-0"
          x-transition:leave-end="translate-y-full"
-         class="fixed bottom-4 left-4 right-4 z-50 rounded-2xl overflow-hidden"
-         style="height: 140px; max-width: calc(100% - 2rem);">
+         class="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50 rounded-2xl overflow-hidden"
+         style="height: 140px; width: 75%; max-width: 700px;">
         
         <!-- Fond avec blur -->
         <div class="absolute inset-0 bg-gradient-to-r from-gray-400/10 via-white/85 to-gray-400/10 backdrop-blur-xl border border-gray-300/50 shadow-2xl rounded-2xl"></div>
         
         <!-- Contenu de la barre -->
-        <div class="relative px-4 py-5 sm:px-6 lg:px-10">
-            <div class="flex flex-col max-w-7xl mx-auto">
+        <div class="relative px-3 py-4 sm:px-4">
+            <div class="flex flex-col mx-auto">
                 <!-- En-tête avec titre -->
                 <div class="mb-2 pb-2 border-b border-gray-200 flex justify-between items-center">
                     <h3 class="text-base font-bold text-gray-900">
