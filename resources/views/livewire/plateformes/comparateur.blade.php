@@ -2432,7 +2432,7 @@ public function searchManual()
                                             </div>
                                             
                                             <!-- Indicateur si pas d'image -->
-                                            @if(!$this->isValidImageUrl($productImage) || str_contains($productImage, 'placehold.co'))
+                                            @if(!$this->isValidImageUrl($productImage) || str_contains($productImage, 'https://placehold.co/400x400/cccccc/999999?text=No+Image'))
                                                 <div class="mt-1 text-center">
                                                     <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
                                                         <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
