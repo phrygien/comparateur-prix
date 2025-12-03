@@ -236,54 +236,66 @@ new class extends Component {
         
         <!-- Contenu de la barre -->
         <div class="relative px-4 py-4 sm:px-6 lg:px-10">
-            <div class="flex items-center justify-between max-w-7xl mx-auto">
-                <!-- Product Image -->
-                <div class="flex-shrink-0 mr-4">
-                    @if($this->product->thumbnail)
-                    <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $this->product->thumbnail) }}" 
-                         alt="{{ utf8_encode($this->product->title) ?? 'Product' }}" 
-                         class="w-16 h-16 object-contain rounded-lg border border-gray-300 shadow-sm" />
-                    @endif
+            <div class="flex flex-col max-w-7xl mx-auto">
+                <!-- Titre "Produit à comparer sur le concurrent" -->
+                <div class="mb-2 pb-2 border-b border-gray-200">
+                    <h3 class="text-base font-bold text-gray-900">
+                        Produit à comparer sur le concurrent
+                    </h3>
                 </div>
-
-                <!-- Product Info -->
-                <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium text-gray-900 truncate">
-                        {{ utf8_encode($this->product->title) ?? 'N/A' }}
-                    </p>
-                    <p class="text-xs text-gray-600 truncate">
-                        {{ utf8_encode($this->product->vendor) ?? 'N/A' }}
-                    </p>
-                    
-                    <!-- Additional info always visible -->
-                    <div class="mt-1 space-y-0.5">
-                        @if($this->product->sku)
-                        <p class="text-xs text-gray-600">
-                            <span class="font-semibold">SKU:</span> {{ $this->product->sku }}
-                        </p>
+                
+                <div class="flex items-center justify-between">
+                    <!-- Product Image -->
+                    <div class="flex-shrink-0 mr-4">
+                        @if($this->product->thumbnail)
+                        <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $this->product->thumbnail) }}" 
+                             alt="{{ utf8_encode($this->product->title) ?? 'Product' }}" 
+                             class="w-16 h-16 object-contain rounded-lg border border-gray-300 shadow-sm" />
                         @endif
-                        {{-- @if($this->product->capacity)
-                        <p class="text-xs text-gray-600">
-                            <span class="font-semibold">Capacité:</span> {{ $this->product->capacity }} ml
+                    </div>
+
+                    <!-- Product Info -->
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium text-gray-900 truncate">
+                            {{ utf8_encode($this->product->title) ?? 'N/A' }}
                         </p>
-                        @endif --}}
+                        <p class="text-xs text-gray-600 truncate">
+                            {{ utf8_encode($this->product->vendor) ?? 'N/A' }}
+                        </p>
+                        
+                        <!-- Additional info always visible -->
+                        <div class="mt-1 space-y-0.5">
+                            @if($this->product->sku)
+                            <p class="text-xs text-gray-600">
+                                <span class="font-semibold">SKU:</span> {{ $this->product->sku }}
+                            </p>
+                            @endif
+                        </div>
+                    </div>
+
+                    <!-- Price -->
+                    <div class="ml-4 flex-shrink-0 text-right">
+                        @if($this->product->special_price)
+                            <p class="text-lg font-bold text-gray-900">
+                                {{ number_format($this->product->special_price, 2) }} €
+                            </p>
+                            <p class="text-xs text-gray-500 line-through">
+                                {{ number_format($this->product->price, 2) }} €
+                            </p>
+                        @else
+                            <p class="text-lg font-bold text-gray-900">
+                                {{ $this->product->price ? number_format($this->product->price, 2) . ' €' : 'N/A' }}
+                            </p>
+                        @endif
                     </div>
                 </div>
-
-                <!-- Price -->
-                <div class="ml-4 flex-shrink-0 text-right">
-                    @if($this->product->special_price)
-                        <p class="text-lg font-bold text-gray-900">
-                            {{ number_format($this->product->special_price, 2) }} €
-                        </p>
-                        <p class="text-xs text-gray-500 line-through">
-                            {{ number_format($this->product->price, 2) }} €
-                        </p>
-                    @else
-                        <p class="text-lg font-bold text-gray-900">
-                            {{ $this->product->price ? number_format($this->product->price, 2) . ' €' : 'N/A' }}
-                        </p>
-                    @endif
+                
+                <!-- Texte d'aide en rouge -->
+                <div class="mt-3 pt-2 border-t border-gray-100">
+                    <p class="text-xs text-red-600 font-medium">
+                        ⓘ Si le résultat n'est pas correct, vous pouvez effectuer une recherche manuelle 
+                        à partir du nom du produit ou de mots-clés spécifiques.
+                    </p>
                 </div>
             </div>
         </div>
