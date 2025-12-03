@@ -258,10 +258,10 @@ new class extends Component {
         <!-- Fond avec blur et bordure gradient -->
         <div class="absolute inset-0 backdrop-blur-xl rounded-2xl shadow-2xl">
             <!-- Background gradient -->
-            <div class="absolute inset-0 bg-gradient-to-r from-purple-50/90 via-white/90 to-purple-50/90 rounded-2xl"></div>
+            <div class="absolute inset-0 bg-gradient-to-r from-purple-50/30 via-white/40 to-purple-50/30 rounded-2xl"></div>
             <!-- Border gradient -->
             <div class="absolute inset-0 rounded-2xl p-[2px] bg-gradient-to-r from-purple-400 via-white to-purple-400">
-                <div class="h-full w-full bg-gradient-to-r from-purple-50/95 via-white/95 to-purple-50/95 rounded-2xl backdrop-blur-xl"></div>
+                <div class="h-full w-full bg-gradient-to-r from-purple-50/35 via-white/45 to-purple-50/35 rounded-2xl backdrop-blur-xl"></div>
             </div>
         </div>
         
