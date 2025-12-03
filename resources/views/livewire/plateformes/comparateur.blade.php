@@ -2873,5 +2873,5 @@ public function searchManual()
             });
         });
     </script>
-@endpush>  
+@endpush  
 </div>
