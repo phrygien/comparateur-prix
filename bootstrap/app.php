@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\CacheResponse;
 use App\Http\Middleware\CheckAuth;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -15,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Enregistrer votre middleware personnalisé
         $middleware->alias([
             'check.auth' => CheckAuth::class,
+             'cache.response' => CacheResponse::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
