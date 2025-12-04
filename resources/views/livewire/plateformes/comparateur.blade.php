@@ -2561,11 +2561,11 @@ public function searchManual()
                                                     <div class="text-sm font-medium text-gray-900">
                                                         {{ $product->site_name ?? $this->extractDomain($productUrl ?? '') }}
                                                     </div>
-                                                    @if(isset($product->web_site_id))
+                                                    {{-- @if(isset($product->web_site_id))
                                                         <div class="text-xs text-gray-500">
                                                             ID: {{ $product->web_site_id }}
                                                         </div>
-                                                    @endif
+                                                    @endif --}}
                                                 </div>
                                             </div>
                                         </td>
