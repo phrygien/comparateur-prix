@@ -19,118 +19,56 @@ new
     #[Validate('required')] 
     public string $password = '';
 
-    public int $loadingProgress = 0;
-    public bool $isLoading = false;
-
     public function login()
     {
-        $this->isLoading = true;
-        $this->loadingProgress = 0;
-
-        // Étape 1: Validation
-        sleep(0.3);
-        $this->loadingProgress = 25;
-
         $this->validate([
             'email' => 'required|email',
             'password' => 'required',
         ]);
 
-        // Étape 2: Recherche utilisateur
-        sleep(0.3);
-        $this->loadingProgress = 50;
-
         $user = \App\Models\User::where('email', $this->email)->first();
 
         if (!$user) {
-            $this->isLoading = false;
-            $this->loadingProgress = 0;
             $this->error('Ces identifiants ne correspondent pas à nos enregistrements.');
             return;
         }
 
-        // Étape 3: Vérification mot de passe
-        sleep(0.3);
-        $this->loadingProgress = 75;
-
         // Check if password needs rehashing
         if (!str_starts_with($user->password, '$2y$')) {
+            // Password is not using bcrypt, update it
             $user->password = Hash::make($this->password);
             $user->save();
         }
 
         if (Auth::attempt(['email' => $this->email, 'password' => $this->password])) {
-            // Étape 4: Connexion réussie
-            $this->loadingProgress = 100;
-            sleep(0.2);
-            
             session()->regenerate();
-            $this->isLoading = false;
-            return $this->redirect('/boutique', navigate: true);
+            return redirect()->intended('/boutique');
         }
 
-        $this->isLoading = false;
-        $this->loadingProgress = 0;
         $this->error('Ces identifiants ne correspondent pas à nos enregistrements.');
     }
 
 }; ?>
 
-<div class="flex h-screen w-screen relative">
-    <!-- Loading Overlay avec cercle de progression -->
-    <div x-data="{ isLoading: @entangle('isLoading'), progress: @entangle('loadingProgress') }"
-         x-show="isLoading"
-         x-transition:enter="transition ease-out duration-300"
-         x-transition:enter-start="opacity-0"
-         x-transition:enter-end="opacity-100"
-         x-transition:leave="transition ease-in duration-200"
-         x-transition:leave-start="opacity-100"
-         x-transition:leave-end="opacity-0"
-         class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center"
-         style="display: none;">
-        
-        <div class="bg-white rounded-2xl p-8 shadow-2xl flex flex-col items-center space-y-6">
-            <!-- Cercle de progression -->
-            <div class="relative w-32 h-32">
-                <!-- Cercle de fond -->
-                <svg class="transform -rotate-90 w-32 h-32">
-                    <circle cx="64" cy="64" r="56" 
-                            stroke="currentColor" 
-                            stroke-width="8" 
-                            fill="none" 
-                            class="text-gray-200" />
-                    <!-- Cercle de progression -->
-                    <circle cx="64" cy="64" r="56" 
-                            stroke="currentColor" 
-                            stroke-width="8" 
-                            fill="none" 
-                            class="text-blue-600 transition-all duration-300 ease-out"
-                            :style="'stroke-dasharray: ' + (2 * Math.PI * 56) + '; stroke-dashoffset: ' + (2 * Math.PI * 56 * (1 - progress / 100))" 
-                            stroke-linecap="round" />
-                </svg>
-                
-                <!-- Pourcentage au centre -->
-                <div class="absolute inset-0 flex items-center justify-center">
-                    <span class="text-3xl font-bold text-blue-600" x-text="progress + '%'"></span>
-                </div>
-            </div>
-            
-            <!-- Texte de chargement -->
-            <div class="text-center">
-                <h3 class="text-xl font-semibold text-gray-900 mb-1">Connexion en cours</h3>
-                <p class="text-sm text-gray-500">Veuillez patienter...</p>
-            </div>
-        </div>
-    </div>
-
+<div class="flex h-screen w-screen">
     <div class="flex-1 flex justify-center items-center bg-white">
         <div class="w-96 max-w-full space-y-6 px-6">
             <!-- Logo -->
             <div class="flex justify-center opacity-50">
                 <a href="/" class="group flex items-center gap-3">
+                    {{-- <svg class="h-4 text-zinc-800" viewBox="0 0 18 13" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <g>
+                            <line x1="1" y1="5" x2="1" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                            <line x1="5" y1="1" x2="5" y2="8" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                            <line x1="9" y1="5" x2="9" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                            <line x1="13" y1="1" x2="13" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                            <line x1="17" y1="5" x2="17" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                        </g>
+                    </svg> --}}
                     <span class="text-xl font-bold text-zinc-800">PRIX</span> <span class="text-xl font-bold text-amber-800">COSMA</span>
                 </a>
             </div>
+
 
             <h2 class="text-center text-2xl font-bold text-gray-900">Bienvenue à nouveau</h2>
 
@@ -140,12 +78,7 @@ new
                 <x-password label="Mot de passe" wire:model.lazy="password" placeholder="" clearable hint="Votre mot de passe" />
 
                 <x-slot:actions>
-                    <x-button 
-                        label="Connexion" 
-                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed" 
-                        type="submit" 
-                        spinner="login"
-                        wire:loading.attr="disabled" />
+                    <x-button label="Connexion" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md text-sm" type="submit" spinner="login" />
                 </x-slot:actions>
             </x-form>
 
@@ -157,14 +90,15 @@ new
              style="background-image: url('https://images.pexels.com/photos/1888026/pexels-photo-1888026.jpeg'); background-size: cover; background-position: center;">
 
             <blockquote class="mb-6 italic font-light text-2xl xl:text-3xl">
-                "Toujours le meilleur prix, par rapport aux autres"
+                “Toujours le meilleur prix, par rapport aux autres”
             </blockquote>
 
             <div class="flex items-center gap-4">
                 <div class="w-14 h-14 rounded-full bg-white flex items-center justify-center">
                     <svg class="w-8 h-8 text-zinc-800" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M9 11l-3 3-1.5-1.5L3 16l3 3 5-5-2-2zm0-6l-3 3-1.5-1.5L3 10l3 3 5-5-2-2zm5 2h7v2h-7V7zm0 6h7v2h-7v-2zm0 6h7v2h-7v-2z"/>
+                    <path d="M9 11l-3 3-1.5-1.5L3 16l3 3 5-5-2-2zm0-6l-3 3-1.5-1.5L3 10l3 3 5-5-2-2zm5 2h7v2h-7V7zm0 6h7v2h-7v-2zm0 6h7v2h-7v-2z"/>
                     </svg>
+
                 </div>
 
                 <div>
