@@ -20,30 +20,38 @@ new
     public string $password = '';
 
     public int $loadingProgress = 0;
+    public bool $isLoading = false;
 
     public function login()
     {
-        $this->loadingProgress = 20;
-        $this->dispatch('update-progress', progress: 20);
+        $this->isLoading = true;
+        $this->loadingProgress = 0;
+
+        // Étape 1: Validation
+        sleep(0.3);
+        $this->loadingProgress = 25;
 
         $this->validate([
             'email' => 'required|email',
             'password' => 'required',
         ]);
 
-        $this->loadingProgress = 40;
-        $this->dispatch('update-progress', progress: 40);
+        // Étape 2: Recherche utilisateur
+        sleep(0.3);
+        $this->loadingProgress = 50;
 
         $user = \App\Models\User::where('email', $this->email)->first();
 
-        $this->loadingProgress = 60;
-        $this->dispatch('update-progress', progress: 60);
-
         if (!$user) {
+            $this->isLoading = false;
             $this->loadingProgress = 0;
             $this->error('Ces identifiants ne correspondent pas à nos enregistrements.');
             return;
         }
+
+        // Étape 3: Vérification mot de passe
+        sleep(0.3);
+        $this->loadingProgress = 75;
 
         // Check if password needs rehashing
         if (!str_starts_with($user->password, '$2y$')) {
@@ -51,23 +59,70 @@ new
             $user->save();
         }
 
-        $this->loadingProgress = 80;
-        $this->dispatch('update-progress', progress: 80);
-
         if (Auth::attempt(['email' => $this->email, 'password' => $this->password])) {
+            // Étape 4: Connexion réussie
             $this->loadingProgress = 100;
-            $this->dispatch('update-progress', progress: 100);
+            sleep(0.2);
+            
             session()->regenerate();
-            return redirect()->intended('/boutique');
+            $this->isLoading = false;
+            return $this->redirect('/boutique', navigate: true);
         }
 
+        $this->isLoading = false;
         $this->loadingProgress = 0;
         $this->error('Ces identifiants ne correspondent pas à nos enregistrements.');
     }
 
 }; ?>
 
-<div class="flex h-screen w-screen">
+<div class="flex h-screen w-screen relative">
+    <!-- Loading Overlay avec cercle de progression -->
+    <div x-data="{ isLoading: @entangle('isLoading'), progress: @entangle('loadingProgress') }"
+         x-show="isLoading"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center"
+         style="display: none;">
+        
+        <div class="bg-white rounded-2xl p-8 shadow-2xl flex flex-col items-center space-y-6">
+            <!-- Cercle de progression -->
+            <div class="relative w-32 h-32">
+                <!-- Cercle de fond -->
+                <svg class="transform -rotate-90 w-32 h-32">
+                    <circle cx="64" cy="64" r="56" 
+                            stroke="currentColor" 
+                            stroke-width="8" 
+                            fill="none" 
+                            class="text-gray-200" />
+                    <!-- Cercle de progression -->
+                    <circle cx="64" cy="64" r="56" 
+                            stroke="currentColor" 
+                            stroke-width="8" 
+                            fill="none" 
+                            class="text-blue-600 transition-all duration-300 ease-out"
+                            :style="'stroke-dasharray: ' + (2 * Math.PI * 56) + '; stroke-dashoffset: ' + (2 * Math.PI * 56 * (1 - progress / 100))" 
+                            stroke-linecap="round" />
+                </svg>
+                
+                <!-- Pourcentage au centre -->
+                <div class="absolute inset-0 flex items-center justify-center">
+                    <span class="text-3xl font-bold text-blue-600" x-text="progress + '%'"></span>
+                </div>
+            </div>
+            
+            <!-- Texte de chargement -->
+            <div class="text-center">
+                <h3 class="text-xl font-semibold text-gray-900 mb-1">Connexion en cours</h3>
+                <p class="text-sm text-gray-500">Veuillez patienter...</p>
+            </div>
+        </div>
+    </div>
+
     <div class="flex-1 flex justify-center items-center bg-white">
         <div class="w-96 max-w-full space-y-6 px-6">
             <!-- Logo -->
@@ -83,21 +138,6 @@ new
                 <x-input label="Email" wire:model.live="email" placeholder="" icon="o-user" hint="Votre adresse email" />
 
                 <x-password label="Mot de passe" wire:model.lazy="password" placeholder="" clearable hint="Votre mot de passe" />
-
-                <!-- Loading Progress Bar -->
-                <div x-data="{ progress: @entangle('loadingProgress') }" 
-                     x-show="progress > 0" 
-                     x-transition
-                     class="w-full">
-                    <div class="flex justify-between items-center mb-2">
-                        <span class="text-sm text-gray-600">Connexion en cours...</span>
-                        <span class="text-sm font-semibold text-blue-600" x-text="progress + '%'"></span>
-                    </div>
-                    <div class="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
-                        <div class="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out"
-                             :style="'width: ' + progress + '%'"></div>
-                    </div>
-                </div>
 
                 <x-slot:actions>
                     <x-button 
