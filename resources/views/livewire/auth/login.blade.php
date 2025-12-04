@@ -4,6 +4,7 @@ use Mary\Traits\Toast;
 use Livewire\Attributes\Validate;
 use Livewire\Volt\Component;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\{Layout, Title};
 
 new
@@ -32,23 +33,34 @@ new
         // Réinitialiser et afficher la barre de progression
         $this->progress = 0;
         $this->showProgress = true;
+        $this->dispatch('progress-started');
 
-        // Simuler la progression
-        $this->progress = 10;
+        // Petit délai pour permettre l'affichage de la barre
+        usleep(100000); // 100ms
+
+        // Étape 1: Vérification initiale
+        $this->progress = 20;
+        $this->dispatch('progress-updated');
 
         $user = \App\Models\User::where('email', $this->email)->first();
-        $this->progress = 30;
+        
+        $this->progress = 40;
+        $this->dispatch('progress-updated');
+        usleep(300000); // 300ms pour l'effet visuel
 
         if (!$user) {
             $this->progress = 100;
-            sleep(0.5); // Pause pour voir 100%
+            $this->dispatch('progress-updated');
+            usleep(500000); // Pause pour voir 100%
             $this->showProgress = false;
-            $this->error('Ces identifiants ne correspondent pas à nos enregistrements.');
+            $this->addError('email', 'Ces identifiants ne correspondent pas à nos enregistrements.');
             return;
         }
 
-        // Check if password needs rehashing
-        $this->progress = 50;
+        // Étape 2: Vérification du mot de passe
+        $this->progress = 60;
+        $this->dispatch('progress-updated');
+        usleep(200000); // 200ms
         
         if (!str_starts_with($user->password, '$2y$')) {
             // Password is not using bcrypt, update it
@@ -56,19 +68,24 @@ new
             $user->save();
         }
 
-        $this->progress = 70;
+        // Étape 3: Tentative de connexion
+        $this->progress = 80;
+        $this->dispatch('progress-updated');
+        usleep(200000); // 200ms
 
         if (Auth::attempt(['email' => $this->email, 'password' => $this->password])) {
             $this->progress = 100;
-            sleep(0.5); // Pause pour voir 100%
+            $this->dispatch('progress-updated');
+            usleep(300000); // Pause pour voir 100%
             session()->regenerate();
             return redirect()->intended('/boutique');
         }
 
         $this->progress = 100;
-        sleep(0.5); // Pause pour voir 100%
+        $this->dispatch('progress-updated');
+        usleep(500000); // Pause pour voir 100%
         $this->showProgress = false;
-        $this->error('Ces identifiants ne correspondent pas à nos enregistrements.');
+        $this->addError('email', 'Ces identifiants ne correspondent pas à nos enregistrements.');
     }
 
 }; ?>
@@ -87,30 +104,47 @@ new
                 <h2 class="text-center text-2xl font-bold text-gray-900">Bienvenue à nouveau</h2>
 
                 <!-- Barre de progression -->
-                @if($showProgress)
                 <div class="mb-6 transition-all duration-500 ease-out" 
-                     x-data="{ progress: @entangle('progress') }"
-                     x-init="$watch('progress', value => {
-                         const progressBar = $refs.progressBar;
-                         const progressText = $refs.progressText;
-                         
-                         // Animation fluide de la barre
-                         progressBar.style.width = value + '%';
-                         progressBar.style.transition = 'width 0.3s ease-out';
-                         
-                         // Animation du texte
-                         progressText.textContent = value + '%';
-                         progressText.style.opacity = '1';
-                         
-                         // Effet de pulsation à 100%
-                         if (value === 100) {
-                             progressBar.classList.add('animate-pulse');
-                             setTimeout(() => {
-                                 progressBar.classList.remove('animate-pulse');
-                             }, 1000);
+                     x-data="{
+                         progress: @entangle('progress'),
+                         showProgress: @entangle('showProgress'),
+                         init() {
+                             // Écouter les événements Livewire
+                             Livewire.on('progress-updated', () => {
+                                 // Forcer une mise à jour visuelle
+                                 this.$nextTick(() => {
+                                     const progressBar = this.$refs.progressBar;
+                                     const progressText = this.$refs.progressText;
+                                     
+                                     if (progressBar) {
+                                         progressBar.style.width = this.progress + '%';
+                                     }
+                                     
+                                     if (progressText) {
+                                         progressText.textContent = this.progress + '%';
+                                     }
+                                 });
+                             });
+                             
+                             Livewire.on('progress-started', () => {
+                                 // Réinitialiser la barre
+                                 this.$nextTick(() => {
+                                     const progressBar = this.$refs.progressBar;
+                                     const progressText = this.$refs.progressText;
+                                     
+                                     if (progressBar) {
+                                         progressBar.style.width = '0%';
+                                     }
+                                     
+                                     if (progressText) {
+                                         progressText.textContent = '0%';
+                                     }
+                                 });
+                             });
                          }
-                     })">
+                     }">
                     
+                    @if($showProgress)
                     <!-- Conteneur de la barre -->
                     <div class="relative pt-1">
                         <!-- Texte de progression -->
@@ -128,22 +162,22 @@ new
                             <!-- Barre de remplissage -->
                             <div x-ref="progressBar" 
                                  :style="{ width: '{{ $progress }}%' }"
-                                 class="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-gradient-to-r from-blue-500 to-purple-600 transition-all duration-300 ease-out rounded-full relative">
+                                 class="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-gradient-to-r from-blue-500 to-purple-600 transition-all duration-500 ease-out rounded-full relative">
                                 
                                 <!-- Effet de brillance animé -->
-                                <div class="absolute top-0 left-0 w-1/3 h-full bg-gradient-to-r from-white/30 to-transparent animate-shine"></div>
+                                <div x-show="progress > 0 && progress < 100" class="absolute top-0 left-0 w-1/3 h-full bg-gradient-to-r from-white/30 to-transparent animate-shine"></div>
                             </div>
                         </div>
                         
                         <!-- Indicateurs de progression -->
                         <div class="flex justify-between text-xs text-gray-500">
-                            <span>Authentification</span>
-                            <span>Validation</span>
-                            <span>Redirection</span>
+                            <span :class="{ 'text-blue-600 font-medium': progress >= 20 }">Authentification</span>
+                            <span :class="{ 'text-blue-600 font-medium': progress >= 60 }">Validation</span>
+                            <span :class="{ 'text-blue-600 font-medium': progress >= 80 }">Redirection</span>
                         </div>
                     </div>
+                    @endif
                 </div>
-                @endif
 
                 <x-form wire:submit="login">
                     <x-input label="Email" wire:model.live="email" placeholder="" icon="o-user" hint="Votre adresse email" />
@@ -158,6 +192,13 @@ new
                                   :disabled="$showProgress" />
                     </x-slot:actions>
                 </x-form>
+                
+                <!-- Afficher les erreurs de validation -->
+                @error('email')
+                    <div class="mt-2 text-sm text-red-600">
+                        {{ $message }}
+                    </div>
+                @enderror
             </div>
         </div>
 
@@ -204,6 +245,11 @@ new
         button:disabled {
             opacity: 0.7;
             cursor: not-allowed;
+        }
+        
+        /* Transition pour la barre de progression */
+        .progress-transition {
+            transition: width 0.5s ease-out;
         }
     </style>
 </div>
