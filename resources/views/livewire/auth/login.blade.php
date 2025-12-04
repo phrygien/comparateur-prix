@@ -49,19 +49,7 @@ new
 
 }; ?>
 
-<div class="flex h-screen w-screen relative">
-    <!-- Loading indicator avec texte et ombre -->
-    <div wire:loading.delay wire:target="login" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-        <div class="flex flex-col items-center justify-center bg-white/90 rounded-2xl p-8 shadow-2xl border border-white/20 min-w-[200px]">
-            <!-- Spinner -->
-            <div class="loading loading-spinner loading-lg text-primary mb-4"></div>
-            
-            <!-- Texte de chargement -->
-            <p class="text-lg font-semibold text-gray-800">Connexion en cours</p>
-            <p class="text-sm text-gray-600 mt-1">Veuillez patienter...</p>
-        </div>
-    </div>
-
+<div class="flex h-screen w-screen">
     <div class="flex-1 flex justify-center items-center bg-white">
         <div class="w-96 max-w-full space-y-6 px-6">
             <!-- Logo -->
