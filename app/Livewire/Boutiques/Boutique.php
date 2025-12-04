@@ -242,8 +242,6 @@ public function getListProduct($search = "", $page = 1, $perPage = null)
         ];
 
     } catch (\Throwable $e) {
-        // Log l'erreur et retourne un tableau vide
-        \Log::error('Error loading products: ' . $e->getMessage());
         return [
             "total_item" => 0,
             "per_page" => $perPage,
