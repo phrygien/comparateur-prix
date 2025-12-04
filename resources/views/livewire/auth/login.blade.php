@@ -81,7 +81,7 @@ new
 
     <div class="flex-1 hidden lg:flex">
         <div class="relative h-full w-full bg-zinc-900 text-white flex flex-col justify-end items-start p-16"
-             style="background-image: url('https://images.pexels.com/photos/7111496/pexels-photo-7111496.jpeg'); background-size: cover; background-position: center;">
+             style="background-image: url('https://images.pexels.com/photos/1888026/pexels-photo-1888026.jpeg'); background-size: cover; background-position: center;">
 
             <blockquote class="mb-6 italic font-light text-2xl xl:text-3xl">
                 "Toujours le meilleur prix, par rapport aux autres"
