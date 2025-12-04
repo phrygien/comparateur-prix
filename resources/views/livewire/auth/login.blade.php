@@ -19,32 +19,49 @@ new
     #[Validate('required')] 
     public string $password = '';
 
+    public int $loadingProgress = 0;
+
     public function login()
     {
+        $this->loadingProgress = 20;
+        $this->dispatch('update-progress', progress: 20);
+
         $this->validate([
             'email' => 'required|email',
             'password' => 'required',
         ]);
 
+        $this->loadingProgress = 40;
+        $this->dispatch('update-progress', progress: 40);
+
         $user = \App\Models\User::where('email', $this->email)->first();
 
+        $this->loadingProgress = 60;
+        $this->dispatch('update-progress', progress: 60);
+
         if (!$user) {
+            $this->loadingProgress = 0;
             $this->error('Ces identifiants ne correspondent pas à nos enregistrements.');
             return;
         }
 
         // Check if password needs rehashing
         if (!str_starts_with($user->password, '$2y$')) {
-            // Password is not using bcrypt, update it
             $user->password = Hash::make($this->password);
             $user->save();
         }
 
+        $this->loadingProgress = 80;
+        $this->dispatch('update-progress', progress: 80);
+
         if (Auth::attempt(['email' => $this->email, 'password' => $this->password])) {
+            $this->loadingProgress = 100;
+            $this->dispatch('update-progress', progress: 100);
             session()->regenerate();
             return redirect()->intended('/boutique');
         }
 
+        $this->loadingProgress = 0;
         $this->error('Ces identifiants ne correspondent pas à nos enregistrements.');
     }
 
@@ -56,19 +73,9 @@ new
             <!-- Logo -->
             <div class="flex justify-center opacity-50">
                 <a href="/" class="group flex items-center gap-3">
-                    {{-- <svg class="h-4 text-zinc-800" viewBox="0 0 18 13" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <g>
-                            <line x1="1" y1="5" x2="1" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                            <line x1="5" y1="1" x2="5" y2="8" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                            <line x1="9" y1="5" x2="9" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                            <line x1="13" y1="1" x2="13" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                            <line x1="17" y1="5" x2="17" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                        </g>
-                    </svg> --}}
                     <span class="text-xl font-bold text-zinc-800">PRIX</span> <span class="text-xl font-bold text-amber-800">COSMA</span>
                 </a>
             </div>
-
 
             <h2 class="text-center text-2xl font-bold text-gray-900">Bienvenue à nouveau</h2>
 
@@ -77,8 +84,28 @@ new
 
                 <x-password label="Mot de passe" wire:model.lazy="password" placeholder="" clearable hint="Votre mot de passe" />
 
+                <!-- Loading Progress Bar -->
+                <div x-data="{ progress: @entangle('loadingProgress') }" 
+                     x-show="progress > 0" 
+                     x-transition
+                     class="w-full">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-sm text-gray-600">Connexion en cours...</span>
+                        <span class="text-sm font-semibold text-blue-600" x-text="progress + '%'"></span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                        <div class="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out"
+                             :style="'width: ' + progress + '%'"></div>
+                    </div>
+                </div>
+
                 <x-slot:actions>
-                    <x-button label="Connexion" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md text-sm" type="submit" spinner="login" />
+                    <x-button 
+                        label="Connexion" 
+                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed" 
+                        type="submit" 
+                        spinner="login"
+                        wire:loading.attr="disabled" />
                 </x-slot:actions>
             </x-form>
 
@@ -90,15 +117,14 @@ new
              style="background-image: url('https://images.pexels.com/photos/1888026/pexels-photo-1888026.jpeg'); background-size: cover; background-position: center;">
 
             <blockquote class="mb-6 italic font-light text-2xl xl:text-3xl">
-                “Toujours le meilleur prix, par rapport aux autres”
+                "Toujours le meilleur prix, par rapport aux autres"
             </blockquote>
 
             <div class="flex items-center gap-4">
                 <div class="w-14 h-14 rounded-full bg-white flex items-center justify-center">
                     <svg class="w-8 h-8 text-zinc-800" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M9 11l-3 3-1.5-1.5L3 16l3 3 5-5-2-2zm0-6l-3 3-1.5-1.5L3 10l3 3 5-5-2-2zm5 2h7v2h-7V7zm0 6h7v2h-7v-2zm0 6h7v2h-7v-2z"/>
+                        <path d="M9 11l-3 3-1.5-1.5L3 16l3 3 5-5-2-2zm0-6l-3 3-1.5-1.5L3 10l3 3 5-5-2-2zm5 2h7v2h-7V7zm0 6h7v2h-7v-2zm0 6h7v2h-7v-2z"/>
                     </svg>
-
                 </div>
 
                 <div>
