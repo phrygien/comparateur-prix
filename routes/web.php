@@ -22,7 +22,8 @@ Route::middleware(['check.auth'])->group(function () {
     
     // Route comparateur (pas de cache car dynamique)
     Volt::route('/article/{name}/{id}/{price}/commparate', 'plateformes.comparateur')
-        ->name('article.comparate-prix');
+        ->name('article.comparate-prix')
+        ->middleware('cache.response:15');;
     
     // Route sites avec cache de 60 minutes
     Volt::route('/sites', 'sites.page')
