@@ -51,7 +51,7 @@ new
 
 <div class="flex h-screen w-screen relative">
     <!-- Loading indicator avec texte et ombre -->
-    <div wire:loading.class.remove="hidden" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+    <div wire:loading.delay wire:target="login" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
         <div class="flex flex-col items-center justify-center bg-white/90 rounded-2xl p-8 shadow-2xl border border-white/20 min-w-[200px]">
             <!-- Spinner -->
             <div class="loading loading-spinner loading-lg text-primary mb-4"></div>
