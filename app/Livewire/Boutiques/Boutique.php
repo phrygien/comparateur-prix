@@ -85,226 +85,172 @@ class Boutique extends Component
         $this->paginators['page'] = $page;
     }
 
-    public function getListProduct($search = "", $page = 1, $perPage = null)
-    {
-        $perPage = $perPage ?: $this->perPage;
+public function getListProduct($search = "", $page = 1, $perPage = null)
+{
+    $perPage = $perPage ?: $this->perPage;
+    
+    try {
+        $offset = ($page - 1) * $perPage;
 
-        try {
-            $offset = ($page - 1) * $perPage;
+        $subQuery = "";
+        $params = [];
 
-            // Construction des conditions WHERE
-            $whereConditions = ["product_int.status >= 0"];
-            $params = [];
+        // Global search
+        if (!empty($search)) {
+            $searchClean = str_replace("'", "", $search);
+            $words = explode(" ", $searchClean);
 
-            // Global search - optimisé
-            if (!empty($search)) {
-                $searchClean = str_replace("'", "", $search);
-                $words = explode(" ", $searchClean);
+            $subQuery = " AND ( ";
+            $and = "";
 
-                $searchConditions = [];
-                foreach ($words as $word) {
-                    $searchConditions[] = "CONCAT(product_char.name, ' ', COALESCE(options.attribute_value, '')) LIKE ?";
-                    $params[] = "%$word%";
-                }
-
-                $whereConditions[] = "(" . implode(" AND ", $searchConditions) . " OR produit.sku LIKE ?)";
-                $params[] = "%$searchClean%";
+            foreach ($words as $word) {
+                $subQuery .= " $and CONCAT(product_char.name, ' ', COALESCE(options.attribute_value, '')) LIKE ? ";
+                $params[] = "%$word%";
+                $and = "AND";
             }
 
-            // Filtres avancés
-            if (!empty($this->filterName)) {
-                $whereConditions[] = "product_char.name LIKE ?";
-                $params[] = "%{$this->filterName}%";
-            }
+            $subQuery .= " OR produit.sku LIKE ? ) ";
+            $params[] = "%$searchClean%";
+        }
 
-            if (!empty($this->filterMarque)) {
-                $whereConditions[] = "SUBSTRING_INDEX(product_char.name, ' - ', 1) = ?";
-                $params[] = $this->filterMarque;
-            }
+        // Filtres avancés
+        if (!empty($this->filterName)) {
+            $subQuery .= " AND product_char.name LIKE ? ";
+            $params[] = "%{$this->filterName}%";
+        }
 
-            if (!empty($this->filterType)) {
-                $whereConditions[] = "SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) = ?";
-                $params[] = $this->filterType;
-            }
+        if (!empty($this->filterMarque)) {
+            $subQuery .= " AND SUBSTRING_INDEX(product_char.name, ' - ', 1) = ? ";
+            $params[] = $this->filterMarque;
+        }
 
-            if (!empty($this->filterCapacity)) {
-                $whereConditions[] = "product_int.capacity = ?";
-                $params[] = $this->filterCapacity;
-            }
+        if (!empty($this->filterType)) {
+            $subQuery .= " AND SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) = ? ";
+            $params[] = $this->filterType;
+        }
 
-            // Filtre prix > 0
-            $whereConditions[] = "product_decimal.price > 0";
+        if (!empty($this->filterCapacity)) {
+            $subQuery .= " AND product_int.capacity = ? ";
+            $params[] = $this->filterCapacity;
+        }
 
-            $whereClause = !empty($whereConditions) ? "WHERE " . implode(" AND ", $whereConditions) : "";
+        // AJOUT: Filtre pour prix > 0
+        $subQuery .= " AND product_decimal.price > 0 ";
 
-            // **OPTIMISATION 1: Création d'une VIEW ou CTE virtuelle pour les données principales**
-            $mainQuery = "
-            WITH product_base AS (
-                SELECT 
-                    p.entity_id,
-                    p.sku,
-                    p.attribute_set_id,
-                    -- Joins optimisés avec EXISTS au lieu de LEFT JOIN quand possible
-                    COALESCE(pc.name, '') as name,
-                    COALESCE(pc.reference, '') as reference,
-                    COALESCE(pc.reference_us, '') as reference_us,
-                    COALESCE(pc.thumbnail, '') as thumbnail,
-                    COALESCE(pc.swatch_image, '') as swatch_image,
-                    COALESCE(pt.description, '') as description,
-                    COALESCE(pt.short_description, '') as short_description,
-                    COALESCE(pt.composition, '') as composition,
-                    COALESCE(pt.olfactive_families, '') as olfactive_families,
-                    COALESCE(pt.product_benefit, '') as product_benefit,
-                    COALESCE(pd.price, 0) as price,
-                    COALESCE(pd.special_price, 0) as special_price,
-                    COALESCE(pd.cost, 0) as cost,
-                    COALESCE(pd.pvc, 0) as pvc,
-                    COALESCE(pd.prix_achat_ht, 0) as prix_achat_ht,
-                    COALESCE(pd.prix_us, 0) as prix_us,
-                    COALESCE(pi.status, 0) as status,
-                    COALESCE(pi.color, 0) as color,
-                    COALESCE(pi.capacity, 0) as capacity,
-                    COALESCE(pi.product_type, 0) as product_type,
-                    COALESCE(pm.media_gallery, '') as media_gallery,
-                    COALESCE(pcat.name, '') as categorie_name,
-                    -- Récupération du parent ID une seule fois
-                    (
-                        SELECT parent_id 
-                        FROM catalog_product_relation cpr 
-                        WHERE cpr.child_id = p.entity_id 
-                        LIMIT 1
-                    ) as parent_id
-                FROM catalog_product_entity p
-                INNER JOIN product_int pi ON p.entity_id = pi.entity_id AND pi.status >= 0
-                LEFT JOIN product_char pc ON p.entity_id = pc.entity_id
-                LEFT JOIN product_text pt ON p.entity_id = pt.entity_id
-                LEFT JOIN product_decimal pd ON p.entity_id = pd.entity_id AND pd.price > 0
-                LEFT JOIN product_media pm ON p.entity_id = pm.entity_id
-                LEFT JOIN product_categorie pcat ON p.entity_id = pcat.entity_id
-            )
-        ";
-
-            // **OPTIMISATION 2: Requête de comptage séparée et simplifiée**
-            $countQuery = "
+        // Total count
+        $resultTotal = DB::connection('mysqlMagento')->selectOne("
             SELECT COUNT(*) as nb
-            FROM product_base pb
-            LEFT JOIN eav_attribute_set eas ON pb.attribute_set_id = eas.attribute_set_id 
-            LEFT JOIN option_super_attribut osa ON pb.entity_id = osa.simple_product_id
-            $whereClause
-        ";
+            FROM catalog_product_entity as produit
+            LEFT JOIN catalog_product_relation as parent_child_table ON parent_child_table.child_id = produit.entity_id 
+            LEFT JOIN catalog_product_super_link as cpsl ON cpsl.product_id = produit.entity_id 
+            LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+            LEFT JOIN product_text ON product_text.entity_id = produit.entity_id 
+            LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
+            LEFT JOIN product_int ON product_int.entity_id = produit.entity_id
+            LEFT JOIN product_media ON product_media.entity_id = produit.entity_id
+            LEFT JOIN product_categorie ON product_categorie.entity_id = produit.entity_id 
+            LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id 
+            LEFT JOIN cataloginventory_stock_status AS stock_status ON stock_item.product_id = stock_status.product_id 
+            LEFT JOIN option_super_attribut AS options ON options.simple_product_id = produit.entity_id 
+            LEFT JOIN eav_attribute_set AS eas ON produit.attribute_set_id = eas.attribute_set_id 
+            LEFT JOIN catalog_product_entity as produit_parent ON parent_child_table.parent_id = produit_parent.entity_id 
+            LEFT JOIN product_char as product_parent_char ON product_parent_char.entity_id = produit_parent.entity_id
+            LEFT JOIN product_text as product_parent_text ON product_parent_text.entity_id = produit_parent.entity_id 
+            WHERE product_int.status >= 0 $subQuery
+        ", $params);
 
-            $resultTotal = DB::connection('mysqlMagento')->selectOne($countQuery, $params);
-            $total = $resultTotal->nb ?? 0;
+        $total = $resultTotal->nb ?? 0;
+        $nbPage = ceil($total / $perPage);
 
-            if ($total === 0) {
-                return [
-                    "total_item" => 0,
-                    "per_page" => $perPage,
-                    "total_page" => 0,
-                    "current_page" => $page,
-                    "data" => []
-                ];
-            }
+        if ($page > $nbPage && $nbPage > 0) {
+            $page = 1;
+            $offset = 0;
+        }
 
-            $nbPage = ceil($total / $perPage);
-
-            if ($page > $nbPage && $nbPage > 0) {
-                $page = 1;
-                $offset = 0;
-            }
-
-            // **OPTIMISATION 3: Requête principale avec JOIN optimisés**
-            $dataQuery = "
-            $mainQuery
+        // Paginated data
+        $dataQuery = "
             SELECT 
-                pb.entity_id as id,
-                pb.sku as sku,
-                pb.reference as parkode,
-                pb.name as title,
-                -- Données parent récupérées seulement si nécessaire
-                (
-                    SELECT name 
-                    FROM product_char 
-                    WHERE entity_id = pb.parent_id 
-                    LIMIT 1
-                ) as parent_title,
-                SUBSTRING_INDEX(pb.name, ' - ', 1) as vendor,
+                produit.entity_id as id,
+                produit.sku as sku,
+                product_char.reference as parkode,
+                CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) as title,
+                CAST(product_parent_char.name AS CHAR CHARACTER SET utf8mb4) as parent_title,
+                SUBSTRING_INDEX(product_char.name, ' - ', 1) as vendor,
                 SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) as type,
-                pb.thumbnail,
-                pb.swatch_image,
-                pb.reference_us,
-                pb.description,
-                pb.short_description,
-                -- Descriptions parent
-                (
-                    SELECT description 
-                    FROM product_text 
-                    WHERE entity_id = pb.parent_id 
-                    LIMIT 1
-                ) as parent_description,
-                (
-                    SELECT short_description 
-                    FROM product_text 
-                    WHERE entity_id = pb.parent_id 
-                    LIMIT 1
-                ) as parent_short_description,
-                pb.composition,
-                pb.olfactive_families,
-                pb.product_benefit,
-                ROUND(pb.price, 2) as price,
-                ROUND(pb.special_price, 2) as special_price,
-                ROUND(pb.cost, 2) as cost,
-                ROUND(pb.pvc, 2) as pvc,
-                ROUND(pb.prix_achat_ht, 2) as prix_achat_ht,
-                ROUND(pb.prix_us, 2) as prix_us,
-                pb.status,
-                pb.color,
-                pb.capacity,
-                pb.product_type,
-                pb.media_gallery,
-                pb.categorie_name as categorie,
-                REPLACE(pb.categorie_name, ' > ', ',') as tags,
-                -- Stock info
-                COALESCE(csi.qty, 0) as quantity,
-                COALESCE(css.stock_status, 0) as quantity_status,
-                -- Options
-                osa.configurable_product_id,
-                pb.parent_id,
-                osa.attribute_code as option_name,
-                osa.attribute_value as option_value
-            FROM product_base pb
-            LEFT JOIN eav_attribute_set eas ON pb.attribute_set_id = eas.attribute_set_id 
-            LEFT JOIN cataloginventory_stock_item csi ON csi.product_id = pb.entity_id 
-            LEFT JOIN cataloginventory_stock_status css ON css.product_id = pb.entity_id 
-            LEFT JOIN option_super_attribut osa ON pb.entity_id = osa.simple_product_id
-            $whereClause
-            ORDER BY pb.entity_id DESC
+                product_char.thumbnail as thumbnail,
+                product_char.swatch_image as swatch_image,
+                product_char.reference as parkode,
+                product_char.reference_us as reference_us,
+                CAST(product_text.description AS CHAR CHARACTER SET utf8mb4) as description,
+                CAST(product_text.short_description AS CHAR CHARACTER SET utf8mb4) as short_description,
+                CAST(product_parent_text.description AS CHAR CHARACTER SET utf8mb4) as parent_description,
+                CAST(product_parent_text.short_description AS CHAR CHARACTER SET utf8mb4) as parent_short_description,
+                CAST(product_text.composition AS CHAR CHARACTER SET utf8mb4) as composition,
+                CAST(product_text.olfactive_families AS CHAR CHARACTER SET utf8mb4) as olfactive_families,
+                CAST(product_text.product_benefit AS CHAR CHARACTER SET utf8mb4) as product_benefit,
+                ROUND(product_decimal.price, 2) as price,
+                ROUND(product_decimal.special_price, 2) as special_price,
+                ROUND(product_decimal.cost, 2) as cost,
+                ROUND(product_decimal.pvc, 2) as pvc,
+                ROUND(product_decimal.prix_achat_ht, 2) as prix_achat_ht,
+                ROUND(product_decimal.prix_us, 2) as prix_us,
+                product_int.status as status,
+                product_int.color as color,
+                product_int.capacity as capacity,
+                product_int.product_type as product_type,
+                product_media.media_gallery as media_gallery,
+                CAST(product_categorie.name AS CHAR CHARACTER SET utf8mb4) as categorie,
+                REPLACE(product_categorie.name, ' > ', ',') as tags,
+                stock_item.qty as quatity,
+                stock_status.stock_status as quatity_status,
+                options.configurable_product_id as configurable_product_id,
+                parent_child_table.parent_id as parent_id,
+                options.attribute_code as option_name,
+                options.attribute_value as option_value
+            FROM catalog_product_entity as produit
+            LEFT JOIN catalog_product_relation as parent_child_table ON parent_child_table.child_id = produit.entity_id 
+            LEFT JOIN catalog_product_super_link as cpsl ON cpsl.product_id = produit.entity_id 
+            LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+            LEFT JOIN product_text ON product_text.entity_id = produit.entity_id 
+            LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
+            LEFT JOIN product_int ON product_int.entity_id = produit.entity_id
+            LEFT JOIN product_media ON product_media.entity_id = produit.entity_id
+            LEFT JOIN product_categorie ON product_categorie.entity_id = produit.entity_id 
+            LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id 
+            LEFT JOIN cataloginventory_stock_status AS stock_status ON stock_item.product_id = stock_status.product_id 
+            LEFT JOIN option_super_attribut AS options ON options.simple_product_id = produit.entity_id 
+            LEFT JOIN eav_attribute_set AS eas ON produit.attribute_set_id = eas.attribute_set_id 
+            LEFT JOIN catalog_product_entity as produit_parent ON parent_child_table.parent_id = produit_parent.entity_id 
+            LEFT JOIN product_char as product_parent_char ON product_parent_char.entity_id = produit_parent.entity_id
+            LEFT JOIN product_text as product_parent_text ON product_parent_text.entity_id = produit_parent.entity_id 
+            WHERE product_int.status >= 0 $subQuery
+            ORDER BY product_char.entity_id DESC
             LIMIT ? OFFSET ?
         ";
 
-            $params[] = $perPage;
-            $params[] = $offset;
+        $params[] = $perPage;
+        $params[] = $offset;
 
-            $result = DB::connection('mysqlMagento')->select($dataQuery, $params);
+        $result = DB::connection('mysqlMagento')->select($dataQuery, $params);
 
-            return [
-                "total_item" => $total,
-                "per_page" => $perPage,
-                "total_page" => $nbPage,
-                "current_page" => $page,
-                "data" => $result
-            ];
+        return [
+            "total_item" => $total,
+            "per_page" => $perPage,
+            "total_page" => $nbPage,
+            "current_page" => $page,
+            "data" => $result
+        ];
 
-        } catch (\Throwable $e) {
-            return [
-                "total_item" => 0,
-                "per_page" => $perPage,
-                "total_page" => 0,
-                "current_page" => 1,
-                "data" => []
-            ];
-        }
+    } catch (\Throwable $e) {
+        return [
+            "total_item" => 0,
+            "per_page" => $perPage,
+            "total_page" => 0,
+            "current_page" => 1,
+            "data" => []
+        ];
     }
+}
 
     public function render()
     {
