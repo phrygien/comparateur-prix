@@ -2,11 +2,16 @@
 
 use Livewire\Volt\Component;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Livewire\Attributes\Computed;
 
 new class extends Component {
 
     public $productId = null;
+
+    // Durée du cache en minutes
+    private const PRODUCT_CACHE_TTL = 30;
+    private const PRODUCT_CACHE_KEY = 'product_details:';
 
     public function mount($id)
     {
@@ -17,70 +22,77 @@ new class extends Component {
     public function product()
     {
         try {
-            $result = DB::connection('mysqlMagento')
-                ->table('catalog_product_entity as produit')
-                ->select([
-                    'produit.entity_id as id',
-                    'produit.sku as sku',
-                    'product_char.reference as parkode',
-                    DB::raw('CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) as title'),
-                    DB::raw('CAST(product_parent_char.name AS CHAR CHARACTER SET utf8mb4) as parent_title'),
-                    DB::raw("SUBSTRING_INDEX(product_char.name, ' - ', 1) as vendor"),
-                    DB::raw("SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) as type"),
-                    'product_char.thumbnail as thumbnail',
-                    'product_char.swatch_image as swatch_image',
-                    'product_char.reference_us as reference_us',
-                    DB::raw('CAST(product_text.description AS CHAR CHARACTER SET utf8mb4) as description'),
-                    DB::raw('CAST(product_text.short_description AS CHAR CHARACTER SET utf8mb4) as short_description'),
-                    DB::raw('CAST(product_parent_text.description AS CHAR CHARACTER SET utf8mb4) as parent_description'),
-                    DB::raw('CAST(product_parent_text.short_description AS CHAR CHARACTER SET utf8mb4) as parent_short_description'),
-                    DB::raw('CAST(product_text.composition AS CHAR CHARACTER SET utf8mb4) as composition'),
-                    DB::raw('CAST(product_text.olfactive_families AS CHAR CHARACTER SET utf8mb4) as olfactive_families'),
-                    DB::raw('CAST(product_text.product_benefit AS CHAR CHARACTER SET utf8mb4) as product_benefit'),
-                    DB::raw('ROUND(product_decimal.price, 2) as price'),
-                    DB::raw('ROUND(product_decimal.special_price, 2) as special_price'),
-                    DB::raw('ROUND(product_decimal.cost, 2) as cost'),
-                    DB::raw('ROUND(product_decimal.pvc, 2) as pvc'),
-                    DB::raw('ROUND(product_decimal.prix_achat_ht, 2) as prix_achat_ht'),
-                    DB::raw('ROUND(product_decimal.prix_us, 2) as prix_us'),
-                    'product_int.status as status',
-                    'product_int.color as color',
-                    'product_int.capacity as capacity',
-                    'product_int.product_type as product_type',
-                    'product_media.media_gallery as media_gallery',
-                    DB::raw('CAST(product_categorie.name AS CHAR CHARACTER SET utf8mb4) as categorie'),
-                    DB::raw("REPLACE(product_categorie.name, ' > ', ',') as tags"),
-                    'stock_item.qty as quatity',
-                    'stock_status.stock_status as quatity_status',
-                    'options.configurable_product_id as configurable_product_id',
-                    'parent_child_table.parent_id as parent_id',
-                    'options.attribute_code as option_name',
-                    'options.attribute_value as option_value'
-                ])
-                ->leftJoin('catalog_product_relation as parent_child_table', 'parent_child_table.child_id', '=', 'produit.entity_id')
-                ->leftJoin('catalog_product_super_link as cpsl', 'cpsl.product_id', '=', 'produit.entity_id')
-                ->leftJoin('product_char', 'product_char.entity_id', '=', 'produit.entity_id')
-                ->leftJoin('product_text', 'product_text.entity_id', '=', 'produit.entity_id')
-                ->leftJoin('product_decimal', 'product_decimal.entity_id', '=', 'produit.entity_id')
-                ->leftJoin('product_int', 'product_int.entity_id', '=', 'produit.entity_id')
-                ->leftJoin('product_media', 'product_media.entity_id', '=', 'produit.entity_id')
-                ->leftJoin('product_categorie', 'product_categorie.entity_id', '=', 'produit.entity_id')
-                ->leftJoin('cataloginventory_stock_item as stock_item', 'stock_item.product_id', '=', 'produit.entity_id')
-                ->leftJoin('cataloginventory_stock_status as stock_status', 'stock_item.product_id', '=', 'stock_status.product_id')
-                ->leftJoin('option_super_attribut as options', 'options.simple_product_id', '=', 'produit.entity_id')
-                ->leftJoin('eav_attribute_set as eas', 'produit.attribute_set_id', '=', 'eas.attribute_set_id')
-                ->leftJoin('catalog_product_entity as produit_parent', 'parent_child_table.parent_id', '=', 'produit_parent.entity_id')
-                ->leftJoin('product_char as product_parent_char', 'product_parent_char.entity_id', '=', 'produit_parent.entity_id')
-                ->leftJoin('product_text as product_parent_text', 'product_parent_text.entity_id', '=', 'produit_parent.entity_id')
-                ->where('produit.entity_id', $this->productId)
-                ->where(function($query) {
-                    $query->whereNull('product_int.status')
-                          ->orWhere('product_int.status', '>=', 0);
-                })
-                ->orderBy('product_char.entity_id', 'DESC')
-                ->first();
+            // Clé de cache unique par produit
+            $cacheKey = self::PRODUCT_CACHE_KEY . $this->productId;
+            
+            // Vérifier le cache
+            $result = Cache::remember($cacheKey, now()->addMinutes(self::PRODUCT_CACHE_TTL), function () {
+                return DB::connection('mysqlMagento')
+                    ->table('catalog_product_entity as produit')
+                    ->select([
+                        'produit.entity_id as id',
+                        'produit.sku as sku',
+                        'product_char.reference as parkode',
+                        DB::raw('CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) as title'),
+                        DB::raw('CAST(product_parent_char.name AS CHAR CHARACTER SET utf8mb4) as parent_title'),
+                        DB::raw("SUBSTRING_INDEX(product_char.name, ' - ', 1) as vendor"),
+                        DB::raw("SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) as type"),
+                        'product_char.thumbnail as thumbnail',
+                        'product_char.swatch_image as swatch_image',
+                        'product_char.reference_us as reference_us',
+                        DB::raw('CAST(product_text.description AS CHAR CHARACTER SET utf8mb4) as description'),
+                        DB::raw('CAST(product_text.short_description AS CHAR CHARACTER SET utf8mb4) as short_description'),
+                        DB::raw('CAST(product_parent_text.description AS CHAR CHARACTER SET utf8mb4) as parent_description'),
+                        DB::raw('CAST(product_parent_text.short_description AS CHAR CHARACTER SET utf8mb4) as parent_short_description'),
+                        DB::raw('CAST(product_text.composition AS CHAR CHARACTER SET utf8mb4) as composition'),
+                        DB::raw('CAST(product_text.olfactive_families AS CHAR CHARACTER SET utf8mb4) as olfactive_families'),
+                        DB::raw('CAST(product_text.product_benefit AS CHAR CHARACTER SET utf8mb4) as product_benefit'),
+                        DB::raw('ROUND(product_decimal.price, 2) as price'),
+                        DB::raw('ROUND(product_decimal.special_price, 2) as special_price'),
+                        DB::raw('ROUND(product_decimal.cost, 2) as cost'),
+                        DB::raw('ROUND(product_decimal.pvc, 2) as pvc'),
+                        DB::raw('ROUND(product_decimal.prix_achat_ht, 2) as prix_achat_ht'),
+                        DB::raw('ROUND(product_decimal.prix_us, 2) as prix_us'),
+                        'product_int.status as status',
+                        'product_int.color as color',
+                        'product_int.capacity as capacity',
+                        'product_int.product_type as product_type',
+                        'product_media.media_gallery as media_gallery',
+                        DB::raw('CAST(product_categorie.name AS CHAR CHARACTER SET utf8mb4) as categorie'),
+                        DB::raw("REPLACE(product_categorie.name, ' > ', ',') as tags"),
+                        'stock_item.qty as quatity',
+                        'stock_status.stock_status as quatity_status',
+                        'options.configurable_product_id as configurable_product_id',
+                        'parent_child_table.parent_id as parent_id',
+                        'options.attribute_code as option_name',
+                        'options.attribute_value as option_value'
+                    ])
+                    ->leftJoin('catalog_product_relation as parent_child_table', 'parent_child_table.child_id', '=', 'produit.entity_id')
+                    ->leftJoin('catalog_product_super_link as cpsl', 'cpsl.product_id', '=', 'produit.entity_id')
+                    ->leftJoin('product_char', 'product_char.entity_id', '=', 'produit.entity_id')
+                    ->leftJoin('product_text', 'product_text.entity_id', '=', 'produit.entity_id')
+                    ->leftJoin('product_decimal', 'product_decimal.entity_id', '=', 'produit.entity_id')
+                    ->leftJoin('product_int', 'product_int.entity_id', '=', 'produit.entity_id')
+                    ->leftJoin('product_media', 'product_media.entity_id', '=', 'produit.entity_id')
+                    ->leftJoin('product_categorie', 'product_categorie.entity_id', '=', 'produit.entity_id')
+                    ->leftJoin('cataloginventory_stock_item as stock_item', 'stock_item.product_id', '=', 'produit.entity_id')
+                    ->leftJoin('cataloginventory_stock_status as stock_status', 'stock_item.product_id', '=', 'stock_status.product_id')
+                    ->leftJoin('option_super_attribut as options', 'options.simple_product_id', '=', 'produit.entity_id')
+                    ->leftJoin('eav_attribute_set as eas', 'produit.attribute_set_id', '=', 'eas.attribute_set_id')
+                    ->leftJoin('catalog_product_entity as produit_parent', 'parent_child_table.parent_id', '=', 'produit_parent.entity_id')
+                    ->leftJoin('product_char as product_parent_char', 'product_parent_char.entity_id', '=', 'produit_parent.entity_id')
+                    ->leftJoin('product_text as product_parent_text', 'product_parent_text.entity_id', '=', 'produit_parent.entity_id')
+                    ->where('produit.entity_id', $this->productId)
+                    ->where(function($query) {
+                        $query->whereNull('product_int.status')
+                              ->orWhere('product_int.status', '>=', 0);
+                    })
+                    ->orderBy('product_char.entity_id', 'DESC')
+                    ->first();
+            });
 
-            return $result;
+            // Convertir en objet si c'est un tableau
+            return is_array($result) ? (object) $result : $result;
 
         } catch (\Throwable $e) {
             \Log::error('Error loading product:', [
@@ -91,6 +103,37 @@ new class extends Component {
             
             return null;
         }
+    }
+
+    /**
+     * Méthode utilitaire pour accéder aux propriétés du produit
+     * Cette méthode gère à la fois les tableaux et les objets
+     */
+    public function getProductProperty($property)
+    {
+        $product = $this->product;
+        
+        if (!$product) {
+            return null;
+        }
+        
+        if (is_array($product)) {
+            return $product[$property] ?? null;
+        } elseif (is_object($product)) {
+            return $product->$property ?? null;
+        }
+        
+        return null;
+    }
+
+    /**
+     * Méthode pour rafraîchir le produit (forcer le rechargement)
+     */
+    public function refreshProduct()
+    {
+        Cache::forget(self::PRODUCT_CACHE_KEY . $this->productId);
+        // Réinitialiser la propriété computed
+        unset($this->product);
     }
 
 }; ?>
@@ -143,18 +186,49 @@ new class extends Component {
 }" 
 @scroll.window.throttle.50ms="handleScroll()">
     
+    @php
+        // Récupérer le produit une fois pour éviter les appels multiples
+        $product = $this->product;
+        
+        // Fonction helper pour accéder aux propriétés
+        function getProp($product, $prop) {
+            if (!$product) return null;
+            if (is_array($product)) return $product[$prop] ?? null;
+            if (is_object($product)) return $product->$prop ?? null;
+            return null;
+        }
+        
+        $title = getProp($product, 'title');
+        $vendor = getProp($product, 'vendor');
+        $thumbnail = getProp($product, 'thumbnail');
+        $price = getProp($product, 'price');
+        $special_price = getProp($product, 'special_price');
+        $sku = getProp($product, 'sku');
+        $description = getProp($product, 'description');
+        $short_description = getProp($product, 'short_description');
+        $prix_achat_ht = getProp($product, 'prix_achat_ht');
+        $pvc = getProp($product, 'pvc');
+        $prix_us = getProp($product, 'prix_us');
+    @endphp
+    
     <div class="w-full px-4 py-6 sm:px-6 lg:grid lg:grid-cols-2 lg:gap-x-10 lg:px-10" 
          :style="isBarVisible ? 'padding-bottom: 180px' : 'padding-bottom: 40px'">
 
-        <x-header title="{{ utf8_encode($this->product->title) ?? 'N/A' }}" subtitle="{{ utf8_encode($this->product->vendor) ?? 'N/A' }}" no-separator />
+        <x-header title="{{ $title ? utf8_encode($title) : 'N/A' }}" subtitle="{{ $vendor ? utf8_encode($vendor) : 'N/A' }}" no-separator />
 
         <!-- Product image - Left column -->
         <div class="lg:col-start-1 flex items-start justify-center">
             <div class="hover-3d">
                 <figure class="w-80 rounded-2xl">
-                    <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $this->product->thumbnail) }}" 
-                         alt="{{ utf8_encode($this->product->title) ?? 'Product image' }}" 
-                         class="w-full object-contain max-h-96" />
+                    @if($thumbnail)
+                        <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $thumbnail) }}" 
+                             alt="{{ $title ? utf8_encode($title) : 'Product image' }}" 
+                             class="w-full object-contain max-h-96" />
+                    @else
+                        <div class="w-full h-96 bg-gray-100 rounded-2xl flex items-center justify-center">
+                            <span class="text-gray-400">Aucune image</span>
+                        </div>
+                    @endif
                 </figure>
             </div>
         </div>
@@ -163,16 +237,20 @@ new class extends Component {
         <div class="lg:col-start-2 mt-6 lg:mt-0">
             <!-- Price -->
             <div class="mb-6">
-                @if($this->product->special_price)
+                @if($special_price && $price)
                     <p class="text-2xl font-bold text-red-600">
-                        Prix :{{ number_format($this->product->special_price, 2) }} €
+                        Prix :{{ number_format($special_price, 2) }} €
                     </p>
                     <p class="text-lg text-gray-500 line-through">
-                        {{ number_format($this->product->price, 2) }} €
+                        {{ number_format($price, 2) }} €
+                    </p>
+                @elseif($price)
+                    <p class="text-2xl font-bold text-gray-900">
+                        {{ number_format($price, 2) }} €
                     </p>
                 @else
                     <p class="text-2xl font-bold text-gray-900">
-                        {{ $this->product->price ? number_format($this->product->price, 2) . ' €' : 'N/A' }}
+                        N/A
                     </p>
                 @endif
             </div>
@@ -186,41 +264,41 @@ new class extends Component {
                     </svg>
                 </summary>
                 <div class="px-4 pb-4 space-y-3 text-sm border-t border-gray-100 pt-3">
-                    @if($this->product->price)
+                    @if($price)
                     <div class="flex justify-between">
                         <span class="text-gray-600">Prix de vente</span>
-                        <span class="font-semibold text-gray-900">{{ number_format($this->product->price, 2) }} €</span>
+                        <span class="font-semibold text-gray-900">{{ number_format($price, 2) }} €</span>
                     </div>
                     @endif
-                    @if($this->product->special_price)
+                    @if($special_price)
                     <div class="flex justify-between">
                         <span class="text-gray-600">Prix promotionnel</span>
-                        <span class="font-semibold text-red-600">{{ number_format($this->product->special_price, 2) }} €</span>
+                        <span class="font-semibold text-red-600">{{ number_format($special_price, 2) }} €</span>
                     </div>
                     @endif
-                    @if($this->product->prix_achat_ht)
+                    @if($prix_achat_ht)
                     <div class="flex justify-between">
                         <span class="text-gray-600">Coût d'achat HT</span>
-                        <span class="font-semibold text-blue-600">{{ number_format($this->product->prix_achat_ht, 2) }} €</span>
+                        <span class="font-semibold text-blue-600">{{ number_format($prix_achat_ht, 2) }} €</span>
                     </div>
                     @endif
-                    @if($this->product->pvc)
+                    @if($pvc)
                     <div class="flex justify-between">
                         <span class="text-gray-600">Prix PVC</span>
-                        <span class="font-semibold text-purple-600">{{ number_format($this->product->pvc, 2) }} €</span>
+                        <span class="font-semibold text-purple-600">{{ number_format($pvc, 2) }} €</span>
                     </div>
                     @endif
-                    @if($this->product->prix_us)
+                    @if($prix_us)
                     <div class="flex justify-between">
                         <span class="text-gray-600">Prix US</span>
-                        <span class="font-semibold text-orange-600">${{ number_format($this->product->prix_us, 2) }}</span>
+                        <span class="font-semibold text-orange-600">${{ number_format($prix_us, 2) }}</span>
                     </div>
                     @endif
                 </div>
             </details>
 
             <!-- Description - Collapsible -->
-            @if($this->product->description || $this->product->short_description)
+            @if($description || $short_description)
             <details class="border border-gray-200 rounded-lg bg-white">
                 <summary class="cursor-pointer p-4 font-semibold text-gray-900 hover:bg-gray-50 transition-colors rounded-lg flex items-center justify-between">
                     <span>Description</span>
@@ -229,13 +307,13 @@ new class extends Component {
                     </svg>
                 </summary>
                 <div class="px-4 pb-4 border-t border-gray-100 pt-3">
-                    @if($this->product->description)
+                    @if($description)
                     <p class="text-gray-700 leading-relaxed">
-                        {{ strip_tags(utf8_encode($this->product->description)) }}
+                        {{ strip_tags(utf8_encode($description)) }}
                     </p>
-                    @elseif($this->product->short_description)
+                    @elseif($short_description)
                     <p class="text-gray-700 leading-relaxed">
-                        {{ strip_tags(utf8_encode($this->product->short_description)) }}
+                        {{ strip_tags(utf8_encode($short_description)) }}
                     </p>
                     @endif
                 </div>
@@ -303,9 +381,9 @@ new class extends Component {
                 <div class="flex items-center justify-between">
                     <!-- Product Image -->
                     <div class="flex-shrink-0 mr-4">
-                        @if($this->product->thumbnail)
-                        <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $this->product->thumbnail) }}" 
-                             alt="{{ utf8_encode($this->product->title) ?? 'Product' }}" 
+                        @if($thumbnail)
+                        <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $thumbnail) }}" 
+                             alt="{{ $title ? utf8_encode($title) : 'Product' }}" 
                              class="w-16 h-16 object-contain rounded-lg border border-gray-300/50 shadow-sm bg-white/50" />
                         @endif
                     </div>
@@ -313,17 +391,17 @@ new class extends Component {
                     <!-- Product Info -->
                     <div class="flex-1 min-w-0">
                         <p class="text-sm font-medium text-gray-900 truncate">
-                            {{ utf8_encode($this->product->title) ?? 'N/A' }}
+                            {{ $title ? utf8_encode($title) : 'N/A' }}
                         </p>
                         <p class="text-xs text-gray-600 truncate">
-                            {{ utf8_encode($this->product->vendor) ?? 'N/A' }}
+                            {{ $vendor ? utf8_encode($vendor) : 'N/A' }}
                         </p>
                         
                         <!-- Additional info -->
                         <div class="mt-1 space-y-0.5">
-                            @if($this->product->sku)
+                            @if($sku)
                             <p class="text-xs text-gray-600">
-                                <span class="font-semibold">SKU:</span> {{ $this->product->sku }}
+                                <span class="font-semibold">SKU:</span> {{ $sku }}
                             </p>
                             @endif
                         </div>
@@ -331,16 +409,20 @@ new class extends Component {
 
                     <!-- Price -->
                     <div class="ml-4 flex-shrink-0 text-right">
-                        @if($this->product->special_price)
+                        @if($special_price && $price)
                             <p class="text-lg font-bold text-gray-900">
-                                {{ number_format($this->product->special_price, 2) }} €
+                                {{ number_format($special_price, 2) }} €
                             </p>
                             <p class="text-xs text-gray-500 line-through">
-                                {{ number_format($this->product->price, 2) }} €
+                                {{ number_format($price, 2) }} €
+                            </p>
+                        @elseif($price)
+                            <p class="text-lg font-bold text-gray-900">
+                                {{ number_format($price, 2) }} €
                             </p>
                         @else
                             <p class="text-lg font-bold text-gray-900">
-                                {{ $this->product->price ? number_format($this->product->price, 2) . ' €' : 'N/A' }}
+                                N/A
                             </p>
                         @endif
                     </div>
