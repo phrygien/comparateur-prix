@@ -785,170 +785,244 @@ new class extends Component {
         }
     }
 
-    /**
-     * Récupère les prix des concurrents (recherche automatique) avec gestion des abréviations et cache
-     */
-    public function getCompetitorPrice($search)
-    {
-        try {
-            if (empty($search)) {
-                $this->products = [];
-                $this->hasData = false;
-                $this->originalAutomaticResults = [];
-                $this->hasAppliedFilters = false;
-                return null;
-            }
-
-            // Vérifier le cache d'abord
-            $cacheKey = $this->getCacheKey($search, [], false);
-            $cachedResults = $this->getCachedResults($cacheKey);
-
-            if ($cachedResults !== null) {
-                $this->matchedProducts = $cachedResults['products'];
-                $this->products = $this->matchedProducts;
-                $this->originalAutomaticResults = $cachedResults['products'];
-                $this->hasAppliedFilters = false;
-                $this->hasData = !empty($cachedResults['products']);
-                $this->isAutomaticSearch = true;
-                $this->showTable = true;
-
-                \Log::info('Competitor price results loaded from cache:', [
-                    'cache_key' => $cacheKey,
-                    'count' => count($cachedResults['products']),
-                    'has_data' => $this->hasData
-                ]);
-
-                return $cachedResults['full_result'];
-            }
-
-            $this->extractSearchVolumes($search);
-            $this->extractSearchVariationKeywords($search);
-
-            $searchQuery = $this->prepareSearchTerms($search);
-
-            if (empty($searchQuery)) {
-                $this->products = [];
-                $this->hasData = false;
-                $this->originalAutomaticResults = [];
-                $this->hasAppliedFilters = false;
-                return null;
-            }
-
-            // MODIFIEZ CETTE REQUÊTE POUR INCLURE LA GESTION DES ABRÉVIATIONS
-            $sql = "SELECT lp.*, ws.name as site_name, lp.url as product_url, lp.image_url as image
-                    FROM last_price_scraped_product lp
-                    LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-                    WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
-                    AGAINST (? IN BOOLEAN MODE)
-                    ORDER BY lp.prix_ht DESC LIMIT 50";
-
-            \Log::info('SQL Query:', [
-                'original_search' => $search,
-                'search_query' => $searchQuery,
-                'search_volumes' => $this->searchVolumes,
-                'search_variation_keywords' => $this->searchVariationKeywords
-            ]);
-
-            $result = DB::connection('mysql')->select($sql, [$searchQuery]);
-
-            // NETTOYER LE PRIX_HT DÈS LA RÉCUPÉRATION
-            $processedProducts = [];
-            foreach ($result as $product) {
-                if (isset($product->prix_ht)) {
-                    $originalPrice = $product->prix_ht;
-                    $cleanedPrice = $this->cleanPrice($product->prix_ht);
-                    $product->prix_ht = $cleanedPrice;
-
-                    \Log::info('Prix nettoyé:', [
-                        'original' => $originalPrice,
-                        'cleaned' => $cleanedPrice
-                    ]);
-                }
-
-                // Normaliser le vendor pour une meilleure comparaison
-                if (isset($product->vendor)) {
-                    $originalVendor = $product->vendor;
-                    $product->vendor = $this->normalizeVendor($originalVendor);
-                    
-                    if ($originalVendor !== $product->vendor) {
-                        \Log::info('Vendor normalisé:', [
-                            'original' => $originalVendor,
-                            'normalized' => $product->vendor
-                        ]);
-                    }
-                }
-
-                // S'assurer que product_url est défini
-                if (!isset($product->product_url) && isset($product->url)) {
-                    $product->product_url = $product->url;
-                }
-
-                // S'assurer que image est défini
-                if (!isset($product->image) && isset($product->image_url)) {
-                    $product->image = $product->image_url;
-                }
-
-                // AJOUTER LA PROPRIÉTÉ POUR DISTINGUER LA RECHERCHE
-                $product->is_manual_search = false;
-
-                $processedProducts[] = $product;
-            }
-
-            \Log::info('Query result:', [
-                'count' => count($processedProducts)
-            ]);
-
-            $matchedProducts = $this->calculateSimilarity($processedProducts, $search);
-            
-            // Préparer les résultats complets pour le cache
-            $fullResult = [
-                'count' => count($matchedProducts),
-                'has_data' => !empty($matchedProducts),
-                'products' => $matchedProducts,
-                'product' => $this->getOneProductDetails($this->id),
-                'query' => $searchQuery,
-                'volumes' => $this->searchVolumes,
-                'variation_keywords' => $this->searchVariationKeywords
-            ];
-
-            // Stocker dans le cache
-            $this->cacheResults($cacheKey, [
-                'products' => $matchedProducts,
-                'full_result' => $fullResult
-            ]);
-
-            $this->matchedProducts = $matchedProducts;
-            $this->products = $matchedProducts;
-            $this->originalAutomaticResults = $matchedProducts;
-            $this->hasAppliedFilters = false;
-            $this->hasData = !empty($matchedProducts);
-            $this->isAutomaticSearch = true;
-
-            // Si pas de résultats automatiques, on affiche le tableau quand même
-            if (!$this->hasData) {
-                $this->showTable = true;
-            }
-
-            return $fullResult;
-
-        } catch (\Throwable $e) {
-            \Log::error('Error loading competitor prices:', [
-                'message' => $e->getMessage(),
-                'search' => $search ?? null,
-                'trace' => $e->getTraceAsString()
-            ]);
-
-            $this->products = [];
-            $this->hasData = false;
-            $this->originalAutomaticResults = [];
-            $this->hasAppliedFilters = false;
-            $this->showTable = true;
-
-            return [
-                'error' => $e->getMessage()
-            ];
+/**
+ * Récupère les prix des concurrents avec optimisations avancées
+ */
+public function getCompetitorPrice($search)
+{
+    try {
+        // Early return si recherche vide
+        if (empty($search)) {
+            return $this->resetSearchState();
         }
+
+        // Vérification cache avec early return
+        $cacheKey = $this->getCacheKey($search, [], false);
+        if ($cachedData = $this->loadFromCache($cacheKey)) {
+            return $cachedData;
+        }
+
+        // Préparation de la recherche (extraction volumes et variations)
+        $searchQuery = $this->prepareSearchQuery($search);
+        
+        if (empty($searchQuery)) {
+            return $this->resetSearchState();
+        }
+
+        // Exécution de la requête optimisée
+        $rawProducts = $this->fetchProducts($searchQuery);
+
+        if (empty($rawProducts)) {
+            return $this->handleEmptyResults($cacheKey);
+        }
+
+        // Traitement des produits en une seule passe
+        $processedProducts = $this->processProductsBatch($rawProducts);
+
+        // Calcul de similarité
+        $matchedProducts = $this->calculateSimilarity($processedProducts, $search);
+
+        // Préparation et mise en cache du résultat
+        return $this->cacheAndReturnResults($cacheKey, $matchedProducts, $searchQuery);
+
+    } catch (\Throwable $e) {
+        return $this->handleError($e, $search);
     }
+}
+
+/**
+ * Réinitialise l'état de recherche
+ */
+private function resetSearchState(): ?array
+{
+    $this->products = [];
+    $this->hasData = false;
+    $this->originalAutomaticResults = [];
+    $this->hasAppliedFilters = false;
+    $this->showTable = true;
+    
+    return null;
+}
+
+/**
+ * Charge les résultats depuis le cache
+ */
+private function loadFromCache(string $cacheKey): ?array
+{
+    $cached = $this->getCachedResults($cacheKey);
+    
+    if ($cached === null) {
+        return null;
+    }
+
+    $this->matchedProducts = $cached['products'];
+    $this->products = $cached['products'];
+    $this->originalAutomaticResults = $cached['products'];
+    $this->hasAppliedFilters = false;
+    $this->hasData = !empty($cached['products']);
+    $this->isAutomaticSearch = true;
+    $this->showTable = true;
+
+    \Log::info('Cache hit', [
+        'key' => $cacheKey,
+        'count' => count($cached['products'])
+    ]);
+
+    return $cached['full_result'];
+}
+
+/**
+ * Prépare la requête de recherche
+ */
+private function prepareSearchQuery(string $search): string
+{
+    $this->extractSearchVolumes($search);
+    $this->extractSearchVariationKeywords($search);
+    
+    return $this->prepareSearchTerms($search);
+}
+
+/**
+ * Récupère les produits depuis la base de données
+ */
+private function fetchProducts(string $searchQuery): array
+{
+    $sql = "SELECT 
+                lp.*, 
+                ws.name as site_name, 
+                lp.url as product_url, 
+                lp.image_url as image
+            FROM last_price_scraped_product lp
+            LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+            WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
+                AGAINST (? IN BOOLEAN MODE)
+            ORDER BY lp.prix_ht DESC 
+            LIMIT 50";
+
+    \Log::info('SQL execution', [
+        'query' => $searchQuery,
+        'volumes' => $this->searchVolumes,
+        'variations' => $this->searchVariationKeywords
+    ]);
+
+    return DB::connection('mysql')->select($sql, [$searchQuery]);
+}
+
+/**
+ * Traite les produits en lot pour optimiser les performances
+ */
+private function processProductsBatch(array $products): array
+{
+    $processed = [];
+    
+    foreach ($products as $product) {
+        // Nettoyage du prix
+        if (isset($product->prix_ht)) {
+            $product->prix_ht = $this->cleanPrice($product->prix_ht);
+        }
+
+        // Normalisation du vendor
+        if (isset($product->vendor)) {
+            $product->vendor = $this->normalizeVendor($product->vendor);
+        }
+
+        // Mapping des URLs et images (évite les isset répétés)
+        $product->product_url = $product->product_url ?? $product->url ?? null;
+        $product->image = $product->image ?? $product->image_url ?? null;
+        
+        // Flag de recherche
+        $product->is_manual_search = false;
+
+        $processed[] = $product;
+    }
+
+    \Log::info('Products processed', ['count' => count($processed)]);
+
+    return $processed;
+}
+
+/**
+ * Gère le cas où aucun résultat n'est trouvé
+ */
+private function handleEmptyResults(string $cacheKey): array
+{
+    $emptyResult = [
+        'count' => 0,
+        'has_data' => false,
+        'products' => [],
+        'product' => $this->getOneProductDetails($this->id),
+        'query' => '',
+        'volumes' => $this->searchVolumes ?? [],
+        'variation_keywords' => $this->searchVariationKeywords ?? []
+    ];
+
+    // Cache même les résultats vides pour éviter les requêtes répétées
+    $this->cacheResults($cacheKey, [
+        'products' => [],
+        'full_result' => $emptyResult
+    ]);
+
+    $this->products = [];
+    $this->hasData = false;
+    $this->originalAutomaticResults = [];
+    $this->hasAppliedFilters = false;
+    $this->showTable = true;
+    $this->isAutomaticSearch = true;
+
+    return $emptyResult;
+}
+
+/**
+ * Met en cache et retourne les résultats
+ */
+private function cacheAndReturnResults(string $cacheKey, array $matchedProducts, string $searchQuery): array
+{
+    $fullResult = [
+        'count' => count($matchedProducts),
+        'has_data' => !empty($matchedProducts),
+        'products' => $matchedProducts,
+        'product' => $this->getOneProductDetails($this->id),
+        'query' => $searchQuery,
+        'volumes' => $this->searchVolumes,
+        'variation_keywords' => $this->searchVariationKeywords
+    ];
+
+    $this->cacheResults($cacheKey, [
+        'products' => $matchedProducts,
+        'full_result' => $fullResult
+    ]);
+
+    $this->matchedProducts = $matchedProducts;
+    $this->products = $matchedProducts;
+    $this->originalAutomaticResults = $matchedProducts;
+    $this->hasAppliedFilters = false;
+    $this->hasData = !empty($matchedProducts);
+    $this->isAutomaticSearch = true;
+    $this->showTable = !$this->hasData; // Affiche le tableau si pas de données
+
+    return $fullResult;
+}
+
+/**
+ * Gère les erreurs de manière centralisée
+ */
+private function handleError(\Throwable $e, ?string $search): array
+{
+    \Log::error('Competitor price error', [
+        'message' => $e->getMessage(),
+        'search' => $search,
+        'file' => $e->getFile(),
+        'line' => $e->getLine()
+    ]);
+
+    $this->products = [];
+    $this->hasData = false;
+    $this->originalAutomaticResults = [];
+    $this->hasAppliedFilters = false;
+    $this->showTable = true;
+
+    return ['error' => $e->getMessage()];
+}
 
     /**
      * Calcule la similarité entre la recherche et chaque produit
