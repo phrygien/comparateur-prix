@@ -300,14 +300,25 @@
     @endif
 
     <!-- Loading indicator avec texte et ombre -->
-    <div wire:loading.class.remove="hidden" class="hidden fixed inset-0 z-50 flex items-center justify-center">
-        <div class="flex flex-col items-center justify-center bg-white/90 rounded-2xl p-8 shadow-2xl border border-white/20 min-w-[200px]">
-            <!-- Spinner -->
-            <div class="loading loading-spinner loading-lg text-primary mb-4"></div>
-            
-            <!-- Texte de chargement -->
-            <p class="text-lg font-semibold text-gray-800">Chargement</p>
-            <p class="text-sm text-gray-600 mt-1">Veuillez patienter...</p>
-        </div>
+<!-- Remplacer votre div de loading par : -->
+<div wire:loading.class.remove="hidden" class="hidden fixed inset-0 z-50 flex items-center justify-center">
+    <div class="flex flex-col items-center justify-center bg-white/90 rounded-2xl p-8 shadow-2xl border border-white/20 min-w-[200px]">
+        <!-- Spinner -->
+        <div class="loading loading-spinner loading-lg text-primary mb-4"></div>
+        
+        <!-- Texte dynamique basé sur le contexte -->
+        <p class="text-lg font-semibold text-gray-800" id="loading-text">Chargement</p>
+        
+        <!-- Script pour détecter les clics produits -->
+        <script>
+            document.addEventListener('click', function(e) {
+                if (e.target.closest('a[href*="article.comparate-prix"]')) {
+                    document.getElementById('loading-text').textContent = 'Recherche de prix concurrent en cours...';
+                }
+            });
+        </script>
+        
+        <p class="text-sm text-gray-600 mt-1">Veuillez patienter...</p>
     </div>
+</div>
 </div>
