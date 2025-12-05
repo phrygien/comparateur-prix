@@ -18,7 +18,7 @@ new class extends Component {
     public $id;
     public $mydata;
 
-    // REMOVED: public $similarityThreshold = 0.6;
+    public $similarityThreshold = 0.6;
     public $matchedProducts = [];
 
     // Pour stocker la requête de recherche
@@ -109,7 +109,7 @@ new class extends Component {
             'search' => trim(strtolower($search)),
             'filters' => $filters,
             'type' => $isManual ? 'manual' : 'automatic',
-            // REMOVED: 'threshold' => $this->similarityThreshold
+            'threshold' => $this->similarityThreshold
         ];
 
         return 'search_results:' . md5(serialize($keyData));
@@ -123,7 +123,7 @@ new class extends Component {
         $cacheData = [
             'filters' => $this->filters,
             'vendor_variations' => !empty($this->filters['vendor']) ? $this->getVendorVariations($this->filters['vendor']) : [],
-            // REMOVED: 'threshold' => $this->similarityThreshold
+            'threshold' => $this->similarityThreshold
         ];
 
         return 'manual_search:' . md5(serialize($cacheData));
@@ -537,6 +537,11 @@ new class extends Component {
                     $product->image = $product->image_url;
                 }
 
+                // AJOUTER LES PROPRIÉTÉS POUR LE TABLEAU UNIFIÉ
+                $product->similarity_score = null;
+                $product->match_level = null;
+                $product->is_manual_search = true;
+
                 $processedResults[] = $product;
             }
 
@@ -883,6 +888,9 @@ new class extends Component {
                     $product->image = $product->image_url;
                 }
 
+                // AJOUTER LA PROPRIÉTÉ POUR DISTINGUER LA RECHERCHE
+                $product->is_manual_search = false;
+
                 $processedProducts[] = $product;
             }
 
@@ -890,9 +898,7 @@ new class extends Component {
                 'count' => count($processedProducts)
             ]);
 
-            // REMOVED: $matchedProducts = $this->calculateSimilarity($processedProducts, $search);
-            // REMOVED: La fonction calculateSimilarity a été supprimée
-            $matchedProducts = $processedProducts;
+            $matchedProducts = $this->calculateSimilarity($processedProducts, $search);
             
             // Préparer les résultats complets pour le cache
             $fullResult = [
@@ -945,6 +951,249 @@ new class extends Component {
     }
 
     /**
+     * Calcule la similarité entre la recherche et chaque produit
+     */
+    private function calculateSimilarity($products, $search)
+    {
+        $scoredProducts = [];
+
+        foreach ($products as $product) {
+            $similarityScore = $this->computeOverallSimilarity($product, $search);
+
+            if ($similarityScore >= $this->similarityThreshold) {
+                $product->similarity_score = $similarityScore;
+                $product->match_level = $this->getMatchLevel($similarityScore);
+                $scoredProducts[] = $product;
+            }
+        }
+
+        usort($scoredProducts, function ($a, $b) {
+            return $b->similarity_score <=> $a->similarity_score;
+        });
+
+        return $scoredProducts;
+    }
+
+    /**
+     * Calcule le score de similarité global
+     */
+    private function computeOverallSimilarity($product, $search)
+    {
+        $weights = [
+            'name' => 0.3,
+            'vendor' => 0.2,
+            'variation' => 0.25,
+            'volumes' => 0.15,
+            'type' => 0.1
+        ];
+
+        $totalScore = 0;
+
+        $nameScore = $this->computeStringSimilarity($search, $product->name ?? '');
+        $totalScore += $nameScore * $weights['name'];
+
+        $vendorScore = $this->computeVendorSimilarity($product, $search);
+        $totalScore += $vendorScore * $weights['vendor'];
+
+        $variationScore = $this->computeVariationSimilarity($product, $search);
+        $totalScore += $variationScore * $weights['variation'];
+
+        $volumeScore = $this->computeVolumeSimilarity($product);
+        $totalScore += $volumeScore * $weights['volumes'];
+
+        $typeScore = $this->computeTypeSimilarity($product, $search);
+        $totalScore += $typeScore * $weights['type'];
+
+        return min(1.0, $totalScore);
+    }
+
+    /**
+     * Similarité de chaîne (algorithme de Jaro-Winkler amélioré)
+     */
+    private function computeStringSimilarity($str1, $str2)
+    {
+        $str1 = mb_strtolower(trim($str1));
+        $str2 = mb_strtolower(trim($str2));
+
+        if (empty($str1) || empty($str2)) {
+            return 0;
+        }
+
+        if ($str1 === $str2) {
+            return 1.0;
+        }
+
+        $len1 = mb_strlen($str1);
+        $len2 = mb_strlen($str2);
+
+        $matchDistance = (int) floor(max($len1, $len2) / 2) - 1;
+        $matches1 = array_fill(0, $len1, false);
+        $matches2 = array_fill(0, $len2, false);
+
+        $matches = 0;
+        $transpositions = 0;
+
+        for ($i = 0; $i < $len1; $i++) {
+            $start = max(0, $i - $matchDistance);
+            $end = min($i + $matchDistance + 1, $len2);
+
+            for ($j = $start; $j < $end; $j++) {
+                if (!$matches2[$j] && mb_substr($str1, $i, 1) === mb_substr($str2, $j, 1)) {
+                    $matches1[$i] = true;
+                    $matches2[$j] = true;
+                    $matches++;
+                    break;
+                }
+            }
+        }
+
+        if ($matches === 0) {
+            return 0;
+        }
+
+        $k = 0;
+        for ($i = 0; $i < $len1; $i++) {
+            if ($matches1[$i]) {
+                while (!$matches2[$k]) {
+                    $k++;
+                }
+                if (mb_substr($str1, $i, 1) !== mb_substr($str2, $k, 1)) {
+                    $transpositions++;
+                }
+                $k++;
+            }
+        }
+
+        $transpositions = $transpositions / 2;
+        $jaro = (($matches / $len1) + ($matches / $len2) + (($matches - $transpositions) / $matches)) / 3;
+
+        $prefix = 0;
+        $maxPrefix = min(4, min($len1, $len2));
+
+        for ($i = 0; $i < $maxPrefix; $i++) {
+            if (mb_substr($str1, $i, 1) === mb_substr($str2, $i, 1)) {
+                $prefix++;
+            } else {
+                break;
+            }
+        }
+
+        return $jaro + ($prefix * 0.1 * (1 - $jaro));
+    }
+
+    /**
+     * Similarité du vendeur avec gestion des abréviations
+     */
+    private function computeVendorSimilarity($product, $search)
+    {
+        $vendor = $product->vendor ?? '';
+        if (empty($vendor)) {
+            return 0;
+        }
+
+        $searchVendor = $this->extractVendorFromSearch($search);
+
+        if (empty($searchVendor)) {
+            return 0;
+        }
+
+        // Normaliser les deux vendors
+        $normalizedProductVendor = $this->normalizeVendor($vendor);
+        $normalizedSearchVendor = $this->normalizeVendor($searchVendor);
+
+        // Calculer la similarité entre les noms normalisés
+        $similarity = $this->computeStringSimilarity($normalizedSearchVendor, $normalizedProductVendor);
+        
+        // Bonus si c'est une correspondance exacte (même après normalisation)
+        if (strcasecmp($normalizedProductVendor, $normalizedSearchVendor) === 0) {
+            $similarity = min(1.0, $similarity + 0.2);
+        }
+        
+        // Bonus si l'abréviation correspond
+        $productVendorUpper = strtoupper($vendor);
+        $searchVendorUpper = strtoupper($searchVendor);
+        foreach ($this->brandAbbreviations as $abbreviation => $fullName) {
+            if (($productVendorUpper === $abbreviation && strtoupper($normalizedSearchVendor) === strtoupper($fullName)) ||
+                ($searchVendorUpper === $abbreviation && strtoupper($normalizedProductVendor) === strtoupper($fullName))) {
+                $similarity = min(1.0, $similarity + 0.15);
+                break;
+            }
+        }
+
+        return $similarity;
+    }
+
+    /**
+     * Similarité de la variation
+     */
+    private function computeVariationSimilarity($product, $search)
+    {
+        $productVariation = $product->variation ?? '';
+        $searchVariation = $this->extractSearchVariationFromSearch($search);
+
+        if (empty($productVariation) || empty($searchVariation)) {
+            return 0;
+        }
+
+        $baseScore = $this->computeStringSimilarity($searchVariation, $productVariation);
+
+        $keywordMatches = 0;
+        foreach ($this->searchVariationKeywords as $keyword) {
+            if (stripos($productVariation, $keyword) !== false) {
+                $keywordMatches++;
+            }
+        }
+
+        $keywordBonus = $keywordMatches / max(1, count($this->searchVariationKeywords)) * 0.3;
+
+        return min(1.0, $baseScore + $keywordBonus);
+    }
+
+    /**
+     * Similarité des volumes
+     */
+    private function computeVolumeSimilarity($product)
+    {
+        if (empty($this->searchVolumes)) {
+            return 0;
+        }
+
+        $productVolumes = $this->extractVolumesFromText($product->name . ' ' . ($product->variation ?? ''));
+
+        if (empty($productVolumes)) {
+            return 0;
+        }
+
+        $matches = array_intersect($this->searchVolumes, $productVolumes);
+        $matchRatio = count($matches) / count($this->searchVolumes);
+
+        if ($matchRatio === 1.0) {
+            $matchRatio = 1.0;
+        }
+
+        return $matchRatio;
+    }
+
+    /**
+     * Similarité du type de produit
+     */
+    private function computeTypeSimilarity($product, $search)
+    {
+        $productType = $product->type ?? '';
+        if (empty($productType)) {
+            return 0;
+        }
+
+        $searchType = $this->extractProductTypeFromSearch($search);
+
+        if (empty($searchType)) {
+            return 0;
+        }
+
+        return $this->computeStringSimilarity($searchType, $productType);
+    }
+
+    /**
      * Extrait la marque de la recherche avec gestion des abréviations
      */
     private function extractVendorFromSearch($search)
@@ -983,6 +1232,20 @@ new class extends Component {
         }
 
         return '';
+    }
+
+    /**
+     * Détermine le niveau de correspondance
+     */
+    private function getMatchLevel($similarityScore)
+    {
+        if ($similarityScore >= 0.9)
+            return 'excellent';
+        if ($similarityScore >= 0.7)
+            return 'bon';
+        if ($similarityScore >= 0.6)
+            return 'moyen';
+        return 'faible';
     }
 
     /**
@@ -1340,6 +1603,18 @@ new class extends Component {
     }
 
     /**
+     * Ajuste le seuil de similarité
+     */
+    public function adjustSimilarityThreshold($threshold)
+    {
+        $this->similarityThreshold = $threshold;
+
+        if (!empty($this->searchQuery)) {
+            $this->getCompetitorPrice($this->searchQuery);
+        }
+    }
+
+    /**
      * Calcule la différence de prix par rapport au prix du concurrent
      */
     public function calculatePriceDifference($competitorPrice)
@@ -1657,6 +1932,34 @@ new class extends Component {
     }
 
     /**
+     * Méthode pour calculer la similarité pour la recherche manuelle si nécessaire
+     */
+    public function calculateManualSimilarity($product)
+    {
+        if (isset($product->similarity_score) && isset($product->match_level)) {
+            return [
+                'similarity_score' => $product->similarity_score,
+                'match_level' => $product->match_level
+            ];
+        }
+
+        if (!empty($this->searchQuery)) {
+            $similarityScore = $this->computeOverallSimilarity($product, $this->searchQuery);
+            $matchLevel = $this->getMatchLevel($similarityScore);
+
+            return [
+                'similarity_score' => $similarityScore,
+                'match_level' => $matchLevel
+            ];
+        }
+
+        return [
+            'similarity_score' => null,
+            'match_level' => null
+        ];
+    }
+
+    /**
      * Récupère l'image du produit de manière sécurisée avec URL par défaut
      */
     public function getProductImage($product)
@@ -1847,7 +2150,68 @@ new class extends Component {
         @endif
 
         @if($hasData && $isAutomaticSearch)
-            <!-- Critères de recherche (toujours visible) -->
+            <!-- Indicateur de similarité (uniquement si on a des résultats automatiques) -->
+            <div class="mb-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border">
+                <div class="flex flex-col space-y-3">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                            </svg>
+                            <span class="text-sm font-medium text-blue-800">
+                                Algorithme de similarité activé - 
+                                {{ count($matchedProducts) }} produit(s) correspondant(s) au seuil de {{ $similarityThreshold * 100 }}%
+                            </span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <span class="text-xs text-blue-600 font-semibold">Ajuster le seuil :</span>
+                            <!-- Boutons avec indicateurs de chargement -->
+                            <button wire:click="adjustSimilarityThreshold(0.5)" 
+                                    class="px-2 py-1 text-xs {{ $similarityThreshold == 0.5 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors flex items-center justify-center min-w-[50px]"
+                                    wire:loading.attr="disabled">
+                                <span wire:loading.remove wire:target="adjustSimilarityThreshold(0.5)">50%</span>
+                                <span wire:loading wire:target="adjustSimilarityThreshold(0.5)">
+                                    <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
+                                </span>
+                            </button>
+                            <button wire:click="adjustSimilarityThreshold(0.6)" 
+                                    class="px-2 py-1 text-xs {{ $similarityThreshold == 0.6 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors flex items-center justify-center min-w-[50px]"
+                                    wire:loading.attr="disabled">
+                                <span wire:loading.remove wire:target="adjustSimilarityThreshold(0.6)">60%</span>
+                                <span wire:loading wire:target="adjustSimilarityThreshold(0.6)">
+                                    <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
+                                </span>
+                            </button>
+                            <button wire:click="adjustSimilarityThreshold(0.7)" 
+                                    class="px-2 py-1 text-xs {{ $similarityThreshold == 0.7 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors flex items-center justify-center min-w-[50px]"
+                                    wire:loading.attr="disabled">
+                                <span wire:loading.remove wire:target="adjustSimilarityThreshold(0.7)">70%</span>
+                                <span wire:loading wire:target="adjustSimilarityThreshold(0.7)">
+                                    <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center space-x-4 text-xs text-blue-600">
+                        <span class="font-semibold">Légende :</span>
+                        <span class="flex items-center">
+                            <span class="w-3 h-3 bg-green-500 rounded-full mr-1"></span>
+                            Excellent (90-100%)
+                        </span>
+                        <span class="flex items-center">
+                            <span class="w-3 h-3 bg-blue-500 rounded-full mr-1"></span>
+                            Bon (70-89%)
+                        </span>
+                        <span class="flex items-center">
+                            <span class="w-3 h-3 bg-yellow-500 rounded-full mr-1"></span>
+                            Moyen (60-69%)
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Critères de recherche -->
             @if(!empty($searchVolumes) || !empty($searchVariationKeywords))
                 <div class="mb-4 p-4 bg-blue-50 rounded-lg">
                     <div class="flex flex-col space-y-2">
@@ -2023,7 +2387,21 @@ new class extends Component {
                                     </div>
                                 </th>
                                 
-                                <!-- REMOVED: Colonnes Score et Correspondance -->
+                                @if($hasData && $isAutomaticSearch)
+                                <!-- Colonne Score (uniquement si résultats automatiques) -->
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <div class="flex flex-col">
+                                        <span>Score</span>
+                                    </div>
+                                </th>
+                                
+                                <!-- Colonne Correspondance (uniquement si résultats automatiques) -->
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <div class="flex flex-col">
+                                        <span>Correspondance</span>
+                                    </div>
+                                </th>
+                                @endif
                                 
                                 <!-- Colonne Vendor avec filtre AJOUTÉE -->
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-48">
@@ -2157,6 +2535,27 @@ new class extends Component {
                             @if(count($matchedProducts) > 0)
                                 @foreach($matchedProducts as $product)
                                     @php
+                                        // Pour la recherche manuelle, on calcule la similarité à la volée si nécessaire
+                                        if ($isAutomaticSearch) {
+                                            $similarityScore = $product->similarity_score ?? null;
+                                            $matchLevel = $product->match_level ?? null;
+                                        } else {
+                                            // Pour la recherche manuelle, on calcule la similarité
+                                            $similarityData = $this->calculateManualSimilarity($product);
+                                            $similarityScore = $similarityData['similarity_score'];
+                                            $matchLevel = $similarityData['match_level'];
+                                        }
+                                        
+                                        // Définir la classe de match si disponible
+                                        if ($matchLevel) {
+                                            $matchClass = [
+                                                'excellent' => 'bg-green-100 text-green-800 border-green-300',
+                                                'bon' => 'bg-blue-100 text-blue-800 border-blue-300',
+                                                'moyen' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
+                                                'faible' => 'bg-gray-100 text-gray-800 border-gray-300'
+                                            ][$matchLevel];
+                                        }
+
                                         $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
                                         $hasMatchingVolume = $this->hasMatchingVolume($product);
                                         $hasExactVariation = $this->hasExactVariationMatch($product);
@@ -2211,7 +2610,47 @@ new class extends Component {
                                             @endif
                                         </td>
                                         
-                                        <!-- REMOVED: Colonnes Score et Correspondance -->
+                                        @if($hasData && $isAutomaticSearch)
+                                        <!-- Colonne Score (uniquement si résultats automatiques) -->
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <div class="flex items-center">
+                                                <div class="w-16 bg-gray-200 rounded-full h-2 mr-3">
+                                                    <div class="h-2 rounded-full 
+                                                        @if($similarityScore >= 0.9) bg-green-500
+                                                        @elseif($similarityScore >= 0.7) bg-blue-500
+                                                        @elseif($similarityScore >= 0.6) bg-yellow-500
+                                                        @else bg-gray-500 @endif"
+                                                        style="width: {{ ($similarityScore ?? 0) * 100 }}%">
+                                                    </div>
+                                                </div>
+                                                <span class="text-sm font-mono font-semibold 
+                                                    @if($similarityScore >= 0.9) text-green-600
+                                                    @elseif($similarityScore >= 0.7) text-blue-600
+                                                    @elseif($similarityScore >= 0.6) text-yellow-600
+                                                    @else text-gray-600 @endif">
+                                                    {{ $similarityScore ? number_format($similarityScore * 100, 0) : 'N/A' }}%
+                                                </span>
+                                            </div>
+                                        </td>
+
+                                        <!-- Colonne Correspondance (uniquement si résultats automatiques) -->
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            @if($matchLevel)
+                                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border {{ $matchClass ?? '' }}">
+                                                    @if($matchLevel === 'excellent')
+                                                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                                        </svg>
+                                                    @endif
+                                                    {{ ucfirst($matchLevel) }}
+                                                </span>
+                                            @else
+                                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border border-gray-300 bg-gray-100 text-gray-800">
+                                                    N/A
+                                                </span>
+                                            @endif
+                                        </td>
+                                        @endif
 
                                         <!-- Colonne Vendor AJOUTÉE -->
                                         <td class="px-6 py-4 whitespace-nowrap">
@@ -2288,6 +2727,11 @@ new class extends Component {
                                                     <div class="text-sm font-medium text-gray-900">
                                                         {{ $product->site_name ?? $this->extractDomain($productUrl ?? '') }}
                                                     </div>
+                                                    {{-- @if(isset($product->web_site_id))
+                                                        <div class="text-xs text-gray-500">
+                                                            ID: {{ $product->web_site_id }}
+                                                        </div>
+                                                    @endif --}}
                                                 </div>
                                             </div>
                                         </td>
@@ -2405,7 +2849,7 @@ new class extends Component {
                             @else
                                 <!-- Aucun résultat avec les filtres appliqués -->
                                 <tr>
-                                    <td colspan="13" class="px-6 py-12 text-center">
+                                    <td colspan="{{ ($hasData && $isAutomaticSearch ? 15 : 13) }}" class="px-6 py-12 text-center">
                                         <svg class="mx-auto h-16 w-16 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                         </svg>
