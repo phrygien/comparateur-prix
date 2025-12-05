@@ -6,6 +6,7 @@ use Livewire\Component;
 use Livewire\WithPagination;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class Boutique extends Component
 {
@@ -22,8 +23,11 @@ class Boutique extends Component
     // Nombre d'éléments par page
     public $perPage = 12;
 
-    // Durée du cache en minutes
-    protected $cacheDuration = 60; // 1 heure
+    // Durée du cache en secondes (1 heure)
+    protected $cacheTTL = 3600;
+    
+    // Préfixe pour les clés de cache
+    protected $cachePrefix = 'boutique';
 
     protected $queryString = [
         'search' => ['except' => ''],
@@ -92,27 +96,73 @@ class Boutique extends Component
     /**
      * Génère une clé de cache unique basée sur les filtres
      */
-    protected function getCacheKey($search, $page, $perPage)
+    protected function getCacheKey($type, ...$params)
     {
+        $filters = [
+            'search' => $this->search,
+            'name' => $this->filterName,
+            'marque' => $this->filterMarque,
+            'type' => $this->filterType,
+            'capacity' => $this->filterCapacity,
+        ];
+        
+        $filterHash = md5(json_encode($filters));
+        
         return sprintf(
-            'products:list:%s:%s:%s:%s:%s:%d:%d',
-            md5($search),
-            md5($this->filterName),
-            md5($this->filterMarque),
-            md5($this->filterType),
-            md5($this->filterCapacity),
-            $page,
-            $perPage
+            '%s:%s:%s:%s',
+            $this->cachePrefix,
+            $type,
+            $filterHash,
+            implode(':', $params)
         );
     }
 
     /**
-     * Vider le cache des produits
+     * Génère un pattern pour supprimer les clés de cache
+     */
+    protected function getCachePattern()
+    {
+        $filters = [
+            'search' => $this->search,
+            'name' => $this->filterName,
+            'marque' => $this->filterMarque,
+            'type' => $this->filterType,
+            'capacity' => $this->filterCapacity,
+        ];
+        
+        $filterHash = md5(json_encode($filters));
+        
+        return sprintf('%s:*:%s:*', $this->cachePrefix, $filterHash);
+    }
+
+    /**
+     * Vider le cache de la page courante
      */
     public function clearCache()
     {
-        Cache::forget($this->getCacheKey($this->search, $this->getPage(), $this->perPage));
-        $this->dispatch('cache-cleared');
+        $cacheKey = $this->getCacheKey('products', $this->getPage(), $this->perPage);
+        Cache::forget($cacheKey);
+        
+        // Vider aussi le cache du count
+        $countKey = $this->getCacheKey('count', $this->getPage(), $this->perPage);
+        Cache::forget($countKey);
+        
+        $this->dispatch('cache-cleared', ['message' => 'Cache de la page courante vidé']);
+    }
+
+    /**
+     * Vider le cache des filtres actuels (toutes les pages)
+     */
+    public function clearFilterCache()
+    {
+        try {
+            $pattern = $this->getCachePattern();
+            $this->flushCacheByPattern($pattern);
+            $this->dispatch('cache-cleared', ['message' => 'Cache des filtres actuels vidé']);
+        } catch (\Exception $e) {
+            Log::error('Error clearing filter cache: ' . $e->getMessage());
+            $this->dispatch('cache-error', ['message' => 'Erreur lors du vidage du cache']);
+        }
     }
 
     /**
@@ -120,21 +170,108 @@ class Boutique extends Component
      */
     public function clearAllCache()
     {
-        Cache::flush(); // Attention: vide tout le cache
-        // Ou utilisez Cache::tags(['products'])->flush() si vous utilisez tags
-        $this->dispatch('cache-cleared');
+        try {
+            $pattern = $this->cachePrefix . ':*';
+            $this->flushCacheByPattern($pattern);
+            $this->dispatch('cache-cleared', ['message' => 'Tout le cache des produits vidé']);
+        } catch (\Exception $e) {
+            Log::error('Error clearing all cache: ' . $e->getMessage());
+            $this->dispatch('cache-error', ['message' => 'Erreur lors du vidage du cache']);
+        }
+    }
+
+    /**
+     * Vider le cache par pattern (Redis uniquement)
+     */
+    protected function flushCacheByPattern($pattern)
+    {
+        if (config('cache.default') !== 'redis') {
+            // Fallback pour les autres drivers
+            Cache::flush();
+            return;
+        }
+
+        try {
+            $redis = Cache::getRedis();
+            $keys = $redis->keys($pattern);
+            
+            if (!empty($keys)) {
+                $redis->del($keys);
+            }
+        } catch (\Exception $e) {
+            Log::error('Redis pattern flush error: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * Obtenir les statistiques du cache
+     */
+    public function getCacheStats()
+    {
+        try {
+            if (config('cache.default') !== 'redis') {
+                return ['error' => 'Redis non configuré'];
+            }
+
+            $redis = Cache::getRedis();
+            $pattern = $this->cachePrefix . ':*';
+            $keys = $redis->keys($pattern);
+            
+            return [
+                'total_keys' => count($keys),
+                'pattern' => $pattern,
+                'cache_driver' => config('cache.default'),
+            ];
+        } catch (\Exception $e) {
+            Log::error('Error getting cache stats: ' . $e->getMessage());
+            return ['error' => $e->getMessage()];
+        }
     }
 
     public function getListProduct($search = "", $page = 1, $perPage = null)
     {
         $perPage = $perPage ?: $this->perPage;
         
-        // Générer la clé de cache
-        $cacheKey = $this->getCacheKey($search, $page, $perPage);
+        // Générer la clé de cache pour les produits
+        $cacheKey = $this->getCacheKey('products', $page, $perPage);
         
         // Tenter de récupérer depuis le cache
-        return Cache::remember($cacheKey, $this->cacheDuration * 60, function () use ($search, $page, $perPage) {
+        return Cache::remember($cacheKey, $this->cacheTTL, function () use ($search, $page, $perPage) {
             return $this->fetchProductsFromDatabase($search, $page, $perPage);
+        });
+    }
+
+    /**
+     * Récupère le nombre total de produits (mis en cache séparément)
+     */
+    protected function getProductCount($subQuery, $params)
+    {
+        $countCacheKey = $this->getCacheKey('count', md5($subQuery . serialize($params)));
+        
+        return Cache::remember($countCacheKey, $this->cacheTTL, function () use ($subQuery, $params) {
+            $resultTotal = DB::connection('mysqlMagento')->selectOne("
+                SELECT COUNT(*) as nb
+                FROM catalog_product_entity as produit
+                LEFT JOIN catalog_product_relation as parent_child_table ON parent_child_table.child_id = produit.entity_id 
+                LEFT JOIN catalog_product_super_link as cpsl ON cpsl.product_id = produit.entity_id 
+                LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+                LEFT JOIN product_text ON product_text.entity_id = produit.entity_id 
+                LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
+                LEFT JOIN product_int ON product_int.entity_id = produit.entity_id
+                LEFT JOIN product_media ON product_media.entity_id = produit.entity_id
+                LEFT JOIN product_categorie ON product_categorie.entity_id = produit.entity_id 
+                LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id 
+                LEFT JOIN cataloginventory_stock_status AS stock_status ON stock_item.product_id = stock_status.product_id 
+                LEFT JOIN option_super_attribut AS options ON options.simple_product_id = produit.entity_id 
+                LEFT JOIN eav_attribute_set AS eas ON produit.attribute_set_id = eas.attribute_set_id 
+                LEFT JOIN catalog_product_entity as produit_parent ON parent_child_table.parent_id = produit_parent.entity_id 
+                LEFT JOIN product_char as product_parent_char ON product_parent_char.entity_id = produit_parent.entity_id
+                LEFT JOIN product_text as product_parent_text ON product_parent_text.entity_id = produit_parent.entity_id 
+                WHERE product_int.status >= 0 $subQuery
+            ", $params);
+
+            return $resultTotal->nb ?? 0;
         });
     }
 
@@ -192,32 +329,7 @@ class Boutique extends Component
             $subQuery .= " AND product_decimal.price > 0 ";
 
             // Total count (mis en cache séparément)
-            $countCacheKey = "products:count:" . md5($subQuery . serialize($params));
-            $total = Cache::remember($countCacheKey, $this->cacheDuration * 60, function () use ($subQuery, $params) {
-                $resultTotal = DB::connection('mysqlMagento')->selectOne("
-                    SELECT COUNT(*) as nb
-                    FROM catalog_product_entity as produit
-                    LEFT JOIN catalog_product_relation as parent_child_table ON parent_child_table.child_id = produit.entity_id 
-                    LEFT JOIN catalog_product_super_link as cpsl ON cpsl.product_id = produit.entity_id 
-                    LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
-                    LEFT JOIN product_text ON product_text.entity_id = produit.entity_id 
-                    LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
-                    LEFT JOIN product_int ON product_int.entity_id = produit.entity_id
-                    LEFT JOIN product_media ON product_media.entity_id = produit.entity_id
-                    LEFT JOIN product_categorie ON product_categorie.entity_id = produit.entity_id 
-                    LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id 
-                    LEFT JOIN cataloginventory_stock_status AS stock_status ON stock_item.product_id = stock_status.product_id 
-                    LEFT JOIN option_super_attribut AS options ON options.simple_product_id = produit.entity_id 
-                    LEFT JOIN eav_attribute_set AS eas ON produit.attribute_set_id = eas.attribute_set_id 
-                    LEFT JOIN catalog_product_entity as produit_parent ON parent_child_table.parent_id = produit_parent.entity_id 
-                    LEFT JOIN product_char as product_parent_char ON product_parent_char.entity_id = produit_parent.entity_id
-                    LEFT JOIN product_text as product_parent_text ON product_parent_text.entity_id = produit_parent.entity_id 
-                    WHERE product_int.status >= 0 $subQuery
-                ", $params);
-
-                return $resultTotal->nb ?? 0;
-            });
-
+            $total = $this->getProductCount($subQuery, $params);
             $nbPage = ceil($total / $perPage);
 
             if ($page > $nbPage && $nbPage > 0) {
@@ -297,11 +409,12 @@ class Boutique extends Component
                 "total_page" => $nbPage,
                 "current_page" => $page,
                 "data" => $result,
-                "cached_at" => now()->toDateTimeString()
+                "cached_at" => now()->toDateTimeString(),
+                "cache_key" => $this->getCacheKey('products', $page, $perPage)
             ];
 
         } catch (\Throwable $e) {
-            \Log::error('Error fetching products: ' . $e->getMessage());
+            Log::error('Error fetching products: ' . $e->getMessage());
             
             return [
                 "total_item" => 0,
@@ -317,13 +430,16 @@ class Boutique extends Component
     public function render()
     {
         $productsData = $this->getListProduct($this->search, $this->getPage(), $this->perPage);
+        $cacheStats = $this->getCacheStats();
         
         return view('livewire.boutiques.boutique', [
             'products' => $productsData['data'],
             'totalItems' => $productsData['total_item'],
             'totalPages' => $productsData['total_page'],
             'currentPage' => $productsData['current_page'],
-            'cachedAt' => $productsData['cached_at'] ?? null
+            'cachedAt' => $productsData['cached_at'] ?? null,
+            'cacheKey' => $productsData['cache_key'] ?? null,
+            'cacheStats' => $cacheStats
         ]);
     }
 }
