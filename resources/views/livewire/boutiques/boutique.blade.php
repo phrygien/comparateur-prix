@@ -142,49 +142,51 @@
     utf8_encode($product->title), 
     $product->id, 
     $product->special_price ?? $product->price ?? 0
-]) }}" class="group text-sm">
-                        <div class="aspect-square w-full rounded-lg bg-gray-100 overflow-hidden">
-                            @if($product->thumbnail)
-                                <img 
-                                    src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $product->thumbnail) }}"
-                                    alt="{{ $product->title }}"
-                                    class="w-full h-full object-cover group-hover:opacity-75 transition-opacity"
-                                    onerror="this.src='https://images.unsplash.com/photo-1541643600914-78b084683601?w=800&q=80'"
-                                >
-                            @else
-                                <img 
-                                    src="https://images.unsplash.com/photo-1541643600914-78b084683601?w=800&q=80"
-                                    alt="Parfum"
-                                    class="w-full h-full object-cover group-hover:opacity-75 transition-opacity"
-                                >
-                            @endif
-                        </div>
-                        
-                        <h3 class="mt-4 font-medium text-gray-900 line-clamp-2">
-                            {{ utf8_encode($product->title) }}
-                        </h3>
-                        
-                        @if($product->vendor)
-                            <p class="text-gray-500 italic">{{ utf8_encode($product->vendor) }}</p>
-                        @endif
-                        
-                        <div class="mt-2">
-                            @if($product->special_price && $product->special_price < $product->price)
-                                <div class="flex items-center gap-2">
-                                    <span class="font-medium text-red-600">{{ number_format($product->special_price, 2) }} €</span>
-                                    <span class="text-sm text-gray-500 line-through">{{ number_format($product->price, 2) }} €</span>
-                                </div>
-                            @else
-                                <p class="font-medium text-gray-900">{{ number_format($product->price, 2) }} €</p>
-                            @endif
-                        </div>
-
-                        @if($product->quatity_status == 1)
-                            <span class="mt-1 inline-block text-xs text-green-600">En stock</span>
+]) }}" 
+                   class="group text-sm product-link"
+                   data-product-name="{{ utf8_encode($product->title) }}">
+                    <div class="aspect-square w-full rounded-lg bg-gray-100 overflow-hidden">
+                        @if($product->thumbnail)
+                            <img 
+                                src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $product->thumbnail) }}"
+                                alt="{{ $product->title }}"
+                                class="w-full h-full object-cover group-hover:opacity-75 transition-opacity"
+                                onerror="this.src='https://images.unsplash.com/photo-1541643600914-78b084683601?w=800&q=80'"
+                            >
                         @else
-                            <span class="mt-1 inline-block text-xs text-red-600">Rupture de stock</span>
+                            <img 
+                                src="https://images.unsplash.com/photo-1541643600914-78b084683601?w=800&q=80"
+                                alt="Parfum"
+                                class="w-full h-full object-cover group-hover:opacity-75 transition-opacity"
+                            >
                         @endif
-                    </a>
+                    </div>
+                    
+                    <h3 class="mt-4 font-medium text-gray-900 line-clamp-2">
+                        {{ utf8_encode($product->title) }}
+                    </h3>
+                    
+                    @if($product->vendor)
+                        <p class="text-gray-500 italic">{{ utf8_encode($product->vendor) }}</p>
+                    @endif
+                    
+                    <div class="mt-2">
+                        @if($product->special_price && $product->special_price < $product->price)
+                            <div class="flex items-center gap-2">
+                                <span class="font-medium text-red-600">{{ number_format($product->special_price, 2) }} €</span>
+                                <span class="text-sm text-gray-500 line-through">{{ number_format($product->price, 2) }} €</span>
+                            </div>
+                        @else
+                            <p class="font-medium text-gray-900">{{ number_format($product->price, 2) }} €</p>
+                        @endif
+                    </div>
+
+                    @if($product->quatity_status == 1)
+                        <span class="mt-1 inline-block text-xs text-green-600">En stock</span>
+                    @else
+                        <span class="mt-1 inline-block text-xs text-red-600">Rupture de stock</span>
+                    @endif
+                </a>
                 @endforeach
             </div>
         @else
@@ -299,26 +301,92 @@
         </div>
     @endif
 
-    <!-- Loading indicator avec texte et ombre -->
-<!-- Remplacer votre div de loading par : -->
-<div wire:loading.class.remove="hidden" class="hidden fixed inset-0 z-50 flex items-center justify-center">
-    <div class="flex flex-col items-center justify-center bg-white/90 rounded-2xl p-8 shadow-2xl border border-white/20 min-w-[200px]">
-        <!-- Spinner -->
-        <div class="loading loading-spinner loading-lg text-primary mb-4"></div>
-        
-        <!-- Texte dynamique basé sur le contexte -->
-        <p class="text-lg font-semibold text-gray-800" id="loading-text">Chargement</p>
-        
-        <!-- Script pour détecter les clics produits -->
-        <script>
+    <!-- Loading indicator avec texte dynamique -->
+    <div wire:loading.class.remove="hidden" 
+         class="hidden fixed inset-0 z-50 flex items-center justify-center">
+        <div class="flex flex-col items-center justify-center bg-white/95 rounded-2xl p-8 shadow-2xl border border-white/20 min-w-[300px] max-w-[90%]">
+            <!-- Spinner -->
+            <div class="loading loading-spinner loading-lg text-primary mb-4"></div>
+            
+            <!-- Texte de chargement dynamique -->
+            <p class="text-lg font-semibold text-gray-800 text-center" id="loading-main-text">
+                Chargement en cours...
+            </p>
+            <p class="text-sm text-gray-600 mt-2 text-center" id="loading-sub-text">
+                Veuillez patienter...
+            </p>
+            
+            <!-- Progress bar optionnelle -->
+            <div class="w-full bg-gray-200 rounded-full h-2.5 mt-4">
+                <div class="bg-primary h-2.5 rounded-full animate-pulse" style="width: 45%"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Script pour gérer le texte de chargement dynamique -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Détecter les clics sur les liens produits
             document.addEventListener('click', function(e) {
-                if (e.target.closest('a[href*="article.comparate-prix"]')) {
-                    document.getElementById('loading-text').textContent = 'Recherche de prix concurrent en cours...';
+                const productLink = e.target.closest('a.product-link');
+                if (productLink) {
+                    // Récupérer le nom du produit
+                    const productName = productLink.getAttribute('data-product-name') || 'ce produit';
+                    
+                    // Mettre à jour le texte du loader
+                    document.getElementById('loading-main-text').textContent = 
+                        `Recherche de prix concurrent en cours...`;
+                    document.getElementById('loading-sub-text').textContent = 
+                        `Analyse des prix pour ${productName}`;
                 }
             });
-        </script>
+            
+            // Réinitialiser le texte quand le loader disparaît
+            const observer = new MutationObserver(function(mutations) {
+                mutations.forEach(function(mutation) {
+                    if (mutation.attributeName === 'class') {
+                        const loader = mutation.target;
+                        if (!loader.classList.contains('hidden')) {
+                            // Si ce n'est pas un clic produit, réinitialiser le texte
+                            setTimeout(() => {
+                                if (!window.productClicked) {
+                                    document.getElementById('loading-main-text').textContent = 
+                                        'Chargement en cours...';
+                                    document.getElementById('loading-sub-text').textContent = 
+                                        'Veuillez patienter...';
+                                }
+                            }, 100);
+                        } else {
+                            window.productClicked = false;
+                        }
+                    }
+                });
+            });
+            
+            // Observer le loader
+            const loader = document.querySelector('[wire\\:loading\\.class\\.remove]');
+            if (loader) {
+                observer.observe(loader, { attributes: true });
+            }
+            
+            // Stocker l'état du clic produit
+            window.productClicked = false;
+            
+            // Détecter tous les clics sur les liens produits
+            document.querySelectorAll('a.product-link').forEach(link => {
+                link.addEventListener('click', function() {
+                    window.productClicked = true;
+                });
+            });
+        });
         
-        <p class="text-sm text-gray-600 mt-1">Veuillez patienter...</p>
-    </div>
-</div>
+        // Réinitialiser le texte quand Livewire termine le chargement
+        document.addEventListener('livewire:navigated', function() {
+            document.getElementById('loading-main-text').textContent = 
+                'Chargement en cours...';
+            document.getElementById('loading-sub-text').textContent = 
+                'Veuillez patienter...';
+            window.productClicked = false;
+        });
+    </script>
 </div>
