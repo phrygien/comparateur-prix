@@ -7,7 +7,7 @@ use Livewire\Volt\Volt;
 Volt::route('/', 'auth.login')->name('login');
 
 // Groupe de routes protégées
-Route::middleware(['check.auth'])->group(function () {
+Route::middleware(['check.auth', 'boutique.cache'])->group(function () {
     Volt::route('/home', 'plateformes.page')->name('home');
     Volt::route('/articles', 'plateformes.article')->name('articles');
     Volt::route('/article/{name}/{id}/{price}/commparate', 'plateformes.comparateur')->name('article.comparate-prix');
