@@ -2,85 +2,147 @@
 
 use Livewire\Volt\Component;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Livewire\Attributes\Computed;
 
 new class extends Component {
 
     public $productId = null;
 
+    // Durée du cache en minutes
+    protected $cacheDuration = 180; // 3 heures
+
     public function mount($id)
     {
         $this->productId = $id;
     }
 
+    /**
+     * Génère une clé de cache unique pour le produit
+     */
+    protected function getCacheKey()
+    {
+        return sprintf('product:details:%d', $this->productId);
+    }
+
+    /**
+     * Vider le cache du produit actuel
+     */
+    public function clearCache()
+    {
+        Cache::forget($this->getCacheKey());
+        $this->dispatch('cache-cleared', ['message' => 'Cache du produit vidé']);
+        
+        // Forcer le recalcul du computed property
+        unset($this->computedPropertyCache['product']);
+    }
+
+    /**
+     * Vider le cache de tous les produits
+     */
+    public function clearAllProductsCache()
+    {
+        // Méthode 1: Si vous utilisez Redis avec tags
+        // Cache::tags(['products'])->flush();
+        
+        // Méthode 2: Avec file cache (approximatif)
+        $pattern = 'product:details:*';
+        
+        // Note: avec le driver 'file', vous devrez implémenter une logique personnalisée
+        // ou simplement vider tout le cache
+        Cache::flush();
+        
+        $this->dispatch('cache-cleared', ['message' => 'Cache de tous les produits vidé']);
+    }
+
+    /**
+     * Récupère les détails du produit avec mise en cache
+     */
     #[Computed]
     public function product()
     {
         try {
-            $result = DB::connection('mysqlMagento')
-                ->table('catalog_product_entity as produit')
-                ->select([
-                    'produit.entity_id as id',
-                    'produit.sku as sku',
-                    'product_char.reference as parkode',
-                    DB::raw('CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) as title'),
-                    DB::raw('CAST(product_parent_char.name AS CHAR CHARACTER SET utf8mb4) as parent_title'),
-                    DB::raw("SUBSTRING_INDEX(product_char.name, ' - ', 1) as vendor"),
-                    DB::raw("SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) as type"),
-                    'product_char.thumbnail as thumbnail',
-                    'product_char.swatch_image as swatch_image',
-                    'product_char.reference_us as reference_us',
-                    DB::raw('CAST(product_text.description AS CHAR CHARACTER SET utf8mb4) as description'),
-                    DB::raw('CAST(product_text.short_description AS CHAR CHARACTER SET utf8mb4) as short_description'),
-                    DB::raw('CAST(product_parent_text.description AS CHAR CHARACTER SET utf8mb4) as parent_description'),
-                    DB::raw('CAST(product_parent_text.short_description AS CHAR CHARACTER SET utf8mb4) as parent_short_description'),
-                    DB::raw('CAST(product_text.composition AS CHAR CHARACTER SET utf8mb4) as composition'),
-                    DB::raw('CAST(product_text.olfactive_families AS CHAR CHARACTER SET utf8mb4) as olfactive_families'),
-                    DB::raw('CAST(product_text.product_benefit AS CHAR CHARACTER SET utf8mb4) as product_benefit'),
-                    DB::raw('ROUND(product_decimal.price, 2) as price'),
-                    DB::raw('ROUND(product_decimal.special_price, 2) as special_price'),
-                    DB::raw('ROUND(product_decimal.cost, 2) as cost'),
-                    DB::raw('ROUND(product_decimal.pvc, 2) as pvc'),
-                    DB::raw('ROUND(product_decimal.prix_achat_ht, 2) as prix_achat_ht'),
-                    DB::raw('ROUND(product_decimal.prix_us, 2) as prix_us'),
-                    'product_int.status as status',
-                    'product_int.color as color',
-                    'product_int.capacity as capacity',
-                    'product_int.product_type as product_type',
-                    'product_media.media_gallery as media_gallery',
-                    DB::raw('CAST(product_categorie.name AS CHAR CHARACTER SET utf8mb4) as categorie'),
-                    DB::raw("REPLACE(product_categorie.name, ' > ', ',') as tags"),
-                    'stock_item.qty as quatity',
-                    'stock_status.stock_status as quatity_status',
-                    'options.configurable_product_id as configurable_product_id',
-                    'parent_child_table.parent_id as parent_id',
-                    'options.attribute_code as option_name',
-                    'options.attribute_value as option_value'
-                ])
-                ->leftJoin('catalog_product_relation as parent_child_table', 'parent_child_table.child_id', '=', 'produit.entity_id')
-                ->leftJoin('catalog_product_super_link as cpsl', 'cpsl.product_id', '=', 'produit.entity_id')
-                ->leftJoin('product_char', 'product_char.entity_id', '=', 'produit.entity_id')
-                ->leftJoin('product_text', 'product_text.entity_id', '=', 'produit.entity_id')
-                ->leftJoin('product_decimal', 'product_decimal.entity_id', '=', 'produit.entity_id')
-                ->leftJoin('product_int', 'product_int.entity_id', '=', 'produit.entity_id')
-                ->leftJoin('product_media', 'product_media.entity_id', '=', 'produit.entity_id')
-                ->leftJoin('product_categorie', 'product_categorie.entity_id', '=', 'produit.entity_id')
-                ->leftJoin('cataloginventory_stock_item as stock_item', 'stock_item.product_id', '=', 'produit.entity_id')
-                ->leftJoin('cataloginventory_stock_status as stock_status', 'stock_item.product_id', '=', 'stock_status.product_id')
-                ->leftJoin('option_super_attribut as options', 'options.simple_product_id', '=', 'produit.entity_id')
-                ->leftJoin('eav_attribute_set as eas', 'produit.attribute_set_id', '=', 'eas.attribute_set_id')
-                ->leftJoin('catalog_product_entity as produit_parent', 'parent_child_table.parent_id', '=', 'produit_parent.entity_id')
-                ->leftJoin('product_char as product_parent_char', 'product_parent_char.entity_id', '=', 'produit_parent.entity_id')
-                ->leftJoin('product_text as product_parent_text', 'product_parent_text.entity_id', '=', 'produit_parent.entity_id')
-                ->where('produit.entity_id', $this->productId)
-                ->where(function($query) {
-                    $query->whereNull('product_int.status')
-                          ->orWhere('product_int.status', '>=', 0);
-                })
-                ->orderBy('product_char.entity_id', 'DESC')
-                ->first();
+            $cacheKey = $this->getCacheKey();
 
-            return $result;
+            // Essayer de récupérer depuis le cache
+            return Cache::remember($cacheKey, $this->cacheDuration * 60, function () {
+                \Log::info('Fetching product from database (not cached)', [
+                    'product_id' => $this->productId,
+                    'cache_key' => $this->getCacheKey()
+                ]);
+
+                $result = DB::connection('mysqlMagento')
+                    ->table('catalog_product_entity as produit')
+                    ->select([
+                        'produit.entity_id as id',
+                        'produit.sku as sku',
+                        'product_char.reference as parkode',
+                        DB::raw('CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) as title'),
+                        DB::raw('CAST(product_parent_char.name AS CHAR CHARACTER SET utf8mb4) as parent_title'),
+                        DB::raw("SUBSTRING_INDEX(product_char.name, ' - ', 1) as vendor"),
+                        DB::raw("SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) as type"),
+                        'product_char.thumbnail as thumbnail',
+                        'product_char.swatch_image as swatch_image',
+                        'product_char.reference_us as reference_us',
+                        DB::raw('CAST(product_text.description AS CHAR CHARACTER SET utf8mb4) as description'),
+                        DB::raw('CAST(product_text.short_description AS CHAR CHARACTER SET utf8mb4) as short_description'),
+                        DB::raw('CAST(product_parent_text.description AS CHAR CHARACTER SET utf8mb4) as parent_description'),
+                        DB::raw('CAST(product_parent_text.short_description AS CHAR CHARACTER SET utf8mb4) as parent_short_description'),
+                        DB::raw('CAST(product_text.composition AS CHAR CHARACTER SET utf8mb4) as composition'),
+                        DB::raw('CAST(product_text.olfactive_families AS CHAR CHARACTER SET utf8mb4) as olfactive_families'),
+                        DB::raw('CAST(product_text.product_benefit AS CHAR CHARACTER SET utf8mb4) as product_benefit'),
+                        DB::raw('ROUND(product_decimal.price, 2) as price'),
+                        DB::raw('ROUND(product_decimal.special_price, 2) as special_price'),
+                        DB::raw('ROUND(product_decimal.cost, 2) as cost'),
+                        DB::raw('ROUND(product_decimal.pvc, 2) as pvc'),
+                        DB::raw('ROUND(product_decimal.prix_achat_ht, 2) as prix_achat_ht'),
+                        DB::raw('ROUND(product_decimal.prix_us, 2) as prix_us'),
+                        'product_int.status as status',
+                        'product_int.color as color',
+                        'product_int.capacity as capacity',
+                        'product_int.product_type as product_type',
+                        'product_media.media_gallery as media_gallery',
+                        DB::raw('CAST(product_categorie.name AS CHAR CHARACTER SET utf8mb4) as categorie'),
+                        DB::raw("REPLACE(product_categorie.name, ' > ', ',') as tags"),
+                        'stock_item.qty as quatity',
+                        'stock_status.stock_status as quatity_status',
+                        'options.configurable_product_id as configurable_product_id',
+                        'parent_child_table.parent_id as parent_id',
+                        'options.attribute_code as option_name',
+                        'options.attribute_value as option_value'
+                    ])
+                    ->leftJoin('catalog_product_relation as parent_child_table', 'parent_child_table.child_id', '=', 'produit.entity_id')
+                    ->leftJoin('catalog_product_super_link as cpsl', 'cpsl.product_id', '=', 'produit.entity_id')
+                    ->leftJoin('product_char', 'product_char.entity_id', '=', 'produit.entity_id')
+                    ->leftJoin('product_text', 'product_text.entity_id', '=', 'produit.entity_id')
+                    ->leftJoin('product_decimal', 'product_decimal.entity_id', '=', 'produit.entity_id')
+                    ->leftJoin('product_int', 'product_int.entity_id', '=', 'produit.entity_id')
+                    ->leftJoin('product_media', 'product_media.entity_id', '=', 'produit.entity_id')
+                    ->leftJoin('product_categorie', 'product_categorie.entity_id', '=', 'produit.entity_id')
+                    ->leftJoin('cataloginventory_stock_item as stock_item', 'stock_item.product_id', '=', 'produit.entity_id')
+                    ->leftJoin('cataloginventory_stock_status as stock_status', 'stock_item.product_id', '=', 'stock_status.product_id')
+                    ->leftJoin('option_super_attribut as options', 'options.simple_product_id', '=', 'produit.entity_id')
+                    ->leftJoin('eav_attribute_set as eas', 'produit.attribute_set_id', '=', 'eas.attribute_set_id')
+                    ->leftJoin('catalog_product_entity as produit_parent', 'parent_child_table.parent_id', '=', 'produit_parent.entity_id')
+                    ->leftJoin('product_char as product_parent_char', 'product_parent_char.entity_id', '=', 'produit_parent.entity_id')
+                    ->leftJoin('product_text as product_parent_text', 'product_parent_text.entity_id', '=', 'produit_parent.entity_id')
+                    ->where('produit.entity_id', $this->productId)
+                    ->where(function($query) {
+                        $query->whereNull('product_int.status')
+                              ->orWhere('product_int.status', '>=', 0);
+                    })
+                    ->orderBy('product_char.entity_id', 'DESC')
+                    ->first();
+
+                \Log::info('Product fetched and cached', [
+                    'product_id' => $this->productId,
+                    'cache_key' => $this->getCacheKey(),
+                    'cache_duration' => $this->cacheDuration,
+                    'found' => $result !== null
+                ]);
+
+                return $result;
+            });
 
         } catch (\Throwable $e) {
             \Log::error('Error loading product:', [
@@ -91,6 +153,30 @@ new class extends Component {
             
             return null;
         }
+    }
+
+    /**
+     * Vérifie si le produit est en cache
+     */
+    public function isCached()
+    {
+        return Cache::has($this->getCacheKey());
+    }
+
+    /**
+     * Obtient les informations de cache
+     */
+    public function getCacheInfo()
+    {
+        $cacheKey = $this->getCacheKey();
+        $isCached = Cache::has($cacheKey);
+        
+        return [
+            'is_cached' => $isCached,
+            'cache_key' => $cacheKey,
+            'cache_duration_minutes' => $this->cacheDuration,
+            'product_id' => $this->productId
+        ];
     }
 
 }; ?>
