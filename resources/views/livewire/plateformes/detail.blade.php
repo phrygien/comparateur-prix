@@ -27,7 +27,7 @@ new class extends Component {
             
             // Vérifier le cache
             return Cache::remember($cacheKey, now()->addMinutes(self::PRODUCT_CACHE_TTL), function () {
-                return DB::connection('mysqlMagento')
+                $result = DB::connection('mysqlMagento')
                     ->table('catalog_product_entity as produit')
                     ->select([
                         'produit.entity_id as id',
@@ -89,6 +89,9 @@ new class extends Component {
                     })
                     ->orderBy('product_char.entity_id', 'DESC')
                     ->first();
+
+                // Vérifier si le résultat est un tableau et le convertir en objet si nécessaire
+                return is_array($result) ? (object) $result : $result;
             });
 
         } catch (\Throwable $e) {
