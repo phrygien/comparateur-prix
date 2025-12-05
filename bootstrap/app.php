@@ -16,7 +16,8 @@ return Application::configure(basePath: dirname(__DIR__))
         // Enregistrer votre middleware personnalisé
         $middleware->alias([
             'check.auth' => CheckAuth::class,
-             'cache.response' => CacheResponse::class,
+            'cache.response' => CacheResponse::class,
+            'boutique.cache' => \App\Http\Middleware\BoutiqueCacheMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
