@@ -62,37 +62,44 @@ new class extends Component {
     // Mapping des abréviations des marques (chargé une fois)
     private static $brandAbbreviations = null;
 
-    // Mount optimisé avec cache
-    public function mount($name, $id, $price)
-    {
-        // Vérifier le cache complet d'abord
-        $fullCacheKey = 'full_search:' . md5($name . $id . $price);
-        $cached = Cache::get($fullCacheKey);
+public function mount($name, $id, $price)
+{
+    // Vérifier le cache complet d'abord
+    $fullCacheKey = 'full_search:' . md5($name . $id . $price);
+    $cached = Cache::get($fullCacheKey);
 
-        if ($cached && !request()->has('refresh')) {
-            $this->hydrateFromCache($cached);
-            return;
-        }
-
-        // Initialiser les propriétés
-        $this->id = $id;
-        $this->price = $this->cleanPrice($price);
-        $this->referencePrice = $this->cleanPrice($price);
-        $this->cosmashopPrice = $this->cleanPrice($price) * 1.05;
-        $this->searchQuery = $name;
-
-        // Extraire le vendor par défaut
-        $this->extractDefaultVendor($name);
-
-        // Charger les sites (avec cache)
-        $this->loadSites();
-
-        // Toujours afficher le tableau
-        $this->showTable = true;
-
-        // Recherche initiale en arrière-plan
-        $this->deferredSearch($name);
+    if ($cached && !request()->has('refresh')) {
+        $this->hydrateFromCache($cached);
+        return;
     }
+
+    // S'assurer que $id est un scalaire (pas un tableau)
+    if (is_array($id)) {
+        \Log::warning('ID is array, using first element', ['id' => $id]);
+        $id = !empty($id) ? reset($id) : null;
+    }
+    
+    // Convertir en int si possible
+    $this->id = is_numeric($id) ? (int) $id : $id;
+    
+    // Le reste du code...
+    $this->price = $this->cleanPrice($price);
+    $this->referencePrice = $this->cleanPrice($price);
+    $this->cosmashopPrice = $this->cleanPrice($price) * 1.05;
+    $this->searchQuery = $name;
+
+    // Extraire le vendor par défaut
+    $this->extractDefaultVendor($name);
+
+    // Charger les sites (avec cache)
+    $this->loadSites();
+
+    // Toujours afficher le tableau
+    $this->showTable = true;
+
+    // Recherche initiale en arrière-plan
+    $this->deferredSearch($name);
+}
 
     // Hydratation depuis le cache
     private function hydrateFromCache(array $cached): void
@@ -486,6 +493,11 @@ new class extends Component {
     // Restaurer les résultats automatiques
     private function restoreAutomaticResults(): void
     {
+        // S'assurer que $this->originalAutomaticResults est bien un tableau d'objets
+        if (!is_array($this->originalAutomaticResults)) {
+            $this->originalAutomaticResults = [];
+        }
+        
         $this->matchedProducts = $this->originalAutomaticResults;
         $this->products = $this->originalAutomaticResults;
         $this->hasData = !empty($this->originalAutomaticResults);
@@ -495,6 +507,12 @@ new class extends Component {
         // Pagination
         $this->totalPages = ceil(count($this->originalAutomaticResults) / $this->perPage);
         $this->hasMore = ($this->currentPage < $this->totalPages);
+        
+        \Log::debug('Restored automatic results', [
+            'count' => count($this->originalAutomaticResults),
+            'type' => gettype($this->originalAutomaticResults),
+            'first_item_type' => !empty($this->originalAutomaticResults[0]) ? gettype($this->originalAutomaticResults[0]) : 'empty'
+        ]);
     }
 
     // Effacer le cache de recherche
@@ -706,54 +724,120 @@ new class extends Component {
         return min(1.0, $score);
     }
 
-    // Mettre en cache et mettre à jour
-    private function cacheAndUpdateState(array $matchedProducts, string $search, string $searchQuery, string $cacheKey): array
-    {
-        $fullResult = [
-            'count' => count($matchedProducts),
-            'has_data' => !empty($matchedProducts),
-            'products' => $matchedProducts,
-            'product' => $this->getOneProductDetails($this->id),
-            'query' => $searchQuery
-        ];
+// Mettre en cache et mettre à jour - CORRIGÉ
+private function cacheAndUpdateState(array $matchedProducts, string $search, string $searchQuery, string $cacheKey): array
+{
+    // S'assurer que $this->id est valide
+    $productDetails = null;
+    if (!empty($this->id) && !is_array($this->id) && is_numeric($this->id)) {
+        $productDetails = $this->getOneProductDetails((int) $this->id);
+    }
+    
+    $fullResult = [
+        'count' => count($matchedProducts),
+        'has_data' => !empty($matchedProducts),
+        'products' => $matchedProducts,
+        'product' => $productDetails,
+        'query' => $searchQuery
+    ];
 
-        // Mettre en cache
-        $this->cachePut($cacheKey, [
-            'products' => $matchedProducts,
-            'full_result' => $fullResult
-        ]);
+    // Mettre en cache
+    $this->cachePut($cacheKey, [
+        'products' => $matchedProducts,
+        'full_result' => $fullResult
+    ]);
 
-        // Mettre à jour l'état
-        $this->matchedProducts = $matchedProducts;
-        $this->products = $matchedProducts;
-        $this->originalAutomaticResults = $matchedProducts;
-        $this->hasAppliedFilters = false;
-        $this->hasData = !empty($matchedProducts);
-        $this->isAutomaticSearch = true;
-        $this->currentPage = 1;
+    // Mettre à jour l'état
+    $this->matchedProducts = $matchedProducts;
+    $this->products = $matchedProducts;
+    $this->originalAutomaticResults = $matchedProducts;
+    $this->hasAppliedFilters = false;
+    $this->hasData = !empty($matchedProducts);
+    $this->isAutomaticSearch = true;
+    $this->currentPage = 1;
+    
+    // Pagination
+    $this->totalPages = ceil(count($matchedProducts) / $this->perPage);
+    $this->hasMore = ($this->currentPage < $this->totalPages);
+
+    return $fullResult;
+}
+
+// Appliquer les résultats du cache automatique - CORRIGÉ
+private function applyAutomaticCachedResults($cachedResults): void
+{
+    // Vérifier la structure du cache
+    if (!is_array($cachedResults) || !isset($cachedResults['products'])) {
+        \Log::error('Invalid cache structure', ['cache' => $cachedResults]);
+        $this->resetSearchState();
+        return;
+    }
+    
+    $products = $cachedResults['products'];
+    
+    // S'assurer que c'est un tableau
+    if (!is_array($products)) {
+        $products = [];
+    }
+    
+    $this->matchedProducts = $products;
+    $this->products = $products;
+    $this->originalAutomaticResults = $products;
+    $this->hasAppliedFilters = false;
+    $this->hasData = !empty($products);
+    $this->isAutomaticSearch = true;
+    $this->currentPage = 1;
+    
+    $this->totalPages = ceil(count($products) / $this->perPage);
+    $this->hasMore = ($this->currentPage < $this->totalPages);
+}
+
+// Valider et normaliser les données de produit
+private function validateAndNormalizeProduct($product)
+{
+    // Si c'est déjà un objet stdClass, le retourner tel quel
+    if ($product instanceof \stdClass) {
+        return $product;
+    }
+    
+    // Si c'est un tableau, le convertir en objet
+    if (is_array($product)) {
+        return (object) $product;
+    }
+    
+    // Si c'est autre chose, créer un objet vide
+    return (object) [];
+}
+
+// Utiliser cette méthode dans le traitement des résultats
+private function processAutomaticResults(array $results, string $search): array
+{
+    $processed = [];
+    
+    foreach ($results as $product) {
+        // Valider et normaliser le produit
+        $product = $this->validateAndNormalizeProduct($product);
         
-        // Pagination
-        $this->totalPages = ceil(count($matchedProducts) / $this->perPage);
-        $this->hasMore = ($this->currentPage < $this->totalPages);
+        // Nettoyer le prix
+        if (isset($product->prix_ht)) {
+            $product->prix_ht = $this->cleanPrice($product->prix_ht);
+        }
 
-        return $fullResult;
+        // Normaliser le vendor
+        if (isset($product->vendor)) {
+            $product->vendor = $this->normalizeVendor($product->vendor);
+        }
+
+        // URLs
+        $product->product_url = $product->url ?? '';
+        $product->image = $product->image_url ?? '';
+        $product->is_manual_search = false;
+
+        $processed[] = $product;
     }
 
-    // Appliquer les résultats du cache automatique
-    private function applyAutomaticCachedResults($cachedResults): void
-    {
-        $this->matchedProducts = $cachedResults['products'];
-        $this->products = $cachedResults['products'];
-        $this->originalAutomaticResults = $cachedResults['products'];
-        $this->hasAppliedFilters = false;
-        $this->hasData = !empty($cachedResults['products']);
-        $this->isAutomaticSearch = true;
-        $this->currentPage = 1;
-        
-        $this->totalPages = ceil(count($cachedResults['products']) / $this->perPage);
-        $this->hasMore = ($this->currentPage < $this->totalPages);
-    }
-
+    return $processed;
+}
     // Réinitialiser l'état de recherche
     private function resetSearchState(): void
     {
@@ -954,48 +1038,58 @@ new class extends Component {
         }
     }
 
-    // Détails du produit avec cache
-    public function getOneProductDetails($entity_id)
-    {
-        $cacheKey = 'product_details:' . $entity_id;
-        $cachedDetails = $this->cacheGet($cacheKey);
-        
-        if ($cachedDetails !== null) {
-            return $cachedDetails;
-        }
-        
-        try {
-            // Requête simplifiée
-            $dataQuery = "
-                SELECT 
-                    produit.entity_id as id,
-                    produit.sku as sku,
-                    product_char.reference as parkode,
-                    CAST(product_char.name AS CHAR) as title,
-                    SUBSTRING_INDEX(product_char.name, ' - ', 1) as vendor,
-                    product_char.thumbnail as thumbnail,
-                    ROUND(product_decimal.price, 2) as price,
-                    product_int.status as status
-                FROM catalog_product_entity as produit
-                LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
-                LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
-                LEFT JOIN product_int ON product_int.entity_id = produit.entity_id
-                WHERE product_int.status >= 0 AND produit.entity_id = ? 
-                LIMIT 1
-            ";
-            
-            $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
-            
-            // Mettre en cache
-            $this->cachePut($cacheKey, $result, 30);
-            
-            return $result;
-            
-        } catch (\Throwable $e) {
-            \Log::error('Error loading product details', ['error' => $e->getMessage()]);
-            return ['error' => $e->getMessage()];
-        }
+// Détails du produit avec cache - CORRIGÉ
+public function getOneProductDetails($entity_id)
+{
+    // Vérifier que $entity_id n'est pas un tableau
+    if (is_array($entity_id)) {
+        \Log::error('Entity ID is array instead of scalar', ['entity_id' => $entity_id]);
+        return ['error' => 'Invalid entity ID'];
     }
+    
+    $cacheKey = 'product_details:' . (string) $entity_id;
+    $cachedDetails = $this->cacheGet($cacheKey);
+    
+    if ($cachedDetails !== null) {
+        return $cachedDetails;
+    }
+    
+    try {
+        // Requête simplifiée
+        $dataQuery = "
+            SELECT 
+                produit.entity_id as id,
+                produit.sku as sku,
+                product_char.reference as parkode,
+                CAST(product_char.name AS CHAR) as title,
+                SUBSTRING_INDEX(product_char.name, ' - ', 1) as vendor,
+                product_char.thumbnail as thumbnail,
+                ROUND(product_decimal.price, 2) as price,
+                product_int.status as status
+            FROM catalog_product_entity as produit
+            LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+            LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
+            LEFT JOIN product_int ON product_int.entity_id = produit.entity_id
+            WHERE product_int.status >= 0 AND produit.entity_id = ? 
+            LIMIT 1
+        ";
+        
+        $result = DB::connection('mysqlMagento')->select($dataQuery, [(int) $entity_id]);
+        
+        // Mettre en cache
+        $this->cachePut($cacheKey, $result, 30);
+        
+        return $result;
+        
+    } catch (\Throwable $e) {
+        \Log::error('Error loading product details', [
+            'error' => $e->getMessage(),
+            'entity_id' => $entity_id,
+            'entity_id_type' => gettype($entity_id)
+        ]);
+        return ['error' => $e->getMessage()];
+    }
+}
 
     // MÉTHODES D'AFFICHAGE OPTIMISÉES
 
