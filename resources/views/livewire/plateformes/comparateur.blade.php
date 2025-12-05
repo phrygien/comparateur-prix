@@ -642,32 +642,32 @@ public function mount($name, $id, $price)
         return DB::connection('mysql')->select($sql, [$searchQuery]);
     }
 
-    // Traiter les résultats automatiques
-    private function processAutomaticResults(array $results, string $search): array
-    {
-        $processed = [];
+    // // Traiter les résultats automatiques
+    // private function processAutomaticResults(array $results, string $search): array
+    // {
+    //     $processed = [];
         
-        foreach ($results as $product) {
-            // Nettoyer le prix
-            if (isset($product->prix_ht)) {
-                $product->prix_ht = $this->cleanPrice($product->prix_ht);
-            }
+    //     foreach ($results as $product) {
+    //         // Nettoyer le prix
+    //         if (isset($product->prix_ht)) {
+    //             $product->prix_ht = $this->cleanPrice($product->prix_ht);
+    //         }
 
-            // Normaliser le vendor
-            if (isset($product->vendor)) {
-                $product->vendor = $this->normalizeVendor($product->vendor);
-            }
+    //         // Normaliser le vendor
+    //         if (isset($product->vendor)) {
+    //             $product->vendor = $this->normalizeVendor($product->vendor);
+    //         }
 
-            // URLs
-            $product->product_url = $product->url ?? '';
-            $product->image = $product->image_url ?? '';
-            $product->is_manual_search = false;
+    //         // URLs
+    //         $product->product_url = $product->url ?? '';
+    //         $product->image = $product->image_url ?? '';
+    //         $product->is_manual_search = false;
 
-            $processed[] = $product;
-        }
+    //         $processed[] = $product;
+    //     }
 
-        return $processed;
-    }
+    //     return $processed;
+    // }
 
     // Calcul de similarité par lot (optimisé)
     private function calculateSimilarityBatch(array $products, string $search): array
