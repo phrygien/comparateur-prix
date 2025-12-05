@@ -8,7 +8,6 @@ use Illuminate\Support\Facades\Cache;
 use App\Models\Site as WebSite;
 
 new class extends Component {
-    // Propriétés de base
     public $products = [];
     public $product = null;
     public $hasData = false;
@@ -19,16 +18,17 @@ new class extends Component {
     public $id;
     public $mydata;
 
-    // Similarité
     public $similarityThreshold = 0.6;
     public $matchedProducts = [];
 
-    // Recherche
+    // Pour stocker la requête de recherche
     public $searchQuery = '';
 
-    // Prix
+    // prix a comparer
     public $price;
     public $referencePrice;
+
+    // price cosmashop
     public $cosmashopPrice;
 
     // Filtres
@@ -40,783 +40,650 @@ new class extends Component {
         'site_source' => ''
     ];
 
-    // Pagination et chargement
-    public $perPage = 20;
-    public $currentPage = 1;
-    public $totalPages = 0;
-    public $isLoading = false;
-    public $hasMore = false;
-
-    // Sites et état
-    public $sites = [];
-    public $showTable = false;
-    public $isAutomaticSearch = true;
+    public $sites = []; // Pour stocker la liste des sites
+    public $showTable = false; // Pour suivre si on doit montrer le tableau même sans résultats
+    public $isAutomaticSearch = true; // Pour distinguer recherche automatique vs manuelle
+    
+    // Pour stocker les résultats originaux de la recherche automatique
     public $originalAutomaticResults = [];
+    
+    // Pour stocker si un filtre a été appliqué après la recherche automatique
     public $hasAppliedFilters = false;
 
-    // Cache optimisé
-    private array $quickCache = [];
-    private const CACHE_TTL = 60;
-    private const QUICK_CACHE_TTL = 10; // Cache court pour les opérations fréquentes
+    // Mapping des abréviations des marques
+    private array $brandAbbreviations = [
+        'YSL' => 'Yves Saint Laurent',
+        'D&G' => 'Dolce & Gabbana',
+        'CK' => 'Calvin Klein',
+        'JPG' => 'Jean Paul Gaultier',
+        'PR' => 'Paco Rabanne',
+        'CH' => 'Carolina Herrera',
+        'V&R' => 'Viktor & Rolf',
+        'BVLGARI' => 'Bvlgari',
+        'HERMES' => 'Hermès',
+        'GUERLAIN' => 'Guerlain',
+        'LANCOME' => 'Lancôme',
+        'DIOR' => 'Dior',
+        'CHANEL' => 'Chanel',
+        'ARMANI' => 'Armani',
+        'PRADA' => 'Prada',
+        'VERSACE' => 'Versace',
+        'GIVENCHY' => 'Givenchy',
+        'BURBERRY' => 'Burberry',
+        'MUGLER' => 'Mugler',
+        'NR' => 'Narciso Rodriguez',
+        'MB' => 'Montblanc',
+        'CARTIER' => 'Cartier',
+    ];
 
-    // Mapping des abréviations des marques (chargé une fois)
-    private static $brandAbbreviations = null;
+    // Durée du cache en minutes
+    private const CACHE_TTL = 60; // 1 heure
 
-    // Mount optimisé avec cache
     public function mount($name, $id, $price)
     {
-        // Vérifier le cache complet d'abord
-        $fullCacheKey = 'full_search:' . md5($name . $id . $price);
-        $cached = Cache::get($fullCacheKey);
-
-        if ($cached && !request()->has('refresh')) {
-            $this->hydrateFromCache($cached);
-            return;
-        }
-
-        // Initialiser les propriétés
+        $this->getCompetitorPrice($name);
         $this->id = $id;
         $this->price = $this->cleanPrice($price);
         $this->referencePrice = $this->cleanPrice($price);
         $this->cosmashopPrice = $this->cleanPrice($price) * 1.05;
+
+        // STOCKEZ LA REQUÊTE DE RECHERCHE
         $this->searchQuery = $name;
 
-        // Extraire le vendor par défaut
+        // Extraire le vendor par défaut depuis la recherche
         $this->extractDefaultVendor($name);
 
-        // Charger les sites (avec cache)
+        // Charger la liste des sites
         $this->loadSites();
 
-        // Toujours afficher le tableau
+        // Toujours afficher le tableau pour permettre le filtrage manuel
         $this->showTable = true;
-
-        // Recherche initiale en arrière-plan
-        $this->deferredSearch($name);
     }
 
-    // Hydratation depuis le cache
-    private function hydrateFromCache(array $cached): void
-    {
-        foreach ($cached as $key => $value) {
-            if (property_exists($this, $key)) {
-                $this->$key = $value;
-            }
-        }
-        $this->hasData = !empty($this->products);
-        \Log::info('Loaded from full cache', ['key' => array_keys($cached)]);
-    }
-
-    // Recherche différée pour le premier rendu
-    private function deferredSearch(string $search): void
-    {
-        if (empty($search)) {
-            $this->hasData = false;
-            return;
-        }
-
-        // Utiliser une file d'attente pour la recherche lourde
-        if (app()->runningInConsole() === false) {
-            dispatch(function () use ($search) {
-                $this->getCompetitorPrice($search);
-            })->afterResponse();
-        } else {
-            $this->getCompetitorPrice($search);
-        }
-    }
-
-    // Cache hiérarchique
+    /**
+     * Génère une clé de cache unique pour les résultats de recherche
+     */
     private function getCacheKey(string $search, array $filters = [], bool $isManual = false): string
     {
         $keyData = [
-            'search' => substr(trim(strtolower($search)), 0, 100),
-            'filters' => $this->filterCacheData($filters),
-            'type' => $isManual ? 'manual' : 'auto',
-            'threshold' => round($this->similarityThreshold, 1)
+            'search' => trim(strtolower($search)),
+            'filters' => $filters,
+            'type' => $isManual ? 'manual' : 'automatic',
+            'threshold' => $this->similarityThreshold
         ];
 
-        return 'search:' . md5(json_encode($keyData));
+        return 'search_results:' . md5(serialize($keyData));
     }
 
-    // Réduire les données de filtre pour le cache
-    private function filterCacheData(array $filters): array
-    {
-        return array_filter($filters, function($value) {
-            return !empty($value);
-        });
-    }
-
-    // Gestionnaire de cache optimisé
-    private function cacheGet(string $key)
-    {
-        // Vérifier d'abord le cache rapide en mémoire
-        if (isset($this->quickCache[$key]) && 
-            $this->quickCache[$key]['expires'] > microtime(true)) {
-            return $this->quickCache[$key]['data'];
-        }
-
-        // Sinon vérifier le cache Laravel
-        $data = Cache::get($key);
-        
-        // Stocker dans le cache rapide
-        if ($data !== null) {
-            $this->quickCache[$key] = [
-                'data' => $data,
-                'expires' => microtime(true) + self::QUICK_CACHE_TTL
-            ];
-        }
-
-        return $data;
-    }
-
-    private function cachePut(string $key, $data, int $ttl = null): void
-    {
-        $ttl = $ttl ?? self::CACHE_TTL;
-        
-        // Stocker dans le cache rapide
-        $this->quickCache[$key] = [
-            'data' => $data,
-            'expires' => microtime(true) + self::QUICK_CACHE_TTL
-        ];
-
-        // Stocker dans le cache Laravel
-        Cache::put($key, $data, now()->addMinutes($ttl));
-    }
-
-    // Extraction optimisée du vendor
-    private function extractDefaultVendor(string $search): void
-    {
-        if (empty($search)) return;
-
-        // Pattern simple pour extraction rapide
-        if (preg_match('/^([A-Z&]+(?:\s+[A-Z&]+)*)/', $search, $matches)) {
-            $vendor = trim($matches[1]);
-            
-            // Nettoyer rapidement
-            $vendor = preg_replace('/\d+ml/i', '', $vendor);
-            $vendor = trim($vendor);
-            
-            // Normaliser
-            $vendor = $this->normalizeVendor($vendor);
-            
-            if (!empty($vendor)) {
-                $this->filters['vendor'] = $vendor;
-                return;
-            }
-        }
-
-        // Fallback simple
-        $words = explode(' ', $search);
-        if (count($words) > 0) {
-            $this->filters['vendor'] = $this->normalizeVendor($words[0]);
-        }
-    }
-
-    // Marques abrégées avec chargement paresseux
-    private function getBrandAbbreviations(): array
-    {
-        if (self::$brandAbbreviations === null) {
-            self::$brandAbbreviations = [
-                'YSL' => 'Yves Saint Laurent',
-                'D&G' => 'Dolce & Gabbana',
-                'CK' => 'Calvin Klein',
-                'JPG' => 'Jean Paul Gaultier',
-                'PR' => 'Paco Rabanne',
-                'CH' => 'Carolina Herrera',
-                'V&R' => 'Viktor & Rolf',
-                'BVLGARI' => 'Bvlgari',
-                'HERMES' => 'Hermès',
-                'GUERLAIN' => 'Guerlain',
-                'LANCOME' => 'Lancôme',
-                'DIOR' => 'Dior',
-                'CHANEL' => 'Chanel',
-                'ARMANI' => 'Armani',
-                'PRADA' => 'Prada',
-                'VERSACE' => 'Versace',
-                'GIVENCHY' => 'Givenchy',
-                'BURBERRY' => 'Burberry',
-                'MUGLER' => 'Mugler',
-                'NR' => 'Narciso Rodriguez',
-                'MB' => 'Montblanc',
-                'CARTIER' => 'Cartier',
-            ];
-        }
-
-        return self::$brandAbbreviations;
-    }
-
-    // Normalisation optimisée
-    private function normalizeVendor(string $vendor): string
-    {
-        if (empty(trim($vendor))) return '';
-
-        $vendorUpper = strtoupper(trim($vendor));
-        $abbreviations = $this->getBrandAbbreviations();
-
-        // Vérification directe
-        if (isset($abbreviations[$vendorUpper])) {
-            return $abbreviations[$vendorUpper];
-        }
-
-        // Recherche inverse (optimisée)
-        foreach ($abbreviations as $abbr => $full) {
-            if (strcasecmp($vendor, $full) === 0) {
-                return $full;
-            }
-        }
-
-        return trim($vendor);
-    }
-
-    // Chargement des sites avec cache longue durée
-    public function loadSites()
-    {
-        $cacheKey = 'sites_list_v2';
-        $cachedSites = $this->cacheGet($cacheKey);
-
-        if ($cachedSites !== null) {
-            $this->sites = $cachedSites;
-            return;
-        }
-
-        try {
-            // Requête simplifiée
-            $this->sites = WebSite::select(['id', 'name'])
-                ->orderBy('name')
-                ->get()
-                ->toArray();
-
-            // Cache pour 24h
-            $this->cachePut($cacheKey, $this->sites, 1440);
-        } catch (\Throwable $e) {
-            $this->sites = [];
-            \Log::error('Error loading sites', ['error' => $e->getMessage()]);
-        }
-    }
-
-    // RECHERCHE MANUELLE OPTIMISÉE
-    public function searchManual()
-    {
-        if ($this->isLoading) return;
-
-        $this->isLoading = true;
-        $startTime = microtime(true);
-
-        try {
-            // Vérifier le cache
-            $cacheKey = $this->getManualSearchCacheKey();
-            $cachedResults = $this->cacheGet($cacheKey);
-
-            if ($cachedResults !== null) {
-                $this->applyCachedResults($cachedResults);
-                $this->logPerformance($startTime, 'manual_search_cache');
-                $this->isLoading = false;
-                return;
-            }
-
-            // Construire la requête optimisée
-            [$sql, $params] = $this->buildOptimizedManualQuery();
-
-            // Exécuter avec limite
-            $limit = $this->perPage * $this->currentPage;
-            $sql .= " LIMIT ?";
-            $params[] = $limit;
-
-            $result = DB::connection('mysql')->select($sql, $params);
-
-            // Traiter les résultats
-            $processedResults = $this->processManualResults($result);
-
-            // Mettre à jour l'état
-            $this->updateManualSearchState($processedResults, $cacheKey);
-
-            $this->logPerformance($startTime, 'manual_search_db');
-
-        } catch (\Throwable $e) {
-            $this->handleSearchError($e);
-        } finally {
-            $this->isLoading = false;
-        }
-    }
-
-    // Construction de requête optimisée
-    private function buildOptimizedManualQuery(): array
-    {
-        $conditions = [];
-        $params = [];
-
-        // Vendor avec variations
-        if (!empty($this->filters['vendor'])) {
-            $vendorVariations = $this->getVendorVariations($this->filters['vendor']);
-            if (!empty($vendorVariations)) {
-                $vendorConditions = [];
-                foreach ($vendorVariations as $variation) {
-                    $vendorConditions[] = "sp.vendor LIKE ?";
-                    $params[] = '%' . $variation . '%';
-                }
-                $conditions[] = '(' . implode(' OR ', $vendorConditions) . ')';
-            }
-        }
-
-        // Autres filtres
-        $filterFields = ['name', 'variation', 'type'];
-        foreach ($filterFields as $field) {
-            if (!empty($this->filters[$field])) {
-                $conditions[] = "sp.$field LIKE ?";
-                $params[] = '%' . $this->filters[$field] . '%';
-            }
-        }
-
-        // Filtre site
-        if (!empty($this->filters['site_source'])) {
-            $conditions[] = "sp.web_site_id = ?";
-            $params[] = $this->filters['site_source'];
-        }
-
-        // Requête de base optimisée
-        $sql = "SELECT DISTINCT ON (sp.url, sp.vendor, sp.name, sp.type, sp.variation)
-                    sp.*,
-                    ws.name as site_name
-                FROM scraped_product sp
-                LEFT JOIN web_site ws ON sp.web_site_id = ws.id";
-
-        if (!empty($conditions)) {
-            $sql .= " WHERE " . implode(' AND ', $conditions);
-        }
-
-        $sql .= " ORDER BY sp.url, sp.vendor, sp.name, sp.type, sp.variation, sp.created_at DESC";
-
-        return [$sql, $params];
-    }
-
-    // Traitement des résultats manuels
-    private function processManualResults(array $results): array
-    {
-        $processed = [];
-        foreach ($results as $product) {
-            // Nettoyer le prix
-            if (isset($product->prix_ht)) {
-                $product->prix_ht = $this->cleanPrice($product->prix_ht);
-            }
-
-            // Assurer les URLs
-            $product->product_url = $product->url ?? '';
-            $product->image = $product->image_url ?? '';
-
-            // Propriétés pour l'UI
-            $product->is_manual_search = true;
-            $product->similarity_score = null;
-            $product->match_level = null;
-
-            $processed[] = $product;
-        }
-
-        return $processed;
-    }
-
-    // Mise à jour de l'état
-    private function updateManualSearchState(array $results, string $cacheKey): void
-    {
-        $this->products = $results;
-        $this->matchedProducts = $results;
-        $this->hasData = !empty($results);
-        $this->isAutomaticSearch = false;
-        $this->hasAppliedFilters = true;
-
-        // Calculer la pagination
-        $this->totalPages = ceil(count($results) / $this->perPage);
-        $this->hasMore = ($this->currentPage < $this->totalPages);
-
-        // Cache
-        $this->cachePut($cacheKey, $results);
-    }
-
-    // Clé de cache pour recherche manuelle
+    /**
+     * Génère une clé de cache pour la recherche manuelle avec déduplication
+     */
     private function getManualSearchCacheKey(): string
     {
         $cacheData = [
-            'filters' => $this->filterCacheData($this->filters),
-            'page' => $this->currentPage,
-            'perPage' => $this->perPage
+            'filters' => $this->filters,
+            'vendor_variations' => !empty($this->filters['vendor']) ? $this->getVendorVariations($this->filters['vendor']) : [],
+            'threshold' => $this->similarityThreshold
         ];
 
-        return 'manual_search:' . md5(json_encode($cacheData));
+        return 'manual_search:' . md5(serialize($cacheData));
     }
 
-    // APPLIQUER LES FILTRES
+    /**
+     * Vérifie si le résultat est en cache et le retourne
+     */
+    private function getCachedResults(string $cacheKey)
+    {
+        return Cache::get($cacheKey);
+    }
+
+    /**
+     * Stocke les résultats dans le cache
+     */
+    private function cacheResults(string $cacheKey, $results): void
+    {
+        Cache::put($cacheKey, $results, now()->addMinutes(self::CACHE_TTL));
+        
+        \Log::info('Results cached:', [
+            'key' => $cacheKey,
+            'count' => is_array($results) ? count($results) : 0,
+            'ttl' => self::CACHE_TTL . ' minutes'
+        ]);
+    }
+
+    /**
+     * Supprime le cache pour une clé spécifique
+     */
+    private function forgetCache(string $cacheKey): void
+    {
+        Cache::forget($cacheKey);
+        \Log::info('Cache cleared for key:', ['key' => $cacheKey]);
+    }
+
+    /**
+     * Extrait le vendor par défaut depuis la recherche avec gestion des abréviations
+     */
+    private function extractDefaultVendor(string $search): void
+    {
+        $vendor = '';
+
+        // Pattern pour extraire le vendor (marque) de la recherche
+        if (preg_match('/^([^-]+)/', $search, $matches)) {
+            $vendor = trim($matches[1]);
+
+            // Nettoyer les chiffres et caractères spéciaux
+            $vendor = preg_replace('/[0-9]+ml/i', '', $vendor);
+            $vendor = trim($vendor);
+            
+            // Vérifier si c'est une abréviation connue
+            $vendor = $this->normalizeVendor($vendor);
+        }
+
+        // Si on n'a pas trouvé de vendor, essayer d'autres méthodes
+        if (empty($vendor)) {
+            $vendor = $this->guessVendorFromSearch($search);
+        }
+
+        // Définir le vendor comme filtre par défaut
+        if (!empty($vendor)) {
+            $this->filters['vendor'] = $vendor;
+            \Log::info('Default vendor extracted:', ['vendor' => $vendor, 'search' => $search]);
+        }
+    }
+
+    /**
+     * Normalise un nom de vendor (convertit les abréviations en noms complets)
+     */
+    private function normalizeVendor(string $vendor): string
+    {
+        if (empty(trim($vendor))) {
+            return '';
+        }
+        
+        $vendorUpper = strtoupper(trim($vendor));
+        
+        // Si le vendor est une abréviation connue, retourner le nom complet
+        if (array_key_exists($vendorUpper, $this->brandAbbreviations)) {
+            return $this->brandAbbreviations[$vendorUpper];
+        }
+        
+        // Vérifier également les correspondances partielles
+        foreach ($this->brandAbbreviations as $abbreviation => $fullName) {
+            if (str_contains($vendorUpper, $abbreviation) || 
+                str_contains(strtoupper($fullName), $vendorUpper)) {
+                return $fullName;
+            }
+        }
+        
+        // Vérifier aussi dans l'autre sens (nom complet vers abréviation)
+        foreach ($this->brandAbbreviations as $abbreviation => $fullName) {
+            if (strcasecmp(trim($vendor), $fullName) === 0) {
+                return $fullName;
+            }
+        }
+        
+        return trim($vendor);
+    }
+
+    /**
+     * Devine le vendor à partir de la recherche avec gestion des abréviations
+     */
+    private function guessVendorFromSearch(string $search): string
+    {
+        $commonVendors = [
+            'Dior',
+            'Chanel',
+            'Yves Saint Laurent',
+            'Guerlain',
+            'Lancôme',
+            'Hermès',
+            'Prada',
+            'Armani',
+            'Versace',
+            'Dolce & Gabbana',
+            'Givenchy',
+            'Jean Paul Gaultier',
+            'Bvlgari',
+            'Cartier',
+            'Montblanc',
+            'Burberry',
+            'Calvin Klein',
+            'Paco Rabanne',
+            'Carolina Herrera',
+            'Viktor & Rolf',
+            'Mugler',
+            'Narciso Rodriguez'
+        ];
+
+        $searchLower = strtolower($search);
+        
+        // Vérifier d'abord les abréviations
+        foreach ($this->brandAbbreviations as $abbreviation => $fullName) {
+            if (stripos($searchLower, strtolower($abbreviation)) !== false) {
+                return $fullName;
+            }
+        }
+
+        // Vérifier les noms complets
+        foreach ($commonVendors as $vendor) {
+            if (stripos($searchLower, strtolower($vendor)) !== false) {
+                return $vendor;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Récupère toutes les variations d'une marque (nom complet, abréviation)
+     */
+    private function getVendorVariations(string $vendor): array
+    {
+        $variations = [trim($vendor)];
+        
+        // Normaliser d'abord
+        $normalized = $this->normalizeVendor($vendor);
+        if ($normalized !== $vendor && !in_array($normalized, $variations)) {
+            $variations[] = $normalized;
+        }
+        
+        // Trouver l'abréviation correspondante
+        foreach ($this->brandAbbreviations as $abbreviation => $fullName) {
+            if (strcasecmp($normalized, $fullName) === 0) {
+                $variations[] = $abbreviation;
+                $variations[] = strtoupper($abbreviation);
+                $variations[] = strtolower($abbreviation);
+            }
+        }
+        
+        // Ajouter aussi les versions en majuscule/minuscule
+        $variations[] = strtoupper($vendor);
+        $variations[] = strtolower($vendor);
+        $variations[] = ucwords(strtolower($vendor));
+        
+        return array_unique(array_filter($variations));
+    }
+
+    /**
+     * Charge la liste des sites
+     */
+    public function loadSites()
+    {
+        try {
+            // Vérifier d'abord le cache
+            $cacheKey = 'sites_list';
+            $cachedSites = Cache::get($cacheKey);
+
+            if ($cachedSites !== null) {
+                $this->sites = $cachedSites;
+                \Log::info('Sites loaded from cache:', ['count' => count($this->sites)]);
+                return;
+            }
+
+            // Récupérer tous les sites web
+            $sites = WebSite::orderBy('name')->get();
+            $this->sites = $sites;
+
+            // Stocker dans le cache
+            Cache::put($cacheKey, $sites, now()->addHours(24)); // Cache pour 24h
+
+            \Log::info('Sites loaded from database and cached:', ['count' => count($this->sites)]);
+        } catch (\Throwable $e) {
+            \Log::error('Error loading sites:', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            $this->sites = [];
+        }
+    }
+
+    /**
+     * Recherche manuelle sans FULLTEXT avec gestion des abréviations et cache
+     * Utilise la vue avec ROW_NUMBER pour éviter les doublons
+     */
+    public function searchManual()
+    {
+        try {
+            // Réinitialiser le flag de données
+            $this->hasData = false;
+            $this->matchedProducts = [];
+            $this->products = [];
+
+            // Vérifier le cache
+            $cacheKey = $this->getManualSearchCacheKey();
+            $cachedResults = $this->getCachedResults($cacheKey);
+
+            if ($cachedResults !== null) {
+                $this->products = $cachedResults;
+                $this->matchedProducts = $cachedResults;
+                $this->hasData = !empty($cachedResults);
+                $this->isAutomaticSearch = false;
+                $this->hasAppliedFilters = true;
+
+                \Log::info('Manual search results loaded from cache:', [
+                    'cache_key' => $cacheKey,
+                    'count' => count($cachedResults),
+                    'has_data' => $this->hasData
+                ]);
+                return;
+            }
+
+            // Construire les conditions de filtre pour les vendor variations
+            $vendorConditions = [];
+            $vendorParams = [];
+            
+            if (!empty($this->filters['vendor'])) {
+                $vendorVariations = $this->getVendorVariations($this->filters['vendor']);
+                
+                if (!empty($vendorVariations)) {
+                    foreach ($vendorVariations as $variation) {
+                        $vendorConditions[] = "t.vendor LIKE ?";
+                        $vendorParams[] = '%' . $variation . '%';
+                    }
+                }
+            }
+
+            // ÉTAPE 1: Trouver le MAX(scrap_reference_id) par site pour les produits correspondants
+            $subQuerySql = "
+                SELECT 
+                    t.web_site_id,
+                    MAX(t.scrap_reference_id) as max_scrap_reference_id
+                FROM (
+                    SELECT
+                        sp.*,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY sp.url, sp.vendor, sp.name, sp.type, sp.variation
+                            ORDER BY sp.created_at DESC
+                        ) AS row_num
+                    FROM scraped_product sp
+                ) AS t
+                WHERE t.row_num = 1";
+            
+            $subQueryParams = [];
+
+            // Appliquer les filtres vendor
+            if (!empty($vendorConditions)) {
+                $subQuerySql .= " AND (" . implode(' OR ', $vendorConditions) . ")";
+                $subQueryParams = array_merge($subQueryParams, $vendorParams);
+            }
+
+            // Appliquer les autres filtres
+            if (!empty($this->filters['name'])) {
+                $subQuerySql .= " AND t.name LIKE ?";
+                $subQueryParams[] = '%' . $this->filters['name'] . '%';
+            }
+
+            if (!empty($this->filters['variation'])) {
+                $subQuerySql .= " AND t.variation LIKE ?";
+                $subQueryParams[] = '%' . $this->filters['variation'] . '%';
+            }
+
+            if (!empty($this->filters['type'])) {
+                $subQuerySql .= " AND t.type LIKE ?";
+                $subQueryParams[] = '%' . $this->filters['type'] . '%';
+            }
+
+            if (!empty($this->filters['site_source'])) {
+                $subQuerySql .= " AND t.web_site_id = ?";
+                $subQueryParams[] = $this->filters['site_source'];
+            }
+
+            $subQuerySql .= " GROUP BY t.web_site_id";
+
+            \Log::info('Finding MAX scrap_reference_id per site with deduplication:', [
+                'subquery_sql' => $subQuerySql,
+                'subquery_params' => $subQueryParams
+            ]);
+
+            // Exécuter la sous-requête
+            $maxReferences = DB::connection('mysql')->select($subQuerySql, $subQueryParams);
+
+            if (empty($maxReferences)) {
+                \Log::info('No matching scrap_reference found with applied filters');
+                $this->products = [];
+                $this->hasData = false;
+                
+                // Mettre en cache les résultats vides
+                $this->cacheResults($cacheKey, []);
+                return;
+            }
+
+            // Créer un tableau des max reference IDs par site
+            $maxRefsBySite = [];
+            foreach ($maxReferences as $ref) {
+                $maxRefsBySite[$ref->web_site_id] = $ref->max_scrap_reference_id;
+            }
+
+            // ÉTAPE 2: Récupérer les produits dédupliqués avec les max reference IDs
+            $sql = "
+                SELECT 
+                    t.*,
+                    ws.name as site_name,
+                    t.url as product_url,
+                    t.image_url as image
+                FROM (
+                    SELECT
+                        sp.*,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY sp.url, sp.vendor, sp.name, sp.type, sp.variation
+                            ORDER BY sp.created_at DESC
+                        ) AS row_num
+                    FROM scraped_product sp
+                ) AS t
+                LEFT JOIN web_site ws ON t.web_site_id = ws.id
+                WHERE t.row_num = 1 AND (";
+
+            $params = [];
+            $conditions = [];
+
+            // Construire les conditions pour chaque site avec son max reference ID
+            foreach ($maxRefsBySite as $siteId => $refId) {
+                $conditions[] = "(t.web_site_id = ? AND t.scrap_reference_id = ?)";
+                $params[] = $siteId;
+                $params[] = $refId;
+            }
+
+            $sql .= implode(' OR ', $conditions) . ")";
+
+            // Réappliquer les filtres
+            if (!empty($vendorConditions)) {
+                $sql .= " AND (" . implode(' OR ', $vendorConditions) . ")";
+                $params = array_merge($params, $vendorParams);
+            }
+
+            if (!empty($this->filters['name'])) {
+                $sql .= " AND t.name LIKE ?";
+                $params[] = '%' . $this->filters['name'] . '%';
+            }
+
+            if (!empty($this->filters['variation'])) {
+                $sql .= " AND t.variation LIKE ?";
+                $params[] = '%' . $this->filters['variation'] . '%';
+            }
+
+            if (!empty($this->filters['type'])) {
+                $sql .= " AND t.type LIKE ?";
+                $params[] = '%' . $this->filters['type'] . '%';
+            }
+
+            if (!empty($this->filters['site_source'])) {
+                $sql .= " AND t.web_site_id = ?";
+                $params[] = $this->filters['site_source'];
+            }
+
+            $sql .= " ORDER BY t.prix_ht DESC LIMIT 100";
+
+            \Log::info('Manual search with deduplication view:', [
+                'filters' => $this->filters,
+                'vendor_variations' => $vendorVariations ?? [],
+                'max_references_by_site' => $maxRefsBySite,
+                'params_count' => count($params)
+            ]);
+
+            $result = DB::connection('mysql')->select($sql, $params);
+
+            // Nettoyer les prix et ajouter les propriétés manquantes
+            $processedResults = [];
+            foreach ($result as $product) {
+                if (isset($product->prix_ht)) {
+                    $product->prix_ht = $this->cleanPrice($product->prix_ht);
+                }
+
+                if (!isset($product->product_url) && isset($product->url)) {
+                    $product->product_url = $product->url;
+                }
+
+                if (!isset($product->image) && isset($product->image_url)) {
+                    $product->image = $product->image_url;
+                }
+
+                // AJOUTER LES PROPRIÉTÉS POUR LE TABLEAU UNIFIÉ
+                $product->similarity_score = null;
+                $product->match_level = null;
+                $product->is_manual_search = true;
+
+                $processedResults[] = $product;
+            }
+
+            $this->products = $processedResults;
+            $this->matchedProducts = $processedResults;
+            $this->hasData = !empty($processedResults);
+            $this->isAutomaticSearch = false;
+            $this->hasAppliedFilters = true;
+
+            // Stocker les résultats dans le cache
+            $this->cacheResults($cacheKey, $processedResults);
+
+            \Log::info('Manual search results with deduplication (cached):', [
+                'count' => count($processedResults),
+                'has_data' => $this->hasData,
+                'unique_sites' => array_unique(array_column($processedResults, 'web_site_id')),
+                'products_per_site' => array_count_values(array_column($processedResults, 'web_site_id')),
+                'max_references_used' => $maxRefsBySite,
+                'cache_key' => $cacheKey
+            ]);
+
+        } catch (\Throwable $e) {
+            \Log::error('Error in manual search:', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'filters' => $this->filters ?? []
+            ]);
+
+            $this->products = [];
+            $this->hasData = false;
+        }
+    }
+
+    /**
+     * Méthode pour appliquer les filtres
+     */
     public function applyFilters()
     {
-        // Réinitialiser la pagination
-        $this->currentPage = 1;
-        $this->totalPages = 0;
-        
-        // Invalider le cache
-        $this->clearSearchCache();
+        // Supprimer le cache existant pour cette recherche
+        $cacheKey = $this->getManualSearchCacheKey();
+        $this->forgetCache($cacheKey);
 
-        // Rechercher
-        $this->searchManual();
+        // Si on est en recherche automatique et qu'on applique un filtre,
+        // on passe en mode recherche manuelle
+        if ($this->isAutomaticSearch && $this->hasData) {
+            $this->searchManual();
+        } else {
+            // Si déjà en recherche manuelle, on fait une nouvelle recherche avec les filtres
+            $this->searchManual();
+        }
     }
 
-    // RÉINITIALISER LES FILTRES
+    /**
+     * Méthode pour réinitialiser les filtres
+     */
     public function resetFilters()
     {
-        // Sauvegarder le vendor original
-        $originalVendor = $this->filters['vendor'];
+        // Supprimer le cache de la recherche manuelle
+        $manualCacheKey = $this->getManualSearchCacheKey();
+        $this->forgetCache($manualCacheKey);
 
-        // Réinitialiser
+        // Supprimer aussi le cache de la recherche automatique si elle existe
+        if (!empty($this->searchQuery)) {
+            $autoCacheKey = $this->getCacheKey($this->searchQuery, [], false);
+            $this->forgetCache($autoCacheKey);
+        }
+
+        // Réinitialiser tous les filtres sauf le vendor qui garde sa valeur par défaut
         $this->filters = [
-            'vendor' => $originalVendor,
+            'vendor' => $this->filters['vendor'], // Garder le vendor actuel
             'name' => '',
             'variation' => '',
             'type' => '',
             'site_source' => ''
         ];
 
-        $this->currentPage = 1;
+        // Réinitialiser le flag de filtres appliqués
         $this->hasAppliedFilters = false;
-        $this->clearSearchCache();
 
-        // Restaurer les résultats automatiques si disponibles
-        if (!empty($this->originalAutomaticResults)) {
-            $this->restoreAutomaticResults();
+        // Si on avait des résultats automatiques stockés, on les restaure
+        if (!empty($this->originalAutomaticResults) && !$this->hasAppliedFilters) {
+            $this->matchedProducts = $this->originalAutomaticResults;
+            $this->products = $this->matchedProducts;
+            $this->hasData = !empty($this->matchedProducts);
+            $this->isAutomaticSearch = true;
+            
+            \Log::info('Reset filters - restored original automatic results:', [
+                'original_count' => count($this->originalAutomaticResults)
+            ]);
         } else {
-            $this->getCompetitorPrice($this->searchQuery);
+            // Sinon, on recharge la recherche automatique
+            if (!empty($this->searchQuery)) {
+                $this->getCompetitorPrice($this->searchQuery);
+            }
         }
     }
 
-    // Restaurer les résultats automatiques
-    private function restoreAutomaticResults(): void
-    {
-        $this->matchedProducts = $this->originalAutomaticResults;
-        $this->products = $this->originalAutomaticResults;
-        $this->hasData = !empty($this->originalAutomaticResults);
-        $this->isAutomaticSearch = true;
-        $this->currentPage = 1;
-        
-        // Pagination
-        $this->totalPages = ceil(count($this->originalAutomaticResults) / $this->perPage);
-        $this->hasMore = ($this->currentPage < $this->totalPages);
-    }
-
-    // Effacer le cache de recherche
-    private function clearSearchCache(): void
-    {
-        $this->quickCache = []; // Vider le cache rapide
-        
-        // Clés spécifiques à effacer
-        if (!empty($this->searchQuery)) {
-            $autoCacheKey = $this->getCacheKey($this->searchQuery, [], false);
-            Cache::forget($autoCacheKey);
-        }
-        
-        $manualCacheKey = $this->getManualSearchCacheKey();
-        Cache::forget($manualCacheKey);
-    }
-
-    // Mettre à jour les filtres avec debounce
+    /**
+     * Méthode appelée quand un filtre change
+     */
     public function updatedFilters($value, $key)
     {
-        // Debounce optimisé
-        $this->debounce('applyFilters', 800);
-    }
+        // Supprimer le cache existant quand un filtre change
+        $cacheKey = $this->getManualSearchCacheKey();
+        $this->forgetCache($cacheKey);
 
-    // CHARGER PLUS DE RÉSULTATS
-    public function loadMore()
-    {
-        if ($this->isLoading || !$this->hasMore) {
-            return;
-        }
-
-        $this->currentPage++;
-        $this->isLoading = true;
-
-        if ($this->isAutomaticSearch) {
-            $this->loadMoreAutomatic();
-        } else {
-            $this->loadMoreManual();
-        }
-
-        $this->isLoading = false;
-    }
-
-    private function loadMoreManual(): void
-    {
-        // Implémentation de pagination manuelle
-        $start = ($this->currentPage - 1) * $this->perPage;
-        $end = $start + $this->perPage;
-        
-        $newProducts = array_slice($this->products, $start, $this->perPage);
-        
-        if (!empty($newProducts)) {
-            $this->matchedProducts = array_merge($this->matchedProducts, $newProducts);
-        }
-        
-        $this->hasMore = (count($this->products) > count($this->matchedProducts));
-    }
-
-    private function loadMoreAutomatic(): void
-    {
-        // Pour la recherche automatique, on recharge tout
-        $this->getCompetitorPrice($this->searchQuery);
-    }
-
-    // RECHERCHE AUTOMATIQUE OPTIMISÉE
-    public function getCompetitorPrice($search)
-    {
-        if (empty($search)) {
-            $this->resetSearchState();
-            return null;
-        }
-
-        $startTime = microtime(true);
-
-        try {
-            // Vérifier le cache
-            $cacheKey = $this->getCacheKey($search, [], false);
-            $cachedResults = $this->cacheGet($cacheKey);
-
-            if ($cachedResults !== null) {
-                $this->applyAutomaticCachedResults($cachedResults);
-                $this->logPerformance($startTime, 'auto_search_cache');
-                return $cachedResults['full_result'];
-            }
-
-            // Préparer la recherche
-            $this->extractSearchVolumes($search);
-            $this->extractSearchVariationKeywords($search);
-            $searchQuery = $this->prepareSearchTerms($search);
-
-            if (empty($searchQuery)) {
-                $this->resetSearchState();
-                return null;
-            }
-
-            // Exécuter la recherche
-            $result = $this->executeAutomaticSearch($searchQuery);
-
-            // Traiter et scorer
-            $processedProducts = $this->processAutomaticResults($result, $search);
-            $matchedProducts = $this->calculateSimilarityBatch($processedProducts, $search);
-
-            // Mettre en cache et mettre à jour l'état
-            $fullResult = $this->cacheAndUpdateState($matchedProducts, $search, $searchQuery, $cacheKey);
-
-            $this->logPerformance($startTime, 'auto_search_db');
-
-            return $fullResult;
-
-        } catch (\Throwable $e) {
-            $this->handleSearchError($e);
-            return null;
-        }
-    }
-
-    // Exécuter la recherche automatique
-    private function executeAutomaticSearch(string $searchQuery): array
-    {
-        $sql = "SELECT lp.*, ws.name as site_name, lp.url as product_url, lp.image_url as image
-                FROM last_price_scraped_product lp
-                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-                WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
-                AGAINST (? IN BOOLEAN MODE)
-                ORDER BY lp.prix_ht DESC 
-                LIMIT 100";
-
-        return DB::connection('mysql')->select($sql, [$searchQuery]);
-    }
-
-    // Traiter les résultats automatiques
-    private function processAutomaticResults(array $results, string $search): array
-    {
-        $processed = [];
-        
-        foreach ($results as $product) {
-            // Nettoyer le prix
-            if (isset($product->prix_ht)) {
-                $product->prix_ht = $this->cleanPrice($product->prix_ht);
-            }
-
-            // Normaliser le vendor
-            if (isset($product->vendor)) {
-                $product->vendor = $this->normalizeVendor($product->vendor);
-            }
-
-            // URLs
-            $product->product_url = $product->url ?? '';
-            $product->image = $product->image_url ?? '';
-            $product->is_manual_search = false;
-
-            $processed[] = $product;
-        }
-
-        return $processed;
-    }
-
-    // Calcul de similarité par lot (optimisé)
-    private function calculateSimilarityBatch(array $products, string $search): array
-    {
-        $scoredProducts = [];
-        $searchLower = strtolower($search);
-        
-        foreach ($products as $product) {
-            $similarityScore = $this->computeQuickSimilarity($product, $searchLower);
-            
-            if ($similarityScore >= $this->similarityThreshold) {
-                $product->similarity_score = $similarityScore;
-                $product->match_level = $this->getMatchLevel($similarityScore);
-                $scoredProducts[] = $product;
+        // Vérifier si le filtre n'est pas vide
+        if (!empty($value)) {
+            // Si on était en recherche automatique, on passe en manuelle
+            if ($this->isAutomaticSearch && $this->hasData) {
+                $this->hasAppliedFilters = true;
             }
         }
-
-        // Trier par score
-        usort($scoredProducts, function ($a, $b) {
-            return ($b->similarity_score ?? 0) <=> ($a->similarity_score ?? 0);
-        });
-
-        return $scoredProducts;
+        
+        // Débouncer pour éviter trop d'appels
+        $this->applyFilters();
     }
 
-    // Similarité rapide
-    private function computeQuickSimilarity($product, string $searchLower): float
-    {
-        $score = 0;
-        
-        // Vérifications rapides
-        $productName = strtolower($product->name ?? '');
-        $productVendor = strtolower($product->vendor ?? '');
-        
-        // Correspondance exacte partielle
-        if (str_contains($productName, $searchLower)) {
-            $score += 0.4;
-        }
-        
-        if (str_contains($productVendor, $searchLower)) {
-            $score += 0.3;
-        }
-        
-        // Volumes correspondants
-        if ($this->hasMatchingVolume($product)) {
-            $score += 0.2;
-        }
-        
-        // Variation correspondante
-        if ($this->hasMatchingVariationKeyword($product)) {
-            $score += 0.1;
-        }
-        
-        return min(1.0, $score);
-    }
-
-    // Mettre en cache et mettre à jour
-    private function cacheAndUpdateState(array $matchedProducts, string $search, string $searchQuery, string $cacheKey): array
-    {
-        $fullResult = [
-            'count' => count($matchedProducts),
-            'has_data' => !empty($matchedProducts),
-            'products' => $matchedProducts,
-            'product' => $this->getOneProductDetails($this->id),
-            'query' => $searchQuery
-        ];
-
-        // Mettre en cache
-        $this->cachePut($cacheKey, [
-            'products' => $matchedProducts,
-            'full_result' => $fullResult
-        ]);
-
-        // Mettre à jour l'état
-        $this->matchedProducts = $matchedProducts;
-        $this->products = $matchedProducts;
-        $this->originalAutomaticResults = $matchedProducts;
-        $this->hasAppliedFilters = false;
-        $this->hasData = !empty($matchedProducts);
-        $this->isAutomaticSearch = true;
-        $this->currentPage = 1;
-        
-        // Pagination
-        $this->totalPages = ceil(count($matchedProducts) / $this->perPage);
-        $this->hasMore = ($this->currentPage < $this->totalPages);
-
-        return $fullResult;
-    }
-
-    // Appliquer les résultats du cache automatique
-    private function applyAutomaticCachedResults($cachedResults): void
-    {
-        $this->matchedProducts = $cachedResults['products'];
-        $this->products = $cachedResults['products'];
-        $this->originalAutomaticResults = $cachedResults['products'];
-        $this->hasAppliedFilters = false;
-        $this->hasData = !empty($cachedResults['products']);
-        $this->isAutomaticSearch = true;
-        $this->currentPage = 1;
-        
-        $this->totalPages = ceil(count($cachedResults['products']) / $this->perPage);
-        $this->hasMore = ($this->currentPage < $this->totalPages);
-    }
-
-    // Réinitialiser l'état de recherche
-    private function resetSearchState(): void
-    {
-        $this->products = [];
-        $this->hasData = false;
-        $this->originalAutomaticResults = [];
-        $this->hasAppliedFilters = false;
-        $this->showTable = true;
-    }
-
-    // Appliquer les résultats du cache
-    private function applyCachedResults($cachedResults): void
-    {
-        $this->matchedProducts = $cachedResults;
-        $this->products = $cachedResults;
-        $this->hasData = !empty($cachedResults);
-        $this->isAutomaticSearch = false;
-        $this->hasAppliedFilters = true;
-    }
-
-    // Gestion des erreurs
-    private function handleSearchError(\Throwable $e): void
-    {
-        \Log::error('Search error', [
-            'message' => $e->getMessage(),
-            'trace' => substr($e->getTraceAsString(), 0, 500)
-        ]);
-
-        $this->products = [];
-        $this->hasData = false;
-    }
-
-    // Log de performance
-    private function logPerformance(float $startTime, string $operation): void
-    {
-        $duration = microtime(true) - $startTime;
-        
-        if ($duration > 0.5) { // Seulement loguer les opérations lentes
-            \Log::warning("Slow operation: {$operation}", [
-                'duration' => round($duration, 3) . 's',
-                'memory' => round(memory_get_usage() / 1024 / 1024, 2) . 'MB'
-            ]);
-        }
-    }
-
-    // MÉTHODES UTILITAIRES OPTIMISÉES
-
-    // Nettoyer le prix (optimisé)
+    /**
+     * Nettoie et convertit un prix en nombre décimal
+     */
     private function cleanPrice($price)
     {
+        // Si null ou vide, retourner null
         if ($price === null || $price === '') {
             return null;
         }
 
+        // Si déjà numérique, retourner tel quel
         if (is_numeric($price)) {
             return (float) $price;
         }
 
+        // Si string, nettoyer
         if (is_string($price)) {
-            // Nettoyage rapide
+            // Enlever symboles de devise et espaces
             $cleanPrice = preg_replace('/[^\d,.-]/', '', $price);
+
+            // Remplacer virgule par point pour conversion
             $cleanPrice = str_replace(',', '.', $cleanPrice);
-            
+
+            // Vérifier si numérique après nettoyage
             if (is_numeric($cleanPrice)) {
                 return (float) $cleanPrice;
             }
@@ -825,236 +692,989 @@ new class extends Component {
         return null;
     }
 
-    // Variations du vendor
-    private function getVendorVariations(string $vendor): array
-    {
-        $variations = [trim($vendor)];
-        $normalized = $this->normalizeVendor($vendor);
-        
-        if ($normalized !== $vendor) {
-            $variations[] = $normalized;
-        }
-        
-        // Ajouter des variations simples
-        $variations[] = strtoupper($vendor);
-        $variations[] = strtolower($vendor);
-        
-        return array_unique(array_filter($variations));
-    }
-
-    // Extraire les volumes
-    private function extractSearchVolumes(string $search): void
-    {
-        $this->searchVolumes = [];
-        
-        if (preg_match_all('/(\d+)\s*ml/i', $search, $matches)) {
-            $this->searchVolumes = array_slice($matches[1], 0, 3); // Limiter à 3 volumes
-        }
-    }
-
-    // Extraire les mots-clés de variation
-    private function extractSearchVariationKeywords(string $search): void
-    {
-        $this->searchVariationKeywords = [];
-        
-        // Pattern simplifié
-        $pattern = '/^[^-]+\s*-\s*[^-]+\s*-\s*/i';
-        $variation = preg_replace($pattern, '', $search);
-        
-        if (empty($variation)) return;
-        
-        // Nettoyer et extraire les mots significatifs
-        $words = preg_split('/\s+/', strtolower(trim($variation)));
-        $stopWords = ['de', 'le', 'la', 'et', 'pour', 'avec', 'ml', 'edition'];
-        
-        foreach ($words as $word) {
-            $word = trim($word);
-            if (strlen($word) > 2 && !in_array($word, $stopWords) && !is_numeric($word)) {
-                $this->searchVariationKeywords[] = $word;
-            }
-            
-            // Limiter à 5 mots-clés
-            if (count($this->searchVariationKeywords) >= 5) break;
-        }
-    }
-
-    // Préparer les termes de recherche
-    private function prepareSearchTerms(string $search): string
-    {
-        $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ\s]/', ' ', $search);
-        $words = preg_split('/\s+/', strtolower(trim($searchClean)));
-        
-        $significantWords = [];
-        $stopWords = ['de', 'le', 'la', 'et', 'pour', 'avec', 'eau', 'ml'];
-        
-        foreach ($words as $word) {
-            $word = trim($word);
-            if (strlen($word) > 2 && !in_array($word, $stopWords)) {
-                $significantWords[] = '+' . $word . '*';
-            }
-            
-            // Limiter à 3 termes
-            if (count($significantWords) >= 3) break;
-        }
-        
-        return implode(' ', $significantWords);
-    }
-
-    // Vérifier si le produit a un volume correspondant
-    public function hasMatchingVolume($product): bool
-    {
-        if (empty($this->searchVolumes)) return false;
-        
-        $productText = ($product->name ?? '') . ' ' . ($product->variation ?? '');
-        preg_match_all('/(\d+)\s*ml/i', $productText, $matches);
-        $productVolumes = $matches[1] ?? [];
-        
-        return !empty(array_intersect($this->searchVolumes, $productVolumes));
-    }
-
-    // Vérifier si la variation correspond
-    public function hasMatchingVariationKeyword($product): bool
-    {
-        if (empty($this->searchVariationKeywords) || empty($product->variation)) {
-            return false;
-        }
-        
-        $variationLower = strtolower($product->variation);
-        
-        foreach ($this->searchVariationKeywords as $keyword) {
-            if (str_contains($variationLower, $keyword)) {
-                return true;
-            }
-        }
-        
-        return false;
-    }
-
-    // Extraire les volumes du texte
-    public function extractVolumesFromText($text): array
-    {
-        if (empty($text)) return [];
-        
-        $volumes = [];
-        if (preg_match_all('/(\d+)\s*ml/i', $text, $matches)) {
-            $volumes = $matches[1];
-        }
-        
-        return $volumes;
-    }
-
-    // Ajuster le seuil de similarité
-    public function adjustSimilarityThreshold($threshold)
-    {
-        $this->similarityThreshold = $threshold;
-        $this->clearSearchCache();
-        
-        if (!empty($this->searchQuery)) {
-            $this->getCompetitorPrice($this->searchQuery);
-        }
-    }
-
-    // Détails du produit avec cache
+    /**
+     * Récupère les détails d'un produit depuis Magento
+     */
     public function getOneProductDetails($entity_id)
     {
-        $cacheKey = 'product_details:' . $entity_id;
-        $cachedDetails = $this->cacheGet($cacheKey);
-        
-        if ($cachedDetails !== null) {
-            return $cachedDetails;
-        }
-        
         try {
-            // Requête simplifiée
+            // Vérifier le cache pour les détails du produit
+            $cacheKey = 'product_details:' . $entity_id;
+            $cachedDetails = Cache::get($cacheKey);
+
+            if ($cachedDetails !== null) {
+                \Log::info('Product details loaded from cache:', ['entity_id' => $entity_id]);
+                return $cachedDetails;
+            }
+
             $dataQuery = "
                 SELECT 
                     produit.entity_id as id,
                     produit.sku as sku,
                     product_char.reference as parkode,
-                    CAST(product_char.name AS CHAR) as title,
+                    CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) as title,
+                    CAST(product_parent_char.name AS CHAR CHARACTER SET utf8mb4) as parent_title,
                     SUBSTRING_INDEX(product_char.name, ' - ', 1) as vendor,
+                    SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) as type,
                     product_char.thumbnail as thumbnail,
+                    product_char.swatch_image as swatch_image,
+                    product_char.reference as parkode,
+                    product_char.reference_us as reference_us,
+                    CAST(product_text.description AS CHAR CHARACTER SET utf8mb4) as description,
+                    CAST(product_text.short_description AS CHAR CHARACTER SET utf8mb4) as short_description,
+                    CAST(product_parent_text.description AS CHAR CHARACTER SET utf8mb4) as parent_description,
+                    CAST(product_parent_text.short_description AS CHAR CHARACTER SET utf8mb4) as parent_short_description,
+                    CAST(product_text.composition AS CHAR CHARACTER SET utf8mb4) as composition,
+                    CAST(product_text.olfactive_families AS CHAR CHARACTER SET utf8mb4) as olfactive_families,
+                    CAST(product_text.product_benefit AS CHAR CHARACTER SET utf8mb4) as product_benefit,
                     ROUND(product_decimal.price, 2) as price,
-                    product_int.status as status
+                    ROUND(product_decimal.special_price, 2) as special_price,
+                    ROUND(product_decimal.cost, 2) as cost,
+                    ROUND(product_decimal.pvc, 2) as pvc,
+                    ROUND(product_decimal.prix_achat_ht, 2) as prix_achat_ht,
+                    ROUND(product_decimal.prix_us, 2) as prix_us,
+                    product_int.status as status,
+                    product_int.color as color,
+                    product_int.capacity as capacity,
+                    product_int.product_type as product_type,
+                    product_media.media_gallery as media_gallery,
+                    CAST(product_categorie.name AS CHAR CHARACTER SET utf8mb4) as categorie,
+                    REPLACE(product_categorie.name, ' > ', ',') as tags,
+                    stock_item.qty as quatity,
+                    stock_status.stock_status as quatity_status,
+                    options.configurable_product_id as configurable_product_id,
+                    parent_child_table.parent_id as parent_id,
+                    options.attribute_code as option_name,
+                    options.attribute_value as option_value
                 FROM catalog_product_entity as produit
+                LEFT JOIN catalog_product_relation as parent_child_table ON parent_child_table.child_id = produit.entity_id 
+                LEFT JOIN catalog_product_super_link as cpsl ON cpsl.product_id = produit.entity_id 
                 LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+                LEFT JOIN product_text ON product_text.entity_id = produit.entity_id 
                 LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
                 LEFT JOIN product_int ON product_int.entity_id = produit.entity_id
+                LEFT JOIN product_media ON product_media.entity_id = produit.entity_id
+                LEFT JOIN product_categorie ON product_categorie.entity_id = produit.entity_id 
+                LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id 
+                LEFT JOIN cataloginventory_stock_status AS stock_status ON stock_item.product_id = stock_status.product_id 
+                LEFT JOIN option_super_attribut AS options ON options.simple_product_id = produit.entity_id 
+                LEFT JOIN eav_attribute_set AS eas ON produit.attribute_set_id = eas.attribute_set_id 
+                LEFT JOIN catalog_product_entity as produit_parent ON parent_child_table.parent_id = produit_parent.entity_id 
+                LEFT JOIN product_char as product_parent_char ON product_parent_char.entity_id = produit_parent.entity_id
+                LEFT JOIN product_text as product_parent_text ON product_parent_text.entity_id = produit_parent.entity_id 
                 WHERE product_int.status >= 0 AND produit.entity_id = ? 
-                LIMIT 1
+                ORDER BY product_char.entity_id DESC
             ";
-            
+
             $result = DB::connection('mysqlMagento')->select($dataQuery, [$entity_id]);
             
-            // Mettre en cache
-            $this->cachePut($cacheKey, $result, 30);
-            
+            // Stocker dans le cache
+            Cache::put($cacheKey, $result, now()->addMinutes(30));
+
             return $result;
-            
+
         } catch (\Throwable $e) {
-            \Log::error('Error loading product details', ['error' => $e->getMessage()]);
-            return ['error' => $e->getMessage()];
+            \Log::error('Error loading product details:', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return [
+                'error' => $e->getMessage()
+            ];
         }
     }
 
-    // MÉTHODES D'AFFICHAGE OPTIMISÉES
-
-    public function formatPrice($price)
+    /**
+     * Récupère les prix des concurrents (recherche automatique) avec gestion des abréviations et cache
+     */
+    public function getCompetitorPrice($search)
     {
-        $cleanPrice = $this->cleanPrice($price);
-        return $cleanPrice !== null ? number_format($cleanPrice, 2, ',', ' ') . ' €' : 'N/A';
+        try {
+            if (empty($search)) {
+                $this->products = [];
+                $this->hasData = false;
+                $this->originalAutomaticResults = [];
+                $this->hasAppliedFilters = false;
+                return null;
+            }
+
+            // Vérifier le cache d'abord
+            $cacheKey = $this->getCacheKey($search, [], false);
+            $cachedResults = $this->getCachedResults($cacheKey);
+
+            if ($cachedResults !== null) {
+                $this->matchedProducts = $cachedResults['products'];
+                $this->products = $this->matchedProducts;
+                $this->originalAutomaticResults = $cachedResults['products'];
+                $this->hasAppliedFilters = false;
+                $this->hasData = !empty($cachedResults['products']);
+                $this->isAutomaticSearch = true;
+                $this->showTable = true;
+
+                \Log::info('Competitor price results loaded from cache:', [
+                    'cache_key' => $cacheKey,
+                    'count' => count($cachedResults['products']),
+                    'has_data' => $this->hasData
+                ]);
+
+                return $cachedResults['full_result'];
+            }
+
+            $this->extractSearchVolumes($search);
+            $this->extractSearchVariationKeywords($search);
+
+            $searchQuery = $this->prepareSearchTerms($search);
+
+            if (empty($searchQuery)) {
+                $this->products = [];
+                $this->hasData = false;
+                $this->originalAutomaticResults = [];
+                $this->hasAppliedFilters = false;
+                return null;
+            }
+
+            // MODIFIEZ CETTE REQUÊTE POUR INCLURE LA GESTION DES ABRÉVIATIONS
+            $sql = "SELECT lp.*, ws.name as site_name, lp.url as product_url, lp.image_url as image
+                    FROM last_price_scraped_product lp
+                    LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+                    WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
+                    AGAINST (? IN BOOLEAN MODE)
+                    ORDER BY lp.prix_ht DESC LIMIT 50";
+
+            \Log::info('SQL Query:', [
+                'original_search' => $search,
+                'search_query' => $searchQuery,
+                'search_volumes' => $this->searchVolumes,
+                'search_variation_keywords' => $this->searchVariationKeywords
+            ]);
+
+            $result = DB::connection('mysql')->select($sql, [$searchQuery]);
+
+            // NETTOYER LE PRIX_HT DÈS LA RÉCUPÉRATION
+            $processedProducts = [];
+            foreach ($result as $product) {
+                if (isset($product->prix_ht)) {
+                    $originalPrice = $product->prix_ht;
+                    $cleanedPrice = $this->cleanPrice($product->prix_ht);
+                    $product->prix_ht = $cleanedPrice;
+
+                    \Log::info('Prix nettoyé:', [
+                        'original' => $originalPrice,
+                        'cleaned' => $cleanedPrice
+                    ]);
+                }
+
+                // Normaliser le vendor pour une meilleure comparaison
+                if (isset($product->vendor)) {
+                    $originalVendor = $product->vendor;
+                    $product->vendor = $this->normalizeVendor($originalVendor);
+                    
+                    if ($originalVendor !== $product->vendor) {
+                        \Log::info('Vendor normalisé:', [
+                            'original' => $originalVendor,
+                            'normalized' => $product->vendor
+                        ]);
+                    }
+                }
+
+                // S'assurer que product_url est défini
+                if (!isset($product->product_url) && isset($product->url)) {
+                    $product->product_url = $product->url;
+                }
+
+                // S'assurer que image est défini
+                if (!isset($product->image) && isset($product->image_url)) {
+                    $product->image = $product->image_url;
+                }
+
+                // AJOUTER LA PROPRIÉTÉ POUR DISTINGUER LA RECHERCHE
+                $product->is_manual_search = false;
+
+                $processedProducts[] = $product;
+            }
+
+            \Log::info('Query result:', [
+                'count' => count($processedProducts)
+            ]);
+
+            $matchedProducts = $this->calculateSimilarity($processedProducts, $search);
+            
+            // Préparer les résultats complets pour le cache
+            $fullResult = [
+                'count' => count($matchedProducts),
+                'has_data' => !empty($matchedProducts),
+                'products' => $matchedProducts,
+                'product' => $this->getOneProductDetails($this->id),
+                'query' => $searchQuery,
+                'volumes' => $this->searchVolumes,
+                'variation_keywords' => $this->searchVariationKeywords
+            ];
+
+            // Stocker dans le cache
+            $this->cacheResults($cacheKey, [
+                'products' => $matchedProducts,
+                'full_result' => $fullResult
+            ]);
+
+            $this->matchedProducts = $matchedProducts;
+            $this->products = $matchedProducts;
+            $this->originalAutomaticResults = $matchedProducts;
+            $this->hasAppliedFilters = false;
+            $this->hasData = !empty($matchedProducts);
+            $this->isAutomaticSearch = true;
+
+            // Si pas de résultats automatiques, on affiche le tableau quand même
+            if (!$this->hasData) {
+                $this->showTable = true;
+            }
+
+            return $fullResult;
+
+        } catch (\Throwable $e) {
+            \Log::error('Error loading competitor prices:', [
+                'message' => $e->getMessage(),
+                'search' => $search ?? null,
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            $this->products = [];
+            $this->hasData = false;
+            $this->originalAutomaticResults = [];
+            $this->hasAppliedFilters = false;
+            $this->showTable = true;
+
+            return [
+                'error' => $e->getMessage()
+            ];
+        }
     }
 
-    public function extractDomain($url)
+    /**
+     * Calcule la similarité entre la recherche et chaque produit
+     */
+    private function calculateSimilarity($products, $search)
     {
-        if (empty($url)) return 'N/A';
+        $scoredProducts = [];
+
+        foreach ($products as $product) {
+            $similarityScore = $this->computeOverallSimilarity($product, $search);
+
+            if ($similarityScore >= $this->similarityThreshold) {
+                $product->similarity_score = $similarityScore;
+                $product->match_level = $this->getMatchLevel($similarityScore);
+                $scoredProducts[] = $product;
+            }
+        }
+
+        usort($scoredProducts, function ($a, $b) {
+            return $b->similarity_score <=> $a->similarity_score;
+        });
+
+        return $scoredProducts;
+    }
+
+    /**
+     * Calcule le score de similarité global
+     */
+    private function computeOverallSimilarity($product, $search)
+    {
+        $weights = [
+            'name' => 0.3,
+            'vendor' => 0.2,
+            'variation' => 0.25,
+            'volumes' => 0.15,
+            'type' => 0.1
+        ];
+
+        $totalScore = 0;
+
+        $nameScore = $this->computeStringSimilarity($search, $product->name ?? '');
+        $totalScore += $nameScore * $weights['name'];
+
+        $vendorScore = $this->computeVendorSimilarity($product, $search);
+        $totalScore += $vendorScore * $weights['vendor'];
+
+        $variationScore = $this->computeVariationSimilarity($product, $search);
+        $totalScore += $variationScore * $weights['variation'];
+
+        $volumeScore = $this->computeVolumeSimilarity($product);
+        $totalScore += $volumeScore * $weights['volumes'];
+
+        $typeScore = $this->computeTypeSimilarity($product, $search);
+        $totalScore += $typeScore * $weights['type'];
+
+        return min(1.0, $totalScore);
+    }
+
+    /**
+     * Similarité de chaîne (algorithme de Jaro-Winkler amélioré)
+     */
+    private function computeStringSimilarity($str1, $str2)
+    {
+        $str1 = mb_strtolower(trim($str1));
+        $str2 = mb_strtolower(trim($str2));
+
+        if (empty($str1) || empty($str2)) {
+            return 0;
+        }
+
+        if ($str1 === $str2) {
+            return 1.0;
+        }
+
+        $len1 = mb_strlen($str1);
+        $len2 = mb_strlen($str2);
+
+        $matchDistance = (int) floor(max($len1, $len2) / 2) - 1;
+        $matches1 = array_fill(0, $len1, false);
+        $matches2 = array_fill(0, $len2, false);
+
+        $matches = 0;
+        $transpositions = 0;
+
+        for ($i = 0; $i < $len1; $i++) {
+            $start = max(0, $i - $matchDistance);
+            $end = min($i + $matchDistance + 1, $len2);
+
+            for ($j = $start; $j < $end; $j++) {
+                if (!$matches2[$j] && mb_substr($str1, $i, 1) === mb_substr($str2, $j, 1)) {
+                    $matches1[$i] = true;
+                    $matches2[$j] = true;
+                    $matches++;
+                    break;
+                }
+            }
+        }
+
+        if ($matches === 0) {
+            return 0;
+        }
+
+        $k = 0;
+        for ($i = 0; $i < $len1; $i++) {
+            if ($matches1[$i]) {
+                while (!$matches2[$k]) {
+                    $k++;
+                }
+                if (mb_substr($str1, $i, 1) !== mb_substr($str2, $k, 1)) {
+                    $transpositions++;
+                }
+                $k++;
+            }
+        }
+
+        $transpositions = $transpositions / 2;
+        $jaro = (($matches / $len1) + ($matches / $len2) + (($matches - $transpositions) / $matches)) / 3;
+
+        $prefix = 0;
+        $maxPrefix = min(4, min($len1, $len2));
+
+        for ($i = 0; $i < $maxPrefix; $i++) {
+            if (mb_substr($str1, $i, 1) === mb_substr($str2, $i, 1)) {
+                $prefix++;
+            } else {
+                break;
+            }
+        }
+
+        return $jaro + ($prefix * 0.1 * (1 - $jaro));
+    }
+
+    /**
+     * Similarité du vendeur avec gestion des abréviations
+     */
+    private function computeVendorSimilarity($product, $search)
+    {
+        $vendor = $product->vendor ?? '';
+        if (empty($vendor)) {
+            return 0;
+        }
+
+        $searchVendor = $this->extractVendorFromSearch($search);
+
+        if (empty($searchVendor)) {
+            return 0;
+        }
+
+        // Normaliser les deux vendors
+        $normalizedProductVendor = $this->normalizeVendor($vendor);
+        $normalizedSearchVendor = $this->normalizeVendor($searchVendor);
+
+        // Calculer la similarité entre les noms normalisés
+        $similarity = $this->computeStringSimilarity($normalizedSearchVendor, $normalizedProductVendor);
         
-        $parsed = parse_url($url);
-        $domain = $parsed['host'] ?? '';
-        
-        if (strpos($domain, 'www.') === 0) {
-            $domain = substr($domain, 4);
+        // Bonus si c'est une correspondance exacte (même après normalisation)
+        if (strcasecmp($normalizedProductVendor, $normalizedSearchVendor) === 0) {
+            $similarity = min(1.0, $similarity + 0.2);
         }
         
-        return $domain ?: 'N/A';
+        // Bonus si l'abréviation correspond
+        $productVendorUpper = strtoupper($vendor);
+        $searchVendorUpper = strtoupper($searchVendor);
+        foreach ($this->brandAbbreviations as $abbreviation => $fullName) {
+            if (($productVendorUpper === $abbreviation && strtoupper($normalizedSearchVendor) === strtoupper($fullName)) ||
+                ($searchVendorUpper === $abbreviation && strtoupper($normalizedProductVendor) === strtoupper($fullName))) {
+                $similarity = min(1.0, $similarity + 0.15);
+                break;
+            }
+        }
+
+        return $similarity;
     }
 
-    public function getMatchLevel($similarityScore)
+    /**
+     * Similarité de la variation
+     */
+    private function computeVariationSimilarity($product, $search)
     {
-        if ($similarityScore >= 0.9) return 'excellent';
-        if ($similarityScore >= 0.7) return 'bon';
-        if ($similarityScore >= 0.6) return 'moyen';
+        $productVariation = $product->variation ?? '';
+        $searchVariation = $this->extractSearchVariationFromSearch($search);
+
+        if (empty($productVariation) || empty($searchVariation)) {
+            return 0;
+        }
+
+        $baseScore = $this->computeStringSimilarity($searchVariation, $productVariation);
+
+        $keywordMatches = 0;
+        foreach ($this->searchVariationKeywords as $keyword) {
+            if (stripos($productVariation, $keyword) !== false) {
+                $keywordMatches++;
+            }
+        }
+
+        $keywordBonus = $keywordMatches / max(1, count($this->searchVariationKeywords)) * 0.3;
+
+        return min(1.0, $baseScore + $keywordBonus);
+    }
+
+    /**
+     * Similarité des volumes
+     */
+    private function computeVolumeSimilarity($product)
+    {
+        if (empty($this->searchVolumes)) {
+            return 0;
+        }
+
+        $productVolumes = $this->extractVolumesFromText($product->name . ' ' . ($product->variation ?? ''));
+
+        if (empty($productVolumes)) {
+            return 0;
+        }
+
+        $matches = array_intersect($this->searchVolumes, $productVolumes);
+        $matchRatio = count($matches) / count($this->searchVolumes);
+
+        if ($matchRatio === 1.0) {
+            $matchRatio = 1.0;
+        }
+
+        return $matchRatio;
+    }
+
+    /**
+     * Similarité du type de produit
+     */
+    private function computeTypeSimilarity($product, $search)
+    {
+        $productType = $product->type ?? '';
+        if (empty($productType)) {
+            return 0;
+        }
+
+        $searchType = $this->extractProductTypeFromSearch($search);
+
+        if (empty($searchType)) {
+            return 0;
+        }
+
+        return $this->computeStringSimilarity($searchType, $productType);
+    }
+
+    /**
+     * Extrait la marque de la recherche avec gestion des abréviations
+     */
+    private function extractVendorFromSearch($search)
+    {
+        if (preg_match('/^([^-]+)/', $search, $matches)) {
+            $vendor = trim($matches[1]);
+            // Normaliser pour convertir les abréviations
+            return $this->normalizeVendor($vendor);
+        }
+
+        return '';
+    }
+
+    /**
+     * Extrait la variation de la recherche
+     */
+    private function extractSearchVariationFromSearch($search)
+    {
+        $pattern = '/^[^-]+\s*-\s*[^-]+\s*-\s*/i';
+        $variation = preg_replace($pattern, '', $search);
+
+        return trim($variation);
+    }
+
+    /**
+     * Extrait le type de produit de la recherche
+     */
+    private function extractProductTypeFromSearch($search)
+    {
+        $types = ['parfum', 'eau de parfum', 'eau de toilette', 'coffret', 'gel douche', 'lotion'];
+
+        foreach ($types as $type) {
+            if (stripos($search, $type) !== false) {
+                return $type;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Détermine le niveau de correspondance
+     */
+    private function getMatchLevel($similarityScore)
+    {
+        if ($similarityScore >= 0.9)
+            return 'excellent';
+        if ($similarityScore >= 0.7)
+            return 'bon';
+        if ($similarityScore >= 0.6)
+            return 'moyen';
         return 'faible';
     }
 
-    public function calculatePriceDifference($competitorPrice)
+    /**
+     * Extrait les volumes (ml) de la recherche
+     */
+    private function extractSearchVolumes(string $search): void
     {
-        $cleanCompetitor = $this->cleanPrice($competitorPrice);
-        $cleanReference = $this->cleanPrice($this->referencePrice);
-        
-        if ($cleanCompetitor === null || $cleanReference === null) {
-            return null;
+        $this->searchVolumes = [];
+
+        if (preg_match_all('/(\d+)\s*ml/i', $search, $matches)) {
+            $this->searchVolumes = $matches[1];
         }
-        
-        return $cleanReference - $cleanCompetitor;
+
+        \Log::info('Extracted search volumes:', [
+            'search' => $search,
+            'volumes' => $this->searchVolumes
+        ]);
     }
 
+    /**
+     * Extrait les mots clés de la variation de la recherche
+     */
+    private function extractSearchVariationKeywords(string $search): void
+    {
+        $this->searchVariationKeywords = [];
+
+        $pattern = '/^[^-]+\s*-\s*[^-]+\s*-\s*/i';
+        $variation = preg_replace($pattern, '', $search);
+
+        $variationClean = preg_replace('/[^a-zA-ZÀ-ÿ0-9\s]/', ' ', $variation);
+        $variationClean = trim(preg_replace('/\s+/', ' ', $variationClean));
+        $variationClean = mb_strtolower($variationClean);
+
+        $words = explode(" ", $variationClean);
+
+        $stopWords = [
+            'de',
+            'le',
+            'la',
+            'les',
+            'un',
+            'une',
+            'des',
+            'du',
+            'et',
+            'ou',
+            'pour',
+            'avec',
+            'the',
+            'a',
+            'an',
+            'and',
+            'or',
+            'ml',
+            'edition',
+            'édition'
+        ];
+
+        foreach ($words as $word) {
+            $word = trim($word);
+
+            if ((strlen($word) > 1 && !in_array($word, $stopWords)) || is_numeric($word)) {
+                $this->searchVariationKeywords[] = $word;
+            }
+        }
+
+        \Log::info('Extracted search variation keywords:', [
+            'search' => $search,
+            'variation' => $variation,
+            'keywords' => $this->searchVariationKeywords
+        ]);
+    }
+
+    /**
+     * Prépare les termes de recherche pour le mode BOOLEAN FULLTEXT
+     */
+    private function prepareSearchTerms(string $search): string
+    {
+        $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ\s]/', ' ', $search);
+        $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
+        $searchClean = mb_strtolower($searchClean);
+
+        $words = explode(" ", $searchClean);
+
+        $stopWords = [
+            'de',
+            'le',
+            'la',
+            'les',
+            'un',
+            'une',
+            'des',
+            'du',
+            'et',
+            'ou',
+            'pour',
+            'avec',
+            'the',
+            'a',
+            'an',
+            'and',
+            'or',
+            'eau',
+            'ml',
+            'edition',
+            'édition',
+            'coffret'
+        ];
+
+        $significantWords = [];
+
+        foreach ($words as $word) {
+            $word = trim($word);
+
+            if (strlen($word) > 2 && !in_array($word, $stopWords)) {
+                $significantWords[] = $word;
+            }
+
+            if (count($significantWords) >= 3) {
+                break;
+            }
+        }
+
+        $booleanTerms = array_map(function ($word) {
+            return '+' . $word . '*';
+        }, $significantWords);
+
+        return implode(' ', $booleanTerms);
+    }
+
+    /**
+     * Formate le prix pour l'affichage
+     */
+    public function formatPrice($price)
+    {
+        $cleanPrice = $this->cleanPrice($price);
+
+        if ($cleanPrice !== null) {
+            return number_format($cleanPrice, 2, ',', ' ') . ' €';
+        }
+
+        return 'N/A';
+    }
+
+    /**
+     * Extrait le domaine d'une URL
+     */
+    public function extractDomain($url)
+    {
+        if (empty($url)) {
+            return 'N/A';
+        }
+
+        try {
+            $parsedUrl = parse_url($url);
+            if (isset($parsedUrl['host'])) {
+                $domain = $parsedUrl['host'];
+                if (strpos($domain, 'www.') === 0) {
+                    $domain = substr($domain, 4);
+                }
+                return $domain;
+            }
+        } catch (\Exception $e) {
+            \Log::error('Error extracting domain:', [
+                'url' => $url,
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        return 'N/A';
+    }
+
+    /**
+     * Ouvre la page du produit
+     */
+    public function viewProduct($productUrl)
+    {
+        if ($productUrl) {
+            return redirect()->away($productUrl);
+        }
+    }
+
+    /**
+     * Formate la variation pour l'affichage
+     */
+    public function formatVariation($variation)
+    {
+        if (empty($variation)) {
+            return 'Standard';
+        }
+
+        return Str::limit($variation, 30);
+    }
+
+    /**
+     * Extrait les volumes d'un texte (nom ou variation)
+     */
+    public function extractVolumesFromText($text)
+    {
+        if (empty($text)) {
+            return [];
+        }
+
+        $volumes = [];
+        if (preg_match_all('/(\d+)\s*ml/i', $text, $matches)) {
+            $volumes = $matches[1];
+        }
+
+        return $volumes;
+    }
+
+    /**
+     * Vérifie si un volume correspond aux volumes recherchés
+     */
+    public function isVolumeMatching($volume)
+    {
+        return in_array($volume, $this->searchVolumes);
+    }
+
+    /**
+     * Vérifie si le produit contient AU MOINS UN volume recherché
+     */
+    public function hasMatchingVolume($product)
+    {
+        if (empty($this->searchVolumes)) {
+            return false;
+        }
+
+        $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
+        return !empty(array_intersect($this->searchVolumes, $productVolumes));
+    }
+
+    /**
+     * Vérifie si la variation du produit contient AU MOINS UN mot clé de la variation recherchée
+     */
+    public function hasMatchingVariationKeyword($product)
+    {
+        if (empty($this->searchVariationKeywords) || empty($product->variation)) {
+            return false;
+        }
+
+        $productVariationLower = mb_strtolower($product->variation);
+
+        foreach ($this->searchVariationKeywords as $keyword) {
+            if (str_contains($productVariationLower, $keyword)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Vérifie si le produit correspond parfaitement (volumes ET mots clés de variation)
+     */
+    public function isPerfectMatch($product)
+    {
+        $hasMatchingVolume = $this->hasMatchingVolume($product);
+        $hasMatchingVariationKeyword = $this->hasMatchingVariationKeyword($product);
+
+        return $hasMatchingVolume && $hasMatchingVariationKeyword;
+    }
+
+    /**
+     * Vérifie si le produit a exactement la même variation que la recherche
+     */
+    public function hasExactVariationMatch($product)
+    {
+        $searchVariation = $this->extractSearchVariation();
+        $productVariation = $product->variation ?? '';
+
+        $searchNormalized = $this->normalizeVariation($searchVariation);
+        $productNormalized = $this->normalizeVariation($productVariation);
+
+        return $searchNormalized === $productNormalized;
+    }
+
+    /**
+     * Extrait la variation de la recherche complète
+     */
+    private function extractSearchVariation()
+    {
+        $pattern = '/^[^-]+\s*-\s*[^-]+\s*-\s*/i';
+        $variation = preg_replace($pattern, '', $this->search ?? '');
+
+        return trim($variation);
+    }
+
+    /**
+     * Normalise une variation pour la comparaison
+     */
+    private function normalizeVariation($variation)
+    {
+        if (empty($variation)) {
+            return '';
+        }
+
+        $normalized = mb_strtolower(trim($variation));
+        $normalized = preg_replace('/[^a-zA-ZÀ-ÿ0-9\s]/', ' ', $normalized);
+        $normalized = trim(preg_replace('/\s+/', ' ', $normalized));
+
+        return $normalized;
+    }
+
+    /**
+     * Vérifie si le produit a le même volume ET la même variation exacte que la recherche
+     */
+    public function hasSameVolumeAndExactVariation($product)
+    {
+        $hasMatchingVolume = $this->hasMatchingVolume($product);
+        $hasExactVariation = $this->hasExactVariationMatch($product);
+
+        return $hasMatchingVolume && $hasExactVariation;
+    }
+
+    /**
+     * Met en évidence les volumes et mots clés correspondants dans un texte
+     */
+    public function highlightMatchingTerms($text)
+    {
+        if (empty($text)) {
+            return $text;
+        }
+
+        $patterns = [];
+
+        if (!empty($this->searchVolumes)) {
+            foreach ($this->searchVolumes as $volume) {
+                $patterns[] = '\b' . preg_quote($volume, '/') . '\s*ml\b';
+            }
+        }
+
+        if (!empty($this->searchVariationKeywords)) {
+            foreach ($this->searchVariationKeywords as $keyword) {
+                if (empty($keyword) || is_numeric($keyword)) {
+                    continue;
+                }
+                $patterns[] = '\b' . preg_quote(trim($keyword), '/') . '\b';
+            }
+        }
+
+        if (empty($patterns)) {
+            return $text;
+        }
+
+        $pattern = '/(' . implode('|', $patterns) . ')/iu';
+
+        $text = preg_replace_callback($pattern, function ($matches) {
+            return '<span class="bg-green-100 text-green-800 font-semibold px-1 py-0.5 rounded">'
+                . $matches[0]
+                . '</span>';
+        }, $text);
+
+        return $text;
+    }
+
+    /**
+     * Ajuste le seuil de similarité
+     */
+    public function adjustSimilarityThreshold($threshold)
+    {
+        $this->similarityThreshold = $threshold;
+
+        if (!empty($this->searchQuery)) {
+            $this->getCompetitorPrice($this->searchQuery);
+        }
+    }
+
+    /**
+     * Calcule la différence de prix par rapport au prix du concurrent
+     */
+    public function calculatePriceDifference($competitorPrice)
+    {
+        $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
+        $cleanReferencePrice = $this->cleanPrice($this->referencePrice);
+
+        if ($cleanCompetitorPrice === null || $cleanReferencePrice === null) {
+            return null;
+        }
+
+        return $cleanReferencePrice - $cleanCompetitorPrice;
+    }
+
+    /**
+     * Calcule le pourcentage de différence par rapport au concurrent
+     */
+    public function calculatePriceDifferencePercentage($competitorPrice)
+    {
+        $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
+        $cleanReferencePrice = $this->cleanPrice($this->referencePrice);
+
+        if ($cleanCompetitorPrice === null || $cleanReferencePrice === null || $cleanCompetitorPrice == 0) {
+            return null;
+        }
+
+        return (($cleanReferencePrice - $cleanCompetitorPrice) / $cleanCompetitorPrice) * 100;
+    }
+
+    /**
+     * Détermine le statut de compétitivité de notre prix
+     */
     public function getPriceCompetitiveness($competitorPrice)
     {
         $difference = $this->calculatePriceDifference($competitorPrice);
-        
-        if ($difference === null) return 'unknown';
-        if ($difference > 10) return 'higher';
-        if ($difference > 0) return 'slightly_higher';
-        if ($difference == 0) return 'same';
-        if ($difference >= -10) return 'competitive';
-        return 'very_competitive';
+
+        if ($difference === null) {
+            return 'unknown';
+        }
+
+        if ($difference > 10) {
+            return 'higher';
+        } elseif ($difference > 0) {
+            return 'slightly_higher';
+        } elseif ($difference == 0) {
+            return 'same';
+        } elseif ($difference >= -10) {
+            return 'competitive';
+        } else {
+            return 'very_competitive';
+        }
     }
 
+    /**
+     * Retourne le libellé pour le statut de prix (Cosmaparfumerie)
+     */
     public function getPriceStatusLabel($competitorPrice)
     {
         $status = $this->getPriceCompetitiveness($competitorPrice);
-        
+
         $labels = [
             'very_competitive' => 'Nous sommes beaucoup moins cher',
             'competitive' => 'Nous sommes moins cher',
@@ -1063,116 +1683,180 @@ new class extends Component {
             'higher' => 'Nous sommes beaucoup plus cher',
             'unknown' => 'Non comparable'
         ];
-        
+
         return $labels[$status] ?? $labels['unknown'];
     }
 
+    /**
+     * Retourne la classe CSS pour le statut de prix
+     */
     public function getPriceStatusClass($competitorPrice)
     {
         $status = $this->getPriceCompetitiveness($competitorPrice);
-        
+
         $classes = [
-            'very_competitive' => 'bg-green-100 text-green-800',
-            'competitive' => 'bg-emerald-100 text-emerald-800',
-            'same' => 'bg-blue-100 text-blue-800',
-            'slightly_higher' => 'bg-yellow-100 text-yellow-800',
-            'higher' => 'bg-red-100 text-red-800',
-            'unknown' => 'bg-gray-100 text-gray-800'
+            'very_competitive' => 'bg-green-100 text-green-800 border-green-300',
+            'competitive' => 'bg-emerald-100 text-emerald-800 border-emerald-300',
+            'same' => 'bg-blue-100 text-blue-800 border-blue-300',
+            'slightly_higher' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
+            'higher' => 'bg-red-100 text-red-800 border-red-300',
+            'unknown' => 'bg-gray-100 text-gray-800 border-gray-300'
         ];
-        
+
         return $classes[$status] ?? $classes['unknown'];
     }
 
-    // Image optimisée
-    public function getProductImage($product)
+    /**
+     * Calcule la différence de prix Cosmashop par rapport au concurrent
+     */
+    public function calculateCosmashopPriceDifference($competitorPrice)
     {
-        // Vérifier dans l'ordre de priorité
-        $sources = [
-            $product->image ?? null,
-            $product->image_url ?? null,
-            $product->thumbnail ?? null,
-            $product->swatch_image ?? null
-        ];
-        
-        foreach ($sources as $source) {
-            if (!empty($source) && $this->isValidImageUrl($source)) {
-                return $source;
-            }
-        }
-        
-        // Placeholder optimisé
-        return 'data:image/svg+xml;base64,' . base64_encode(
-            '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">
-                <rect width="100" height="100" fill="#f3f4f6"/>
-            </svg>'
-        );
-    }
+        $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
+        $cleanCosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
 
-    public function isValidImageUrl($url)
-    {
-        if (empty($url)) return false;
-        
-        // Vérification rapide
-        $validExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-        $path = parse_url($url, PHP_URL_PATH);
-        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-        
-        return in_array($extension, $validExtensions);
-    }
-
-    // Mettre en évidence les termes correspondants
-    public function highlightMatchingTerms($text)
-    {
-        if (empty($text)) return $text;
-        
-        $patterns = [];
-        
-        // Volumes
-        if (!empty($this->searchVolumes)) {
-            foreach ($this->searchVolumes as $volume) {
-                $patterns[] = '\b' . preg_quote($volume, '/') . '\s*ml\b';
-            }
-        }
-        
-        // Mots-clés
-        if (!empty($this->searchVariationKeywords)) {
-            foreach ($this->searchVariationKeywords as $keyword) {
-                if (strlen($keyword) > 2) {
-                    $patterns[] = '\b' . preg_quote($keyword, '/') . '\b';
-                }
-            }
-        }
-        
-        if (empty($patterns)) return e($text);
-        
-        $pattern = '/(' . implode('|', $patterns) . ')/iu';
-        
-        return preg_replace($pattern, '<span class="bg-yellow-100 px-1 rounded">$1</span>', e($text));
-    }
-
-    // Analyse des prix (simplifiée)
-    public function getPriceAnalysis()
-    {
-        if (empty($this->matchedProducts) || !$this->referencePrice) {
+        if ($cleanCompetitorPrice === null || $cleanCosmashopPrice === null) {
             return null;
         }
-        
+
+        return $cleanCosmashopPrice - $cleanCompetitorPrice;
+    }
+
+    /**
+     * Calcule le pourcentage de différence Cosmashop par rapport au concurrent
+     */
+    public function calculateCosmashopPriceDifferencePercentage($competitorPrice)
+    {
+        $cleanCompetitorPrice = $this->cleanPrice($competitorPrice);
+        $cleanCosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
+
+        if ($cleanCompetitorPrice === null || $cleanCosmashopPrice === null || $cleanCompetitorPrice == 0) {
+            return null;
+        }
+
+        return (($cleanCosmashopPrice - $cleanCompetitorPrice) / $cleanCompetitorPrice) * 100;
+    }
+
+    /**
+     * Détermine le statut de compétitivité de Cosmashop
+     */
+    public function getCosmashopPriceCompetitiveness($competitorPrice)
+    {
+        $difference = $this->calculateCosmashopPriceDifference($competitorPrice);
+
+        if ($difference === null) {
+            return 'unknown';
+        }
+
+        if ($difference > 10) {
+            return 'higher';
+        } elseif ($difference > 0) {
+            return 'slightly_higher';
+        } elseif ($difference == 0) {
+            return 'same';
+        } elseif ($difference >= -10) {
+            return 'competitive';
+        } else {
+            return 'very_competitive';
+        }
+    }
+
+    /**
+     * Retourne le libellé pour le statut Cosmashop
+     */
+    public function getCosmashopPriceStatusLabel($competitorPrice)
+    {
+        $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
+
+        $labels = [
+            'very_competitive' => 'Cosmashop serait beaucoup moins cher',
+            'competitive' => 'Cosmashop serait moins cher',
+            'same' => 'Prix identique à Cosmashop',
+            'slightly_higher' => 'Cosmashop serait légèrement plus cher',
+            'higher' => 'Cosmashop serait beaucoup plus cher',
+            'unknown' => 'Non comparable'
+        ];
+
+        return $labels[$status] ?? $labels['unknown'];
+    }
+
+    /**
+     * Retourne la classe CSS pour le statut Cosmashop
+     */
+    public function getCosmashopPriceStatusClass($competitorPrice)
+    {
+        $status = $this->getCosmashopPriceCompetitiveness($competitorPrice);
+
+        $classes = [
+            'very_competitive' => 'bg-green-100 text-green-800 border-green-300',
+            'competitive' => 'bg-emerald-100 text-emerald-800 border-emerald-300',
+            'same' => 'bg-blue-100 text-blue-800 border-blue-300',
+            'slightly_higher' => 'bg-yellow-100 text-yellow-800 border-yellow-300',
+            'higher' => 'bg-red-100 text-red-800 border-red-300',
+            'unknown' => 'bg-gray-100 text-gray-800 border-gray-300'
+        ];
+
+        return $classes[$status] ?? $classes['unknown'];
+    }
+
+    /**
+     * Formate la différence de prix avec le bon symbole
+     */
+    public function formatPriceDifference($difference)
+    {
+        if ($difference === null) {
+            return 'N/A';
+        }
+
+        if ($difference == 0) {
+            return '0 €';
+        }
+
+        $formatted = number_format(abs($difference), 2, ',', ' ');
+        return $difference > 0 ? "+{$formatted} €" : "-{$formatted} €";
+    }
+
+    /**
+     * Formate le pourcentage de différence avec le bon symbole
+     */
+    public function formatPercentageDifference($percentage)
+    {
+        if ($percentage === null) {
+            return 'N/A';
+        }
+
+        if ($percentage == 0) {
+            return '0%';
+        }
+
+        $formatted = number_format(abs($percentage), 1, ',', ' ');
+        return $percentage > 0 ? "+{$formatted}%" : "-{$formatted}%";
+    }
+
+    /**
+     * Analyse globale des prix des concurrents
+     */
+    public function getPriceAnalysis()
+    {
         $prices = [];
+
         foreach ($this->matchedProducts as $product) {
             $price = $product->price_ht ?? $product->prix_ht;
             $cleanPrice = $this->cleanPrice($price);
+
             if ($cleanPrice !== null) {
                 $prices[] = $cleanPrice;
             }
         }
-        
-        if (empty($prices)) return null;
-        
+
+        if (empty($prices)) {
+            return null;
+        }
+
         $minPrice = min($prices);
         $maxPrice = max($prices);
         $avgPrice = array_sum($prices) / count($prices);
         $ourPrice = $this->cleanPrice($this->referencePrice);
-        
+
         return [
             'min' => $minPrice,
             'max' => $maxPrice,
@@ -1183,25 +1867,150 @@ new class extends Component {
         ];
     }
 
-    // Similarité pour recherche manuelle
+    /**
+     * Analyse globale pour Cosmashop
+     */
+    public function getCosmashopPriceAnalysis()
+    {
+        $prices = [];
+
+        foreach ($this->matchedProducts as $product) {
+            $price = $product->price_ht ?? $product->prix_ht;
+            $cleanPrice = $this->cleanPrice($price);
+
+            if ($cleanPrice !== null) {
+                $prices[] = $cleanPrice;
+            }
+        }
+
+        if (empty($prices)) {
+            return null;
+        }
+
+        $minPrice = min($prices);
+        $maxPrice = max($prices);
+        $avgPrice = array_sum($prices) / count($prices);
+        $cosmashopPrice = $this->cleanPrice($this->cosmashopPrice);
+
+        $belowCosmashop = 0;
+        $aboveCosmashop = 0;
+
+        foreach ($prices as $price) {
+            if ($price < $cosmashopPrice) {
+                $belowCosmashop++;
+            } else {
+                $aboveCosmashop++;
+            }
+        }
+
+        return [
+            'min' => $minPrice,
+            'max' => $maxPrice,
+            'average' => $avgPrice,
+            'cosmashop_price' => $cosmashopPrice,
+            'count' => count($prices),
+            'below_cosmashop' => $belowCosmashop,
+            'above_cosmashop' => $aboveCosmashop,
+            'cosmashop_position' => $cosmashopPrice <= $avgPrice ? 'competitive' : 'above_average'
+        ];
+    }
+
+    /**
+     * Récupère l'URL du produit de manière sécurisée
+     */
+    public function getProductUrl($product)
+    {
+        if (isset($product->product_url)) {
+            return $product->product_url;
+        }
+
+        if (isset($product->url)) {
+            return $product->url;
+        }
+
+        return null;
+    }
+
+    /**
+     * Méthode pour calculer la similarité pour la recherche manuelle si nécessaire
+     */
     public function calculateManualSimilarity($product)
     {
+        if (isset($product->similarity_score) && isset($product->match_level)) {
+            return [
+                'similarity_score' => $product->similarity_score,
+                'match_level' => $product->match_level
+            ];
+        }
+
         if (!empty($this->searchQuery)) {
-            $similarityScore = $this->computeQuickSimilarity($product, strtolower($this->searchQuery));
+            $similarityScore = $this->computeOverallSimilarity($product, $this->searchQuery);
             $matchLevel = $this->getMatchLevel($similarityScore);
-            
+
             return [
                 'similarity_score' => $similarityScore,
                 'match_level' => $matchLevel
             ];
         }
-        
+
         return [
             'similarity_score' => null,
             'match_level' => null
         ];
     }
+
+    /**
+     * Récupère l'image du produit de manière sécurisée avec URL par défaut
+     */
+    public function getProductImage($product)
+    {
+        if (isset($product->image) && !empty($product->image)) {
+            return $product->image;
+        }
+
+        if (isset($product->image_url) && !empty($product->image_url)) {
+            return $product->image_url;
+        }
+
+        if (isset($product->thumbnail) && !empty($product->thumbnail)) {
+            return $product->thumbnail;
+        }
+
+        if (isset($product->swatch_image) && !empty($product->swatch_image)) {
+            return $product->swatch_image;
+        }
+
+        if (isset($product->media_gallery) && !empty($product->media_gallery)) {
+            $images = json_decode($product->media_gallery, true);
+            if (is_array($images) && !empty($images)) {
+                return $images[0] ?? null;
+            }
+        }
+
+        return 'https://placehold.co/400x400/cccccc/999999?text=No+Image';
+    }
+
+    /**
+     * Vérifie si une URL d'image est valide
+     */
+    public function isValidImageUrl($url)
+    {
+        if (empty($url)) {
+            return false;
+        }
+
+        if (!filter_var($url, FILTER_VALIDATE_URL)) {
+            return false;
+        }
+
+        $imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
+        $path = parse_url($url, PHP_URL_PATH);
+        $extension = pathinfo($path, PATHINFO_EXTENSION);
+
+        return in_array(strtolower($extension), $imageExtensions);
+    }
 }; ?>
+
 <div>
     <!-- Overlay de chargement global - Uniquement visible lors d'une action Livewire -->
     <div wire:loading.delay.flex class="hidden fixed inset-0 z-50 items-center justify-center bg-transparent">
