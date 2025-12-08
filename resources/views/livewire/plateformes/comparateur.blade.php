@@ -376,21 +376,29 @@ public function searchManual()
             
             if (!empty($vendorVariations)) {
                 foreach ($vendorVariations as $variation) {
-                    $vendorConditions[] = "lp.vendor LIKE ?";
+                    $vendorConditions[] = "t.vendor LIKE ?";
                     $vendorParams[] = '%' . $variation . '%';
                 }
             }
         }
 
-        // Utiliser directement la vue last_price_scraped_product
+        // Utiliser la nouvelle vue avec ROW_NUMBER
         $sql = "SELECT 
-                    lp.*,
+                    t.*,
                     ws.name as site_name,
-                    lp.url as product_url,
-                    lp.image_url as image
-                FROM last_price_scraped_product lp
-                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-                WHERE 1=1";
+                    t.url as product_url,
+                    t.image_url as image
+                FROM (
+                    SELECT
+                        sp.*,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY sp.url, sp.vendor, sp.name, sp.type, sp.variation
+                            ORDER BY sp.created_at DESC
+                        ) AS row_num
+                    FROM scraped_product sp
+                ) AS t
+                LEFT JOIN web_site ws ON t.web_site_id = ws.id
+                WHERE t.row_num = 1";
         
         $params = [];
 
@@ -402,28 +410,28 @@ public function searchManual()
 
         // Appliquer les autres filtres
         if (!empty($this->filters['name'])) {
-            $sql .= " AND lp.name LIKE ?";
+            $sql .= " AND t.name LIKE ?";
             $params[] = '%' . $this->filters['name'] . '%';
         }
 
         if (!empty($this->filters['variation'])) {
-            $sql .= " AND lp.variation LIKE ?";
+            $sql .= " AND t.variation LIKE ?";
             $params[] = '%' . $this->filters['variation'] . '%';
         }
 
         if (!empty($this->filters['type'])) {
-            $sql .= " AND lp.type LIKE ?";
+            $sql .= " AND t.type LIKE ?";
             $params[] = '%' . $this->filters['type'] . '%';
         }
 
         if (!empty($this->filters['site_source'])) {
-            $sql .= " AND lp.web_site_id = ?";
+            $sql .= " AND t.web_site_id = ?";
             $params[] = $this->filters['site_source'];
         }
 
-        $sql .= " ORDER BY lp.prix_ht DESC LIMIT 100";
+        $sql .= " ORDER BY t.vendor ASC, t.prix_ht DESC LIMIT 100";
 
-        \Log::info('Manual search using view:', [
+        \Log::info('Manual search using ROW_NUMBER view:', [
             'filters' => $this->filters,
             'vendor_variations' => $vendorVariations ?? [],
             'params_count' => count($params)
@@ -463,7 +471,7 @@ public function searchManual()
         // Stocker les résultats dans le cache
         $this->cacheResults($cacheKey, $processedResults);
 
-        \Log::info('Manual search results using view (cached):', [
+        \Log::info('Manual search results using ROW_NUMBER view (cached):', [
             'count' => count($processedResults),
             'has_data' => $this->hasData,
             'unique_sites' => array_unique(array_column($processedResults, 'web_site_id')),
