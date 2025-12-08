@@ -138,11 +138,16 @@
         @if(count($products) > 0)
             <div class="grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-4 lg:gap-x-8">
                 @foreach($products as $product)
-                <a wire:navigate href="{{ route('article.comparate-prix', [
-    utf8_encode($product->title), 
-    $product->id, 
-    $product->special_price ?? $product->price ?? 0
-]) }}" class="group text-sm">
+                <a 
+                    wire:navigate 
+                    href="{{ route('article.comparate-prix', [
+                        utf8_encode($product->title), 
+                        $product->id, 
+                        $product->special_price ?? $product->price ?? 0
+                    ]) }}" 
+                    class="group text-sm"
+                    onclick="showCompetitorSearchLoading(event)"
+                >
                         <div class="aspect-square w-full rounded-lg bg-gray-100 overflow-hidden">
                             @if($product->thumbnail)
                                 <img 
@@ -299,7 +304,7 @@
         </div>
     @endif
 
-    <!-- Loading indicator avec texte et ombre -->
+    <!-- Loading indicator Livewire -->
     <div wire:loading.class.remove="hidden" class="hidden fixed inset-0 z-50 flex items-center justify-center">
         <div class="flex flex-col items-center justify-center bg-white/90 rounded-2xl p-8 shadow-2xl border border-white/20 min-w-[200px]">
             <!-- Spinner -->
@@ -310,4 +315,71 @@
             <p class="text-sm text-gray-600 mt-1">Veuillez patienter...</p>
         </div>
     </div>
+
+    <!-- Loading indicator pour recherche de prix concurrent -->
+    <div id="competitor-search-loading" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div class="flex flex-col items-center justify-center bg-white rounded-2xl p-10 shadow-2xl border border-gray-200 min-w-[300px] max-w-md">
+            <!-- Icône de recherche animée -->
+            <div class="relative mb-6">
+                <svg class="w-16 h-16 text-primary animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <div class="absolute inset-0 flex items-center justify-center">
+                    <div class="loading loading-spinner loading-md text-primary"></div>
+                </div>
+            </div>
+            
+            <!-- Texte principal -->
+            <h3 class="text-xl font-bold text-gray-800 mb-2 text-center">
+                Recherche de prix concurrent
+            </h3>
+            
+            <!-- Texte secondaire -->
+            <p class="text-sm text-gray-600 text-center mb-4">
+                Nous comparons les prix pour vous trouver la meilleure offre
+            </p>
+            
+            <!-- Barre de progression animée -->
+            <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                <div class="bg-primary h-full rounded-full animate-[loading_2s_ease-in-out_infinite]"></div>
+            </div>
+            
+            <p class="text-xs text-gray-500 mt-4">Veuillez patienter quelques instants...</p>
+        </div>
+    </div>
 </div>
+
+<style>
+    @keyframes loading {
+        0% {
+            width: 0%;
+            margin-left: 0%;
+        }
+        50% {
+            width: 50%;
+            margin-left: 25%;
+        }
+        100% {
+            width: 0%;
+            margin-left: 100%;
+        }
+    }
+</style>
+
+<script>
+    function showCompetitorSearchLoading(event) {
+        // Afficher le loading
+        const loadingElement = document.getElementById('competitor-search-loading');
+        if (loadingElement) {
+            loadingElement.classList.remove('hidden');
+        }
+    }
+
+    // Masquer le loading si l'utilisateur revient en arrière
+    window.addEventListener('pageshow', function(event) {
+        const loadingElement = document.getElementById('competitor-search-loading');
+        if (loadingElement) {
+            loadingElement.classList.add('hidden');
+        }
+    });
+</script>
