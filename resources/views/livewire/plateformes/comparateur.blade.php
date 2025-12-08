@@ -899,12 +899,6 @@ private function fetchProducts(string $searchQuery): array
             ORDER BY lp.prix_ht DESC 
             LIMIT 20";
 
-    \Log::info('SQL execution', [
-        'query' => $searchQuery,
-        'volumes' => $this->searchVolumes,
-        'variations' => $this->searchVariationKeywords
-    ]);
-
     return DB::connection('mysql')->select($sql, [$searchQuery]);
 }
 
