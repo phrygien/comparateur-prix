@@ -887,26 +887,25 @@ private function prepareSearchQuery(string $search): string
  */
 private function fetchProducts(string $searchQuery): array
 {
-    \Log::info('Eloquent query execution', [
+    $sql = "SELECT 
+                lp.*, 
+                ws.name as site_name, 
+                lp.url as product_url, 
+                lp.image_url as image
+            FROM last_price_scraped_product lp
+            LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+            WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
+                AGAINST (? IN BOOLEAN MODE)
+            ORDER BY lp.prix_ht DESC 
+            LIMIT 20";
+
+    \Log::info('SQL execution', [
         'query' => $searchQuery,
         'volumes' => $this->searchVolumes,
         'variations' => $this->searchVariationKeywords
     ]);
 
-    return Product::with('website') // Charge la relation website
-        ->select('scraped_product.*')
-        ->addSelect([
-            'site_name' => \DB::raw('web_site.name'),
-            'product_url' => \DB::raw('scraped_product.url'),
-            'image' => \DB::raw('scraped_product.image_url')
-        ])
-        ->join('web_site', 'scraped_product.web_site_id', '=', 'web_site.id')
-        ->whereRaw('MATCH(scraped_product.name, scraped_product.vendor, scraped_product.type, scraped_product.variation) 
-                    AGAINST(? IN BOOLEAN MODE)', [$searchQuery])
-        ->orderByDesc('scraped_product.prix_ht')
-        ->limit(20)
-        ->get()
-        ->toArray();
+    return DB::connection('mysql')->select($sql, [$searchQuery]);
 }
 
 /**
