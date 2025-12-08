@@ -19,4 +19,12 @@ class Product extends Model
     {
         return $this->belongsTo(Reference::class, 'scrap_reference_id');
     }
+
+    // Dans le modèle Product
+    public function scopeFullTextSearch($query, string $searchQuery)
+    {
+        return $query->whereRaw('MATCH(name, vendor, type, variation) 
+                                AGAINST(? IN BOOLEAN MODE)', [$searchQuery]);
+    }
+
 }

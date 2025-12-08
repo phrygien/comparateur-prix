@@ -882,30 +882,28 @@ private function prepareSearchQuery(string $search): string
     return $this->prepareSearchTerms($search);
 }
 
-/**
- * Récupère les produits depuis la base de données
- */
+// Puis dans votre méthode
 private function fetchProducts(string $searchQuery): array
 {
-    $sql = "SELECT 
-                lp.*, 
-                ws.name as site_name, 
-                lp.url as product_url, 
-                lp.image_url as image
-            FROM last_price_scraped_product lp
-            LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-            WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
-                AGAINST (? IN BOOLEAN MODE)
-            ORDER BY lp.prix_ht DESC 
-            LIMIT 50";
-
-    \Log::info('SQL execution', [
+    \Log::info('Eloquent query execution', [
         'query' => $searchQuery,
         'volumes' => $this->searchVolumes,
         'variations' => $this->searchVariationKeywords
     ]);
 
-    return DB::connection('mysql')->select($sql, [$searchQuery]);
+    return Product::with('website')
+        ->select('scraped_product.*')
+        ->addSelect([
+            'site_name' => \DB::raw('web_site.name'),
+            'product_url' => \DB::raw('scraped_product.url'),
+            'image' => \DB::raw('scraped_product.image_url')
+        ])
+        ->join('web_site', 'scraped_product.web_site_id', '=', 'web_site.id')
+        ->fullTextSearch($searchQuery) // Utilisation du scope
+        ->orderByDesc('prix_ht')
+        ->limit(20)
+        ->get()
+        ->toArray();
 }
 
 /**
