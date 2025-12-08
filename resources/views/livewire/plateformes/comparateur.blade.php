@@ -882,14 +882,11 @@ private function prepareSearchQuery(string $search): string
     return $this->prepareSearchTerms($search);
 }
 
-/**
- * Récupère les produits depuis la base de données
- */
 private function fetchProducts(string $searchQuery): array
 {
-    $cacheKey = 'products:search:' . md5($searchQuery);
+    $cacheKey = 'search:' . md5($searchQuery);
     
-    return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($searchQuery) {
+    return Cache::tags(['products'])->remember($cacheKey, now()->addMinutes(5), function () use ($searchQuery) {
         return DB::connection('mysql')
             ->table('last_price_scraped_product as lp')
             ->leftJoin('web_site as ws', 'lp.web_site_id', '=', 'ws.id')
