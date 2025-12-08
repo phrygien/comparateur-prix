@@ -347,39 +347,42 @@
             <p class="text-xs text-gray-500 mt-4">Veuillez patienter quelques instants...</p>
         </div>
     </div>
+    </div>
+
+    <style>
+        @keyframes loading {
+            0% {
+                width: 0%;
+                margin-left: 0%;
+            }
+            50% {
+                width: 50%;
+                margin-left: 25%;
+            }
+            100% {
+                width: 0%;
+                margin-left: 100%;
+            }
+        }
+    </style>
+
+    @push('scripts')
+    <script>
+        function showCompetitorSearchLoading(event) {
+            // Afficher le loading
+            const loadingElement = document.getElementById('competitor-search-loading');
+            if (loadingElement) {
+                loadingElement.classList.remove('hidden');
+            }
+        }
+
+        // Masquer le loading si l'utilisateur revient en arrière
+        window.addEventListener('pageshow', function(event) {
+            const loadingElement = document.getElementById('competitor-search-loading');
+            if (loadingElement) {
+                loadingElement.classList.add('hidden');
+            }
+        });
+    </script>
+    @endpush
 </div>
-
-<style>
-    @keyframes loading {
-        0% {
-            width: 0%;
-            margin-left: 0%;
-        }
-        50% {
-            width: 50%;
-            margin-left: 25%;
-        }
-        100% {
-            width: 0%;
-            margin-left: 100%;
-        }
-    }
-</style>
-
-<script>
-    function showCompetitorSearchLoading(event) {
-        // Afficher le loading
-        const loadingElement = document.getElementById('competitor-search-loading');
-        if (loadingElement) {
-            loadingElement.classList.remove('hidden');
-        }
-    }
-
-    // Masquer le loading si l'utilisateur revient en arrière
-    window.addEventListener('pageshow', function(event) {
-        const loadingElement = document.getElementById('competitor-search-loading');
-        if (loadingElement) {
-            loadingElement.classList.add('hidden');
-        }
-    });
-</script>
