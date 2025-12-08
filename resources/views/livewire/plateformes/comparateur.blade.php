@@ -6,6 +6,7 @@ use Livewire\Volt\Component;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use App\Models\Site as WebSite;
+use Illuminate\Support\Str;
 
 new class extends Component {
     public $products = [];
@@ -19,7 +20,9 @@ new class extends Component {
     public $mydata;
 
     public $similarityThreshold = 0.6;
-    public $matchedProducts = [];
+    public $matchedProducts = []; // Garder pour compatibilité
+    public $displayedProducts = []; // Produits actuellement affichés
+    public $allMatchedProducts = []; // Tous les produits correspondants
 
     // Pour stocker la requête de recherche
     public $searchQuery = '';
@@ -40,6 +43,12 @@ new class extends Component {
         'site_source' => ''
     ];
 
+    // Pagination
+    public $currentPage = 1;
+    public $perPage = 20;
+    public $totalProducts = 0;
+    public $hasMoreProducts = false;
+
     public $sites = []; // Pour stocker la liste des sites
     public $showTable = false; // Pour suivre si on doit montrer le tableau même sans résultats
     public $isAutomaticSearch = true; // Pour distinguer recherche automatique vs manuelle
@@ -49,6 +58,9 @@ new class extends Component {
     
     // Pour stocker si un filtre a été appliqué après la recherche automatique
     public $hasAppliedFilters = false;
+
+    // Pour suivre si on charge plus de produits
+    public $isLoadingMore = false;
 
     // Mapping des abréviations des marques
     private array $brandAbbreviations = [
@@ -344,25 +356,38 @@ new class extends Component {
     public function searchManual()
     {
         try {
+            // Réinitialiser la pagination
+            $this->currentPage = 1;
+            $this->hasMoreProducts = false;
+
             // Réinitialiser le flag de données
             $this->hasData = false;
-            $this->matchedProducts = [];
+            $this->allMatchedProducts = [];
+            $this->displayedProducts = [];
+            $this->matchedProducts = []; // Réinitialiser aussi matchedProducts pour compatibilité
             $this->products = [];
 
             // Vérifier le cache
             $cacheKey = $this->getManualSearchCacheKey();
             $cachedResults = $this->getCachedResults($cacheKey);
 
-            if ($cachedResults !== null) {
-                $this->products = $cachedResults;
-                $this->matchedProducts = $cachedResults;
-                $this->hasData = !empty($cachedResults);
+            if ($cachedResults !== null && isset($cachedResults['all_results'])) {
+                $this->allMatchedProducts = $cachedResults['all_results'];
+                $this->matchedProducts = $this->allMatchedProducts; // Pour compatibilité
+                $this->totalProducts = count($this->allMatchedProducts);
+                
+                // Charger seulement la première page
+                $this->displayedProducts = array_slice($this->allMatchedProducts, 0, $this->perPage);
+                $this->hasMoreProducts = $this->totalProducts > $this->perPage;
+                $this->hasData = $this->totalProducts > 0;
                 $this->isAutomaticSearch = false;
                 $this->hasAppliedFilters = true;
 
                 \Log::info('Manual search results loaded from cache:', [
                     'cache_key' => $cacheKey,
-                    'count' => count($cachedResults),
+                    'total_count' => $this->totalProducts,
+                    'displayed_count' => count($this->displayedProducts),
+                    'has_more' => $this->hasMoreProducts,
                     'has_data' => $this->hasData
                 ]);
                 return;
@@ -440,11 +465,13 @@ new class extends Component {
 
             if (empty($maxReferences)) {
                 \Log::info('No matching scrap_reference found with applied filters');
-                $this->products = [];
+                $this->allMatchedProducts = [];
+                $this->displayedProducts = [];
+                $this->matchedProducts = [];
                 $this->hasData = false;
                 
                 // Mettre en cache les résultats vides
-                $this->cacheResults($cacheKey, []);
+                $this->cacheResults($cacheKey, ['all_results' => []]);
                 return;
             }
 
@@ -454,7 +481,7 @@ new class extends Component {
                 $maxRefsBySite[$ref->web_site_id] = $ref->max_scrap_reference_id;
             }
 
-            // ÉTAPE 2: Récupérer les produits dédupliqués avec les max reference IDs
+            // ÉTAPE 2: Récupérer TOUS les produits dédupliqués avec les max reference IDs
             $sql = "
                 SELECT 
                     t.*,
@@ -511,7 +538,7 @@ new class extends Component {
                 $params[] = $this->filters['site_source'];
             }
 
-            $sql .= " ORDER BY t.prix_ht DESC LIMIT 100";
+            $sql .= " ORDER BY t.prix_ht DESC LIMIT 200"; // Limiter à 200 pour éviter les excès
 
             \Log::info('Manual search with deduplication view:', [
                 'filters' => $this->filters,
@@ -545,22 +572,30 @@ new class extends Component {
                 $processedResults[] = $product;
             }
 
-            $this->products = $processedResults;
-            $this->matchedProducts = $processedResults;
-            $this->hasData = !empty($processedResults);
+            $this->allMatchedProducts = $processedResults;
+            $this->matchedProducts = $processedResults; // Pour compatibilité
+            $this->totalProducts = count($processedResults);
+            
+            // Charger seulement la première page
+            $this->displayedProducts = array_slice($processedResults, 0, $this->perPage);
+            $this->hasMoreProducts = $this->totalProducts > $this->perPage;
+            $this->hasData = $this->totalProducts > 0;
             $this->isAutomaticSearch = false;
             $this->hasAppliedFilters = true;
 
-            // Stocker les résultats dans le cache
-            $this->cacheResults($cacheKey, $processedResults);
+            // Stocker tous les résultats dans le cache
+            $this->cacheResults($cacheKey, [
+                'all_results' => $processedResults,
+                'total' => $this->totalProducts
+            ]);
 
-            \Log::info('Manual search results with deduplication (cached):', [
-                'count' => count($processedResults),
+            \Log::info('Manual search results with pagination:', [
+                'total_count' => $this->totalProducts,
+                'displayed_count' => count($this->displayedProducts),
+                'has_more' => $this->hasMoreProducts,
                 'has_data' => $this->hasData,
-                'unique_sites' => array_unique(array_column($processedResults, 'web_site_id')),
-                'products_per_site' => array_count_values(array_column($processedResults, 'web_site_id')),
-                'max_references_used' => $maxRefsBySite,
-                'cache_key' => $cacheKey
+                'current_page' => $this->currentPage,
+                'per_page' => $this->perPage
             ]);
 
         } catch (\Throwable $e) {
@@ -570,9 +605,63 @@ new class extends Component {
                 'filters' => $this->filters ?? []
             ]);
 
-            $this->products = [];
+            $this->allMatchedProducts = [];
+            $this->displayedProducts = [];
+            $this->matchedProducts = [];
             $this->hasData = false;
         }
+    }
+
+    /**
+     * Charge plus de produits (pagination)
+     */
+    public function loadMore()
+    {
+        $this->isLoadingMore = true;
+        
+        try {
+            $this->currentPage++;
+            
+            $startIndex = ($this->currentPage - 1) * $this->perPage;
+            $endIndex = $startIndex + $this->perPage;
+            
+            // Charger la page suivante
+            $nextPageProducts = array_slice($this->allMatchedProducts, $startIndex, $this->perPage);
+            
+            // Ajouter aux produits affichés
+            $this->displayedProducts = array_merge($this->displayedProducts, $nextPageProducts);
+            
+            // Vérifier s'il reste des produits
+            $this->hasMoreProducts = $endIndex < $this->totalProducts;
+            
+            \Log::info('Loaded more products:', [
+                'current_page' => $this->currentPage,
+                'loaded_count' => count($nextPageProducts),
+                'total_displayed' => count($this->displayedProducts),
+                'has_more' => $this->hasMoreProducts
+            ]);
+            
+        } catch (\Throwable $e) {
+            \Log::error('Error loading more products:', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        } finally {
+            $this->isLoadingMore = false;
+        }
+    }
+
+    /**
+     * Charge une page spécifique
+     */
+    private function loadPage(int $page)
+    {
+        $startIndex = ($page - 1) * $this->perPage;
+        $endIndex = min($startIndex + $this->perPage, $this->totalProducts);
+        
+        $this->displayedProducts = array_slice($this->allMatchedProducts, $startIndex, $this->perPage);
+        $this->currentPage = $page;
+        $this->hasMoreProducts = $endIndex < $this->totalProducts;
     }
 
     /**
@@ -618,18 +707,27 @@ new class extends Component {
             'site_source' => ''
         ];
 
+        // Réinitialiser la pagination
+        $this->currentPage = 1;
+        $this->hasMoreProducts = false;
+
         // Réinitialiser le flag de filtres appliqués
         $this->hasAppliedFilters = false;
 
         // Si on avait des résultats automatiques stockés, on les restaure
         if (!empty($this->originalAutomaticResults) && !$this->hasAppliedFilters) {
-            $this->matchedProducts = $this->originalAutomaticResults;
-            $this->products = $this->matchedProducts;
-            $this->hasData = !empty($this->matchedProducts);
+            $this->allMatchedProducts = $this->originalAutomaticResults;
+            $this->matchedProducts = $this->originalAutomaticResults; // Pour compatibilité
+            $this->totalProducts = count($this->allMatchedProducts);
+            $this->displayedProducts = array_slice($this->allMatchedProducts, 0, $this->perPage);
+            $this->hasMoreProducts = $this->totalProducts > $this->perPage;
+            $this->hasData = !empty($this->allMatchedProducts);
             $this->isAutomaticSearch = true;
             
             \Log::info('Reset filters - restored original automatic results:', [
-                'original_count' => count($this->originalAutomaticResults)
+                'original_count' => count($this->originalAutomaticResults),
+                'displayed_count' => count($this->displayedProducts),
+                'has_more' => $this->hasMoreProducts
             ]);
         } else {
             // Sinon, on recharge la recherche automatique
@@ -785,238 +883,279 @@ new class extends Component {
         }
     }
 
-/**
- * Récupère les prix des concurrents avec optimisations avancées
- */
-public function getCompetitorPrice($search)
-{
-    try {
-        // Early return si recherche vide
-        if (empty($search)) {
-            return $this->resetSearchState();
+    /**
+     * Récupère les prix des concurrents avec pagination
+     */
+    public function getCompetitorPrice($search)
+    {
+        try {
+            // Early return si recherche vide
+            if (empty($search)) {
+                return $this->resetSearchState();
+            }
+
+            // Vérification cache avec early return
+            $cacheKey = $this->getCacheKey($search, [], false);
+            if ($cachedData = $this->loadFromCache($cacheKey)) {
+                return $cachedData;
+            }
+
+            // Préparation de la recherche (extraction volumes et variations)
+            $searchQuery = $this->prepareSearchQuery($search);
+            
+            if (empty($searchQuery)) {
+                return $this->resetSearchState();
+            }
+
+            // Exécution de la requête optimisée avec pagination
+            $rawProducts = $this->fetchProducts($searchQuery);
+
+            if (empty($rawProducts)) {
+                return $this->handleEmptyResults($cacheKey);
+            }
+
+            // Traitement des produits en une seule passe
+            $processedProducts = $this->processProductsBatch($rawProducts);
+
+            // Calcul de similarité
+            $matchedProducts = $this->calculateSimilarity($processedProducts, $search);
+
+            // Préparation et mise en cache du résultat
+            return $this->cacheAndReturnResults($cacheKey, $matchedProducts, $searchQuery);
+
+        } catch (\Throwable $e) {
+            return $this->handleError($e, $search);
         }
-
-        // Vérification cache avec early return
-        $cacheKey = $this->getCacheKey($search, [], false);
-        if ($cachedData = $this->loadFromCache($cacheKey)) {
-            return $cachedData;
-        }
-
-        // Préparation de la recherche (extraction volumes et variations)
-        $searchQuery = $this->prepareSearchQuery($search);
-        
-        if (empty($searchQuery)) {
-            return $this->resetSearchState();
-        }
-
-        // Exécution de la requête optimisée
-        $rawProducts = $this->fetchProducts($searchQuery);
-
-        if (empty($rawProducts)) {
-            return $this->handleEmptyResults($cacheKey);
-        }
-
-        // Traitement des produits en une seule passe
-        $processedProducts = $this->processProductsBatch($rawProducts);
-
-        // Calcul de similarité
-        $matchedProducts = $this->calculateSimilarity($processedProducts, $search);
-
-        // Préparation et mise en cache du résultat
-        return $this->cacheAndReturnResults($cacheKey, $matchedProducts, $searchQuery);
-
-    } catch (\Throwable $e) {
-        return $this->handleError($e, $search);
     }
-}
 
-/**
- * Réinitialise l'état de recherche
- */
-private function resetSearchState(): ?array
-{
-    $this->products = [];
-    $this->hasData = false;
-    $this->originalAutomaticResults = [];
-    $this->hasAppliedFilters = false;
-    $this->showTable = true;
-    
-    return null;
-}
-
-/**
- * Charge les résultats depuis le cache
- */
-private function loadFromCache(string $cacheKey): ?array
-{
-    $cached = $this->getCachedResults($cacheKey);
-    
-    if ($cached === null) {
+    /**
+     * Réinitialise l'état de recherche
+     */
+    private function resetSearchState(): ?array
+    {
+        $this->allMatchedProducts = [];
+        $this->displayedProducts = [];
+        $this->matchedProducts = []; // Réinitialiser aussi
+        $this->hasData = false;
+        $this->originalAutomaticResults = [];
+        $this->hasAppliedFilters = false;
+        $this->showTable = true;
+        $this->currentPage = 1;
+        $this->hasMoreProducts = false;
+        
         return null;
     }
 
-    $this->matchedProducts = $cached['products'];
-    $this->products = $cached['products'];
-    $this->originalAutomaticResults = $cached['products'];
-    $this->hasAppliedFilters = false;
-    $this->hasData = !empty($cached['products']);
-    $this->isAutomaticSearch = true;
-    $this->showTable = true;
-
-    \Log::info('Cache hit', [
-        'key' => $cacheKey,
-        'count' => count($cached['products'])
-    ]);
-
-    return $cached['full_result'];
-}
-
-/**
- * Prépare la requête de recherche
- */
-private function prepareSearchQuery(string $search): string
-{
-    $this->extractSearchVolumes($search);
-    $this->extractSearchVariationKeywords($search);
-    
-    return $this->prepareSearchTerms($search);
-}
-
-/**
- * Récupère les produits depuis la base de données
- */
-private function fetchProducts(string $searchQuery): array
-{
-    $sql = "SELECT 
-                lp.*, 
-                ws.name as site_name, 
-                lp.url as product_url, 
-                lp.image_url as image
-            FROM last_price_scraped_product lp
-            LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-            WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
-                AGAINST (? IN BOOLEAN MODE)
-            ORDER BY lp.prix_ht DESC 
-            LIMIT 20";
-
-    return DB::connection('mysql')->select($sql, [$searchQuery]);
-}
-
-/**
- * Traite les produits en lot pour optimiser les performances
- */
-private function processProductsBatch(array $products): array
-{
-    $processed = [];
-    
-    foreach ($products as $product) {
-        // Nettoyage du prix
-        if (isset($product->prix_ht)) {
-            $product->prix_ht = $this->cleanPrice($product->prix_ht);
-        }
-
-        // Normalisation du vendor
-        if (isset($product->vendor)) {
-            $product->vendor = $this->normalizeVendor($product->vendor);
-        }
-
-        // Mapping des URLs et images (évite les isset répétés)
-        $product->product_url = $product->product_url ?? $product->url ?? null;
-        $product->image = $product->image ?? $product->image_url ?? null;
+    /**
+     * Charge les résultats depuis le cache
+     */
+    private function loadFromCache(string $cacheKey): ?array
+    {
+        $cached = $this->getCachedResults($cacheKey);
         
-        // Flag de recherche
-        $product->is_manual_search = false;
+        if ($cached === null) {
+            return null;
+        }
 
-        $processed[] = $product;
+        $this->allMatchedProducts = $cached['all_results'];
+        $this->matchedProducts = $cached['all_results']; // Pour compatibilité
+        $this->totalProducts = count($this->allMatchedProducts);
+        $this->displayedProducts = array_slice($this->allMatchedProducts, 0, $this->perPage);
+        $this->hasMoreProducts = $this->totalProducts > $this->perPage;
+        $this->originalAutomaticResults = $this->allMatchedProducts;
+        $this->hasAppliedFilters = false;
+        $this->hasData = !empty($this->allMatchedProducts);
+        $this->isAutomaticSearch = true;
+        $this->currentPage = 1;
+        $this->showTable = true;
+
+        \Log::info('Cache hit with pagination', [
+            'key' => $cacheKey,
+            'total_count' => $this->totalProducts,
+            'displayed_count' => count($this->displayedProducts),
+            'has_more' => $this->hasMoreProducts
+        ]);
+
+        return $cached['full_result'];
     }
 
-    \Log::info('Products processed', ['count' => count($processed)]);
+    /**
+     * Prépare la requête de recherche
+     */
+    private function prepareSearchQuery(string $search): string
+    {
+        $this->extractSearchVolumes($search);
+        $this->extractSearchVariationKeywords($search);
+        
+        return $this->prepareSearchTerms($search);
+    }
 
-    return $processed;
-}
+    /**
+     * Récupère les produits depuis la base de données
+     */
+    private function fetchProducts(string $searchQuery): array
+    {
+        $sql = "SELECT 
+                    lp.*, 
+                    ws.name as site_name, 
+                    lp.url as product_url, 
+                    lp.image_url as image
+                FROM last_price_scraped_product lp
+                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+                WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
+                    AGAINST (? IN BOOLEAN MODE)
+                ORDER BY lp.prix_ht DESC 
+                LIMIT 200"; // Augmenter la limite pour permettre la pagination
 
-/**
- * Gère le cas où aucun résultat n'est trouvé
- */
-private function handleEmptyResults(string $cacheKey): array
-{
-    $emptyResult = [
-        'count' => 0,
-        'has_data' => false,
-        'products' => [],
-        'product' => $this->getOneProductDetails($this->id),
-        'query' => '',
-        'volumes' => $this->searchVolumes ?? [],
-        'variation_keywords' => $this->searchVariationKeywords ?? []
-    ];
+        \Log::info('SQL execution', [
+            'query' => $searchQuery,
+            'volumes' => $this->searchVolumes,
+            'variations' => $this->searchVariationKeywords
+        ]);
 
-    // Cache même les résultats vides pour éviter les requêtes répétées
-    $this->cacheResults($cacheKey, [
-        'products' => [],
-        'full_result' => $emptyResult
-    ]);
+        return DB::connection('mysql')->select($sql, [$searchQuery]);
+    }
 
-    $this->products = [];
-    $this->hasData = false;
-    $this->originalAutomaticResults = [];
-    $this->hasAppliedFilters = false;
-    $this->showTable = true;
-    $this->isAutomaticSearch = true;
+    /**
+     * Traite les produits en lot pour optimiser les performances
+     */
+    private function processProductsBatch(array $products): array
+    {
+        $processed = [];
+        
+        foreach ($products as $product) {
+            // Nettoyage du prix
+            if (isset($product->prix_ht)) {
+                $product->prix_ht = $this->cleanPrice($product->prix_ht);
+            }
 
-    return $emptyResult;
-}
+            // Normalisation du vendor
+            if (isset($product->vendor)) {
+                $product->vendor = $this->normalizeVendor($product->vendor);
+            }
 
-/**
- * Met en cache et retourne les résultats
- */
-private function cacheAndReturnResults(string $cacheKey, array $matchedProducts, string $searchQuery): array
-{
-    $fullResult = [
-        'count' => count($matchedProducts),
-        'has_data' => !empty($matchedProducts),
-        'products' => $matchedProducts,
-        'product' => $this->getOneProductDetails($this->id),
-        'query' => $searchQuery,
-        'volumes' => $this->searchVolumes,
-        'variation_keywords' => $this->searchVariationKeywords
-    ];
+            // Mapping des URLs et images (évite les isset répétés)
+            $product->product_url = $product->product_url ?? $product->url ?? null;
+            $product->image = $product->image ?? $product->image_url ?? null;
+            
+            // Flag de recherche
+            $product->is_manual_search = false;
 
-    $this->cacheResults($cacheKey, [
-        'products' => $matchedProducts,
-        'full_result' => $fullResult
-    ]);
+            $processed[] = $product;
+        }
 
-    $this->matchedProducts = $matchedProducts;
-    $this->products = $matchedProducts;
-    $this->originalAutomaticResults = $matchedProducts;
-    $this->hasAppliedFilters = false;
-    $this->hasData = !empty($matchedProducts);
-    $this->isAutomaticSearch = true;
-    $this->showTable = !$this->hasData; // Affiche le tableau si pas de données
+        \Log::info('Products processed', ['count' => count($processed)]);
 
-    return $fullResult;
-}
+        return $processed;
+    }
 
-/**
- * Gère les erreurs de manière centralisée
- */
-private function handleError(\Throwable $e, ?string $search): array
-{
-    \Log::error('Competitor price error', [
-        'message' => $e->getMessage(),
-        'search' => $search,
-        'file' => $e->getFile(),
-        'line' => $e->getLine()
-    ]);
+    /**
+     * Gère le cas où aucun résultat n'est trouvé
+     */
+    private function handleEmptyResults(string $cacheKey): array
+    {
+        $emptyResult = [
+            'count' => 0,
+            'has_data' => false,
+            'all_results' => [],
+            'displayed_results' => [],
+            'product' => $this->getOneProductDetails($this->id),
+            'query' => '',
+            'volumes' => $this->searchVolumes ?? [],
+            'variation_keywords' => $this->searchVariationKeywords ?? [],
+            'has_more' => false
+        ];
 
-    $this->products = [];
-    $this->hasData = false;
-    $this->originalAutomaticResults = [];
-    $this->hasAppliedFilters = false;
-    $this->showTable = true;
+        // Cache même les résultats vides pour éviter les requêtes répétées
+        $this->cacheResults($cacheKey, [
+            'all_results' => [],
+            'full_result' => $emptyResult
+        ]);
 
-    return ['error' => $e->getMessage()];
-}
+        $this->allMatchedProducts = [];
+        $this->displayedProducts = [];
+        $this->matchedProducts = []; // Réinitialiser aussi
+        $this->hasData = false;
+        $this->originalAutomaticResults = [];
+        $this->hasAppliedFilters = false;
+        $this->showTable = true;
+        $this->isAutomaticSearch = true;
+        $this->currentPage = 1;
+        $this->hasMoreProducts = false;
+
+        return $emptyResult;
+    }
+
+    /**
+     * Met en cache et retourne les résultats
+     */
+    private function cacheAndReturnResults(string $cacheKey, array $matchedProducts, string $searchQuery): array
+    {
+        $this->allMatchedProducts = $matchedProducts;
+        $this->matchedProducts = $matchedProducts; // Pour compatibilité
+        $this->totalProducts = count($matchedProducts);
+        $this->displayedProducts = array_slice($matchedProducts, 0, $this->perPage);
+        $this->hasMoreProducts = $this->totalProducts > $this->perPage;
+        
+        $fullResult = [
+            'count' => $this->totalProducts,
+            'has_data' => !empty($matchedProducts),
+            'all_results' => $matchedProducts,
+            'displayed_results' => $this->displayedProducts,
+            'product' => $this->getOneProductDetails($this->id),
+            'query' => $searchQuery,
+            'volumes' => $this->searchVolumes,
+            'variation_keywords' => $this->searchVariationKeywords,
+            'has_more' => $this->hasMoreProducts,
+            'current_page' => 1,
+            'per_page' => $this->perPage
+        ];
+
+        $this->cacheResults($cacheKey, [
+            'all_results' => $matchedProducts,
+            'full_result' => $fullResult
+        ]);
+
+        $this->originalAutomaticResults = $matchedProducts;
+        $this->hasAppliedFilters = false;
+        $this->hasData = !empty($matchedProducts);
+        $this->isAutomaticSearch = true;
+        $this->currentPage = 1;
+        $this->showTable = !$this->hasData; // Affiche le tableau si pas de données
+
+        \Log::info('Results cached with pagination', [
+            'total_count' => $this->totalProducts,
+            'displayed_count' => count($this->displayedProducts),
+            'has_more' => $this->hasMoreProducts
+        ]);
+
+        return $fullResult;
+    }
+
+    /**
+     * Gère les erreurs de manière centralisée
+     */
+    private function handleError(\Throwable $e, ?string $search): array
+    {
+        \Log::error('Competitor price error', [
+            'message' => $e->getMessage(),
+            'search' => $search,
+            'file' => $e->getFile(),
+            'line' => $e->getLine()
+        ]);
+
+        $this->allMatchedProducts = [];
+        $this->displayedProducts = [];
+        $this->matchedProducts = []; // Réinitialiser aussi
+        $this->hasData = false;
+        $this->originalAutomaticResults = [];
+        $this->hasAppliedFilters = false;
+        $this->showTable = true;
+        $this->currentPage = 1;
+        $this->hasMoreProducts = false;
+
+        return ['error' => $e->getMessage()];
+    }
 
     /**
      * Calcule la similarité entre la recherche et chaque produit
@@ -1907,7 +2046,8 @@ private function handleError(\Throwable $e, ?string $search): array
     {
         $prices = [];
 
-        foreach ($this->matchedProducts as $product) {
+        // Utiliser uniquement les produits affichés pour l'analyse
+        foreach ($this->displayedProducts as $product) {
             $price = $product->price_ht ?? $product->prix_ht;
             $cleanPrice = $this->cleanPrice($price);
 
@@ -1942,7 +2082,8 @@ private function handleError(\Throwable $e, ?string $search): array
     {
         $prices = [];
 
-        foreach ($this->matchedProducts as $product) {
+        // Utiliser uniquement les produits affichés pour l'analyse
+        foreach ($this->displayedProducts as $product) {
             $price = $product->price_ht ?? $product->prix_ht;
             $cleanPrice = $this->cleanPrice($price);
 
@@ -2077,6 +2218,34 @@ private function handleError(\Throwable $e, ?string $search): array
 
         return in_array(strtolower($extension), $imageExtensions);
     }
+
+    /**
+     * Change le nombre de produits par page
+     */
+    public function changePerPage($perPage)
+    {
+        $this->perPage = $perPage;
+        $this->currentPage = 1;
+        
+        // Recharger la page actuelle avec le nouveau perPage
+        $this->loadPage(1);
+    }
+    
+    /**
+     * Récupère les produits à afficher (pour compatibilité)
+     */
+    public function getProductsToDisplay()
+    {
+        return $this->displayedProducts;
+    }
+    
+    /**
+     * Vérifie s'il y a des produits
+     */
+    public function getHasProducts()
+    {
+        return !empty($this->displayedProducts);
+    }
 }; ?>
 
 <div>
@@ -2103,7 +2272,7 @@ private function handleError(\Throwable $e, ?string $search): array
     <livewire:plateformes.detail :id="$id"/>
 
     <!-- Section d'analyse des prix (uniquement si on a des données) -->
-    @if($hasData && $referencePrice && count($matchedProducts) > 0)
+    @if($hasData && $referencePrice && count($displayedProducts) > 0)
         @php
             $priceAnalysis = $this->getPriceAnalysis();
             $cosmashopAnalysis = $this->getCosmashopPriceAnalysis();
@@ -2228,7 +2397,7 @@ private function handleError(\Throwable $e, ?string $search): array
                             </svg>
                             <span class="text-sm font-medium text-blue-800">
                                 Algorithme de similarité activé - 
-                                {{ count($matchedProducts) }} produit(s) correspondant(s) au seuil de {{ $similarityThreshold * 100 }}%
+                                {{ $totalProducts }} produit(s) correspondant(s) au seuil de {{ $similarityThreshold * 100 }}%
                             </span>
                         </div>
                         <div class="flex items-center space-x-2">
@@ -2419,6 +2588,33 @@ private function handleError(\Throwable $e, ?string $search): array
             </div>
         @endif
 
+        <!-- Pagination controls -->
+        @if($hasData && $totalProducts > $perPage)
+            <div class="mb-4 p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
+                <div class="flex items-center justify-between">
+                    <div class="text-sm text-gray-700">
+                        Affichage de <span class="font-semibold">{{ count($displayedProducts) }}</span> 
+                        sur <span class="font-semibold">{{ $totalProducts }}</span> produits
+                        (Page {{ $currentPage }})
+                    </div>
+                    
+                    <div class="flex items-center space-x-4">
+                        <div class="flex items-center space-x-2">
+                            <span class="text-sm text-gray-600">Produits par page:</span>
+                            <select wire:model.live="perPage" 
+                                    wire:change="changePerPage($event.target.value)"
+                                    class="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
+                                <option value="10">10</option>
+                                <option value="20">20</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        @endif
+
         <!-- Tableau des résultats - TOUJOURS AFFICHÉ -->
         @if($showTable)
             <div class="bg-white shadow-sm rounded-lg overflow-hidden" wire:loading.class="opacity-50" wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
@@ -2426,9 +2622,13 @@ private function handleError(\Throwable $e, ?string $search): array
                     <h3 class="text-lg font-medium text-gray-900">
                         @if($hasData)
                             @if($isAutomaticSearch)
-                                Résultats de la recherche automatique ({{ count($matchedProducts) }} produit(s))
+                                Résultats de la recherche automatique 
                             @else
-                                Résultats de la recherche manuelle ({{ count($matchedProducts) }} produit(s))
+                                Résultats de la recherche manuelle 
+                            @endif
+                            ({{ $totalProducts }} produit(s))
+                            @if($hasMoreProducts)
+                                - <span class="text-blue-600">{{ count($displayedProducts) }} affiché(s)</span>
                             @endif
                         @else
                             Recherche manuelle - Utilisez les filtres
@@ -2437,7 +2637,7 @@ private function handleError(\Throwable $e, ?string $search): array
                     <p class="mt-1 text-sm text-gray-500">
                         @if($hasData)
                             <span wire:loading.remove wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
-                                {{ count($matchedProducts) }} produit(s) trouvé(s)
+                                {{ count($displayedProducts) }} produit(s) affiché(s) sur {{ $totalProducts }}
                             </span>
                         @else
                             Aucun résultat automatique. Utilisez les filtres pour rechercher manuellement.
@@ -2600,8 +2800,8 @@ private function handleError(\Throwable $e, ?string $search): array
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
-                            @if(count($matchedProducts) > 0)
-                                @foreach($matchedProducts as $product)
+                            @if(count($displayedProducts) > 0)
+                                @foreach($displayedProducts as $product)
                                     @php
                                         // Pour la recherche manuelle, on calcule la similarité à la volée si nécessaire
                                         if ($isAutomaticSearch) {
@@ -2795,11 +2995,6 @@ private function handleError(\Throwable $e, ?string $search): array
                                                     <div class="text-sm font-medium text-gray-900">
                                                         {{ $product->site_name ?? $this->extractDomain($productUrl ?? '') }}
                                                     </div>
-                                                    {{-- @if(isset($product->web_site_id))
-                                                        <div class="text-xs text-gray-500">
-                                                            ID: {{ $product->web_site_id }}
-                                                        </div>
-                                                    @endif --}}
                                                 </div>
                                             </div>
                                         </td>
@@ -2960,6 +3155,29 @@ private function handleError(\Throwable $e, ?string $search): array
                         </tbody>
                     </table>
                 </div>
+                
+                <!-- Load More Button -->
+                @if($hasMoreProducts && count($displayedProducts) > 0)
+                    <div class="px-6 py-4 border-t border-gray-200 text-center">
+                        <button wire:click="loadMore" 
+                                wire:loading.attr="disabled"
+                                class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200">
+                            <span wire:loading.remove wire:target="loadMore">
+                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                                </svg>
+                                Charger plus de produits ({{ $totalProducts - count($displayedProducts) }} restants)
+                            </span>
+                            <span wire:loading wire:target="loadMore">
+                                <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                                Chargement...
+                            </span>
+                        </button>
+                        <p class="mt-2 text-sm text-gray-500">
+                            Affichage de {{ count($displayedProducts) }} sur {{ $totalProducts }} produits
+                        </p>
+                    </div>
+                @endif
             </div>
         @endif
     </div>
@@ -3105,6 +3323,28 @@ private function handleError(\Throwable $e, ?string $search): array
             Livewire.hook('response', ({ component }) => {
                 document.body.style.cursor = 'default';
             });
+        });
+
+        // Infinite scroll pour le lazy loading
+        let isLoading = false;
+        
+        window.addEventListener('scroll', function() {
+            if (isLoading) return;
+            
+            const table = document.querySelector('table');
+            if (!table) return;
+            
+            const tableBottom = table.getBoundingClientRect().bottom;
+            const windowHeight = window.innerHeight;
+            
+            // Si on est à 200px du bas du tableau et qu'il y a plus de produits à charger
+            if (tableBottom - windowHeight < 200 && @this.hasMoreProducts) {
+                isLoading = true;
+                
+                @this.loadMore().then(() => {
+                    isLoading = false;
+                });
+            }
         });
     </script>
 @endpush  
