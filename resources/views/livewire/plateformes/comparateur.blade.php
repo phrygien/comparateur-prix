@@ -882,7 +882,9 @@ private function prepareSearchQuery(string $search): string
     return $this->prepareSearchTerms($search);
 }
 
-// Puis dans votre méthode
+/**
+ * Récupère les produits depuis la base de données
+ */
 private function fetchProducts(string $searchQuery): array
 {
     \Log::info('Eloquent query execution', [
@@ -891,7 +893,7 @@ private function fetchProducts(string $searchQuery): array
         'variations' => $this->searchVariationKeywords
     ]);
 
-    return Product::with('website')
+    return Product::with('website') // Charge la relation website
         ->select('scraped_product.*')
         ->addSelect([
             'site_name' => \DB::raw('web_site.name'),
@@ -899,8 +901,9 @@ private function fetchProducts(string $searchQuery): array
             'image' => \DB::raw('scraped_product.image_url')
         ])
         ->join('web_site', 'scraped_product.web_site_id', '=', 'web_site.id')
-        ->fullTextSearch($searchQuery) // Utilisation du scope
-        ->orderByDesc('prix_ht')
+        ->whereRaw('MATCH(scraped_product.name, scraped_product.vendor, scraped_product.type, scraped_product.variation) 
+                    AGAINST(? IN BOOLEAN MODE)', [$searchQuery])
+        ->orderByDesc('scraped_product.prix_ht')
         ->limit(20)
         ->get()
         ->toArray();
