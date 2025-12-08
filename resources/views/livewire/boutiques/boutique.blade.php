@@ -146,7 +146,7 @@
                         $product->special_price ?? $product->price ?? 0
                     ]) }}" 
                     class="group text-sm"
-                    onclick="showCompetitorSearchLoading(event)"
+                    x-on:click="$dispatch('show-competitor-loading')"
                 >
                         <div class="aspect-square w-full rounded-lg bg-gray-100 overflow-hidden">
                             @if($product->thumbnail)
@@ -307,17 +307,20 @@
     <!-- Loading indicator Livewire -->
     <div wire:loading.class.remove="hidden" class="hidden fixed inset-0 z-50 flex items-center justify-center">
         <div class="flex flex-col items-center justify-center bg-white/90 rounded-2xl p-8 shadow-2xl border border-white/20 min-w-[200px]">
-            <!-- Spinner -->
             <div class="loading loading-spinner loading-lg text-primary mb-4"></div>
-            
-            <!-- Texte de chargement -->
             <p class="text-lg font-semibold text-gray-800">Chargement</p>
             <p class="text-sm text-gray-600 mt-1">Veuillez patienter...</p>
         </div>
     </div>
 
     <!-- Loading indicator pour recherche de prix concurrent -->
-    <div id="competitor-search-loading" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div 
+        x-data="{ show: false }"
+        x-on:show-competitor-loading.window="show = true"
+        x-show="show"
+        x-cloak
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+    >
         <div class="flex flex-col items-center justify-center bg-white rounded-2xl p-10 shadow-2xl border border-gray-200 min-w-[300px] max-w-md">
             <!-- Icône de recherche animée -->
             <div class="relative mb-6">
@@ -341,14 +344,14 @@
             
             <!-- Barre de progression animée -->
             <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                <div class="bg-primary h-full rounded-full animate-[loading_2s_ease-in-out_infinite]"></div>
+                <div class="bg-primary h-full rounded-full" style="animation: loading 2s ease-in-out infinite;"></div>
             </div>
             
             <p class="text-xs text-gray-500 mt-4">Veuillez patienter quelques instants...</p>
         </div>
     </div>
-    </div>
 
+    <!-- Styles inline pour l'animation -->
     <style>
         @keyframes loading {
             0% {
@@ -364,25 +367,9 @@
                 margin-left: 100%;
             }
         }
-    </style>
-
-    @push('scripts')
-    <script>
-        function showCompetitorSearchLoading(event) {
-            // Afficher le loading
-            const loadingElement = document.getElementById('competitor-search-loading');
-            if (loadingElement) {
-                loadingElement.classList.remove('hidden');
-            }
+        
+        [x-cloak] {
+            display: none !important;
         }
-
-        // Masquer le loading si l'utilisateur revient en arrière
-        window.addEventListener('pageshow', function(event) {
-            const loadingElement = document.getElementById('competitor-search-loading');
-            if (loadingElement) {
-                loadingElement.classList.add('hidden');
-            }
-        });
-    </script>
-    @endpush
-</div>
+    </style>
+</div
