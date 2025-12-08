@@ -887,28 +887,34 @@ private function prepareSearchQuery(string $search): string
  */
 private function fetchProducts(string $searchQuery): array
 {
-    return DB::connection('mysql')
-        ->table('last_price_scraped_product as lp')
-        ->leftJoin('web_site as ws', 'lp.web_site_id', '=', 'ws.id')
-        ->selectRaw('
-            lp.id,
-            lp.name,
-            lp.vendor,
-            lp.type,
-            lp.variation,
-            lp.prix_ht,
-            lp.url as product_url,
-            lp.image_url as image,
-            ws.name as site_name
-        ')
-        ->whereRaw(
-            'MATCH (lp.name, lp.vendor, lp.type, lp.variation) AGAINST (? IN BOOLEAN MODE)',
-            [$searchQuery]
-        )
-        ->orderByDesc('lp.prix_ht')
-        ->limit(20)
-        ->get()
-        ->toArray();
+    $cacheKey = 'products:search:' . md5($searchQuery);
+    
+    return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($searchQuery) {
+        return DB::connection('mysql')
+            ->table('last_price_scraped_product as lp')
+            ->leftJoin('web_site as ws', 'lp.web_site_id', '=', 'ws.id')
+            ->selectRaw('
+                lp.id,
+                lp.name,
+                lp.vendor,
+                lp.type,
+                lp.variation,
+                lp.prix_ht,
+                lp.url as product_url,
+                lp.image_url as image,
+                lp.created_at,
+                lp.updated_at,
+                ws.name as site_name
+            ')
+            ->whereRaw(
+                'MATCH (lp.name, lp.vendor, lp.type, lp.variation) AGAINST (? IN BOOLEAN MODE)',
+                [$searchQuery]
+            )
+            ->orderByDesc('lp.prix_ht')
+            ->limit(20)
+            ->get()
+            ->toArray();
+    });
 }
 
 /**
