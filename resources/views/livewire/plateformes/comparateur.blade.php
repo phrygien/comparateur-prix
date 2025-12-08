@@ -887,19 +887,28 @@ private function prepareSearchQuery(string $search): string
  */
 private function fetchProducts(string $searchQuery): array
 {
-    $sql = "SELECT 
-                lp.*, 
-                ws.name as site_name, 
-                lp.url as product_url, 
-                lp.image_url as image
-            FROM last_price_scraped_product lp
-            LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-            WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
-                AGAINST (? IN BOOLEAN MODE)
-            ORDER BY lp.prix_ht DESC 
-            LIMIT 20";
-
-    return DB::connection('mysql')->select($sql, [$searchQuery]);
+    return DB::connection('mysql')
+        ->table('last_price_scraped_product as lp')
+        ->leftJoin('web_site as ws', 'lp.web_site_id', '=', 'ws.id')
+        ->selectRaw('
+            lp.id,
+            lp.name,
+            lp.vendor,
+            lp.type,
+            lp.variation,
+            lp.prix_ht,
+            lp.url as product_url,
+            lp.image_url as image,
+            ws.name as site_name
+        ')
+        ->whereRaw(
+            'MATCH (lp.name, lp.vendor, lp.type, lp.variation) AGAINST (? IN BOOLEAN MODE)',
+            [$searchQuery]
+        )
+        ->orderByDesc('lp.prix_ht')
+        ->limit(20)
+        ->get()
+        ->toArray();
 }
 
 /**
