@@ -20,7 +20,7 @@ new class extends Component {
     public $mydata;
 
     public $similarityThreshold = 0.6;
-    public $matchedProducts = [];
+    public $matchedProducts = []; // Garder pour compatibilité
     public $displayedProducts = []; // Produits actuellement affichés
     public $allMatchedProducts = []; // Tous les produits correspondants
 
@@ -139,14 +139,6 @@ new class extends Component {
         ];
 
         return 'manual_search:' . md5(serialize($cacheData));
-    }
-
-    /**
-     * Clé de cache pour la pagination
-     */
-    private function getPaginationCacheKey(string $baseKey, int $page): string
-    {
-        return $baseKey . ':page:' . $page;
     }
 
     /**
@@ -372,6 +364,7 @@ new class extends Component {
             $this->hasData = false;
             $this->allMatchedProducts = [];
             $this->displayedProducts = [];
+            $this->matchedProducts = []; // Réinitialiser aussi matchedProducts pour compatibilité
             $this->products = [];
 
             // Vérifier le cache
@@ -380,6 +373,7 @@ new class extends Component {
 
             if ($cachedResults !== null && isset($cachedResults['all_results'])) {
                 $this->allMatchedProducts = $cachedResults['all_results'];
+                $this->matchedProducts = $this->allMatchedProducts; // Pour compatibilité
                 $this->totalProducts = count($this->allMatchedProducts);
                 
                 // Charger seulement la première page
@@ -473,6 +467,7 @@ new class extends Component {
                 \Log::info('No matching scrap_reference found with applied filters');
                 $this->allMatchedProducts = [];
                 $this->displayedProducts = [];
+                $this->matchedProducts = [];
                 $this->hasData = false;
                 
                 // Mettre en cache les résultats vides
@@ -578,6 +573,7 @@ new class extends Component {
             }
 
             $this->allMatchedProducts = $processedResults;
+            $this->matchedProducts = $processedResults; // Pour compatibilité
             $this->totalProducts = count($processedResults);
             
             // Charger seulement la première page
@@ -611,6 +607,7 @@ new class extends Component {
 
             $this->allMatchedProducts = [];
             $this->displayedProducts = [];
+            $this->matchedProducts = [];
             $this->hasData = false;
         }
     }
@@ -720,6 +717,7 @@ new class extends Component {
         // Si on avait des résultats automatiques stockés, on les restaure
         if (!empty($this->originalAutomaticResults) && !$this->hasAppliedFilters) {
             $this->allMatchedProducts = $this->originalAutomaticResults;
+            $this->matchedProducts = $this->originalAutomaticResults; // Pour compatibilité
             $this->totalProducts = count($this->allMatchedProducts);
             $this->displayedProducts = array_slice($this->allMatchedProducts, 0, $this->perPage);
             $this->hasMoreProducts = $this->totalProducts > $this->perPage;
@@ -937,6 +935,7 @@ new class extends Component {
     {
         $this->allMatchedProducts = [];
         $this->displayedProducts = [];
+        $this->matchedProducts = []; // Réinitialiser aussi
         $this->hasData = false;
         $this->originalAutomaticResults = [];
         $this->hasAppliedFilters = false;
@@ -959,6 +958,7 @@ new class extends Component {
         }
 
         $this->allMatchedProducts = $cached['all_results'];
+        $this->matchedProducts = $cached['all_results']; // Pour compatibilité
         $this->totalProducts = count($this->allMatchedProducts);
         $this->displayedProducts = array_slice($this->allMatchedProducts, 0, $this->perPage);
         $this->hasMoreProducts = $this->totalProducts > $this->perPage;
@@ -1074,6 +1074,7 @@ new class extends Component {
 
         $this->allMatchedProducts = [];
         $this->displayedProducts = [];
+        $this->matchedProducts = []; // Réinitialiser aussi
         $this->hasData = false;
         $this->originalAutomaticResults = [];
         $this->hasAppliedFilters = false;
@@ -1091,6 +1092,7 @@ new class extends Component {
     private function cacheAndReturnResults(string $cacheKey, array $matchedProducts, string $searchQuery): array
     {
         $this->allMatchedProducts = $matchedProducts;
+        $this->matchedProducts = $matchedProducts; // Pour compatibilité
         $this->totalProducts = count($matchedProducts);
         $this->displayedProducts = array_slice($matchedProducts, 0, $this->perPage);
         $this->hasMoreProducts = $this->totalProducts > $this->perPage;
@@ -1144,6 +1146,7 @@ new class extends Component {
 
         $this->allMatchedProducts = [];
         $this->displayedProducts = [];
+        $this->matchedProducts = []; // Réinitialiser aussi
         $this->hasData = false;
         $this->originalAutomaticResults = [];
         $this->hasAppliedFilters = false;
@@ -2226,6 +2229,22 @@ new class extends Component {
         
         // Recharger la page actuelle avec le nouveau perPage
         $this->loadPage(1);
+    }
+    
+    /**
+     * Récupère les produits à afficher (pour compatibilité)
+     */
+    public function getProductsToDisplay()
+    {
+        return $this->displayedProducts;
+    }
+    
+    /**
+     * Vérifie s'il y a des produits
+     */
+    public function getHasProducts()
+    {
+        return !empty($this->displayedProducts);
     }
 }; ?>
 
