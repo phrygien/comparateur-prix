@@ -138,7 +138,7 @@
         @if(count($products) > 0)
             <div class="grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-4 lg:gap-x-8">
                 @foreach($products as $product)
-                <a href="{{ route('article.comparate-prix', [
+                <a wire:navigate href="{{ route('article.comparate-prix', [
     utf8_encode($product->title), 
     $product->id, 
     $product->special_price ?? $product->price ?? 0
