@@ -55,7 +55,7 @@
 
                 <x-menu-item title="Boutiques" icon="o-building-storefront" link="/boutique" />
 
-                <x-menu-item title="Parcourir les concurrents" icon="o-calculator" link="/scraped_products" />
+                <x-menu-item title="Parcourir les concurrents" icon="o-magnifying-glass" link="/scraped_products" />
                 {{-- <x-menu-sub title="Settings" icon="o-cog-6-tooth">
                     <x-menu-item title="Wifi" icon="o-wifi" link="####" />
                     <x-menu-item title="Archives" icon="o-archive-box" link="####" />
