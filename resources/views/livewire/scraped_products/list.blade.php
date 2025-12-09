@@ -154,9 +154,9 @@ public function with()
     </style>
     
     <x-header title="Produits de concurent" subtitle="Tous les prix des produits sur le concurent" separator>
-        <x-slot:actions>
+        {{-- <x-slot:actions>
             <x-button icon="o-plus" class="btn-primary" />
-        </x-slot:actions>
+        </x-slot:actions> --}}
     </x-header>
     
     <!-- Filtres -->
