@@ -254,100 +254,125 @@ new class extends Component {
         <div class="overflow-x-auto rounded-none border border-gray-300 bg-white shadow-sm mb-6">
             @if($products->count() > 0)
                 <table class="excel-table table-auto border-collapse w-full">
-                    <!-- head -->
-                    <thead>
-                        <tr class="bg-gray-100 border-b border-gray-300">
-                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-12">#</th>
-                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-16">Image</th>
-                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32">Vendeur</th>
-                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-48">Nom</th>
-                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32 max-w-48 excel-truncate">Type</th>
-                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32 max-w-48 excel-truncate">Variation</th>
-                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-32">Prix HT</th>
-                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32">Site</th>
-                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-32">Date</th>
-                            <th class="font-bold text-gray-700 text-sm px-3 py-2 text-center w-24">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach($products as $index => $product)
-                            @php
-                                $rowNumber = (($currentPage - 1) * $perPage) + $index + 1;
-                                $site = \App\Models\Site::find($product->web_site_id);
-                            @endphp
-                            <tr class="border-b border-gray-200 hover:bg-gray-50 even:bg-gray-50/50">
-                                <td class="text-gray-600 text-sm px-3 py-2 border-r border-gray-300 text-center font-mono">{{ $rowNumber }}</td>
-                                <td class="px-3 py-2 border-r border-gray-300 text-center">
-                                    @if($product->image_url)
-                                        <div class="avatar mx-auto">
-                                            <div class="mask mask-squircle w-10 h-10">
-                                                <img src="{{ $product->image_url }}" 
-                                                     alt="{{ $product->name }}"
-                                                     class="object-cover"
-                                                     onerror="this.src='https://via.placeholder.com/40x40?text=No+Image'">
-                                            </div>
-                                        </div>
-                                    @else
-                                        <div class="text-gray-300 mx-auto">
-                                            <x-icon name="o-photo" class="w-5 h-5" />
-                                        </div>
-                                    @endif
-                                </td>
-                                <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 excel-truncate max-w-32" title="{{ $product->vendor }}">
-                                    {{ $product->vendor }}
-                                </td>
-                                <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 excel-truncate max-w-48" title="{{ $product->name }}">
-                                    {{ $product->name }}
-                                </td>
-                                <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 excel-truncate max-w-48" title="{{ $product->type ?? 'N/A' }}">
-                                    <div class="inline-flex items-center px-2 py-1 rounded bg-blue-50 text-blue-700 border border-blue-200 text-xs">
-                                        {{ $product->type ?? 'N/A' }}
-                                    </div>
-                                </td>
-                                <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 excel-truncate max-w-48" title="{{ $product->variation ?? 'N/A' }}">
-                                    <div class="inline-flex items-center px-2 py-1 rounded bg-gray-50 text-gray-700 border border-gray-200 text-xs">
-                                        {{ $product->variation ?? 'N/A' }}
-                                    </div>
-                                </td>
-                                <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 text-center font-semibold text-green-600">
-                                    {{ $product->prix_ht }} {{ $product->currency }}
-                                </td>
-                                <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300">
-                                    @if($site)
-                                        <div class="flex items-center gap-1 excel-truncate max-w-32" title="{{ $site->name }}">
-                                            <x-icon name="o-globe-alt" class="w-3 h-3 text-gray-400 flex-shrink-0" />
-                                            <span class="excel-truncate">{{ $site->name }}</span>
-                                        </div>
-                                    @else
-                                        <span class="text-gray-400 italic">N/A</span>
-                                    @endif
-                                </td>
-                                <td class="text-gray-600 text-sm px-3 py-2 border-r border-gray-300 text-center">
-                                    <div class="whitespace-nowrap">
-                                        {{ \Carbon\Carbon::parse($product->created_at)->format('d/m/Y') }}
-                                    </div>
-                                    <div class="text-xs text-gray-400">
-                                        {{ \Carbon\Carbon::parse($product->created_at)->format('H:i') }}
-                                    </div>
-                                </td>
-                                <td class="px-3 py-2 text-center">
-                                    <div class="flex justify-center gap-1">
-                                        @if($product->url)
-                                            <a href="{{ $product->url }}" 
-                                               target="_blank" 
-                                               class="btn btn-xs btn-outline btn-square border-gray-300 hover:bg-blue-50 hover:border-blue-300"
-                                               title="Voir sur le site">
-                                                <x-icon name="o-arrow-top-right-on-square" class="w-3 h-3" />
-                                            </a>
-                                        @endif
-                                        <button class="btn btn-xs btn-ghost btn-square border border-gray-300 hover:bg-gray-100" title="Voir détails">
-                                            <x-icon name="o-eye" class="w-3 h-3" />
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        @endforeach
-                    </tbody>
+<thead>
+    <tr class="bg-gray-100 border-b border-gray-300">
+        <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-12">#</th>
+        <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-16 hidden sm:table-cell">Image</th>
+        <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32 lg:min-w-40">Vendeur</th>
+        <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-48 lg:min-w-56 xl:min-w-64">Nom</th>
+        <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32 max-w-48 excel-truncate hidden md:table-cell">Type</th>
+        <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32 max-w-48 excel-truncate hidden lg:table-cell">Variation</th>
+        <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-32">Prix HT</th>
+        <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32 hidden xl:table-cell">Site</th>
+        <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-32 hidden lg:table-cell">Date</th>
+        <th class="font-bold text-gray-700 text-sm px-3 py-2 text-center w-24">Actions</th>
+    </tr>
+</thead>
+<tbody>
+    @foreach($products as $index => $product)
+        @php
+            $rowNumber = (($currentPage - 1) * $perPage) + $index + 1;
+            $site = \App\Models\Site::find($product->web_site_id);
+        @endphp
+        <tr class="border-b border-gray-200 hover:bg-gray-50 even:bg-gray-50/50">
+            <!-- Colonne # -->
+            <td class="text-gray-600 text-sm px-3 py-2 border-r border-gray-300 text-center font-mono">{{ $rowNumber }}</td>
+            
+            <!-- Colonne Image (cachée sur mobile) -->
+            <td class="px-3 py-2 border-r border-gray-300 text-center hidden sm:table-cell">
+                @if($product->image_url)
+                    <div class="avatar mx-auto">
+                        <div class="mask mask-squircle w-10 h-10">
+                            <img src="{{ $product->image_url }}" 
+                                 alt="{{ $product->name }}"
+                                 class="object-cover"
+                                 onerror="this.src='https://via.placeholder.com/40x40?text=No+Image'">
+                        </div>
+                    </div>
+                @else
+                    <div class="text-gray-300 mx-auto">
+                        <x-icon name="o-photo" class="w-5 h-5" />
+                    </div>
+                @endif
+            </td>
+            
+            <!-- Colonne Vendeur -->
+            <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 excel-truncate" 
+                title="{{ $product->vendor }}">
+                <div class="block lg:hidden font-semibold">Vendeur:</div>
+                {{ $product->vendor }}
+            </td>
+            
+            <!-- Colonne Nom -->
+            <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 excel-truncate" 
+                title="{{ $product->name }}">
+                <div class="block lg:hidden font-semibold">Produit:</div>
+                {{ $product->name }}
+            </td>
+            
+            <!-- Colonne Type (cachée sur mobile et tablette) -->
+            <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 hidden md:table-cell" 
+                title="{{ $product->type ?? 'N/A' }}">
+                <div class="inline-flex items-center px-2 py-1 rounded bg-blue-50 text-blue-700 border border-blue-200 text-xs excel-truncate">
+                    {{ $product->type ?? 'N/A' }}
+                </div>
+            </td>
+            
+            <!-- Colonne Variation (cachée sur mobile et tablette) -->
+            <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 hidden lg:table-cell" 
+                title="{{ $product->variation ?? 'N/A' }}">
+                <div class="inline-flex items-center px-2 py-1 rounded bg-gray-50 text-gray-700 border border-gray-200 text-xs excel-truncate">
+                    {{ $product->variation ?? 'N/A' }}
+                </div>
+            </td>
+            
+            <!-- Colonne Prix HT -->
+            <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 text-center font-semibold text-green-600">
+                <div class="block lg:hidden font-semibold text-gray-600">Prix:</div>
+                {{ $product->prix_ht }} {{ $product->currency }}
+            </td>
+            
+            <!-- Colonne Site (cachée sur mobile et tablette) -->
+            <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 hidden xl:table-cell">
+                @if($site)
+                    <div class="flex items-center gap-1 excel-truncate" title="{{ $site->name }}">
+                        <x-icon name="o-globe-alt" class="w-3 h-3 text-gray-400 flex-shrink-0" />
+                        <span class="excel-truncate">{{ $site->name }}</span>
+                    </div>
+                @else
+                    <span class="text-gray-400 italic">N/A</span>
+                @endif
+            </td>
+            
+            <!-- Colonne Date (cachée sur mobile et tablette) -->
+            <td class="text-gray-600 text-sm px-3 py-2 border-r border-gray-300 hidden lg:table-cell">
+                <div class="whitespace-nowrap">
+                    {{ \Carbon\Carbon::parse($product->created_at)->format('d/m/Y') }}
+                </div>
+                <div class="text-xs text-gray-400">
+                    {{ \Carbon\Carbon::parse($product->created_at)->format('H:i') }}
+                </div>
+            </td>
+            
+            <!-- Colonne Actions -->
+            <td class="px-3 py-2 text-center">
+                <div class="flex justify-center gap-1">
+                    @if($product->url)
+                        <a href="{{ $product->url }}" 
+                           target="_blank" 
+                           class="btn btn-xs btn-outline btn-square border-gray-300 hover:bg-blue-50 hover:border-blue-300"
+                           title="Voir sur le site">
+                            <x-icon name="o-arrow-top-right-on-square" class="w-3 h-3" />
+                        </a>
+                    @endif
+                    <button class="btn btn-xs btn-ghost btn-square border border-gray-300 hover:bg-gray-100" title="Voir détails">
+                        <x-icon name="o-eye" class="w-3 h-3" />
+                    </button>
+                </div>
+            </td>
+        </tr>
+    @endforeach
+</tbody>
                 </table>
             @else
                 <div class="p-8 text-center">
