@@ -21,7 +21,7 @@ class Boutique extends Component
     public $filterCapacity = "";
 
     // Nombre d'éléments par page
-    public $perPage = 12;
+    public $perPage = 30;
 
     // Durée du cache en secondes (1 heure)
     protected $cacheTTL = 3600;

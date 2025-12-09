@@ -12,12 +12,12 @@
                 <!-- Sélecteur d'éléments par page -->
                 <div class="form-control">
                     <select wire:model.live="perPage" class="select select-bordered select-sm">
-                        <option value="12">12 par page</option>
-                        <option value="24">24 par page</option>
-                        <option value="48">48 par page</option>
-                        <option value="96">96 par page</option>
-                        <option value="108">108 par page</option>
+                        <option value="30">30 par page</option>
+                        <option value="60">60 par page</option>
+                        <option value="90">90 par page</option>
                         <option value="120">120 par page</option>
+                        <option value="160">160 par page</option>
+                        <option value="190">190 par page</option>
                     </select>
                 </div>
 
