@@ -22,7 +22,7 @@
                 </div>
 
                 <!-- Bouton filtre avancé -->
-                <div class="drawer drawer-end">
+                {{-- <div class="drawer drawer-end">
                     <input id="my-drawer-1" type="checkbox" class="drawer-toggle" />
                     <div class="drawer-content">
                         <label for="my-drawer-1" class="btn drawer-button btn-primary">Filtre avancé</label>
@@ -113,7 +113,7 @@
                             </div>
                         </div>
                     </div>
-                </div>
+                </div> --}}
             </div>
         </x-slot:actions>
     </x-header>
