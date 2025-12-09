@@ -159,88 +159,97 @@ public function with()
         </x-slot:actions> --}}
     </x-header>
     
-    <!-- Filtres -->
-    <div class="card bg-base-100 shadow-md mb-6">
-        <div class="card-body">
-            <h3 class="card-title mb-4">Filtres de recherche</h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                <!-- Vendeur -->
-                <div>
-                    <x-input 
-                        wire:model="vendor"
-                        label="Vendeur" 
-                        placeholder="Filtrer par vendeur..."
-                        icon="o-building-storefront"
-                    />
-                </div>
-                
-                <!-- Nom du produit -->
-                <div>
-                    <x-input 
-                        wire:model="name"
-                        label="Nom du produit" 
-                        placeholder="Filtrer par nom..."
-                        icon="o-tag"
-                    />
-                </div>
-                
-                <!-- Type -->
-                <div>
-                    <x-input 
-                        wire:model="type"
-                        label="Type" 
-                        placeholder="Filtrer par type..."
-                        icon="o-cube"
-                    />
-                </div>
-                
-                <!-- Variation -->
-                <div>
-                    <x-input 
-                        wire:model="variation"
-                        label="Variation" 
-                        placeholder="Filtrer par variation..."
-                        icon="o-arrows-pointing-out"
-                    />
-                </div>
-                
-                <!-- Site web -->
-                <div>
-                    <x-select 
-                        wire:model="site_id"
-                        label="Site web" 
-                        placeholder="Tous les sites"
-                        icon="o-globe-alt"
-                        :options="$sites->map(function($site) {
-                            return ['id' => $site->id, 'name' => $site->name];
-                        })->toArray()"
-                        option-value="id"
-                        option-label="name"
-                    />
-                </div>
+<!-- Filtres -->
+<div class="card bg-base-100 shadow-sm mb-4">
+    <div class="card-body p-3">
+        <h3 class="card-title text-base font-medium mb-2">Filtres de recherche</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-2">
+            <!-- Vendeur -->
+            <div>
+                <x-input 
+                    wire:model="vendor"
+                    label="Vendeur" 
+                    placeholder="Filtrer par vendeur..."
+                    icon="o-building-storefront"
+                    class="input-sm"
+                    input-class="border border-gray-300 rounded-lg focus:border-primary focus:ring-2 focus:ring-primary/20 transition-colors"
+                />
             </div>
             
-            <!-- Boutons d'action -->
-            <div class="flex justify-end gap-2 mt-6">
-                @if($showResults)
-                    <x-button 
-                        wire:click="resetFilter" 
-                        icon="o-x-mark"
-                        label="Réinitialiser"
-                        class="btn-ghost"
-                    />
-                @endif
-                <x-button 
-                    wire:click="applyFilter" 
-                    icon="o-funnel"
-                    label="Appliquer les filtres"
-                    class="btn-primary"
-                    spinner
+            <!-- Nom du produit -->
+            <div>
+                <x-input 
+                    wire:model="name"
+                    label="Nom du produit" 
+                    placeholder="Filtrer par nom..."
+                    icon="o-tag"
+                    class="input-sm"
+                    input-class="border border-gray-300 rounded-lg focus:border-primary focus:ring-2 focus:ring-primary/20 transition-colors"
+                />
+            </div>
+            
+            <!-- Type -->
+            <div>
+                <x-input 
+                    wire:model="type"
+                    label="Type" 
+                    placeholder="Filtrer par type..."
+                    icon="o-cube"
+                    class="input-sm"
+                    input-class="border border-gray-300 rounded-lg focus:border-primary focus:ring-2 focus:ring-primary/20 transition-colors"
+                />
+            </div>
+            
+            <!-- Variation -->
+            <div>
+                <x-input 
+                    wire:model="variation"
+                    label="Variation" 
+                    placeholder="Filtrer par variation..."
+                    icon="o-arrows-pointing-out"
+                    class="input-sm"
+                    input-class="border border-gray-300 rounded-lg focus:border-primary focus:ring-2 focus:ring-primary/20 transition-colors"
+                />
+            </div>
+            
+            <!-- Site web -->
+            <div>
+                <x-select 
+                    wire:model="site_id"
+                    label="Site web" 
+                    placeholder="Tous les sites"
+                    icon="o-globe-alt"
+                    class="select-sm"
+                    :options="$sites->map(function($site) {
+                        return ['id' => $site->id, 'name' => $site->name];
+                    })->toArray()"
+                    option-value="id"
+                    option-label="name"
+                    select-class="border border-gray-300 rounded-lg focus:border-primary focus:ring-2 focus:ring-primary/20 transition-colors"
                 />
             </div>
         </div>
+        
+        <!-- Boutons d'action -->
+        <div class="flex justify-end gap-2 mt-3">
+            @if($showResults)
+                <x-button 
+                    wire:click="resetFilter" 
+                    icon="o-x-mark"
+                    label="Réinitialiser"
+                    class="btn-ghost btn-sm"
+                />
+            @endif
+            <x-button 
+                wire:click="applyFilter" 
+                icon="o-funnel"
+                label="Appliquer les filtres"
+                class="btn-primary btn-sm"
+                spinner
+            />
+        </div>
     </div>
-    
+</div>
     <!-- Affichage des résultats -->
     @if($showResults)
         <div class="overflow-x-auto rounded-none border border-gray-300 bg-white shadow-sm mb-6">
