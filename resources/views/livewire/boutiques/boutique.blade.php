@@ -136,7 +136,7 @@
     <!-- Grille de produits -->
     <div class="mx-auto overflow-hidden">
         @if(count($products) > 0)
-            <div class="grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-4 lg:gap-x-8">
+            <div class="grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-5 lg:gap-x-8">
                 @foreach($products as $product)
                 <a 
                     href="{{ route('article.comparate-prix', [
