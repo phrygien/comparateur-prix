@@ -248,7 +248,7 @@ public function with()
                 <table class="excel-table table-auto border-collapse w-full">
 <thead>
     <tr class="bg-gray-100 border-b border-gray-300">
-        <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-12">#</th>
+        {{-- <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-12">#</th> --}}
         <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-16 hidden sm:table-cell">Image</th>
         <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32 lg:min-w-40">Vendeur</th>
         <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-48 lg:min-w-56 xl:min-w-64">Nom</th>
@@ -268,7 +268,7 @@ public function with()
         @endphp
         <tr class="border-b border-gray-200 hover:bg-gray-50 even:bg-gray-50/50">
             <!-- Colonne # -->
-            <td class="text-gray-600 text-sm px-3 py-2 border-r border-gray-300 text-center font-mono">{{ $rowNumber }}</td>
+            {{-- <td class="text-gray-600 text-sm px-3 py-2 border-r border-gray-300 text-center font-mono">{{ $rowNumber }}</td> --}}
             
             <!-- Colonne Image (cachée sur mobile) -->
             <td class="px-3 py-2 border-r border-gray-300 text-center hidden sm:table-cell">
