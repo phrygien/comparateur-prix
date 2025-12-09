@@ -7,5 +7,5 @@ new class extends Component {
 }; ?>
 
 <div>
-    //
+    <livewire:scraped_products.list />
 </div>

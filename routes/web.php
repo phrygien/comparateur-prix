@@ -13,5 +13,5 @@ Route::middleware(['check.auth', 'boutique.cache'])->group(function () {
     Volt::route('/article/{name}/{id}/{price}/commparate', 'plateformes.comparateur')->name('article.comparate-prix');
     Volt::route('/sites', 'sites.page')->name('sites');
     Volt::route('/scraped_products', 'scraped_products.page')->name('scraped_products');
-    Route::get('/boutique', Boutique::class)->name('boutiques');
+    Route::get('/boutique', action: Boutique::class)->name('boutiques');
 });
