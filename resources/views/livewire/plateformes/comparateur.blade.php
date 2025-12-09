@@ -2347,11 +2347,11 @@ private function handleError(\Throwable $e, ?string $search): array
                     </p>
                 </div>
                 <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
+                    <table class="min-w-full divide-y divide-gray-200 excel-style-table">
                         <thead class="bg-gray-50">
                             <tr>
                                 <!-- NOUVELLE COLONNE : Image (TOUJOURS VISIBLE) -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider excel-header">
                                     <div class="flex flex-col">
                                         <span>Image</span>
                                     </div>
@@ -2359,14 +2359,14 @@ private function handleError(\Throwable $e, ?string $search): array
                                 
                                 @if($hasData && $isAutomaticSearch)
                                 <!-- Colonne Score (uniquement si résultats automatiques) -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider excel-header">
                                     <div class="flex flex-col">
                                         <span>Score</span>
                                     </div>
                                 </th>
                                 
                                 <!-- Colonne Correspondance (uniquement si résultats automatiques) -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider excel-header">
                                     <div class="flex flex-col">
                                         <span>Correspondance</span>
                                     </div>
@@ -2374,7 +2374,7 @@ private function handleError(\Throwable $e, ?string $search): array
                                 @endif
                                 
                                 <!-- Colonne Vendor avec filtre AJOUTÉE -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-48">
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider excel-header">
                                     <div class="flex flex-col space-y-2">
                                         <span class="whitespace-nowrap">Marque/Vendor</span>
                                         <div class="relative">
@@ -2382,7 +2382,7 @@ private function handleError(\Throwable $e, ?string $search): array
                                                    disabled
                                                    wire:model.live.debounce.800ms="filters.vendor"
                                                    placeholder="Filtrer par marque..."
-                                                   class="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
+                                                   class="excel-filter-input px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-full"
                                                    wire:loading.attr="disabled">
                                             <div wire:loading wire:target="filters.vendor" class="absolute right-3 top-1/2 transform -translate-y-1/2">
                                                 <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
@@ -2392,15 +2392,14 @@ private function handleError(\Throwable $e, ?string $search): array
                                 </th>
                                 
                                 <!-- Colonne Nom avec filtre -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-64" style="width: 30%;">
-                                    <!-- Largeur ajustée -->
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider excel-header">
                                     <div class="flex flex-col space-y-2">
                                         <span class="whitespace-nowrap">Nom</span>
                                         <div class="relative">
                                             <input type="text" 
                                                 wire:model.live.debounce.800ms="filters.name"
                                                 placeholder="Filtrer..."
-                                                class="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
+                                                class="excel-filter-input px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-full"
                                                 wire:loading.attr="disabled">
                                             <div wire:loading wire:target="filters.name" class="absolute right-3 top-1/2 transform -translate-y-1/2">
                                                 <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
@@ -2410,16 +2409,16 @@ private function handleError(\Throwable $e, ?string $search): array
                                 </th>
                                 
                                 <!-- Colonne Variation avec filtre -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    <div class="flex flex-col space-y-1">
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider excel-header">
+                                    <div class="flex flex-col space-y-2">
                                         <span>Variation</span>
                                         <div class="relative">
                                             <input type="text" 
                                                    wire:model.live.debounce.800ms="filters.variation"
                                                    placeholder="Filtrer..."
-                                                   class="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
+                                                   class="excel-filter-input px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-full"
                                                    wire:loading.attr="disabled">
-                                            <div wire:loading wire:target="filters.variation" class="absolute right-2 top-1/2 transform -translate-y-1/2">
+                                            <div wire:loading wire:target="filters.variation" class="absolute right-3 top-1/2 transform -translate-y-1/2">
                                                 <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
                                             </div>
                                         </div>
@@ -2427,19 +2426,19 @@ private function handleError(\Throwable $e, ?string $search): array
                                 </th>
                                 
                                 <!-- Colonne Site Source avec filtre -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    <div class="flex flex-col space-y-1">
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider excel-header">
+                                    <div class="flex flex-col space-y-2">
                                         <span>Site Source</span>
                                         <div class="relative">
                                             <select wire:model.live="filters.site_source"
-                                                    class="px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-full"
+                                                    class="excel-filter-input px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-full"
                                                     wire:loading.attr="disabled">
                                                 <option value="">Tous</option>
                                                 @foreach($sites as $site)
                                                     <option value="{{ $site->id }}">{{ $site->name }}</option>
                                                 @endforeach
                                             </select>
-                                            <div wire:loading wire:target="filters.site_source" class="absolute right-2 top-1/2 transform -translate-y-1/2">
+                                            <div wire:loading wire:target="filters.site_source" class="absolute right-3 top-1/2 transform -translate-y-1/2">
                                                 <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
                                             </div>
                                         </div>
@@ -2447,14 +2446,14 @@ private function handleError(\Throwable $e, ?string $search): array
                                 </th>
                                 
                                 <!-- Colonne Prix HT -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider excel-header">
                                     <div class="flex flex-col">
                                         <span>Prix HT</span>
                                     </div>
                                 </th>
                                 
                                 <!-- Colonne Date MAJ Prix -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider excel-header">
                                     <div class="flex flex-col">
                                         <span>Date MAJ Prix</span>
                                     </div>
@@ -2462,14 +2461,14 @@ private function handleError(\Throwable $e, ?string $search): array
                                 
                                 @if($hasData && $referencePrice)
                                 <!-- Colonne Vs Cosmaparfumerie (uniquement si on a un prix de référence) -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider excel-header">
                                     <div class="flex flex-col">
                                         <span>Vs Cosmaparfumerie</span>
                                     </div>
                                 </th>
                                 
                                 <!-- Colonne Vs Cosmashop (uniquement si on a un prix de référence) -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider excel-header">
                                     <div class="flex flex-col">
                                         <span>Vs Cosmashop</span>
                                     </div>
@@ -2477,16 +2476,16 @@ private function handleError(\Throwable $e, ?string $search): array
                                 @endif
                                 
                                 <!-- Colonne Type avec filtre -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    <div class="flex flex-col space-y-1">
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider excel-header">
+                                    <div class="flex flex-col space-y-2">
                                         <span>Type</span>
                                         <div class="relative">
                                             <input type="text" 
                                                    wire:model.live.debounce.800ms="filters.type"
                                                    placeholder="Filtrer..."
-                                                   class="px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-full"
+                                                   class="excel-filter-input px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-full"
                                                    wire:loading.attr="disabled">
-                                            <div wire:loading wire:target="filters.type" class="absolute right-2 top-1/2 transform -translate-y-1/2">
+                                            <div wire:loading wire:target="filters.type" class="absolute right-3 top-1/2 transform -translate-y-1/2">
                                                 <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
                                             </div>
                                         </div>
@@ -2494,7 +2493,7 @@ private function handleError(\Throwable $e, ?string $search): array
                                 </th>
                                 
                                 <!-- Colonne Actions -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider excel-header">
                                     <div class="flex flex-col">
                                         <span>Actions</span>
                                     </div>
@@ -2545,9 +2544,9 @@ private function handleError(\Throwable $e, ?string $search): array
                                             $cosmashopStatusLabel = $this->getCosmashopPriceStatusLabel($competitorPrice);
                                         }
                                     @endphp
-                                    <tr class="hover:bg-gray-50 transition-colors duration-150">
+                                    <tr class="hover:bg-gray-50 transition-colors duration-150 excel-row">
                                         <!-- NOUVELLE COLONNE : Image (TOUJOURS VISIBLE) -->
-                                        <td class="px-6 py-4 whitespace-nowrap">
+                                        <td class="px-3 py-4 whitespace-nowrap excel-cell">
                                             @php
                                                 $productImage = $this->getProductImage($product);
                                                 $productName = $product->name ?? 'Produit sans nom';
@@ -2555,34 +2554,15 @@ private function handleError(\Throwable $e, ?string $search): array
                                             <div class="relative group">
                                                 <img src="{{ $productImage }}" 
                                                      alt="{{ $productName }}" 
-                                                     class="h-20 w-20 object-cover rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-200"
+                                                     class="h-16 w-16 object-cover rounded border border-gray-300 hover:shadow-sm transition-shadow duration-200"
                                                      loading="lazy"
                                                      onerror="this.onerror=null; this.src='https://placehold.co/400x400/cccccc/999999?text=No+Image'">
-                                                
-                                                <!-- Overlay au survol pour agrandir -->
-                                                <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 rounded-lg transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
-                                                    <svg class="w-6 h-6 text-white opacity-0 group-hover:opacity-70 transition-opacity duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path>
-                                                    </svg>
-                                                </div>
                                             </div>
-                                            
-                                            <!-- Indicateur si pas d'image -->
-                                            @if(!$this->isValidImageUrl($productImage) || str_contains($productImage, 'https://placehold.co/400x400/cccccc/999999?text=No+Image'))
-                                                <div class="mt-1 text-center">
-                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
-                                                        <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                                                        </svg>
-                                                        Sans image
-                                                    </span>
-                                                </div>
-                                            @endif
                                         </td>
                                         
                                         @if($hasData && $isAutomaticSearch)
                                         <!-- Colonne Score (uniquement si résultats automatiques) -->
-                                        <td class="px-6 py-4 whitespace-nowrap">
+                                        <td class="px-3 py-4 whitespace-nowrap excel-cell">
                                             <div class="flex items-center">
                                                 <div class="w-16 bg-gray-200 rounded-full h-2 mr-3">
                                                     <div class="h-2 rounded-full 
@@ -2604,18 +2584,13 @@ private function handleError(\Throwable $e, ?string $search): array
                                         </td>
 
                                         <!-- Colonne Correspondance (uniquement si résultats automatiques) -->
-                                        <td class="px-6 py-4 whitespace-nowrap">
+                                        <td class="px-3 py-4 whitespace-nowrap excel-cell">
                                             @if($matchLevel)
-                                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border {{ $matchClass ?? '' }}">
-                                                    @if($matchLevel === 'excellent')
-                                                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
-                                                        </svg>
-                                                    @endif
+                                                <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium border {{ $matchClass ?? '' }}">
                                                     {{ ucfirst($matchLevel) }}
                                                 </span>
                                             @else
-                                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border border-gray-300 bg-gray-100 text-gray-800">
+                                                <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium border border-gray-300 bg-gray-100 text-gray-800">
                                                     N/A
                                                 </span>
                                             @endif
@@ -2623,45 +2598,25 @@ private function handleError(\Throwable $e, ?string $search): array
                                         @endif
 
                                         <!-- Colonne Vendor AJOUTÉE -->
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <div class="text-sm font-medium text-gray-900">
+                                        <td class="px-3 py-4 whitespace-nowrap excel-cell">
+                                            <div class="text-sm text-gray-900 font-medium">
                                                 {{ $product->vendor ?? 'N/A' }}
                                             </div>
                                         </td>
 
                                         <!-- Colonne Nom -->
-                                        <td class="px-6 py-4">
-                                            <div class="text-sm font-medium text-gray-900 max-w-xs" title="{{ $product->name ?? 'N/A' }}">
+                                        <td class="px-3 py-4 excel-cell">
+                                            <div class="text-sm text-gray-900 max-w-xs excel-cell-content" title="{{ $product->name ?? 'N/A' }}">
                                                 @if($isAutomaticSearch && !empty($searchVolumes))
                                                     {!! $this->highlightMatchingTerms($product->name) !!}
                                                 @else
                                                     {{ $product->name ?? 'N/A' }}
                                                 @endif
                                             </div>
-                                            <!-- Badges des volumes du produit -->
-                                            @if(!empty($productVolumes))
-                                                <div class="mt-2 flex flex-wrap gap-1">
-                                                    @foreach($productVolumes as $volume)
-                                                        <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium 
-                                                            @if($this->isVolumeMatching($volume))
-                                                                bg-green-100 text-green-800 border border-green-300
-                                                            @else
-                                                                bg-gray-100 text-gray-800
-                                                            @endif">
-                                                            {{ $volume }} ml
-                                                            @if($this->isVolumeMatching($volume))
-                                                                <svg class="w-3 h-3 ml-1 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                                                                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
-                                                                </svg>
-                                                            @endif
-                                                        </span>
-                                                    @endforeach
-                                                </div>
-                                            @endif
                                         </td>
 
                                         <!-- Colonne Variation -->
-                                        <td class="px-6 py-4 whitespace-nowrap">
+                                        <td class="px-3 py-4 whitespace-nowrap excel-cell">
                                             <div class="text-sm text-gray-900 max-w-xs" title="{{ $product->variation ?? 'Standard' }}">
                                                 @if($isAutomaticSearch && !empty($searchVariationKeywords))
                                                     {!! $this->highlightMatchingTerms($product->variation ?? 'Standard') !!}
@@ -2669,82 +2624,42 @@ private function handleError(\Throwable $e, ?string $search): array
                                                     {{ $product->variation ?? 'Standard' }}
                                                 @endif
                                             </div>
-                                            @if($hasData && $hasExactVariation)
-                                                <div class="mt-1">
-                                                    <span class="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
-                                                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
-                                                        </svg>
-                                                        Variation identique
-                                                    </span>
-                                                </div>
-                                            @endif
                                         </td>
 
                                         <!-- Colonne Site Source -->
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <div class="flex items-center">
-                                                <div class="flex-shrink-0 h-8 w-8 bg-gray-100 rounded-full flex items-center justify-center mr-3">
-                                                    <span class="text-xs font-medium text-gray-600">
-                                                        @php
-                                                            $productUrl = $this->getProductUrl($product);
-                                                            $domain = $this->extractDomain($productUrl ?? '');
-                                                            echo strtoupper(substr($domain, 0, 2));
-                                                        @endphp
-                                                    </span>
-                                                </div>
-                                                <div>
-                                                    <div class="text-sm font-medium text-gray-900">
-                                                        {{ $product->site_name ?? $this->extractDomain($productUrl ?? '') }}
-                                                    </div>
-                                                    {{-- @if(isset($product->web_site_id))
-                                                        <div class="text-xs text-gray-500">
-                                                            ID: {{ $product->web_site_id }}
-                                                        </div>
-                                                    @endif --}}
-                                                </div>
+                                        <td class="px-3 py-4 whitespace-nowrap excel-cell">
+                                            <div class="text-sm text-gray-900">
+                                                {{ $product->site_name ?? $this->extractDomain($this->getProductUrl($product) ?? '') }}
                                             </div>
                                         </td>
 
                                         <!-- Colonne Prix HT -->
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <div class="text-sm font-semibold text-green-600">
+                                        <td class="px-3 py-4 whitespace-nowrap excel-cell">
+                                            <div class="text-sm font-semibold text-gray-900 text-right">
                                                 {{ $this->formatPrice($product->price_ht ?? $product->prix_ht) }}
                                             </div>
                                         </td>
 
                                         <!-- Colonne Date MAJ Prix -->
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <div class="text-xs text-gray-400">
+                                        <td class="px-3 py-4 whitespace-nowrap excel-cell">
+                                            <div class="text-xs text-gray-500">
                                                 {{ \Carbon\Carbon::parse($product->updated_at)->translatedFormat('j F Y') }}
                                             </div>
                                         </td>
 
                                         @if($referencePrice)
                                         <!-- Colonne Vs Cosmaparfumerie (uniquement si référencePrice) -->
-                                        <td class="px-6 py-4 whitespace-nowrap">
+                                        <td class="px-3 py-4 whitespace-nowrap excel-cell">
                                             @if(is_numeric($competitorPrice) && is_numeric($referencePrice))
                                                 <div class="space-y-1">
                                                     <div class="text-xs text-gray-500">
-                                                        prix cosma-parfumerie: {{ number_format($referencePrice, 2, ',', ' ') }} €
+                                                        {{ number_format($referencePrice, 2, ',', ' ') }} €
                                                     </div>
-                                                    <!-- Statut -->
-                                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $priceStatusClass }}">
-                                                        {{ $priceStatusLabel }}
-                                                    </span>
-
                                                     <!-- Différence -->
-                                                    <div class="text-xs font-semibold 
+                                                    <div class="text-sm font-semibold 
                                                         {{ $priceDifference > 0 ? 'text-green-600' : ($priceDifference < 0 ? 'text-red-600' : 'text-blue-600') }}">
                                                         {{ $this->formatPriceDifference($priceDifference) }}
                                                     </div>
-
-                                                    <!-- Pourcentage -->
-                                                    @if($priceDifferencePercent !== null && $priceDifference != 0)
-                                                        <div class="text-xs text-gray-500">
-                                                            {{ $this->formatPercentageDifference($priceDifferencePercent) }}
-                                                        </div>
-                                                    @endif
                                                 </div>
                                             @else
                                                 <span class="text-xs text-gray-400">N/A</span>
@@ -2752,29 +2667,17 @@ private function handleError(\Throwable $e, ?string $search): array
                                         </td>
 
                                         <!-- Colonne Vs Cosmashop (uniquement si référencePrice) -->
-                                        <td class="px-6 py-4 whitespace-nowrap">
+                                        <td class="px-3 py-4 whitespace-nowrap excel-cell">
                                             @if(is_numeric($competitorPrice) && is_numeric($cosmashopPrice))
                                                 <div class="space-y-1">
                                                     <div class="text-xs text-gray-500">
-                                                        prix cosmashop: {{ number_format($cosmashopPrice, 2, ',', ' ') }} €
+                                                        {{ number_format($cosmashopPrice, 2, ',', ' ') }} €
                                                     </div>
-                                                    <!-- Statut Cosmashop -->
-                                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $cosmashopStatusClass }}">
-                                                        {{ $cosmashopStatusLabel }}
-                                                    </span>
-
                                                     <!-- Différence Cosmashop -->
-                                                    <div class="text-xs font-semibold 
+                                                    <div class="text-sm font-semibold 
                                                         {{ $cosmashopDifference > 0 ? 'text-green-600' : ($cosmashopDifference < 0 ? 'text-red-600' : 'text-blue-600') }}">
                                                         {{ $this->formatPriceDifference($cosmashopDifference) }}
                                                     </div>
-
-                                                    <!-- Pourcentage Cosmashop -->
-                                                    @if($cosmashopDifferencePercent !== null && $cosmashopDifference != 0)
-                                                        <div class="text-xs text-gray-500">
-                                                            {{ $this->formatPercentageDifference($cosmashopDifferencePercent) }}
-                                                        </div>
-                                                    @endif
                                                 </div>
                                             @else
                                                 <span class="text-xs text-gray-400">N/A</span>
@@ -2783,34 +2686,23 @@ private function handleError(\Throwable $e, ?string $search): array
                                         @endif
 
                                         <!-- Colonne Type -->
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                        <td class="px-3 py-4 whitespace-nowrap excel-cell">
+                                            <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">
                                                 {{ $product->type ?? 'N/A' }}
                                             </span>
                                         </td>
 
                                         <!-- Colonne Actions -->
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                        <td class="px-3 py-4 whitespace-nowrap text-sm font-medium excel-cell">
                                             <div class="flex space-x-2">
                                                 @php
                                                     $productUrl = $this->getProductUrl($product);
                                                 @endphp
                                                 @if(!empty($productUrl))
                                                     <a href="{{ $productUrl }}" target="_blank" rel="noopener noreferrer"
-                                                        class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-full shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200">
-                                                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-                                                        </svg>
+                                                        class="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200">
                                                         Voir
                                                     </a>
-                                                @else
-                                                    <span class="inline-flex items-center px-2 py-1 text-xs text-gray-400 bg-gray-100 rounded-full">
-                                                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
-                                                        </svg>
-                                                        Indisponible
-                                                    </span>
                                                 @endif
                                             </div>
                                         </td>
@@ -2837,25 +2729,6 @@ private function handleError(\Throwable $e, ?string $search): array
                                                 Ajustez les filtres pour trouver des produits.
                                             @endif
                                         </p>
-                                        @if(array_filter($filters))
-                                            <div class="mt-4 flex justify-center space-x-3">
-                                                <!-- Bouton Réinitialiser avec loading -->
-                                                <button wire:click="resetFilters" 
-                                                        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors duration-200"
-                                                        wire:loading.attr="disabled">
-                                                    <span wire:loading.remove wire:target="resetFilters">
-                                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                                                        </svg>
-                                                        Réinitialiser les filtres
-                                                    </span>
-                                                    <span wire:loading wire:target="resetFilters">
-                                                        <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                                                        Réinitialisation...
-                                                    </span>
-                                                </button>
-                                            </div>
-                                        @endif
                                     </td>
                                 </tr>
                             @endif
@@ -2870,143 +2743,268 @@ private function handleError(\Throwable $e, ?string $search): array
   
 @push('styles')
     <style>
-        /* Style pour les filtres dans le thead */
-        th .flex-col {
-            min-height: 70px;
-            justify-content: space-between;
+        /* Style Excel-like pour le tableau */
+        .excel-style-table {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            border-collapse: collapse;
+            width: 100%;
         }
 
-        /* Style pour les inputs de filtres */
-        input[type="text"], select {
+        .excel-header {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            color: #495057;
+            font-weight: 600;
+            white-space: nowrap;
+            position: relative;
+        }
+
+        .excel-cell {
+            border: 1px solid #dee2e6;
+            padding: 8px 12px;
+            vertical-align: middle;
+            background-color: white;
+            transition: background-color 0.2s ease;
+        }
+
+        .excel-row:hover .excel-cell {
+            background-color: #f8f9fa;
+        }
+
+        .excel-row:nth-child(even) .excel-cell {
+            background-color: #fafbfc;
+        }
+
+        .excel-row:nth-child(even):hover .excel-cell {
+            background-color: #f1f3f5;
+        }
+
+        .excel-cell-content {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 300px;
+            line-height: 1.4;
+        }
+
+        .excel-filter-input {
+            background-color: white;
+            border: 1px solid #ced4da;
+            border-radius: 3px;
+            padding: 4px 8px;
+            font-size: 0.875rem;
+            width: 100%;
             transition: all 0.2s ease;
         }
 
-        input[type="text"]:focus, select:focus {
-            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-            border-color: #3b82f6;
+        .excel-filter-input:focus {
+            outline: none;
+            border-color: #4dabf7;
+            box-shadow: 0 0 0 2px rgba(77, 171, 247, 0.2);
         }
 
-        /* Style pour les filtres actifs */
-        .filter-active {
-            background-color: rgba(59, 130, 246, 0.1);
-            border-left: 3px solid #3b82f6;
+        .excel-filter-input:hover {
+            border-color: #adb5bd;
         }
 
-        /* Style pour les badges de filtres */
-        .filter-badge {
-            transition: all 0.2s ease;
-        }
-
-        .filter-badge:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        /* Animation pour les boutons */
-        button {
-            transition: all 0.2s ease;
-        }
-
-        button:hover {
-            transform: translateY(-1px);
-        }
-
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        /* Style pour les colonnes avec filtres */
+        /* Style pour les en-têtes avec filtres */
         th.with-filter {
-            background-color: #f9fafb;
+            min-width: 150px;
         }
 
-        /* Animation de spin pour les loaders */
+        /* Style pour les colonnes avec données monétaires */
+        td.excel-cell.text-right {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.875rem;
+        }
+
+        /* Style pour les badges dans les cellules */
+        .excel-cell .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            border: 1px solid;
+        }
+
+        /* Style pour les images dans les cellules */
+        .excel-cell img {
+            display: block;
+            margin: 0 auto;
+            max-width: 100%;
+            height: auto;
+        }
+
+        /* Style pour les liens d'action */
+        .excel-cell a {
+            text-decoration: none;
+            color: #495057;
+            transition: all 0.2s ease;
+        }
+
+        .excel-cell a:hover {
+            color: #228be6;
+            text-decoration: underline;
+        }
+
+        /* Style responsive pour le tableau */
+        @media (max-width: 1024px) {
+            .excel-cell-content {
+                max-width: 200px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .excel-cell-content {
+                max-width: 150px;
+            }
+            
+            .excel-cell {
+                padding: 6px 8px;
+                font-size: 0.875rem;
+            }
+            
+            .excel-header {
+                font-size: 0.75rem;
+                padding: 8px 10px;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .excel-cell-content {
+                max-width: 120px;
+            }
+            
+            .excel-cell {
+                padding: 4px 6px;
+                font-size: 0.8125rem;
+            }
+        }
+
+        /* Style pour les colonnes spécifiques */
+        .excel-cell:nth-child(1) { /* Image */
+            width: 80px;
+            min-width: 80px;
+        }
+
+        .excel-cell:nth-child(2),
+        .excel-cell:nth-child(3) { /* Score et Correspondance */
+            width: 100px;
+            min-width: 100px;
+        }
+
+        .excel-cell:nth-child(4) { /* Vendor */
+            width: 150px;
+            min-width: 150px;
+        }
+
+        .excel-cell:nth-child(5) { /* Nom */
+            width: 300px;
+            min-width: 250px;
+            max-width: 400px;
+        }
+
+        .excel-cell:nth-child(6),
+        .excel-cell:nth-child(7) { /* Variation et Site Source */
+            width: 120px;
+            min-width: 120px;
+        }
+
+        .excel-cell:nth-child(8),
+        .excel-cell:nth-child(9),
+        .excel-cell:nth-child(10),
+        .excel-cell:nth-child(11) { /* Prix et comparaisons */
+            width: 100px;
+            min-width: 100px;
+        }
+
+        .excel-cell:nth-child(12) { /* Type */
+            width: 100px;
+            min-width: 100px;
+        }
+
+        .excel-cell:nth-child(13) { /* Actions */
+            width: 80px;
+            min-width: 80px;
+        }
+
+        /* Style pour les indicateurs de chargement */
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+
         @keyframes spin {
             from { transform: rotate(0deg); }
             to { transform: rotate(360deg); }
         }
 
-        .animate-spin {
-            animation: spin 1s linear infinite;
+        /* Style pour les messages vides */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #6c757d;
         }
 
-        /* Style pour les indicateurs de chargement dans les inputs */
-        .relative .animate-spin {
-            position: absolute;
-            right: 8px;
-            top: 50%;
-            transform: translateY(-50%);
+        /* Style pour les boutons d'action */
+        .action-button {
+            padding: 4px 12px;
+            border-radius: 3px;
+            font-size: 0.875rem;
+            border: 1px solid #dee2e6;
+            background-color: white;
+            cursor: pointer;
+            transition: all 0.2s ease;
         }
 
-        /* Style pour l'overlay de chargement global - Transparent */
-        .fixed.inset-0 {
-            z-index: 9999;
-            background-color: transparent !important;
+        .action-button:hover {
+            background-color: #e9ecef;
+            border-color: #adb5bd;
         }
 
-        .fixed.inset-0 > div {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(8px);
-            box-shadow: 
-                0 20px 40px rgba(0, 0, 0, 0.1),
-                0 0 0 1px rgba(255, 255, 255, 0.1);
-            animation: slideIn 0.3s ease-out;
+        /* Style pour les statuts de prix */
+        .price-higher {
+            color: #dc3545;
+            font-weight: 600;
         }
 
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(-20px) scale(0.95);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0) scale(1);
-            }
+        .price-lower {
+            color: #28a745;
+            font-weight: 600;
         }
 
-        /* Style pour le loader des filtres */
-        .fixed.top-4.right-4 {
-            z-index: 9998;
-            animation: slideInRight 0.3s ease-out;
-        }
-
-        @keyframes slideInRight {
-            from {
-                opacity: 0;
-                transform: translateX(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateX(0);
-            }
-        }
-
-        /* Transition pour l'opacité du tableau */
-        .opacity-50 {
-            transition: opacity 0.3s ease;
+        .price-equal {
+            color: #6c757d;
         }
     </style>
 @endpush
 
 @push('scripts')
     <script>
-        // Script pour gérer les indicateurs de chargement
-        document.addEventListener('livewire:init', () => {
-            // Désactiver les inputs pendant le chargement
-            Livewire.hook('request', ({ fail }) => {
-                // Ajouter un indicateur visuel
-                document.body.style.cursor = 'wait';
-
-                fail(() => {
-                    document.body.style.cursor = 'default';
+        // Script pour gérer le responsive du tableau
+        document.addEventListener('DOMContentLoaded', function() {
+            function adjustTableLayout() {
+                const table = document.querySelector('.excel-style-table');
+                if (!table) return;
+                
+                const cells = table.querySelectorAll('.excel-cell-content');
+                const screenWidth = window.innerWidth;
+                
+                cells.forEach(cell => {
+                    if (screenWidth < 768) {
+                        cell.style.maxWidth = '150px';
+                    } else if (screenWidth < 1024) {
+                        cell.style.maxWidth = '200px';
+                    } else {
+                        cell.style.maxWidth = '300px';
+                    }
                 });
-            });
-
-            Livewire.hook('response', ({ component }) => {
-                document.body.style.cursor = 'default';
-            });
+            }
+            
+            // Ajuster au chargement
+            adjustTableLayout();
+            
+            // Ajuster au redimensionnement
+            window.addEventListener('resize', adjustTableLayout);
         });
     </script>
 @endpush  
