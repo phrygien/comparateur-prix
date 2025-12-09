@@ -123,6 +123,44 @@ new class extends Component {
 }; ?>
 
 <div>
+    <!-- Styles inline pour éviter les problèmes d'éléments multiples -->
+    <style>
+        /* Styles Excel-like supplémentaires */
+        .excel-table {
+            border-spacing: 0;
+        }
+        
+        .excel-table th, .excel-table td {
+            border-right: 1px solid #e5e7eb;
+            border-bottom: 1px solid #e5e7eb;
+            padding: 8px 12px;
+        }
+        
+        .excel-table th:last-child, .excel-table td:last-child {
+            border-right: none;
+        }
+        
+        .excel-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+        
+        .excel-table tbody tr:hover {
+            background-color: #f9fafb;
+        }
+        
+        /* Amélioration du truncate */
+        .excel-truncate {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        /* Style pour les cellules avec badges */
+        .excel-badge-cell {
+            max-width: 200px;
+        }
+    </style>
+    
     <x-header title="Produits de concurent" subtitle="Tous les prix des produits sur le concurent" separator>
         <x-slot:actions>
             <x-button icon="o-plus" class="btn-primary" />
@@ -213,22 +251,22 @@ new class extends Component {
     
     <!-- Affichage des résultats -->
     @if($showResults)
-        <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100 mb-6">
+        <div class="overflow-x-auto rounded-none border border-gray-300 bg-white shadow-sm mb-6">
             @if($products->count() > 0)
-                <table class="table">
+                <table class="excel-table table-auto border-collapse w-full">
                     <!-- head -->
                     <thead>
-                        <tr class="bg-base-200">
-                            <th class="font-bold">#</th>
-                            <th class="font-bold">Image</th>
-                            <th class="font-bold">Vendeur</th>
-                            <th class="font-bold">Nom</th>
-                            <th class="font-bold">Type</th>
-                            <th class="font-bold">Variation</th>
-                            <th class="font-bold">Prix HT</th>
-                            <th class="font-bold">Site</th>
-                            <th class="font-bold">Date</th>
-                            <th class="font-bold">Actions</th>
+                        <tr class="bg-gray-100 border-b border-gray-300">
+                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-12">#</th>
+                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-16">Image</th>
+                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32">Vendeur</th>
+                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-48">Nom</th>
+                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32 max-w-48 excel-truncate">Type</th>
+                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32 max-w-48 excel-truncate">Variation</th>
+                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-32">Prix HT</th>
+                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32">Site</th>
+                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-32">Date</th>
+                            <th class="font-bold text-gray-700 text-sm px-3 py-2 text-center w-24">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -237,70 +275,73 @@ new class extends Component {
                                 $rowNumber = (($currentPage - 1) * $perPage) + $index + 1;
                                 $site = \App\Models\Site::find($product->web_site_id);
                             @endphp
-                            <tr class="hover:bg-base-100">
-                                <th class="font-normal">{{ $rowNumber }}</th>
-                                <td>
+                            <tr class="border-b border-gray-200 hover:bg-gray-50 even:bg-gray-50/50">
+                                <td class="text-gray-600 text-sm px-3 py-2 border-r border-gray-300 text-center font-mono">{{ $rowNumber }}</td>
+                                <td class="px-3 py-2 border-r border-gray-300 text-center">
                                     @if($product->image_url)
-                                        <div class="avatar">
-                                            <div class="mask mask-squircle w-12 h-12">
+                                        <div class="avatar mx-auto">
+                                            <div class="mask mask-squircle w-10 h-10">
                                                 <img src="{{ $product->image_url }}" 
                                                      alt="{{ $product->name }}"
-                                                     onerror="this.src='https://via.placeholder.com/50x50?text=No+Image'">
+                                                     class="object-cover"
+                                                     onerror="this.src='https://via.placeholder.com/40x40?text=No+Image'">
                                             </div>
                                         </div>
                                     @else
-                                        <div class="text-gray-400">
-                                            <x-icon name="o-photo" class="w-6 h-6" />
+                                        <div class="text-gray-300 mx-auto">
+                                            <x-icon name="o-photo" class="w-5 h-5" />
                                         </div>
                                     @endif
                                 </td>
-                                <td>
-                                    <div class="font-medium">{{ $product->vendor }}</div>
+                                <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 excel-truncate max-w-32" title="{{ $product->vendor }}">
+                                    {{ $product->vendor }}
                                 </td>
-                                <td>
-                                    <div class="font-medium">{{ $product->name }}</div>
+                                <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 excel-truncate max-w-48" title="{{ $product->name }}">
+                                    {{ $product->name }}
                                 </td>
-                                <td>
-                                    <div class="badge badge-outline">{{ $product->type ?? 'N/A' }}</div>
-                                </td>
-                                <td>
-                                    <div class="badge badge-ghost">{{ $product->variation ?? 'N/A' }}</div>
-                                </td>
-                                <td>
-                                    <div class="font-bold text-primary">
-                                        {{ $product->prix_ht }} {{ $product->currency }}
+                                <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 excel-truncate max-w-48" title="{{ $product->type ?? 'N/A' }}">
+                                    <div class="inline-flex items-center px-2 py-1 rounded bg-blue-50 text-blue-700 border border-blue-200 text-xs">
+                                        {{ $product->type ?? 'N/A' }}
                                     </div>
                                 </td>
-                                <td>
+                                <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 excel-truncate max-w-48" title="{{ $product->variation ?? 'N/A' }}">
+                                    <div class="inline-flex items-center px-2 py-1 rounded bg-gray-50 text-gray-700 border border-gray-200 text-xs">
+                                        {{ $product->variation ?? 'N/A' }}
+                                    </div>
+                                </td>
+                                <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 text-center font-semibold text-green-600">
+                                    {{ $product->prix_ht }} {{ $product->currency }}
+                                </td>
+                                <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300">
                                     @if($site)
-                                        <div class="flex items-center gap-2">
-                                            <x-icon name="o-globe-alt" class="w-4 h-4" />
-                                            <span>{{ $site->name }}</span>
+                                        <div class="flex items-center gap-1 excel-truncate max-w-32" title="{{ $site->name }}">
+                                            <x-icon name="o-globe-alt" class="w-3 h-3 text-gray-400 flex-shrink-0" />
+                                            <span class="excel-truncate">{{ $site->name }}</span>
                                         </div>
                                     @else
-                                        <span class="text-gray-400">N/A</span>
+                                        <span class="text-gray-400 italic">N/A</span>
                                     @endif
                                 </td>
-                                <td>
-                                    <div class="text-sm text-gray-500">
+                                <td class="text-gray-600 text-sm px-3 py-2 border-r border-gray-300 text-center">
+                                    <div class="whitespace-nowrap">
                                         {{ \Carbon\Carbon::parse($product->created_at)->format('d/m/Y') }}
                                     </div>
                                     <div class="text-xs text-gray-400">
                                         {{ \Carbon\Carbon::parse($product->created_at)->format('H:i') }}
                                     </div>
                                 </td>
-                                <td>
-                                    <div class="flex gap-2">
+                                <td class="px-3 py-2 text-center">
+                                    <div class="flex justify-center gap-1">
                                         @if($product->url)
                                             <a href="{{ $product->url }}" 
                                                target="_blank" 
-                                               class="btn btn-sm btn-outline btn-square"
+                                               class="btn btn-xs btn-outline btn-square border-gray-300 hover:bg-blue-50 hover:border-blue-300"
                                                title="Voir sur le site">
-                                                <x-icon name="o-arrow-top-right-on-square" class="w-4 h-4" />
+                                                <x-icon name="o-arrow-top-right-on-square" class="w-3 h-3" />
                                             </a>
                                         @endif
-                                        <button class="btn btn-sm btn-ghost btn-square" title="Voir détails">
-                                            <x-icon name="o-eye" class="w-4 h-4" />
+                                        <button class="btn btn-xs btn-ghost btn-square border border-gray-300 hover:bg-gray-100" title="Voir détails">
+                                            <x-icon name="o-eye" class="w-3 h-3" />
                                         </button>
                                     </div>
                                 </td>
@@ -310,8 +351,8 @@ new class extends Component {
                 </table>
             @else
                 <div class="p-8 text-center">
-                    <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-warning/10 mb-4">
-                        <x-icon name="o-magnifying-glass" class="w-8 h-8 text-warning" />
+                    <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-yellow-50 border border-yellow-200 mb-4">
+                        <x-icon name="o-magnifying-glass" class="w-8 h-8 text-yellow-600" />
                     </div>
                     <h3 class="text-lg font-semibold mb-2">Aucun produit trouvé</h3>
                     <p class="text-gray-600 mb-4">
@@ -321,7 +362,7 @@ new class extends Component {
                         wire:click="resetFilter" 
                         icon="o-arrow-path"
                         label="Réinitialiser les filtres"
-                        class="btn-outline"
+                        class="btn-outline border-gray-300"
                     />
                 </div>
             @endif
@@ -329,7 +370,7 @@ new class extends Component {
         
         <!-- Pagination -->
         @if($products->count() > 0 && $paginator)
-            <div class="card bg-base-100 shadow-md">
+            <div class="card bg-white border border-gray-300 shadow-sm">
                 <div class="card-body">
                     <div class="flex flex-col md:flex-row justify-between items-center gap-4">
                         <!-- Informations sur les résultats -->
@@ -347,14 +388,14 @@ new class extends Component {
                         </div>
                         
                         <!-- Contrôles de pagination -->
-                        <div class="join">
+                        <div class="join border border-gray-300 rounded">
                             <!-- Bouton Précédent -->
                             <button 
                                 wire:click="previousPage" 
-                                class="join-item btn {{ $currentPage <= 1 ? 'btn-disabled' : '' }}"
+                                class="join-item btn btn-sm bg-white border-gray-300 hover:bg-gray-50 {{ $currentPage <= 1 ? 'btn-disabled opacity-50' : '' }}"
                                 {{ $currentPage <= 1 ? 'disabled' : '' }}
                             >
-                                <x-icon name="o-chevron-left" class="w-4 h-4" />
+                                <x-icon name="o-chevron-left" class="w-3 h-3" />
                             </button>
                             
                             <!-- Pages -->
@@ -366,19 +407,19 @@ new class extends Component {
                             @if($startPage > 1)
                                 <button 
                                     wire:click="goToPage(1)" 
-                                    class="join-item btn {{ $currentPage == 1 ? 'btn-active' : '' }}"
+                                    class="join-item btn btn-sm bg-white border-gray-300 hover:bg-gray-50 {{ $currentPage == 1 ? 'bg-blue-50 text-blue-600 border-blue-300' : '' }}"
                                 >
                                     1
                                 </button>
                                 @if($startPage > 2)
-                                    <button class="join-item btn btn-disabled" disabled>...</button>
+                                    <button class="join-item btn btn-sm bg-white border-gray-300 btn-disabled" disabled>...</button>
                                 @endif
                             @endif
                             
                             @for($page = $startPage; $page <= $endPage; $page++)
                                 <button 
                                     wire:click="goToPage({{ $page }})" 
-                                    class="join-item btn {{ $currentPage == $page ? 'btn-active' : '' }}"
+                                    class="join-item btn btn-sm bg-white border-gray-300 hover:bg-gray-50 {{ $currentPage == $page ? 'bg-blue-50 text-blue-600 border-blue-300' : '' }}"
                                 >
                                     {{ $page }}
                                 </button>
@@ -386,11 +427,11 @@ new class extends Component {
                             
                             @if($endPage < $totalPages)
                                 @if($endPage < $totalPages - 1)
-                                    <button class="join-item btn btn-disabled" disabled>...</button>
+                                    <button class="join-item btn btn-sm bg-white border-gray-300 btn-disabled" disabled>...</button>
                                 @endif
                                 <button 
                                     wire:click="goToPage({{ $totalPages }})" 
-                                    class="join-item btn {{ $currentPage == $totalPages ? 'btn-active' : '' }}"
+                                    class="join-item btn btn-sm bg-white border-gray-300 hover:bg-gray-50 {{ $currentPage == $totalPages ? 'bg-blue-50 text-blue-600 border-blue-300' : '' }}"
                                 >
                                     {{ $totalPages }}
                                 </button>
@@ -399,17 +440,17 @@ new class extends Component {
                             <!-- Bouton Suivant -->
                             <button 
                                 wire:click="nextPage" 
-                                class="join-item btn {{ $currentPage >= $totalPages ? 'btn-disabled' : '' }}"
+                                class="join-item btn btn-sm bg-white border-gray-300 hover:bg-gray-50 {{ $currentPage >= $totalPages ? 'btn-disabled opacity-50' : '' }}"
                                 {{ $currentPage >= $totalPages ? 'disabled' : '' }}
                             >
-                                <x-icon name="o-chevron-right" class="w-4 h-4" />
+                                <x-icon name="o-chevron-right" class="w-3 h-3" />
                             </button>
                         </div>
                         
                         <!-- Sélection du nombre de résultats par page -->
                         <div class="flex items-center gap-2">
                             <span class="text-sm text-gray-600">Résultats par page:</span>
-                            <select class="select select-bordered select-sm" wire:model.live="perPage">
+                            <select class="select select-bordered select-sm border-gray-300 bg-white" wire:model.live="perPage">
                                 <option value="20">20</option>
                                 <option value="50" selected>50</option>
                                 <option value="100">100</option>
@@ -421,43 +462,43 @@ new class extends Component {
             </div>
         @endif
     @else
-        <div class="card bg-base-100 shadow-md">
+        <div class="card bg-white border border-gray-300 shadow-sm">
             <div class="card-body text-center py-12">
-                <div class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-primary/10 mb-4">
-                    <x-icon name="o-funnel" class="w-10 h-10 text-primary" />
+                <div class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-blue-50 border border-blue-200 mb-4">
+                    <x-icon name="o-funnel" class="w-10 h-10 text-blue-600" />
                 </div>
-                <h3 class="text-xl font-semibold mb-2">Aucun filtre appliqué</h3>
+                <h3 class="text-xl font-semibold mb-2 text-gray-800">Aucun filtre appliqué</h3>
                 <p class="text-gray-600 max-w-md mx-auto mb-6">
                     Remplissez les champs de filtrage et cliquez sur "Appliquer les filtres" pour voir les résultats.
                     <br>
-                    <span class="text-sm">Seuls les produits les plus récents pour chaque combinaison unique sont affichés.</span>
+                    <span class="text-sm text-gray-500">Seuls les produits les plus récents pour chaque combinaison unique sont affichés.</span>
                 </p>
-                <div class="stats shadow">
-                    <div class="stat">
-                        <div class="stat-figure text-primary">
+                <div class="stats shadow border border-gray-300">
+                    <div class="stat border-r border-gray-300">
+                        <div class="stat-figure text-blue-600">
                             <x-icon name="o-cube" class="w-8 h-8" />
                         </div>
-                        <div class="stat-title">Produits uniques</div>
-                        <div class="stat-value text-primary">?</div>
-                        <div class="stat-desc">Cliquez pour voir</div>
+                        <div class="stat-title text-gray-600">Produits uniques</div>
+                        <div class="stat-value text-blue-600 text-2xl">?</div>
+                        <div class="stat-desc text-gray-500">Cliquez pour voir</div>
                     </div>
                     
-                    <div class="stat">
-                        <div class="stat-figure text-secondary">
+                    <div class="stat border-r border-gray-300">
+                        <div class="stat-figure text-gray-600">
                             <x-icon name="o-building-storefront" class="w-8 h-8" />
                         </div>
-                        <div class="stat-title">Vendeurs</div>
-                        <div class="stat-value text-secondary">?</div>
-                        <div class="stat-desc">En attente de filtre</div>
+                        <div class="stat-title text-gray-600">Vendeurs</div>
+                        <div class="stat-value text-gray-700 text-2xl">?</div>
+                        <div class="stat-desc text-gray-500">En attente de filtre</div>
                     </div>
                     
                     <div class="stat">
-                        <div class="stat-figure text-accent">
+                        <div class="stat-figure text-green-600">
                             <x-icon name="o-globe-alt" class="w-8 h-8" />
                         </div>
-                        <div class="stat-title">Sites web</div>
-                        <div class="stat-value text-accent">{{ \App\Models\Site::count() }}</div>
-                        <div class="stat-desc">Sites disponibles</div>
+                        <div class="stat-title text-gray-600">Sites web</div>
+                        <div class="stat-value text-green-600 text-2xl">{{ \App\Models\Site::count() }}</div>
+                        <div class="stat-desc text-gray-500">Sites disponibles</div>
                     </div>
                 </div>
             </div>
