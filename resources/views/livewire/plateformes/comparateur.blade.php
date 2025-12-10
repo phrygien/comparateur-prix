@@ -2323,7 +2323,7 @@ private function handleError(\Throwable $e, ?string $search): array
 
         <!-- Tableau des résultats - TOUJOURS AFFICHÉ -->
         @if($showTable)
-            <div class="bg-white shadow-sm rounded-lg overflow-hidden" wire:loading.class="opacity-50" wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
+            <div class="bg-white shadow-sm border border-gray-300 overflow-hidden" wire:loading.class="opacity-50" wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
                 <div class="px-6 py-4 border-b border-gray-200">
                     <h3 class="text-lg font-medium text-gray-900">
                         @if($hasData)
@@ -2347,11 +2347,11 @@ private function handleError(\Throwable $e, ?string $search): array
                     </p>
                 </div>
                 <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
+                    <table class="min-w-full border-collapse border border-gray-300">
+                        <thead class="bg-gray-100">
                             <tr>
                                 <!-- NOUVELLE COLONNE : Image (TOUJOURS VISIBLE) -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
                                     <div class="flex flex-col">
                                         <span>Image</span>
                                     </div>
@@ -2359,14 +2359,14 @@ private function handleError(\Throwable $e, ?string $search): array
                                 
                                 @if($hasData && $isAutomaticSearch)
                                 <!-- Colonne Score (uniquement si résultats automatiques) -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
                                     <div class="flex flex-col">
                                         <span>Score</span>
                                     </div>
                                 </th>
                                 
                                 <!-- Colonne Correspondance (uniquement si résultats automatiques) -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
                                     <div class="flex flex-col">
                                         <span>Correspondance</span>
                                     </div>
@@ -2374,7 +2374,7 @@ private function handleError(\Throwable $e, ?string $search): array
                                 @endif
                                 
                                 <!-- Colonne Vendor avec filtre AJOUTÉE -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-48">
+                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200 min-w-48">
                                     <div class="flex flex-col space-y-2">
                                         <span class="whitespace-nowrap">Marque/Vendor</span>
                                         <div class="relative">
@@ -2382,7 +2382,7 @@ private function handleError(\Throwable $e, ?string $search): array
                                                    disabled
                                                    wire:model.live.debounce.800ms="filters.vendor"
                                                    placeholder="Filtrer par marque..."
-                                                   class="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
+                                                   class="px-3 py-2 text-sm border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
                                                    wire:loading.attr="disabled">
                                             <div wire:loading wire:target="filters.vendor" class="absolute right-3 top-1/2 transform -translate-y-1/2">
                                                 <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
@@ -2392,7 +2392,7 @@ private function handleError(\Throwable $e, ?string $search): array
                                 </th>
                                 
                                 <!-- Colonne Nom avec filtre -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-64" style="width: 30%;">
+                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200 min-w-64" style="width: 30%;">
                                     <!-- Largeur ajustée -->
                                     <div class="flex flex-col space-y-2">
                                         <span class="whitespace-nowrap">Nom</span>
@@ -2400,7 +2400,7 @@ private function handleError(\Throwable $e, ?string $search): array
                                             <input type="text" 
                                                 wire:model.live.debounce.800ms="filters.name"
                                                 placeholder="Filtrer..."
-                                                class="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
+                                                class="px-3 py-2 text-sm border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
                                                 wire:loading.attr="disabled">
                                             <div wire:loading wire:target="filters.name" class="absolute right-3 top-1/2 transform -translate-y-1/2">
                                                 <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
@@ -2410,14 +2410,14 @@ private function handleError(\Throwable $e, ?string $search): array
                                 </th>
                                 
                                 <!-- Colonne Variation avec filtre -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
                                     <div class="flex flex-col space-y-1">
                                         <span>Variation</span>
                                         <div class="relative">
                                             <input type="text" 
                                                    wire:model.live.debounce.800ms="filters.variation"
                                                    placeholder="Filtrer..."
-                                                   class="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
+                                                   class="px-3 py-2 text-sm border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
                                                    wire:loading.attr="disabled">
                                             <div wire:loading wire:target="filters.variation" class="absolute right-2 top-1/2 transform -translate-y-1/2">
                                                 <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
@@ -2427,12 +2427,12 @@ private function handleError(\Throwable $e, ?string $search): array
                                 </th>
                                 
                                 <!-- Colonne Site Source avec filtre -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
                                     <div class="flex flex-col space-y-1">
                                         <span>Site Source</span>
                                         <div class="relative">
                                             <select wire:model.live="filters.site_source"
-                                                    class="px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-full"
+                                                    class="px-2 py-1 text-xs border border-gray-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-full"
                                                     wire:loading.attr="disabled">
                                                 <option value="">Tous</option>
                                                 @foreach($sites as $site)
@@ -2447,14 +2447,14 @@ private function handleError(\Throwable $e, ?string $search): array
                                 </th>
                                 
                                 <!-- Colonne Prix HT -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
                                     <div class="flex flex-col">
                                         <span>Prix HT</span>
                                     </div>
                                 </th>
                                 
                                 <!-- Colonne Date MAJ Prix -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
                                     <div class="flex flex-col">
                                         <span>Date MAJ Prix</span>
                                     </div>
@@ -2462,14 +2462,14 @@ private function handleError(\Throwable $e, ?string $search): array
                                 
                                 @if($hasData && $referencePrice)
                                 <!-- Colonne Vs Cosmaparfumerie (uniquement si on a un prix de référence) -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
                                     <div class="flex flex-col">
                                         <span>Vs Cosmaparfumerie</span>
                                     </div>
                                 </th>
                                 
                                 <!-- Colonne Vs Cosmashop (uniquement si on a un prix de référence) -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
                                     <div class="flex flex-col">
                                         <span>Vs Cosmashop</span>
                                     </div>
@@ -2477,14 +2477,14 @@ private function handleError(\Throwable $e, ?string $search): array
                                 @endif
                                 
                                 <!-- Colonne Type avec filtre -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
                                     <div class="flex flex-col space-y-1">
                                         <span>Type</span>
                                         <div class="relative">
                                             <input type="text" 
                                                    wire:model.live.debounce.800ms="filters.type"
                                                    placeholder="Filtrer..."
-                                                   class="px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-full"
+                                                   class="px-2 py-1 text-xs border border-gray-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-full"
                                                    wire:loading.attr="disabled">
                                             <div wire:loading wire:target="filters.type" class="absolute right-2 top-1/2 transform -translate-y-1/2">
                                                 <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
@@ -2494,7 +2494,7 @@ private function handleError(\Throwable $e, ?string $search): array
                                 </th>
                                 
                                 <!-- Colonne Actions -->
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
                                     <div class="flex flex-col">
                                         <span>Actions</span>
                                     </div>
@@ -2503,7 +2503,7 @@ private function handleError(\Throwable $e, ?string $search): array
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
                             @if(count($matchedProducts) > 0)
-                                @foreach($matchedProducts as $product)
+                                @foreach($matchedProducts as $index => $product)
                                     @php
                                         // Pour la recherche manuelle, on calcule la similarité à la volée si nécessaire
                                         if ($isAutomaticSearch) {
@@ -2544,10 +2544,13 @@ private function handleError(\Throwable $e, ?string $search): array
                                             $cosmashopStatusClass = $this->getCosmashopPriceStatusClass($competitorPrice);
                                             $cosmashopStatusLabel = $this->getCosmashopPriceStatusLabel($competitorPrice);
                                         }
+
+                                        // Alternance des couleurs de ligne pour style Excel
+                                        $rowClass = $index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
                                     @endphp
-                                    <tr class="hover:bg-gray-50 transition-colors duration-150">
+                                    <tr class="{{ $rowClass }} hover:bg-gray-100 transition-colors duration-150 border-b border-gray-300">
                                         <!-- NOUVELLE COLONNE : Image (TOUJOURS VISIBLE) -->
-                                        <td class="px-6 py-4 whitespace-nowrap">
+                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
                                             @php
                                                 $productImage = $this->getProductImage($product);
                                                 $productName = $product->name ?? 'Produit sans nom';
@@ -2555,12 +2558,12 @@ private function handleError(\Throwable $e, ?string $search): array
                                             <div class="relative group">
                                                 <img src="{{ $productImage }}" 
                                                      alt="{{ $productName }}" 
-                                                     class="h-20 w-20 object-cover rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-200"
+                                                     class="h-20 w-20 object-cover border border-gray-300 hover:shadow-sm transition-shadow duration-200"
                                                      loading="lazy"
                                                      onerror="this.onerror=null; this.src='https://placehold.co/400x400/cccccc/999999?text=No+Image'">
                                                 
                                                 <!-- Overlay au survol pour agrandir -->
-                                                <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 rounded-lg transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                                <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
                                                     <svg class="w-6 h-6 text-white opacity-0 group-hover:opacity-70 transition-opacity duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path>
                                                     </svg>
@@ -2570,7 +2573,7 @@ private function handleError(\Throwable $e, ?string $search): array
                                             <!-- Indicateur si pas d'image -->
                                             @if(!$this->isValidImageUrl($productImage) || str_contains($productImage, 'https://placehold.co/400x400/cccccc/999999?text=No+Image'))
                                                 <div class="mt-1 text-center">
-                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 border border-gray-300">
                                                         <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                                                         </svg>
@@ -2582,9 +2585,9 @@ private function handleError(\Throwable $e, ?string $search): array
                                         
                                         @if($hasData && $isAutomaticSearch)
                                         <!-- Colonne Score (uniquement si résultats automatiques) -->
-                                        <td class="px-6 py-4 whitespace-nowrap">
+                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
                                             <div class="flex items-center">
-                                                <div class="w-16 bg-gray-200 rounded-full h-2 mr-3">
+                                                <div class="w-16 bg-gray-300 rounded-full h-2 mr-3">
                                                     <div class="h-2 rounded-full 
                                                         @if($similarityScore >= 0.9) bg-green-500
                                                         @elseif($similarityScore >= 0.7) bg-blue-500
@@ -2604,7 +2607,7 @@ private function handleError(\Throwable $e, ?string $search): array
                                         </td>
 
                                         <!-- Colonne Correspondance (uniquement si résultats automatiques) -->
-                                        <td class="px-6 py-4 whitespace-nowrap">
+                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
                                             @if($matchLevel)
                                                 <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border {{ $matchClass ?? '' }}">
                                                     @if($matchLevel === 'excellent')
@@ -2623,14 +2626,14 @@ private function handleError(\Throwable $e, ?string $search): array
                                         @endif
 
                                         <!-- Colonne Vendor AJOUTÉE -->
-                                        <td class="px-6 py-4 whitespace-nowrap">
+                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
                                             <div class="text-sm font-medium text-gray-900">
                                                 {{ $product->vendor ?? 'N/A' }}
                                             </div>
                                         </td>
 
                                         <!-- Colonne Nom -->
-                                        <td class="px-6 py-4">
+                                        <td class="border border-gray-300 px-4 py-3">
                                             <div class="text-sm font-medium text-gray-900 max-w-xs" title="{{ $product->name ?? 'N/A' }}">
                                                 @if($isAutomaticSearch && !empty($searchVolumes))
                                                     {!! $this->highlightMatchingTerms($product->name) !!}
@@ -2646,7 +2649,7 @@ private function handleError(\Throwable $e, ?string $search): array
                                                             @if($this->isVolumeMatching($volume))
                                                                 bg-green-100 text-green-800 border border-green-300
                                                             @else
-                                                                bg-gray-100 text-gray-800
+                                                                bg-gray-100 text-gray-800 border border-gray-300
                                                             @endif">
                                                             {{ $volume }} ml
                                                             @if($this->isVolumeMatching($volume))
@@ -2661,7 +2664,7 @@ private function handleError(\Throwable $e, ?string $search): array
                                         </td>
 
                                         <!-- Colonne Variation -->
-                                        <td class="px-6 py-4 whitespace-nowrap">
+                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
                                             <div class="text-sm text-gray-900 max-w-xs" title="{{ $product->variation ?? 'Standard' }}">
                                                 @if($isAutomaticSearch && !empty($searchVariationKeywords))
                                                     {!! $this->highlightMatchingTerms($product->variation ?? 'Standard') !!}
@@ -2671,7 +2674,7 @@ private function handleError(\Throwable $e, ?string $search): array
                                             </div>
                                             @if($hasData && $hasExactVariation)
                                                 <div class="mt-1">
-                                                    <span class="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
+                                                    <span class="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full border border-blue-300">
                                                         <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
                                                             <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
                                                         </svg>
@@ -2682,9 +2685,9 @@ private function handleError(\Throwable $e, ?string $search): array
                                         </td>
 
                                         <!-- Colonne Site Source -->
-                                        <td class="px-6 py-4 whitespace-nowrap">
+                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
                                             <div class="flex items-center">
-                                                <div class="flex-shrink-0 h-8 w-8 bg-gray-100 rounded-full flex items-center justify-center mr-3">
+                                                <div class="flex-shrink-0 h-8 w-8 bg-gray-100 rounded-full flex items-center justify-center mr-3 border border-gray-300">
                                                     <span class="text-xs font-medium text-gray-600">
                                                         @php
                                                             $productUrl = $this->getProductUrl($product);
@@ -2707,14 +2710,14 @@ private function handleError(\Throwable $e, ?string $search): array
                                         </td>
 
                                         <!-- Colonne Prix HT -->
-                                        <td class="px-6 py-4 whitespace-nowrap">
+                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
                                             <div class="text-sm font-semibold text-green-600">
                                                 {{ $this->formatPrice($product->price_ht ?? $product->prix_ht) }}
                                             </div>
                                         </td>
 
                                         <!-- Colonne Date MAJ Prix -->
-                                        <td class="px-6 py-4 whitespace-nowrap">
+                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
                                             <div class="text-xs text-gray-400">
                                                 {{ \Carbon\Carbon::parse($product->updated_at)->translatedFormat('j F Y') }}
                                             </div>
@@ -2722,7 +2725,7 @@ private function handleError(\Throwable $e, ?string $search): array
 
                                         @if($referencePrice)
                                         <!-- Colonne Vs Cosmaparfumerie (uniquement si référencePrice) -->
-                                        <td class="px-6 py-4 whitespace-nowrap">
+                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
                                             @if(is_numeric($competitorPrice) && is_numeric($referencePrice))
                                                 <div class="space-y-1">
                                                     <div class="text-xs text-gray-500">
@@ -2752,7 +2755,7 @@ private function handleError(\Throwable $e, ?string $search): array
                                         </td>
 
                                         <!-- Colonne Vs Cosmashop (uniquement si référencePrice) -->
-                                        <td class="px-6 py-4 whitespace-nowrap">
+                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
                                             @if(is_numeric($competitorPrice) && is_numeric($cosmashopPrice))
                                                 <div class="space-y-1">
                                                     <div class="text-xs text-gray-500">
@@ -2783,14 +2786,14 @@ private function handleError(\Throwable $e, ?string $search): array
                                         @endif
 
                                         <!-- Colonne Type -->
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-300">
                                                 {{ $product->type ?? 'N/A' }}
                                             </span>
                                         </td>
 
                                         <!-- Colonne Actions -->
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap text-sm font-medium">
                                             <div class="flex space-x-2">
                                                 @php
                                                     $productUrl = $this->getProductUrl($product);
@@ -2819,7 +2822,7 @@ private function handleError(\Throwable $e, ?string $search): array
                             @else
                                 <!-- Aucun résultat avec les filtres appliqués -->
                                 <tr>
-                                    <td colspan="{{ ($hasData && $isAutomaticSearch ? 15 : 13) }}" class="px-6 py-12 text-center">
+                                    <td colspan="{{ ($hasData && $isAutomaticSearch ? 15 : 13) }}" class="border border-gray-300 px-6 py-12 text-center">
                                         <svg class="mx-auto h-16 w-16 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                         </svg>
@@ -2870,15 +2873,41 @@ private function handleError(\Throwable $e, ?string $search): array
   
 @push('styles')
     <style>
-        /* Style pour les filtres dans le thead */
-        th .flex-col {
-            min-height: 70px;
-            justify-content: space-between;
+        /* Style Excel-like pour le tableau */
+        table {
+            border-collapse: collapse;
+            border-spacing: 0;
         }
-
-        /* Style pour les inputs de filtres */
+        
+        th, td {
+            border: 1px solid #d1d5db;
+        }
+        
+        th {
+            background-color: #f3f4f6;
+            font-weight: 600;
+            color: #374151;
+            border-bottom: 2px solid #9ca3af;
+        }
+        
+        /* Alternance des lignes comme Excel */
+        tbody tr:nth-child(even) {
+            background-color: #f9fafb;
+        }
+        
+        tbody tr:hover {
+            background-color: #f0f9ff;
+        }
+        
+        /* Style pour les cellules avec des bordures complètes */
+        .border-gray-300 {
+            border-color: #d1d5db !important;
+        }
+        
+        /* Style pour les inputs de filtres - préservé */
         input[type="text"], select {
             transition: all 0.2s ease;
+            border: 1px solid #d1d5db;
         }
 
         input[type="text"]:focus, select:focus {
@@ -2886,23 +2915,7 @@ private function handleError(\Throwable $e, ?string $search): array
             border-color: #3b82f6;
         }
 
-        /* Style pour les filtres actifs */
-        .filter-active {
-            background-color: rgba(59, 130, 246, 0.1);
-            border-left: 3px solid #3b82f6;
-        }
-
-        /* Style pour les badges de filtres */
-        .filter-badge {
-            transition: all 0.2s ease;
-        }
-
-        .filter-badge:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        /* Animation pour les boutons */
+        /* Style pour les boutons - préservé */
         button {
             transition: all 0.2s ease;
         }
@@ -2917,11 +2930,6 @@ private function handleError(\Throwable $e, ?string $search): array
             transform: none;
         }
 
-        /* Style pour les colonnes avec filtres */
-        th.with-filter {
-            background-color: #f9fafb;
-        }
-
         /* Animation de spin pour les loaders */
         @keyframes spin {
             from { transform: rotate(0deg); }
@@ -2930,14 +2938,6 @@ private function handleError(\Throwable $e, ?string $search): array
 
         .animate-spin {
             animation: spin 1s linear infinite;
-        }
-
-        /* Style pour les indicateurs de chargement dans les inputs */
-        .relative .animate-spin {
-            position: absolute;
-            right: 8px;
-            top: 50%;
-            transform: translateY(-50%);
         }
 
         /* Style pour l'overlay de chargement global - Transparent */
@@ -2986,6 +2986,35 @@ private function handleError(\Throwable $e, ?string $search): array
         /* Transition pour l'opacité du tableau */
         .opacity-50 {
             transition: opacity 0.3s ease;
+        }
+
+        /* Style pour les images */
+        img {
+            border: 1px solid #d1d5db;
+        }
+
+        /* Style pour les badges */
+        .rounded-full {
+            border-radius: 9999px;
+        }
+
+        /* Conteneur principal du tableau */
+        .overflow-x-auto {
+            scrollbar-width: thin;
+            scrollbar-color: #cbd5e1 #f1f5f9;
+        }
+
+        .overflow-x-auto::-webkit-scrollbar {
+            height: 8px;
+        }
+
+        .overflow-x-auto::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+
+        .overflow-x-auto::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1;
+            border-radius: 4px;
         }
     </style>
 @endpush
