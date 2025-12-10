@@ -2870,122 +2870,97 @@ private function handleError(\Throwable $e, ?string $search): array
   
 @push('styles')
     <style>
-        /* Style pour les filtres dans le thead */
-        th .flex-col {
-            min-height: 70px;
-            justify-content: space-between;
+        /* Style Excel-like pour le tableau */
+        table {
+            border-collapse: collapse;
+            border-spacing: 0;
         }
-
-        /* Style pour les inputs de filtres */
-        input[type="text"], select {
-            transition: all 0.2s ease;
+        
+        th, td {
+            border: 1px solid #d1d5db;
+            padding: 8px 12px;
         }
-
-        input[type="text"]:focus, select:focus {
-            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-            border-color: #3b82f6;
+        
+        th {
+            background-color: #f3f4f6;
+            font-weight: 600;
+            color: #374151;
         }
-
-        /* Style pour les filtres actifs */
-        .filter-active {
-            background-color: rgba(59, 130, 246, 0.1);
-            border-left: 3px solid #3b82f6;
-        }
-
-        /* Style pour les badges de filtres */
-        .filter-badge {
-            transition: all 0.2s ease;
-        }
-
-        .filter-badge:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        /* Animation pour les boutons */
-        button {
-            transition: all 0.2s ease;
-        }
-
-        button:hover {
-            transform: translateY(-1px);
-        }
-
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        /* Style pour les colonnes avec filtres */
-        th.with-filter {
+        
+        tbody tr:nth-child(even) {
             background-color: #f9fafb;
         }
-
-        /* Animation de spin pour les loaders */
+        
+        tbody tr:hover {
+            background-color: #f0f0f0;
+        }
+        
+        /* Style pour les inputs de filtres */
+        input[type="text"], select {
+            border: 1px solid #9ca3af;
+            border-radius: 2px;
+            font-size: 0.75rem;
+        }
+        
+        input[type="text"]:focus, select:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 1px #3b82f6;
+        }
+        
+        /* Style pour les boutons */
+        button {
+            border-radius: 2px;
+            font-size: 0.75rem;
+        }
+        
+        /* Style pour les badges et labels */
+        .rounded {
+            border-radius: 2px;
+        }
+        
+        /* Style pour les images */
+        img {
+            border: 1px solid #d1d5db;
+        }
+        
+        /* Animation de spin */
         @keyframes spin {
             from { transform: rotate(0deg); }
             to { transform: rotate(360deg); }
         }
-
+        
         .animate-spin {
             animation: spin 1s linear infinite;
         }
-
-        /* Style pour les indicateurs de chargement dans les inputs */
-        .relative .animate-spin {
-            position: absolute;
-            right: 8px;
-            top: 50%;
-            transform: translateY(-50%);
-        }
-
-        /* Style pour l'overlay de chargement global - Transparent */
-        .fixed.inset-0 {
-            z-index: 9999;
-            background-color: transparent !important;
-        }
-
-        .fixed.inset-0 > div {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(8px);
-            box-shadow: 
-                0 20px 40px rgba(0, 0, 0, 0.1),
-                0 0 0 1px rgba(255, 255, 255, 0.1);
-            animation: slideIn 0.3s ease-out;
-        }
-
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(-20px) scale(0.95);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0) scale(1);
-            }
-        }
-
-        /* Style pour le loader des filtres */
-        .fixed.top-4.right-4 {
-            z-index: 9998;
-            animation: slideInRight 0.3s ease-out;
-        }
-
-        @keyframes slideInRight {
-            from {
-                opacity: 0;
-                transform: translateX(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateX(0);
-            }
-        }
-
+        
         /* Transition pour l'opacité du tableau */
         .opacity-50 {
-            transition: opacity 0.3s ease;
+            transition: opacity 0.2s ease;
+        }
+        
+        /* Conteneur principal du tableau */
+        .overflow-x-auto {
+            scrollbar-width: thin;
+            scrollbar-color: #cbd5e1 #f1f5f9;
+        }
+        
+        .overflow-x-auto::-webkit-scrollbar {
+            height: 8px;
+        }
+        
+        .overflow-x-auto::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        
+        .overflow-x-auto::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1;
+            border-radius: 4px;
+        }
+        
+        /* Style pour les cellules avec bordures */
+        .border-gray-300 {
+            border-color: #d1d5db !important;
         }
     </style>
 @endpush
