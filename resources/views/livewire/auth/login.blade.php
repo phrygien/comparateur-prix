@@ -50,12 +50,57 @@ new
 }; ?>
 
 <div class="flex h-screen w-screen">
-    <div class="flex-1 flex justify-center items-center bg-white">
-        <div class="w-96 max-w-full space-y-6 px-6">
-            <!-- Logo -->
-            <div class="flex justify-center opacity-50">
-                <a href="/" class="group flex items-center gap-3">
-                    <span class="text-xl font-bold text-zinc-800">PRIX</span> <span class="text-xl font-bold text-amber-800">COSMA</span>
+    <div class="flex-1 flex justify-center items-center bg-gradient-to-br from-white via-gray-50/50 to-blue-50/30">
+        <div class="w-96 max-w-full space-y-8 px-6">
+            <!-- Logo amélioré - Version élégante -->
+            <div class="flex justify-center">
+                <a href="/" class="group relative">
+                    <!-- Effet de fond lumineux -->
+                    <div class="absolute -inset-3 bg-gradient-to-r from-blue-100/40 via-amber-100/30 to-blue-100/40 rounded-2xl blur-lg opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                    
+                    <!-- Conteneur principal du logo -->
+                    <div class="relative flex items-center gap-0 bg-white/80 backdrop-blur-sm rounded-xl p-3 shadow-lg border border-gray-100 group-hover:shadow-xl transition-all duration-300">
+                        <!-- Icône décorative gauche -->
+                        <div class="px-2">
+                            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-sm">
+                                <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zM12 2a1 1 0 01.967.744L14.146 7.2 17.5 9.134a1 1 0 010 1.732l-3.354 1.935-1.18 4.455a1 1 0 01-1.933 0L9.854 12.2 6.5 10.266a1 1 0 010-1.732l3.354-1.935 1.18-4.455A1 1 0 0112 2z" clip-rule="evenodd"/>
+                                </svg>
+                            </div>
+                        </div>
+                        
+                        <!-- Séparateur -->
+                        <div class="w-px h-10 bg-gradient-to-b from-transparent via-gray-200 to-transparent mx-2"></div>
+                        
+                        <!-- Texte du logo -->
+                        <div class="px-2">
+                            <div class="flex items-baseline gap-1">
+                                <span class="text-3xl font-black bg-gradient-to-r from-gray-800 via-gray-900 to-black bg-clip-text text-transparent tracking-tight leading-none">
+                                    PRIX
+                                </span>
+                                <span class="text-3xl font-black bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 bg-clip-text text-transparent tracking-tight leading-none">
+                                    COSMA
+                                </span>
+                            </div>
+                            <div class="h-0.5 w-full bg-gradient-to-r from-blue-400/50 via-amber-400/50 to-blue-400/50 rounded-full mt-1"></div>
+                        </div>
+                        
+                        <!-- Icône décorative droite -->
+                        {{-- <div class="px-2">
+                            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center shadow-sm">
+                                <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                                </svg>
+                            </div>
+                        </div> --}}
+                    </div>
+                    
+                    <!-- Badge premium subtil -->
+                    {{-- <div class="absolute -top-2 -right-2">
+                        <div class="px-1.5 py-0.5 bg-gradient-to-r from-blue-500 to-blue-600 rounded-full text-[9px] font-bold text-white shadow-md">
+                            PRO
+                        </div>
+                    </div> --}}
                 </a>
             </div>
 
