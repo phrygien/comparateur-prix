@@ -575,7 +575,8 @@ new class extends Component {
                         FROM scraped_product sp
                     ) AS t
                     LEFT JOIN web_site ws ON t.web_site_id = ws.id
-                    WHERE t.row_num = 1";
+                    WHERE t.row_num = 1
+                    AND (t.variation != 'Standard' OR t.variation IS NULL OR t.variation = '')";
             
             $params = [];
 
@@ -686,6 +687,7 @@ new class extends Component {
                     LEFT JOIN web_site ws ON lp.web_site_id = ws.id
                     WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
                         AGAINST (? IN BOOLEAN MODE)
+                    AND (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
                     ORDER BY lp.prix_ht DESC 
                     LIMIT 50";
 
@@ -707,16 +709,17 @@ new class extends Component {
                     $vendorParams[] = '%' . $variation . '%';
                 }
                 
-                $sqlVendorSearch = "SELECT 
-                            lp.*, 
-                            ws.name as site_name, 
-                            lp.url as product_url, 
-                            lp.image_url as image
-                        FROM last_price_scraped_product lp
-                        LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-                        WHERE (" . implode(' OR ', $vendorConditions) . ")
-                        ORDER BY lp.prix_ht DESC 
-                        LIMIT 30";
+                 $sqlVendorSearch = "SELECT 
+                        lp.*, 
+                        ws.name as site_name, 
+                        lp.url as product_url, 
+                        lp.image_url as image
+                    FROM last_price_scraped_product lp
+                    LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+                    WHERE (" . implode(' OR ', $vendorConditions) . ")
+                    AND (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
+                    ORDER BY lp.prix_ht DESC 
+                    LIMIT 30";
                 
                 $vendorSearchProducts = DB::connection('mysql')->select($sqlVendorSearch, $vendorParams);
                 \Log::info('Vendor search results:', ['count' => count($vendorSearchProducts)]);
