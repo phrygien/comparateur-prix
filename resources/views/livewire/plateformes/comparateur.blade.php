@@ -2323,7 +2323,7 @@ new class extends Component {
                                         <span class="whitespace-nowrap">Marque/Vendor</span>
                                         <div class="relative">
                                             <input type="text" 
-                                                   
+                                                   disabled
                                                    wire:model.live.debounce.800ms="filters.vendor"
                                                    placeholder="Filtrer par marque..."
                                                    class="px-3 py-2 text-sm border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
