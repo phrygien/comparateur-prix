@@ -2663,7 +2663,7 @@ new class extends Component {
                                         <!-- Colonne Date MAJ Prix -->
                                         <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
                                             <div class="text-xs text-gray-400">
-                                                {{ \Carbon\Carbon::parse($product->updated_at)->translatedFormat('j F Y') }}
+                                                {{ \Carbon\Carbon::parse($product->updated_at)->translatedFormat('j F Y \\à H:i') }}
                                             </div>
                                         </td>
 
