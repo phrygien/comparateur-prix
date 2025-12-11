@@ -172,6 +172,7 @@ public function with()
                     placeholder="Filtrer par vendeur..."
                     icon="o-building-storefront"
                     class="input-sm"
+                    hint="Exemple: Dior, Prada, etc..."
                     input-class="border border-gray-300 rounded-lg focus:border-primary focus:ring-2 focus:ring-primary/20 transition-colors"
                 />
             </div>
