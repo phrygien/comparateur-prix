@@ -18,6 +18,7 @@
                         <option value="120">120 par page</option>
                         <option value="160">160 par page</option>
                         <option value="190">190 par page</option>
+                        <option value="200">200 par page</option>
                     </select>
                 </div>
 
