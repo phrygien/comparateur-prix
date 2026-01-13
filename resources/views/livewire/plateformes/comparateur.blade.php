@@ -689,7 +689,7 @@ new class extends Component {
                         AGAINST (? IN BOOLEAN MODE)
                     AND (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
                     ORDER BY lp.prix_ht DESC 
-                    LIMIT 50";
+                    LIMIT 200";
 
             $fullSearchProducts = DB::connection('mysql')->select($sqlFullSearch, [$searchQuery]);
             
