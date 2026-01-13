@@ -51,67 +51,70 @@ new class extends Component {
         }
     }
     
-public function with()
-{
-    if (!$this->showResults) {
+    public function with()
+    {
+        if (!$this->showResults) {
+            return [
+                'products' => collect(),
+                'sites' => Site::orderBy('name')->get(),
+                'paginator' => null,
+            ];
+        }
+        
+        // Utiliser la vue à la place de la sous-requête
+        $query = DB::table('last_price_scraped_product')
+            ->select('*');
+        
+        // Exclure les produits avec variation = "Standard"
+        $query->where('variation', '!=', 'Standard');
+
+        // Appliquer les filtres individuellement
+        if (!empty($this->vendor)) {
+            $query->where('vendor', 'like', '%' . $this->vendor . '%');
+        }
+        
+        if (!empty($this->name)) {
+            $query->where('name', 'like', '%' . $this->name . '%');
+        }
+        
+        if (!empty($this->type)) {
+            $query->where('type', 'like', '%' . $this->type . '%');
+        }
+        
+        if (!empty($this->variation)) {
+            $query->where('variation', 'like', '%' . $this->variation . '%');
+        }
+        
+        if (!empty($this->site_id)) {
+            $query->where('web_site_id', $this->site_id);
+        }
+        
+        // Compter le total des résultats
+        $totalResults = $query->count();
+        
+        // Récupérer les résultats paginés
+        $products = $query->orderBy('vendor', 'asc')
+            ->skip(($this->currentPage - 1) * $this->perPage)
+            ->take($this->perPage)
+            ->get();
+        
+        // Créer un paginator manuel
+        $paginator = new LengthAwarePaginator(
+            $products,
+            $totalResults,
+            $this->perPage,
+            $this->currentPage,
+            ['path' => request()->url()]
+        );
+        
         return [
-            'products' => collect(),
+            'products' => $products,
             'sites' => Site::orderBy('name')->get(),
-            'paginator' => null,
+            'paginator' => $paginator,
+            'totalResults' => $totalResults,
+            'totalPages' => ceil($totalResults / $this->perPage),
         ];
     }
-    
-    // Utiliser la vue à la place de la sous-requête
-    $query = DB::table('last_price_scraped_product')
-        ->select('*');
-    
-    // Appliquer les filtres individuellement
-    if (!empty($this->vendor)) {
-        $query->where('vendor', 'like', '%' . $this->vendor . '%');
-    }
-    
-    if (!empty($this->name)) {
-        $query->where('name', 'like', '%' . $this->name . '%');
-    }
-    
-    if (!empty($this->type)) {
-        $query->where('type', 'like', '%' . $this->type . '%');
-    }
-    
-    if (!empty($this->variation)) {
-        $query->where('variation', 'like', '%' . $this->variation . '%');
-    }
-    
-    if (!empty($this->site_id)) {
-        $query->where('web_site_id', $this->site_id);
-    }
-    
-    // Compter le total des résultats
-    $totalResults = $query->count();
-    
-    // Récupérer les résultats paginés
-    $products = $query->orderBy('vendor', 'asc')
-        ->skip(($this->currentPage - 1) * $this->perPage)
-        ->take($this->perPage)
-        ->get();
-    
-    // Créer un paginator manuel
-    $paginator = new LengthAwarePaginator(
-        $products,
-        $totalResults,
-        $this->perPage,
-        $this->currentPage,
-        ['path' => request()->url()]
-    );
-    
-    return [
-        'products' => $products,
-        'sites' => Site::orderBy('name')->get(),
-        'paginator' => $paginator,
-        'totalResults' => $totalResults,
-        'totalPages' => ceil($totalResults / $this->perPage),
-    ];
-}
 }; ?>
 
 <div>
