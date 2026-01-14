@@ -53,6 +53,10 @@ new class extends Component {
     
     public function exportCsv()
     {
+        // Augmenter les limites pour les exports volumineux
+        set_time_limit(700); // 5 minutes
+        ini_set('memory_limit', '512M');
+
         // Récupérer tous les résultats filtrés (sans pagination)
         $query = DB::table('last_price_scraped_product')
             ->select('*');
