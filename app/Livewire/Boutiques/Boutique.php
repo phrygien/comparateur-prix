@@ -35,6 +35,7 @@ class Boutique extends Component
         'filterName' => ['except' => ''],
         'filterMarque' => ['except' => ''],
         'filterType' => ['except' => ''],
+        'filterEAN' => ['except' => ''],
         'filterCapacity' => ['except' => ''],
         'perPage' => ['except' => 12],
     ];
@@ -42,7 +43,7 @@ class Boutique extends Component
     public function updated($property)
     {
         // Reset à la première page quand un filtre change
-        if (in_array($property, ['search', 'filterName', 'filterMarque', 'filterType', 'filterCapacity', 'perPage'])) {
+        if (in_array($property, ['search', 'filterName', 'filterMarque', 'filterType', 'filterEAN', 'filterCapacity', 'perPage'])) {
             $this->resetPage();
         }
     }
@@ -105,6 +106,7 @@ class Boutique extends Component
             'name' => $this->filterName,
             'marque' => $this->filterMarque,
             'type' => $this->filterType,
+            'ean' => $this->filterEAN,
             'capacity' => $this->filterCapacity,
         ];
         
@@ -129,6 +131,7 @@ class Boutique extends Component
             'name' => $this->filterName,
             'marque' => $this->filterMarque,
             'type' => $this->filterType,
+            'ean' => $this->filterEAN,
             'capacity' => $this->filterCapacity,
         ];
         
