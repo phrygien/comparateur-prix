@@ -19,6 +19,7 @@ class Boutique extends Component
     public $filterMarque = "";
     public $filterType = "";
     public $filterCapacity = "";
+    public $filterEAN = "";
 
     // Nombre d'éléments par page
     public $perPage = 30;
@@ -320,9 +321,14 @@ class Boutique extends Component
                 $params[] = $this->filterType;
             }
 
-            if (!empty($this->filterCapacity)) {
-                $subQuery .= " AND product_int.capacity = ? ";
-                $params[] = $this->filterCapacity;
+            // if (!empty($this->filterCapacity)) {
+            //     $subQuery .= " AND product_int.capacity = ? ";
+            //     $params[] = $this->filterCapacity;
+            // }
+
+            if (!empty($this->filterEAN)) {
+                $subQuery .= " AND produit.sku LIKE ? ";
+                $params[] = $this->filterEAN;
             }
 
             // Filtre pour prix > 0

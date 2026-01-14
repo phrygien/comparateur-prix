@@ -23,7 +23,7 @@
                 </div>
 
                 <!-- Bouton filtre avancé -->
-                {{-- <div class="drawer drawer-end">
+                <div class="drawer drawer-end">
                     <input id="my-drawer-1" type="checkbox" class="drawer-toggle" />
                     <div class="drawer-content">
                         <label for="my-drawer-1" class="btn drawer-button btn-primary">Filtre avancé</label>
@@ -48,7 +48,7 @@
                                 </div>
 
                                 <!-- Filtre par marque -->
-                                <div class="form-control">
+                                <!-- <div class="form-control">
                                     <label class="label">
                                         <span class="label-text font-semibold">Marque</span>
                                     </label>
@@ -63,10 +63,21 @@
                                         <option value="Versace">Versace</option>
                                         <option value="Armani">Armani</option>
                                     </select>
+                                </div> -->
+                                <div class="form-control">
+                                    <label class="label">
+                                        <span class="label-text font-semibold">Marque</span>
+                                    </label>
+                                    <input 
+                                        type="text" 
+                                        wire:model="filterMarque"
+                                        placeholder="Entrer la marque du produit ..."
+                                        class="input input-bordered w-full" 
+                                    />
                                 </div>
 
                                 <!-- Filtre par type de parfum -->
-                                <div class="form-control">
+                                <!-- <div class="form-control">
                                     <label class="label">
                                         <span class="label-text font-semibold">Type de parfum</span>
                                     </label>
@@ -77,21 +88,30 @@
                                         <option value="eau_de_cologne">Eau de Cologne</option>
                                         <option value="parfum">Parfum</option>
                                     </select>
-                                </div>
-
-                                <!-- Filtre par capacité -->
+                                </div> -->
                                 <div class="form-control">
                                     <label class="label">
-                                        <span class="label-text font-semibold">Capacité (ML)</span>
+                                        <span class="label-text font-semibold">Type de parfum</span>
                                     </label>
-                                    <select wire:model="filterCapacity" class="select select-bordered w-full">
-                                        <option value="">Toutes les capacités</option>
-                                        <option value="30">30 ML</option>
-                                        <option value="50">50 ML</option>
-                                        <option value="75">75 ML</option>
-                                        <option value="100">100 ML</option>
-                                        <option value="150">150 ML</option>
-                                    </select>
+                                    <input 
+                                        type="text" 
+                                        wire:model="filterType"
+                                        placeholder="Entrer le type du produit ..."
+                                        class="input input-bordered w-full" 
+                                    />
+                                </div>
+
+                                <!-- Filtre par EAN -->
+                                <div class="form-control">
+                                    <label class="label">
+                                        <span class="label-text font-semibold">EAN</span>
+                                    </label>
+                                    <input 
+                                        type="text" 
+                                        wire:model="filterEAN"
+                                        placeholder="Entrer l'EAN du produit ..."
+                                        class="input input-bordered w-full" 
+                                    />
                                 </div>
 
                                 <!-- Boutons d'action -->
@@ -114,7 +134,7 @@
                             </div>
                         </div>
                     </div>
-                </div> --}}
+                </div> 
             </div>
         </x-slot:actions>
     </x-header>
