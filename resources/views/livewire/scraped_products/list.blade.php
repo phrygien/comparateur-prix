@@ -56,185 +56,206 @@ new class extends Component {
         }
     }
     
-    public function exportCsv()
-    {
-        // Augmenter les limites pour les exports volumineux
-        set_time_limit(300); // 5 minutes
-        ini_set('memory_limit', '512M');
-        
-        // Récupérer tous les résultats filtrés (sans pagination)
-        $query = DB::table('last_price_scraped_product')
-            ->select('*');
-        
-        $query->where('variation', '!=', 'Standard');
+public function exportCsv()
+{
+    // Augmenter les limites pour les exports volumineux
+    set_time_limit(300); // 5 minutes
+    ini_set('memory_limit', '512M');
+    
+    // Récupérer tous les résultats filtrés (sans pagination)
+    $query = DB::table('last_price_scraped_product')
+        ->select('*');
+    
+    $query->where('variation', '!=', 'Standard');
 
-        if (!empty($this->vendor)) {
-            $query->where('vendor', 'like', '%' . $this->vendor . '%');
+    if (!empty($this->vendor)) {
+        $query->where('vendor', 'like', '%' . $this->vendor . '%');
+    }
+    
+    if (!empty($this->name)) {
+        $query->where('name', 'like', '%' . $this->name . '%');
+    }
+    
+    if (!empty($this->type)) {
+        $query->where('type', 'like', '%' . $this->type . '%');
+    }
+    
+    if (!empty($this->variation)) {
+        $query->where('variation', 'like', '%' . $this->variation . '%');
+    }
+    
+    if (!empty($this->site_ids) && count($this->site_ids) > 0) {
+        $query->whereIn('web_site_id', $this->site_ids);
+    }
+    
+    // Utiliser chunk pour traiter par lots et économiser la mémoire
+    $totalProducts = $query->count();
+    
+    // Créer un fichier Excel avec PhpSpreadsheet
+    $spreadsheet = new Spreadsheet();
+    $sheet = $spreadsheet->getActiveSheet();
+    
+    // Définir le titre de la feuille
+    $sheet->setTitle('Produits Concurrents');
+    
+    // En-têtes (sans Image URL)
+    $headers = ['Image', 'Vendeur', 'Nom du produit', 'Type', 'Variation', 'Prix HT', 'Devise', 'Site web', 'URL', 'Date de scraping'];
+    $sheet->fromArray($headers, null, 'A1');
+    
+    // Style de l'en-tête - Fond bleu avec texte blanc
+    $headerStyle = [
+        'font' => [
+            'bold' => true,
+            'color' => ['rgb' => 'FFFFFF'],
+            'size' => 12
+        ],
+        'fill' => [
+            'fillType' => Fill::FILL_SOLID,
+            'startColor' => ['rgb' => '4F46E5']
+        ],
+        'alignment' => [
+            'horizontal' => Alignment::HORIZONTAL_CENTER,
+            'vertical' => Alignment::VERTICAL_CENTER
+        ],
+        'borders' => [
+            'allBorders' => [
+                'borderStyle' => Border::BORDER_THIN,
+                'color' => ['rgb' => '000000']
+            ]
+        ]
+    ];
+    $sheet->getStyle('A1:J1')->applyFromArray($headerStyle);
+    
+    // Augmenter la hauteur de la ligne d'en-tête
+    $sheet->getRowDimension(1)->setRowHeight(25);
+    
+    // Augmenter la hauteur des lignes pour les images
+    $sheet->getDefaultRowDimension()->setRowHeight(120); // Augmenté de 60 à 120 pour plus de lisibilité
+    
+    // Traiter les données par chunks pour optimiser la mémoire
+    $row = 2;
+    $chunkSize = 500; // Traiter 500 lignes à la fois
+    
+    $query->orderBy('vendor', 'asc')->chunk($chunkSize, function($products) use ($sheet, &$row) {
+        foreach ($products as $product) {
+            $site = Site::find($product->web_site_id);
+            
+            // Insérer les données
+            $sheet->setCellValue('B' . $row, $product->vendor ?? '');
+            $sheet->setCellValue('C' . $row, $product->name ?? '');
+            $sheet->setCellValue('D' . $row, $product->type ?? '');
+            $sheet->setCellValue('E' . $row, $product->variation ?? '');
+            $sheet->setCellValue('F' . $row, $product->prix_ht ?? '');
+            $sheet->setCellValue('G' . $row, $product->currency ?? '');
+            $sheet->setCellValue('H' . $row, $site ? $site->name : '');
+            $sheet->setCellValue('I' . $row, $product->url ?? '');
+            $sheet->setCellValue('J' . $row, $product->created_at ? \Carbon\Carbon::parse($product->created_at)->format('d/m/Y H:i:s') : '');
+            
+            // Utiliser la formule IMAGE() pour afficher l'image depuis l'URL
+            if ($product->image_url) {
+                try {
+                    // Formule Excel IMAGE() sans @ au début
+                    $imageUrl = str_replace('"', '""', $product->image_url);
+                    
+                    // Paramètres optionnels pour mieux contrôler la taille de l'image dans Excel:
+                    // 1 = Ajuster l'image à la cellule tout en conservant les proportions (recommandé)
+                    // 3 = Image à taille réelle
+                    $formula = '=IMAGE("' . $imageUrl . '", 1)';
+                    
+                    $sheet->setCellValue('A' . $row, $formula);
+                    
+                    // Définir un style explicite pour éviter l'ajout automatique de @
+                    $sheet->getCell('A' . $row)->getStyle()
+                        ->setQuotePrefix(false); // Important: éviter que Excel ajoute ' automatiquement
+                    
+                } catch (\Exception $e) {
+                    // Si la formule échoue, mettre juste l'URL
+                    $sheet->setCellValue('A' . $row, $product->image_url);
+                }
+            } else {
+                $sheet->setCellValue('A' . $row, '');
+            }
+            
+            // URL cliquable (si présente) - Colonne I maintenant
+            if ($product->url) {
+                $sheet->getCell('I' . $row)->getHyperlink()->setUrl($product->url);
+                $sheet->getStyle('I' . $row)->getFont()->getColor()->setRGB('0563C1');
+                $sheet->getStyle('I' . $row)->getFont()->setUnderline(true);
+            }
+            
+            // Centrer l'image dans la cellule
+            $sheet->getStyle('A' . $row)->getAlignment()
+                ->setHorizontal(Alignment::HORIZONTAL_CENTER)
+                ->setVertical(Alignment::VERTICAL_CENTER);
+            
+            // Définir la largeur spécifique de la colonne A pour les images
+            $sheet->getColumnDimension('A')->setWidth(20); // Augmenté à 20 pour plus de largeur
+            
+            // Définir l'habillage du texte pour les autres colonnes
+            $sheet->getStyle('C' . $row . ':I' . $row)->getAlignment()
+                ->setWrapText(true)
+                ->setVertical(Alignment::VERTICAL_CENTER);
+            
+            // Alterner les couleurs de lignes
+            if ($row % 2 == 0) {
+                $sheet->getStyle('A' . $row . ':J' . $row)->getFill()
+                    ->setFillType(Fill::FILL_SOLID)
+                    ->getStartColor()->setRGB('F9FAFB');
+            }
+            
+            $row++;
         }
-        
-        if (!empty($this->name)) {
-            $query->where('name', 'like', '%' . $this->name . '%');
-        }
-        
-        if (!empty($this->type)) {
-            $query->where('type', 'like', '%' . $this->type . '%');
-        }
-        
-        if (!empty($this->variation)) {
-            $query->where('variation', 'like', '%' . $this->variation . '%');
-        }
-        
-        if (!empty($this->site_ids) && count($this->site_ids) > 0) {
-            $query->whereIn('web_site_id', $this->site_ids);
-        }
-        
-        // Utiliser chunk pour traiter par lots et économiser la mémoire
-        $totalProducts = $query->count();
-        
-        // Créer un fichier Excel avec PhpSpreadsheet
-        $spreadsheet = new Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet();
-        
-        // Définir le titre de la feuille
-        $sheet->setTitle('Produits Concurrents');
-        
-        // En-têtes (sans Image URL)
-        $headers = ['Image', 'Vendeur', 'Nom du produit', 'Type', 'Variation', 'Prix HT', 'Devise', 'Site web', 'URL', 'Date de scraping'];
-        $sheet->fromArray($headers, null, 'A1');
-        
-        // Style de l'en-tête - Fond bleu avec texte blanc
-        $headerStyle = [
-            'font' => [
-                'bold' => true,
-                'color' => ['rgb' => 'FFFFFF'],
-                'size' => 12
-            ],
-            'fill' => [
-                'fillType' => Fill::FILL_SOLID,
-                'startColor' => ['rgb' => '4F46E5']
-            ],
-            'alignment' => [
-                'horizontal' => Alignment::HORIZONTAL_CENTER,
-                'vertical' => Alignment::VERTICAL_CENTER
-            ],
+    });
+    
+    $lastRow = $row - 1;
+    
+    // Bordures pour toutes les cellules de données (appliquer en une seule fois)
+    if ($lastRow > 1) {
+        $sheet->getStyle('A1:J' . $lastRow)->applyFromArray([
             'borders' => [
                 'allBorders' => [
                     'borderStyle' => Border::BORDER_THIN,
-                    'color' => ['rgb' => '000000']
+                    'color' => ['rgb' => 'E5E7EB']
                 ]
             ]
-        ];
-        $sheet->getStyle('A1:J1')->applyFromArray($headerStyle);
-        
-        // Augmenter la hauteur de la ligne d'en-tête
-        $sheet->getRowDimension(1)->setRowHeight(25);
-        
-        // Hauteur par défaut pour les lignes de données (pour les images)
-        $sheet->getDefaultRowDimension()->setRowHeight(60);
-        
-        // Traiter les données par chunks pour optimiser la mémoire
-        $row = 2;
-        $chunkSize = 500; // Traiter 500 lignes à la fois
-        
-        $query->orderBy('vendor', 'asc')->chunk($chunkSize, function($products) use ($sheet, &$row) {
-            foreach ($products as $product) {
-                $site = Site::find($product->web_site_id);
-                
-                // Insérer les données
-                $sheet->setCellValue('B' . $row, $product->vendor ?? '');
-                $sheet->setCellValue('C' . $row, $product->name ?? '');
-                $sheet->setCellValue('D' . $row, $product->type ?? '');
-                $sheet->setCellValue('E' . $row, $product->variation ?? '');
-                $sheet->setCellValue('F' . $row, $product->prix_ht ?? '');
-                $sheet->setCellValue('G' . $row, $product->currency ?? '');
-                $sheet->setCellValue('H' . $row, $site ? $site->name : '');
-                $sheet->setCellValue('I' . $row, $product->url ?? '');
-                $sheet->setCellValue('J' . $row, $product->created_at ? \Carbon\Carbon::parse($product->created_at)->format('d/m/Y H:i:s') : '');
-                
-                // Utiliser la formule IMAGE() pour afficher l'image depuis l'URL
-                if ($product->image_url) {
-                    try {
-                        // Formule Excel IMAGE() - disponible dans Excel 365 et versions récentes
-                        $sheet->setCellValue('A' . $row, '=IMAGE("' . str_replace('"', '""', $product->image_url) . '")');
-                    } catch (\Exception $e) {
-                        // Si la formule échoue, mettre juste l'URL
-                        $sheet->setCellValue('A' . $row, $product->image_url);
-                    }
-                } else {
-                    $sheet->setCellValue('A' . $row, '');
-                }
-                
-                // URL cliquable (si présente) - Colonne I maintenant
-                if ($product->url) {
-                    $sheet->getCell('I' . $row)->getHyperlink()->setUrl($product->url);
-                    $sheet->getStyle('I' . $row)->getFont()->getColor()->setRGB('0563C1');
-                    $sheet->getStyle('I' . $row)->getFont()->setUnderline(true);
-                }
-                
-                // Centrer l'image dans la cellule
-                $sheet->getStyle('A' . $row)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-                $sheet->getStyle('A' . $row)->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
-                
-                // Alterner les couleurs de lignes
-                if ($row % 2 == 0) {
-                    $sheet->getStyle('A' . $row . ':J' . $row)->getFill()
-                        ->setFillType(Fill::FILL_SOLID)
-                        ->getStartColor()->setRGB('F9FAFB');
-                }
-                
-                $row++;
-            }
-        });
-        
-        $lastRow = $row - 1;
-        
-        // Bordures pour toutes les cellules de données (appliquer en une seule fois)
-        if ($lastRow > 1) {
-            $sheet->getStyle('A1:J' . $lastRow)->applyFromArray([
-                'borders' => [
-                    'allBorders' => [
-                        'borderStyle' => Border::BORDER_THIN,
-                        'color' => ['rgb' => 'E5E7EB']
-                    ]
-                ]
-            ]);
-        }
-        
-        // Largeurs de colonnes
-        $sheet->getColumnDimension('A')->setWidth(12);  // Image
-        $sheet->getColumnDimension('B')->setWidth(20);  // Vendeur
-        $sheet->getColumnDimension('C')->setWidth(50);  // Nom
-        $sheet->getColumnDimension('D')->setWidth(20);  // Type
-        $sheet->getColumnDimension('E')->setWidth(20);  // Variation
-        $sheet->getColumnDimension('F')->setWidth(12);  // Prix
-        $sheet->getColumnDimension('G')->setWidth(8);   // Devise
-        $sheet->getColumnDimension('H')->setWidth(25);  // Site
-        $sheet->getColumnDimension('I')->setWidth(60);  // URL
-        $sheet->getColumnDimension('J')->setWidth(20);  // Date
-        
-        // Appliquer l'auto-filtre sur les en-têtes
-        $sheet->setAutoFilter('A1:J1');
-        
-        // Figer la première ligne (en-têtes)
-        $sheet->freezePane('A2');
-        
-        // Créer le writer Excel
-        $writer = new Xlsx($spreadsheet);
-        
-        // Nom du fichier
-        $filename = 'produits_concurrents_' . date('Y-m-d_His') . '.xlsx';
-        
-        // Créer un fichier temporaire
-        $temp_file = tempnam(sys_get_temp_dir(), 'excel_');
-        $writer->save($temp_file);
-        
-        // Libérer la mémoire
-        $spreadsheet->disconnectWorksheets();
-        unset($spreadsheet);
-        
-        // Retourner le fichier en téléchargement
-        return response()->download($temp_file, $filename)->deleteFileAfterSend(true);
+        ]);
     }
+    
+    // Largeurs de colonnes ajustées pour plus de lisibilité
+    $sheet->getColumnDimension('A')->setWidth(25);  // Image - augmenté
+    $sheet->getColumnDimension('B')->setWidth(20);  // Vendeur
+    $sheet->getColumnDimension('C')->setWidth(50);  // Nom
+    $sheet->getColumnDimension('D')->setWidth(20);  // Type
+    $sheet->getColumnDimension('E')->setWidth(20);  // Variation
+    $sheet->getColumnDimension('F')->setWidth(12);  // Prix
+    $sheet->getColumnDimension('G')->setWidth(8);   // Devise
+    $sheet->getColumnDimension('H')->setWidth(25);  // Site
+    $sheet->getColumnDimension('I')->setWidth(60);  // URL
+    $sheet->getColumnDimension('J')->setWidth(20);  // Date
+    
+    // Appliquer l'auto-filtre sur les en-têtes
+    $sheet->setAutoFilter('A1:J1');
+    
+    // Figer la première ligne (en-têtes)
+    $sheet->freezePane('A2');
+    
+    // Créer le writer Excel
+    $writer = new Xlsx($spreadsheet);
+    
+    // Nom du fichier
+    $filename = 'produits_concurrents_' . date('Y-m-d_His') . '.xlsx';
+    
+    // Créer un fichier temporaire
+    $temp_file = tempnam(sys_get_temp_dir(), 'excel_');
+    $writer->save($temp_file);
+    
+    // Libérer la mémoire
+    $spreadsheet->disconnectWorksheets();
+    unset($spreadsheet);
+    
+    // Retourner le fichier en téléchargement
+    return response()->download($temp_file, $filename)->deleteFileAfterSend(true);
+}
     
     private function escapeCsv($value)
     {
