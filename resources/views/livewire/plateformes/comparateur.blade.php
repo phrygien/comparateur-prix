@@ -2124,6 +2124,9 @@ public function getCompetitorPrice($search)
 
 
 
+/**
+ * Export des résultats vers Excel
+ */
 public function exportToExcel()
 {
     try {
@@ -2162,8 +2165,10 @@ public function exportToExcel()
         
         // Écrire les en-têtes
         $col = 'A';
-        foreach ($headers as $header) {
+        $headerColumns = [];
+        foreach ($headers as $index => $header) {
             $sheet->setCellValue($col . '1', $header);
+            $headerColumns[$header] = $col; // Stocker la position de chaque colonne
             
             // Style des en-têtes
             $sheet->getStyle($col . '1')->applyFromArray([
@@ -2190,6 +2195,9 @@ public function exportToExcel()
             
             $col++;
         }
+        
+        $lastHeaderColumn = $col;
+        $lastHeaderColumn--;
         
         // Données des produits
         $row = 2;
@@ -2352,6 +2360,12 @@ public function exportToExcel()
             $row++;
         }
         
+        $lastDataRow = $row - 1;
+        
+        // AJOUTER LES FILTRES AUTOMATIQUES sur les colonnes Vendor, Variation et Site Source
+        // Appliquer le filtre sur toute la plage de données
+        $sheet->setAutoFilter('A1:' . $lastHeaderColumn . $lastDataRow);
+        
         // Ajuster automatiquement la largeur des colonnes
         foreach (range('A', $sheet->getHighestColumn()) as $col) {
             $sheet->getColumnDimension($col)->setAutoSize(true);
@@ -2359,6 +2373,17 @@ public function exportToExcel()
         
         // Figer la première ligne
         $sheet->freezePane('A2');
+        
+        // Ajouter une note d'information dans une cellule séparée
+        $infoRow = $lastDataRow + 3;
+        $sheet->setCellValue('A' . $infoRow, '💡 Conseil : Utilisez les filtres dans les en-têtes pour filtrer par Vendor, Variation ou Site Source');
+        $sheet->getStyle('A' . $infoRow)->applyFromArray([
+            'font' => [
+                'italic' => true,
+                'color' => ['rgb' => '0070C0']
+            ]
+        ]);
+        $sheet->mergeCells('A' . $infoRow . ':' . $lastHeaderColumn . $infoRow);
         
         // Créer le nom du fichier
         $filename = 'resultats_recherche_' . date('Y-m-d_His') . '.xlsx';
