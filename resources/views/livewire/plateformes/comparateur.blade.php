@@ -27,7 +27,8 @@ new class extends Component {
         'name' => '',
         'variation' => '',
         'type' => '',
-        'site_source' => ''
+        //'site_source' => ''
+        'site_source' => [] // Changé de '' à []
     ];
     public $sites = [];
     public $showTable = false;
@@ -622,367 +623,385 @@ new class extends Component {
     /**
      * Recherche manuelle
      */
-    public function searchManual()
-    {
-        try {
-            $this->hasData = false;
-            $this->matchedProducts = [];
-            $this->products = [];
+public function searchManual()
+{
+    try {
+        $this->hasData = false;
+        $this->matchedProducts = [];
+        $this->products = [];
 
-            $cacheKey = $this->getManualSearchCacheKey();
-            $cachedResults = $this->getCachedResults($cacheKey);
+        $cacheKey = $this->getManualSearchCacheKey();
+        $cachedResults = $this->getCachedResults($cacheKey);
 
-            if ($cachedResults !== null) {
-                $this->products = $cachedResults;
-                $this->matchedProducts = $cachedResults;
-                $this->hasData = !empty($cachedResults);
-                $this->isAutomaticSearch = false;
-                $this->hasAppliedFilters = true;
-                return;
-            }
-
-            // Construire les conditions de filtre
-            $vendorConditions = [];
-            $vendorParams = [];
-            
-            if (!empty($this->filters['vendor'])) {
-                $vendorVariations = $this->getVendorVariations($this->filters['vendor']);
-                
-                foreach ($vendorVariations as $variation) {
-                    $vendorConditions[] = "t.vendor LIKE ?";
-                    $vendorParams[] = '%' . $variation . '%';
-                }
-            }
-
-            // Requête optimisée avec ROW_NUMBER
-            $sql = "SELECT 
-                        t.*,
-                        ws.name as site_name,
-                        t.url as product_url,
-                        t.image_url as image
-                    FROM (
-                        SELECT
-                            sp.*,
-                            ROW_NUMBER() OVER (
-                                PARTITION BY sp.url, sp.vendor, sp.name, sp.type, sp.variation
-                                ORDER BY sp.created_at DESC
-                            ) AS row_num
-                        FROM scraped_product sp
-                    ) AS t
-                    LEFT JOIN web_site ws ON t.web_site_id = ws.id
-                    WHERE t.row_num = 1
-                    AND (t.variation != 'Standard' OR t.variation IS NULL OR t.variation = '')";
-            
-            $params = [];
-
-            // Appliquer les filtres
-            if (!empty($vendorConditions)) {
-                $sql .= " AND (" . implode(' OR ', $vendorConditions) . ")";
-                $params = array_merge($params, $vendorParams);
-            }
-
-            if (!empty($this->filters['name'])) {
-                $sql .= " AND t.name LIKE ?";
-                $params[] = '%' . $this->filters['name'] . '%';
-            }
-
-            if (!empty($this->filters['variation'])) {
-                $sql .= " AND t.variation LIKE ?";
-                $params[] = '%' . $this->filters['variation'] . '%';
-            }
-
-            if (!empty($this->filters['type'])) {
-                $sql .= " AND t.type LIKE ?";
-                $params[] = '%' . $this->filters['type'] . '%';
-            }
-
-            if (!empty($this->filters['site_source'])) {
-                $sql .= " AND t.web_site_id = ?";
-                $params[] = $this->filters['site_source'];
-            }
-
-            $sql .= " ORDER BY t.vendor ASC, t.prix_ht DESC LIMIT 100";
-
-            $result = DB::connection('mysql')->select($sql, $params);
-
-            // Traiter les résultats
-            $processedResults = [];
-            foreach ($result as $product) {
-                if (isset($product->prix_ht)) {
-                    $product->prix_ht = $this->cleanPrice($product->prix_ht);
-                }
-
-                $product->product_url = $product->product_url ?? $product->url ?? null;
-                $product->image = $product->image ?? $product->image_url ?? null;
-                $product->similarity_score = null;
-                $product->match_level = null;
-                $product->is_manual_search = true;
-
-                $processedResults[] = $product;
-            }
-
-            $this->products = $processedResults;
-            $this->matchedProducts = $processedResults;
-            $this->hasData = !empty($processedResults);
+        if ($cachedResults !== null) {
+            $this->products = $cachedResults;
+            $this->matchedProducts = $cachedResults;
+            $this->hasData = !empty($cachedResults);
             $this->isAutomaticSearch = false;
             $this->hasAppliedFilters = true;
-
-            $this->cacheResults($cacheKey, $processedResults);
-
-        } catch (\Throwable $e) {
-            \Log::error('Error in manual search:', ['message' => $e->getMessage()]);
-            $this->products = [];
-            $this->hasData = false;
+            return;
         }
+
+        // Construire les conditions de filtre
+        $vendorConditions = [];
+        $vendorParams = [];
+        
+        if (!empty($this->filters['vendor'])) {
+            $vendorVariations = $this->getVendorVariations($this->filters['vendor']);
+            
+            foreach ($vendorVariations as $variation) {
+                $vendorConditions[] = "t.vendor LIKE ?";
+                $vendorParams[] = '%' . $variation . '%';
+            }
+        }
+
+        // Requête optimisée avec ROW_NUMBER
+        $sql = "SELECT 
+                    t.*,
+                    ws.name as site_name,
+                    t.url as product_url,
+                    t.image_url as image
+                FROM (
+                    SELECT
+                        sp.*,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY sp.url, sp.vendor, sp.name, sp.type, sp.variation
+                            ORDER BY sp.created_at DESC
+                        ) AS row_num
+                    FROM scraped_product sp
+                ) AS t
+                LEFT JOIN web_site ws ON t.web_site_id = ws.id
+                WHERE t.row_num = 1
+                AND (t.variation != 'Standard' OR t.variation IS NULL OR t.variation = '')";
+        
+        $params = [];
+
+        // Appliquer les filtres
+        if (!empty($vendorConditions)) {
+            $sql .= " AND (" . implode(' OR ', $vendorConditions) . ")";
+            $params = array_merge($params, $vendorParams);
+        }
+
+        if (!empty($this->filters['name'])) {
+            $sql .= " AND t.name LIKE ?";
+            $params[] = '%' . $this->filters['name'] . '%';
+        }
+
+        if (!empty($this->filters['variation'])) {
+            $sql .= " AND t.variation LIKE ?";
+            $params[] = '%' . $this->filters['variation'] . '%';
+        }
+
+        if (!empty($this->filters['type'])) {
+            $sql .= " AND t.type LIKE ?";
+            $params[] = '%' . $this->filters['type'] . '%';
+        }
+
+        // FILTRE MULTI-SELECT POUR SITE_SOURCE
+        if (!empty($this->filters['site_source']) && is_array($this->filters['site_source'])) {
+            $placeholders = implode(',', array_fill(0, count($this->filters['site_source']), '?'));
+            $sql .= " AND t.web_site_id IN (" . $placeholders . ")";
+            $params = array_merge($params, $this->filters['site_source']);
+        }
+
+        $sql .= " ORDER BY t.vendor ASC, t.prix_ht DESC LIMIT 100";
+
+        $result = DB::connection('mysql')->select($sql, $params);
+
+        // Traiter les résultats
+        $processedResults = [];
+        foreach ($result as $product) {
+            if (isset($product->prix_ht)) {
+                $product->prix_ht = $this->cleanPrice($product->prix_ht);
+            }
+
+            $product->product_url = $product->product_url ?? $product->url ?? null;
+            $product->image = $product->image ?? $product->image_url ?? null;
+            $product->similarity_score = null;
+            $product->match_level = null;
+            $product->is_manual_search = true;
+
+            $processedResults[] = $product;
+        }
+
+        $this->products = $processedResults;
+        $this->matchedProducts = $processedResults;
+        $this->hasData = !empty($processedResults);
+        $this->isAutomaticSearch = false;
+        $this->hasAppliedFilters = true;
+
+        $this->cacheResults($cacheKey, $processedResults);
+
+    } catch (\Throwable $e) {
+        \Log::error('Error in manual search:', ['message' => $e->getMessage()]);
+        $this->products = [];
+        $this->hasData = false;
     }
+}
 
     /**
      * Recherche automatique AVEC LA MÊME LOGIQUE QUE LA RECHERCHE MANUELLE
      */
-    public function getCompetitorPrice($search)
-    {
-        try {
-            if (empty($search)) {
-                return $this->resetSearchState();
-            }
+public function getCompetitorPrice($search)
+{
+    try {
+        if (empty($search)) {
+            return $this->resetSearchState();
+        }
 
-            $cacheKey = $this->getCacheKey($search, [], false);
-            $cachedData = $this->getCachedResults($cacheKey);
+        $cacheKey = $this->getCacheKey($search, [], false);
+        $cachedData = $this->getCachedResults($cacheKey);
 
-            if ($cachedData !== null) {
-                $this->matchedProducts = $cachedData['products'];
-                $this->products = $cachedData['products'];
-                $this->originalAutomaticResults = $cachedData['products'];
-                $this->hasAppliedFilters = false;
-                $this->hasData = !empty($cachedData['products']);
-                $this->isAutomaticSearch = true;
-                $this->showTable = true;
-
-                return $cachedData['full_result'];
-            }
-
-            // Log pour débogage
-            \Log::info('Automatic search started:', [
-                'search' => $search,
-                'current_vendor_filter' => $this->filters['vendor']
-            ]);
-
-            // NOUVELLE MÉTHODE : Utiliser la même logique que la recherche manuelle
-            // mais sans les filtres sauf pour le vendor
-            $allProducts = [];
-            
-            // Construire les conditions comme dans la recherche manuelle
-            $vendorConditions = [];
-            $vendorParams = [];
-            
-            // Récupérer le vendor extrait
-            $vendor = $this->filters['vendor'] ?? '';
-            if (empty($vendor)) {
-                // Si pas de vendor, extraire depuis la recherche
-                $vendor = $this->guessVendorFromSearch($search);
-            }
-            
-            if (!empty($vendor)) {
-                $vendorVariations = $this->getVendorVariations($vendor);
-                
-                foreach ($vendorVariations as $variation) {
-                    $vendorConditions[] = "lp.vendor LIKE ?";
-                    $vendorParams[] = '%' . $variation . '%';
-                }
-            }
-            
-            // Extraire le premier mot du nom du produit (après le vendor)
-            $firstProductWord = $this->extractFirstProductWord($search, $vendor);
-            \Log::info('Extracted first product word:', [
-                'search' => $search,
-                'vendor' => $vendor,
-                'first_product_word' => $firstProductWord
-            ]);
-            
-            // Construire la requête SQL comme dans la recherche manuelle
-            $sql = "SELECT 
-                        lp.*, 
-                        ws.name as site_name, 
-                        lp.url as product_url, 
-                        lp.image_url as image
-                    FROM last_price_scraped_product lp
-                    LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-                    WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')";
-            
-            $params = [];
-
-            // Appliquer les conditions du vendor
-            if (!empty($vendorConditions)) {
-                $sql .= " AND (" . implode(' OR ', $vendorConditions) . ")";
-                $params = array_merge($params, $vendorParams);
-            }
-            
-            // Ajouter une condition pour le premier mot du produit si trouvé
-            if (!empty($firstProductWord)) {
-                $sql .= " AND (lp.name LIKE ? OR lp.variation LIKE ?)";
-                $params[] = '%' . $firstProductWord . '%';
-                $params[] = '%' . $firstProductWord . '%';
-            }
-
-            $sql .= " ORDER BY lp.prix_ht DESC LIMIT 100";
-
-            \Log::info('Automatic search SQL:', [
-                'sql' => $sql,
-                'params' => $params
-            ]);
-
-            $allProducts = DB::connection('mysql')->select($sql, $params);
-
-            \Log::info('Total products found:', ['count' => count($allProducts)]);
-
-            // Si peu de résultats avec cette méthode, essayer la méthode originale
-            if (count($allProducts) < 5) {
-                \Log::info('Too few results with manual-like search, trying full search');
-                
-                // ÉTAPE 2 : Recherche FULLTEXT comme avant
-                $searchQuery = $this->prepareAutomaticSearchTerms($search);
-                
-                $sqlFullSearch = "SELECT 
-                        lp.*, 
-                        ws.name as site_name, 
-                        lp.url as product_url, 
-                        lp.image_url as image
-                    FROM last_price_scraped_product lp
-                    LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-                    WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
-                        AGAINST (? IN BOOLEAN MODE)
-                    AND (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
-                    ORDER BY lp.prix_ht DESC 
-                    LIMIT 200";
-
-                $fullSearchProducts = DB::connection('mysql')->select($sqlFullSearch, [$searchQuery]);
-                
-                // Combiner les résultats, éviter les doublons
-                $allProductsIds = [];
-                foreach ($allProducts as $product) {
-                    $allProductsIds[] = $product->id ?? $product->url;
-                }
-                
-                foreach ($fullSearchProducts as $product) {
-                    $productId = $product->id ?? $product->url;
-                    if (!in_array($productId, $allProductsIds)) {
-                        $allProducts[] = $product;
-                        $allProductsIds[] = $productId;
-                    }
-                }
-            }
-
-            \Log::info('Total products after all searches:', ['count' => count($allProducts)]);
-
-            if (empty($allProducts)) {
-                return $this->handleEmptyResults($cacheKey);
-            }
-
-            // Traiter les produits
-            $processedProducts = [];
-            foreach ($allProducts as $product) {
-                if (isset($product->prix_ht)) {
-                    $product->prix_ht = $this->cleanPrice($product->prix_ht);
-                }
-                if (isset($product->vendor)) {
-                    $product->vendor = $this->normalizeVendor($product->vendor);
-                }
-                $product->product_url = $product->product_url ?? $product->url ?? null;
-                $product->image = $product->image ?? $product->image_url ?? null;
-                $product->is_manual_search = false;
-                $processedProducts[] = $product;
-            }
-
-            // Extraction des composants pour la similarité
-            $components = $this->extractSearchComponents($search);
-            $this->searchVolumes = $components['volumes'];
-            $this->extractSearchVariationKeywords($search);
-
-            \Log::info('Components extracted:', [
-                'vendor' => $components['vendor'],
-                'product_name' => $components['product_name'],
-                'first_product_word' => $components['first_product_word'],
-                'volumes' => $components['volumes']
-            ]);
-
-            // Calcul de similarité avec seuil réduit pour plus de résultats
-            $matchedProducts = [];
-            $tempThreshold = $this->similarityThreshold;
-            
-            // Si peu de résultats, baisser le seuil temporairement
-            if (count($processedProducts) < 10) {
-                $tempThreshold = max(0.3, $this->similarityThreshold - 0.2);
-                \Log::info('Lowering threshold for more results:', [
-                    'original' => $this->similarityThreshold,
-                    'temp' => $tempThreshold
-                ]);
-            }
-            
-            foreach ($processedProducts as $product) {
-                $similarityScore = $this->computeOverallSimilarityImproved($product, $search, $components);
-                
-                if ($similarityScore >= $tempThreshold) {
-                    $product->similarity_score = $similarityScore;
-                    $product->match_level = $this->getMatchLevel($similarityScore);
-                    $product->search_source = 'mixed';
-                    $matchedProducts[] = $product;
-                }
-            }
-
-            // Trier par score décroissant
-            usort($matchedProducts, function ($a, $b) {
-                return $b->similarity_score <=> $a->similarity_score;
-            });
-
-            \Log::info('Products after similarity filter:', [
-                'count' => count($matchedProducts),
-                'threshold_used' => $tempThreshold
-            ]);
-
-            // Préparer le résultat final
-            $fullResult = [
-                'count' => count($matchedProducts),
-                'has_data' => !empty($matchedProducts),
-                'products' => $matchedProducts,
-                'product' => $this->getOneProductDetails($this->id),
-                'query' => $search,
-                'vendor_used' => $vendor,
-                'first_product_word' => $firstProductWord,
-                'volumes' => $components['volumes'],
-                'variation_keywords' => $this->searchVariationKeywords,
-                'search_strategy' => 'manual_like_search'
-            ];
-
-            // Mettre en cache
-            $this->cacheResults($cacheKey, [
-                'products' => $matchedProducts,
-                'full_result' => $fullResult
-            ]);
-
-            // Mettre à jour les propriétés
-            $this->matchedProducts = $matchedProducts;
-            $this->products = $matchedProducts;
-            $this->originalAutomaticResults = $matchedProducts;
+        if ($cachedData !== null) {
+            $this->matchedProducts = $cachedData['products'];
+            $this->products = $cachedData['products'];
+            $this->originalAutomaticResults = $cachedData['products'];
             $this->hasAppliedFilters = false;
-            $this->hasData = !empty($matchedProducts);
+            $this->hasData = !empty($cachedData['products']);
             $this->isAutomaticSearch = true;
             $this->showTable = true;
 
-            return $fullResult;
-
-        } catch (\Throwable $e) {
-            \Log::error('Competitor price error:', [
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            $this->products = [];
-            $this->hasData = false;
-            $this->originalAutomaticResults = [];
-            $this->hasAppliedFilters = false;
-            $this->showTable = true;
-            return ['error' => $e->getMessage()];
+            return $cachedData['full_result'];
         }
+
+        // Log pour débogage
+        \Log::info('Automatic search started:', [
+            'search' => $search,
+            'current_vendor_filter' => $this->filters['vendor']
+        ]);
+
+        // NOUVELLE MÉTHODE : Utiliser la même logique que la recherche manuelle
+        // mais sans les filtres sauf pour le vendor
+        $allProducts = [];
+        
+        // Construire les conditions comme dans la recherche manuelle
+        $vendorConditions = [];
+        $vendorParams = [];
+        
+        // Récupérer le vendor extrait
+        $vendor = $this->filters['vendor'] ?? '';
+        if (empty($vendor)) {
+            // Si pas de vendor, extraire depuis la recherche
+            $vendor = $this->guessVendorFromSearch($search);
+        }
+        
+        if (!empty($vendor)) {
+            $vendorVariations = $this->getVendorVariations($vendor);
+            
+            foreach ($vendorVariations as $variation) {
+                $vendorConditions[] = "lp.vendor LIKE ?";
+                $vendorParams[] = '%' . $variation . '%';
+            }
+        }
+        
+        // Extraire le premier mot du nom du produit (après le vendor)
+        $firstProductWord = $this->extractFirstProductWord($search, $vendor);
+        \Log::info('Extracted first product word:', [
+            'search' => $search,
+            'vendor' => $vendor,
+            'first_product_word' => $firstProductWord
+        ]);
+        
+        // Construire la requête SQL comme dans la recherche manuelle
+        $sql = "SELECT 
+                    lp.*, 
+                    ws.name as site_name, 
+                    lp.url as product_url, 
+                    lp.image_url as image
+                FROM last_price_scraped_product lp
+                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+                WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')";
+        
+        $params = [];
+
+        // Appliquer les conditions du vendor
+        if (!empty($vendorConditions)) {
+            $sql .= " AND (" . implode(' OR ', $vendorConditions) . ")";
+            $params = array_merge($params, $vendorParams);
+        }
+        
+        // Ajouter une condition pour le premier mot du produit si trouvé
+        if (!empty($firstProductWord)) {
+            $sql .= " AND (lp.name LIKE ? OR lp.variation LIKE ?)";
+            $params[] = '%' . $firstProductWord . '%';
+            $params[] = '%' . $firstProductWord . '%';
+        }
+
+        // FILTRE MULTI-SELECT POUR SITE_SOURCE (si appliqué)
+        if (!empty($this->filters['site_source']) && is_array($this->filters['site_source'])) {
+            $placeholders = implode(',', array_fill(0, count($this->filters['site_source']), '?'));
+            $sql .= " AND lp.web_site_id IN (" . $placeholders . ")";
+            $params = array_merge($params, $this->filters['site_source']);
+        }
+
+        $sql .= " ORDER BY lp.prix_ht DESC LIMIT 100";
+
+        \Log::info('Automatic search SQL:', [
+            'sql' => $sql,
+            'params' => $params
+        ]);
+
+        $allProducts = DB::connection('mysql')->select($sql, $params);
+
+        \Log::info('Total products found:', ['count' => count($allProducts)]);
+
+        // Si peu de résultats avec cette méthode, essayer la méthode originale
+        if (count($allProducts) < 5) {
+            \Log::info('Too few results with manual-like search, trying full search');
+            
+            // ÉTAPE 2 : Recherche FULLTEXT comme avant
+            $searchQuery = $this->prepareAutomaticSearchTerms($search);
+            
+            $sqlFullSearch = "SELECT 
+                    lp.*, 
+                    ws.name as site_name, 
+                    lp.url as product_url, 
+                    lp.image_url as image
+                FROM last_price_scraped_product lp
+                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+                WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
+                    AGAINST (? IN BOOLEAN MODE)
+                AND (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')";
+
+            $fullSearchParams = [$searchQuery];
+
+            // FILTRE MULTI-SELECT POUR SITE_SOURCE dans la recherche FULLTEXT
+            if (!empty($this->filters['site_source']) && is_array($this->filters['site_source'])) {
+                $placeholders = implode(',', array_fill(0, count($this->filters['site_source']), '?'));
+                $sqlFullSearch .= " AND lp.web_site_id IN (" . $placeholders . ")";
+                $fullSearchParams = array_merge($fullSearchParams, $this->filters['site_source']);
+            }
+
+            $sqlFullSearch .= " ORDER BY lp.prix_ht DESC LIMIT 200";
+
+            $fullSearchProducts = DB::connection('mysql')->select($sqlFullSearch, $fullSearchParams);
+            
+            // Combiner les résultats, éviter les doublons
+            $allProductsIds = [];
+            foreach ($allProducts as $product) {
+                $allProductsIds[] = $product->id ?? $product->url;
+            }
+            
+            foreach ($fullSearchProducts as $product) {
+                $productId = $product->id ?? $product->url;
+                if (!in_array($productId, $allProductsIds)) {
+                    $allProducts[] = $product;
+                    $allProductsIds[] = $productId;
+                }
+            }
+        }
+
+        \Log::info('Total products after all searches:', ['count' => count($allProducts)]);
+
+        if (empty($allProducts)) {
+            return $this->handleEmptyResults($cacheKey);
+        }
+
+        // Traiter les produits
+        $processedProducts = [];
+        foreach ($allProducts as $product) {
+            if (isset($product->prix_ht)) {
+                $product->prix_ht = $this->cleanPrice($product->prix_ht);
+            }
+            if (isset($product->vendor)) {
+                $product->vendor = $this->normalizeVendor($product->vendor);
+            }
+            $product->product_url = $product->product_url ?? $product->url ?? null;
+            $product->image = $product->image ?? $product->image_url ?? null;
+            $product->is_manual_search = false;
+            $processedProducts[] = $product;
+        }
+
+        // Extraction des composants pour la similarité
+        $components = $this->extractSearchComponents($search);
+        $this->searchVolumes = $components['volumes'];
+        $this->extractSearchVariationKeywords($search);
+
+        \Log::info('Components extracted:', [
+            'vendor' => $components['vendor'],
+            'product_name' => $components['product_name'],
+            'first_product_word' => $components['first_product_word'],
+            'volumes' => $components['volumes']
+        ]);
+
+        // Calcul de similarité avec seuil réduit pour plus de résultats
+        $matchedProducts = [];
+        $tempThreshold = $this->similarityThreshold;
+        
+        // Si peu de résultats, baisser le seuil temporairement
+        if (count($processedProducts) < 10) {
+            $tempThreshold = max(0.3, $this->similarityThreshold - 0.2);
+            \Log::info('Lowering threshold for more results:', [
+                'original' => $this->similarityThreshold,
+                'temp' => $tempThreshold
+            ]);
+        }
+        
+        foreach ($processedProducts as $product) {
+            $similarityScore = $this->computeOverallSimilarityImproved($product, $search, $components);
+            
+            if ($similarityScore >= $tempThreshold) {
+                $product->similarity_score = $similarityScore;
+                $product->match_level = $this->getMatchLevel($similarityScore);
+                $product->search_source = 'mixed';
+                $matchedProducts[] = $product;
+            }
+        }
+
+        // Trier par score décroissant
+        usort($matchedProducts, function ($a, $b) {
+            return $b->similarity_score <=> $a->similarity_score;
+        });
+
+        \Log::info('Products after similarity filter:', [
+            'count' => count($matchedProducts),
+            'threshold_used' => $tempThreshold
+        ]);
+
+        // Préparer le résultat final
+        $fullResult = [
+            'count' => count($matchedProducts),
+            'has_data' => !empty($matchedProducts),
+            'products' => $matchedProducts,
+            'product' => $this->getOneProductDetails($this->id),
+            'query' => $search,
+            'vendor_used' => $vendor,
+            'first_product_word' => $firstProductWord,
+            'volumes' => $components['volumes'],
+            'variation_keywords' => $this->searchVariationKeywords,
+            'search_strategy' => 'manual_like_search'
+        ];
+
+        // Mettre en cache
+        $this->cacheResults($cacheKey, [
+            'products' => $matchedProducts,
+            'full_result' => $fullResult
+        ]);
+
+        // Mettre à jour les propriétés
+        $this->matchedProducts = $matchedProducts;
+        $this->products = $matchedProducts;
+        $this->originalAutomaticResults = $matchedProducts;
+        $this->hasAppliedFilters = false;
+        $this->hasData = !empty($matchedProducts);
+        $this->isAutomaticSearch = true;
+        $this->showTable = true;
+
+        return $fullResult;
+
+    } catch (\Throwable $e) {
+        \Log::error('Competitor price error:', [
+            'message' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+        $this->products = [];
+        $this->hasData = false;
+        $this->originalAutomaticResults = [];
+        $this->hasAppliedFilters = false;
+        $this->showTable = true;
+        return ['error' => $e->getMessage()];
     }
+}
 
     /**
      * Méthode de similarité AMÉLIORÉE avec premier mot du produit
@@ -2417,21 +2436,25 @@ new class extends Component {
                     @endif
 
                     @if($filters['site_source'])
-                        @php
-                            $selectedSite = $sites->firstWhere('id', $filters['site_source']);
-                            $siteName = $selectedSite ? $selectedSite->name : 'Site ID: ' . $filters['site_source'];
-                        @endphp
-                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
-                            Site: {{ $siteName }}
-                            <button wire:click="$set('filters.site_source', '')" 
-                                    class="ml-2 text-indigo-600 hover:text-indigo-800 flex items-center"
-                                    wire:loading.attr="disabled">
-                                <span wire:loading.remove wire:target="$set('filters.site_source', '')">×</span>
-                                <span wire:loading wire:target="$set('filters.site_source', '')">
-                                    <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-indigo-600"></div>
-                                </span>
-                            </button>
-                        </span>
+@if(!empty($this->filters['site_source']))
+    @foreach($this->filters['site_source'] as $siteId)
+        @php
+            $selectedSite = $sites->firstWhere('id', $siteId);
+            $siteName = $selectedSite ? $selectedSite->name : 'Site ID: ' . $siteId;
+        @endphp
+        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
+            Site: {{ $siteName }}
+            <button wire:click="$set('filters.site_source', {{ json_encode(array_values(array_diff($this->filters['site_source'], [$siteId]))) }})" 
+                    class="ml-2 text-indigo-600 hover:text-indigo-800 flex items-center"
+                    wire:loading.attr="disabled">
+                <span wire:loading.remove wire:target="$set('filters.site_source', {{ json_encode(array_values(array_diff($this->filters['site_source'], [$siteId]))) }})">×</span>
+                <span wire:loading wire:target="$set('filters.site_source', {{ json_encode(array_values(array_diff($this->filters['site_source'], [$siteId]))) }})">
+                    <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-indigo-600"></div>
+                </span>
+            </button>
+        </span>
+    @endforeach
+@endif
                     @endif
                 </div>
             </div>
@@ -2543,24 +2566,25 @@ new class extends Component {
                                 </th>
                                 
                                 <!-- Colonne Site Source avec filtre -->
-                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
-                                    <div class="flex flex-col space-y-1">
-                                        <span>Site Source</span>
-                                        <div class="relative">
-                                            <select wire:model.live="filters.site_source"
-                                                    class="px-2 py-1 text-xs border border-gray-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-full"
-                                                    wire:loading.attr="disabled">
-                                                <option value="">Tous</option>
-                                                @foreach($sites as $site)
-                                                    <option value="{{ $site->id }}">{{ $site->name }}</option>
-                                                @endforeach
-                                            </select>
-                                            <div wire:loading wire:target="filters.site_source" class="absolute right-2 top-1/2 transform -translate-y-1/2">
-                                                <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </th>
+<th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
+    <div class="flex flex-col space-y-1">
+        <span>Site Source</span>
+        <div class="relative">
+            <select wire:model.live="filters.site_source"
+                    multiple
+                    class="px-2 py-1 text-xs border border-gray-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-full"
+                    wire:loading.attr="disabled"
+                    size="3">
+                @foreach($sites as $site)
+                    <option value="{{ $site->id }}">{{ $site->name }}</option>
+                @endforeach
+            </select>
+            <div wire:loading wire:target="filters.site_source" class="absolute right-2 top-1/2 transform -translate-y-1/2">
+                <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
+            </div>
+        </div>
+    </div>
+</th>
                                 
                                 <!-- Colonne Prix HT -->
                                 <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
