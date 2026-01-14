@@ -49,6 +49,7 @@ class Boutique extends Component
 
     public function applyFilters()
     {
+        dd($this->filterEAN);
         $this->resetPage();
         $this->dispatch('close-drawer');
     }
