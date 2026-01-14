@@ -2571,9 +2571,9 @@ public function getCompetitorPrice($search)
     <div class="flex flex-col space-y-2">
         <span>Site Source</span>
         <div x-data="{ open: false }" @click.away="open = false" class="relative">
-            <!-- Display des sites sélectionnés -->
+            <!-- Display des sites sélectionnés - LARGEUR AUGMENTÉE -->
             <div @click="open = !open" 
-                 class="min-h-[38px] px-3 py-2 text-sm border border-gray-400 rounded-lg cursor-pointer bg-white hover:border-blue-500 transition-colors"
+                 class="min-h-[38px] min-w-[250px] px-3 py-2 text-xs border border-gray-400 rounded-lg cursor-pointer bg-white hover:border-blue-500 transition-colors"
                  :class="{ 'ring-2 ring-blue-500 border-blue-500': open }">
                 @if(empty($filters['site_source']))
                     <span class="text-gray-400 text-xs">Sélectionner des sites...</span>
@@ -2584,12 +2584,13 @@ public function getCompetitorPrice($search)
                                 $site = $sites->firstWhere('id', $siteId);
                             @endphp
                             @if($site)
-                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-300">
+                                <!-- TAILLE DE TEXTE RÉDUITE -->
+                                <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-indigo-100 text-indigo-800 border border-indigo-300">
                                     {{ $site->name }}
                                     <button 
                                         type="button"
                                         wire:click.stop="$set('filters.site_source', {{ json_encode(array_values(array_diff($filters['site_source'], [$siteId]))) }})"
-                                        class="ml-1 text-indigo-600 hover:text-indigo-800 focus:outline-none"
+                                        class="ml-1 text-indigo-600 hover:text-indigo-800 focus:outline-none text-xs"
                                     >
                                         ×
                                     </button>
@@ -2601,13 +2602,13 @@ public function getCompetitorPrice($search)
                 
                 <!-- Icône dropdown -->
                 <div class="absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none">
-                    <svg class="w-4 h-4 text-gray-400" :class="{ 'rotate-180': open }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="w-3 h-3 text-gray-400" :class="{ 'rotate-180': open }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
                     </svg>
                 </div>
             </div>
             
-            <!-- Dropdown menu -->
+            <!-- Dropdown menu - LARGEUR AUGMENTÉE -->
             <div x-show="open" 
                  x-transition:enter="transition ease-out duration-100"
                  x-transition:enter-start="transform opacity-0 scale-95"
@@ -2615,38 +2616,38 @@ public function getCompetitorPrice($search)
                  x-transition:leave="transition ease-in duration-75"
                  x-transition:leave-start="transform opacity-100 scale-100"
                  x-transition:leave-end="transform opacity-0 scale-95"
-                 class="absolute z-50 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg max-h-64 overflow-y-auto"
+                 class="absolute z-50 mt-1 min-w-[250px] bg-white border border-gray-300 rounded-lg shadow-lg max-h-64 overflow-y-auto"
                  style="display: none;">
                 
-                <!-- Boutons Tout sélectionner / Tout désélectionner -->
+                <!-- Boutons Tout sélectionner / Tout désélectionner - TEXTE RÉDUIT -->
                 <div class="sticky top-0 p-2 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
                     <button 
                         type="button"
                         wire:click="$set('filters.site_source', {{ json_encode($sites->pluck('id')->toArray()) }})"
-                        class="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                        class="text-[10px] text-blue-600 hover:text-blue-800 font-medium"
                     >
                         Tout sélectionner
                     </button>
                     <button 
                         type="button"
                         wire:click="$set('filters.site_source', [])"
-                        class="text-xs text-gray-600 hover:text-gray-800 font-medium"
+                        class="text-[10px] text-gray-600 hover:text-gray-800 font-medium"
                     >
                         Tout désélectionner
                     </button>
                 </div>
                 
-                <!-- Liste des sites -->
+                <!-- Liste des sites - TEXTE RÉDUIT -->
                 <div class="py-1">
                     @foreach($sites as $site)
-                        <label class="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer transition-colors">
+                        <label class="flex items-center px-3 py-1.5 hover:bg-gray-50 cursor-pointer transition-colors">
                             <input 
                                 type="checkbox" 
                                 value="{{ $site->id }}"
                                 wire:model.live="filters.site_source"
-                                class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                                class="h-3 w-3 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
                             >
-                            <span class="ml-2 text-sm text-gray-700">{{ $site->name }}</span>
+                            <span class="ml-2 text-xs text-gray-700">{{ $site->name }}</span>
                         </label>
                     @endforeach
                 </div>
@@ -2654,7 +2655,7 @@ public function getCompetitorPrice($search)
             
             <!-- Loading indicator -->
             <div wire:loading wire:target="filters.site_source" class="absolute right-8 top-1/2 transform -translate-y-1/2">
-                <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
             </div>
         </div>
     </div>
