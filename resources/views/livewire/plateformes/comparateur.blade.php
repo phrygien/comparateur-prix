@@ -8,6 +8,13 @@ use Illuminate\Support\Facades\Cache;
 use App\Models\Site as WebSite;
 use Illuminate\Support\Str;
 
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
+
 new class extends Component {
     public $products = [];
     public $hasData = false;
@@ -2114,6 +2121,248 @@ public function getCompetitorPrice($search)
 
         return in_array(strtolower($extension), $imageExtensions);
     }
+
+
+
+/**
+ * Export des résultats vers Excel
+ */
+public function exportToExcel()
+{
+    try {
+        // Vérifier qu'il y a des résultats à exporter
+        if (empty($this->matchedProducts)) {
+            session()->flash('error', 'Aucun produit à exporter.');
+            return;
+        }
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        
+        // Définir le titre de la feuille
+        $sheet->setTitle('Résultats Recherche');
+        
+        // En-têtes de colonnes
+        $headers = ['Image URL', 'Vendor', 'Nom', 'Variation', 'Site Source', 'Prix HT', 'Date MAJ'];
+        
+        // Ajouter les colonnes de comparaison de prix si on a un prix de référence
+        if ($this->referencePrice) {
+            $headers[] = 'Prix Cosmaparfumerie';
+            $headers[] = 'Différence Cosmaparfumerie';
+            $headers[] = 'Différence %';
+            $headers[] = 'Prix Cosmashop';
+            $headers[] = 'Différence Cosmashop';
+            $headers[] = 'Différence Cosmashop %';
+        }
+        
+        $headers[] = 'Type';
+        $headers[] = 'URL';
+        
+        // Ajouter les colonnes de score si recherche automatique
+        if ($this->isAutomaticSearch) {
+            array_splice($headers, 1, 0, ['Score %', 'Correspondance']);
+        }
+        
+        // Écrire les en-têtes
+        $col = 'A';
+        foreach ($headers as $header) {
+            $sheet->setCellValue($col . '1', $header);
+            
+            // Style des en-têtes
+            $sheet->getStyle($col . '1')->applyFromArray([
+                'font' => [
+                    'bold' => true,
+                    'color' => ['rgb' => 'FFFFFF'],
+                    'size' => 11
+                ],
+                'fill' => [
+                    'fillType' => Fill::FILL_SOLID,
+                    'startColor' => ['rgb' => '4472C4']
+                ],
+                'alignment' => [
+                    'horizontal' => Alignment::HORIZONTAL_CENTER,
+                    'vertical' => Alignment::VERTICAL_CENTER
+                ],
+                'borders' => [
+                    'allBorders' => [
+                        'borderStyle' => Border::BORDER_THIN,
+                        'color' => ['rgb' => '000000']
+                    ]
+                ]
+            ]);
+            
+            $col++;
+        }
+        
+        // Données des produits
+        $row = 2;
+        foreach ($this->matchedProducts as $product) {
+            $col = 'A';
+            
+            // Image URL
+            $imageUrl = $this->getProductImage($product);
+            $sheet->setCellValue($col++ . $row, $imageUrl);
+            
+            // Score et Correspondance (si recherche automatique)
+            if ($this->isAutomaticSearch) {
+                $similarityScore = $product->similarity_score ?? null;
+                $matchLevel = $product->match_level ?? null;
+                
+                $sheet->setCellValue($col . $row, $similarityScore ? round($similarityScore * 100, 0) : 'N/A');
+                $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('0"%"');
+                $col++;
+                
+                $sheet->setCellValue($col++ . $row, $matchLevel ? ucfirst($matchLevel) : 'N/A');
+            }
+            
+            // Vendor
+            $sheet->setCellValue($col++ . $row, $product->vendor ?? 'N/A');
+            
+            // Nom
+            $sheet->setCellValue($col++ . $row, $product->name ?? 'N/A');
+            
+            // Variation
+            $sheet->setCellValue($col++ . $row, $product->variation ?? 'Standard');
+            
+            // Site Source
+            $productUrl = $this->getProductUrl($product);
+            $siteName = $product->site_name ?? $this->extractDomain($productUrl ?? '');
+            $sheet->setCellValue($col++ . $row, $siteName);
+            
+            // Prix HT
+            $prixHT = $this->cleanPrice($product->price_ht ?? $product->prix_ht);
+            $sheet->setCellValue($col . $row, $prixHT);
+            $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
+            $col++;
+            
+            // Date MAJ
+            $sheet->setCellValue($col++ . $row, \Carbon\Carbon::parse($product->updated_at)->format('d/m/Y H:i'));
+            
+            // Colonnes de comparaison de prix
+            if ($this->referencePrice) {
+                $competitorPrice = $product->price_ht ?? $product->prix_ht;
+                $priceDifference = $this->calculatePriceDifference($competitorPrice);
+                $priceDifferencePercent = $this->calculatePriceDifferencePercentage($competitorPrice);
+                
+                // Prix Cosmaparfumerie
+                $sheet->setCellValue($col . $row, $this->cleanPrice($this->referencePrice));
+                $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
+                $col++;
+                
+                // Différence Cosmaparfumerie
+                $sheet->setCellValue($col . $row, $priceDifference);
+                $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
+                // Colorer en rouge si négatif, vert si positif
+                if ($priceDifference < 0) {
+                    $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('FF0000');
+                } elseif ($priceDifference > 0) {
+                    $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('00B050');
+                }
+                $col++;
+                
+                // Différence %
+                $sheet->setCellValue($col . $row, $priceDifferencePercent);
+                $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('0.0"%"');
+                if ($priceDifferencePercent < 0) {
+                    $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('FF0000');
+                } elseif ($priceDifferencePercent > 0) {
+                    $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('00B050');
+                }
+                $col++;
+                
+                // Prix Cosmashop
+                $sheet->setCellValue($col . $row, $this->cleanPrice($this->cosmashopPrice));
+                $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
+                $col++;
+                
+                // Différence Cosmashop
+                $cosmashopDifference = $this->calculateCosmashopPriceDifference($competitorPrice);
+                $sheet->setCellValue($col . $row, $cosmashopDifference);
+                $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
+                if ($cosmashopDifference < 0) {
+                    $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('FF0000');
+                } elseif ($cosmashopDifference > 0) {
+                    $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('00B050');
+                }
+                $col++;
+                
+                // Différence Cosmashop %
+                $cosmashopDifferencePercent = $this->calculateCosmashopPriceDifferencePercentage($competitorPrice);
+                $sheet->setCellValue($col . $row, $cosmashopDifferencePercent);
+                $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('0.0"%"');
+                if ($cosmashopDifferencePercent < 0) {
+                    $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('FF0000');
+                } elseif ($cosmashopDifferencePercent > 0) {
+                    $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('00B050');
+                }
+                $col++;
+            }
+            
+            // Type
+            $sheet->setCellValue($col++ . $row, $product->type ?? 'N/A');
+            
+            // URL
+            $sheet->setCellValue($col++ . $row, $productUrl ?? 'N/A');
+            
+            // Alternance des couleurs de lignes
+            if ($row % 2 === 0) {
+                $lastCol = $col;
+                $lastCol--;
+                $sheet->getStyle('A' . $row . ':' . $lastCol . $row)->applyFromArray([
+                    'fill' => [
+                        'fillType' => Fill::FILL_SOLID,
+                        'startColor' => ['rgb' => 'F2F2F2']
+                    ]
+                ]);
+            }
+            
+            // Bordures pour toute la ligne
+            $lastCol = $col;
+            $lastCol--;
+            $sheet->getStyle('A' . $row . ':' . $lastCol . $row)->applyFromArray([
+                'borders' => [
+                    'allBorders' => [
+                        'borderStyle' => Border::BORDER_THIN,
+                        'color' => ['rgb' => 'D0D0D0']
+                    ]
+                ]
+            ]);
+            
+            $row++;
+        }
+        
+        // Ajuster automatiquement la largeur des colonnes
+        foreach (range('A', $sheet->getHighestColumn()) as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+        
+        // Figer la première ligne
+        $sheet->freezePane('A2');
+        
+        // Créer le nom du fichier
+        $filename = 'resultats_recherche_' . date('Y-m-d_His') . '.xlsx';
+        
+        // Créer le writer et sauvegarder
+        $writer = new Xlsx($spreadsheet);
+        
+        // Créer un fichier temporaire
+        $tempFile = tempnam(sys_get_temp_dir(), 'export_');
+        $writer->save($tempFile);
+        
+        // Télécharger le fichier
+        return response()->download($tempFile, $filename)->deleteFileAfterSend(true);
+        
+    } catch (\Throwable $e) {
+        \Log::error('Error exporting to Excel:', [
+            'message' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+        
+        session()->flash('error', 'Erreur lors de l\'export Excel: ' . $e->getMessage());
+        return;
+    }
+}
+
 }; ?>
 
 <div>
@@ -2462,6 +2711,49 @@ public function getCompetitorPrice($search)
 
         <!-- Tableau des résultats - TOUJOURS AFFICHÉ -->
         @if($showTable)
+
+        <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+    <div>
+        <h3 class="text-lg font-medium text-gray-900">
+            @if($hasData)
+                @if($isAutomaticSearch)
+                    Résultats de la recherche automatique ({{ count($matchedProducts) }} produit(s))
+                @else
+                    Résultats de la recherche manuelle ({{ count($matchedProducts) }} produit(s))
+                @endif
+            @else
+                Recherche manuelle - Utilisez les filtres
+            @endif
+        </h3>
+        <p class="mt-1 text-sm text-gray-500">
+            @if($hasData)
+                <span wire:loading.remove wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
+                    {{ count($matchedProducts) }} produit(s) trouvé(s)
+                </span>
+            @else
+                Aucun résultat automatique. Utilisez les filtres pour rechercher manuellement.
+            @endif
+        </p>
+    </div>
+    
+    @if($hasData && count($matchedProducts) > 0)
+        <button wire:click="exportToExcel" 
+                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-200"
+                wire:loading.attr="disabled">
+            <span wire:loading.remove wire:target="exportToExcel">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                Exporter Excel
+            </span>
+            <span wire:loading wire:target="exportToExcel" class="flex items-center">
+                <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                Export en cours...
+            </span>
+        </button>
+    @endif
+</div>
+
             <div class="bg-white shadow-sm border border-gray-300 overflow-hidden" wire:loading.class="opacity-50" wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
                 <div class="px-6 py-4 border-b border-gray-200">
                     <h3 class="text-lg font-medium text-gray-900">
