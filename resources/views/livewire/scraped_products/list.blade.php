@@ -81,86 +81,54 @@ new class extends Component {
         
         $products = $query->orderBy('vendor', 'asc')->get();
         
-        // Créer un export Excel simple avec PhpSpreadsheet
-        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet();
+        // Nom du fichier
+        $filename = 'produits_concurrents_' . date('Y-m-d_His') . '.csv';
         
-        // Définir le titre de la feuille
-        $sheet->setTitle('Produits Concurrents');
+        // Créer le CSV avec BOM UTF-8 pour Excel
+        $output = chr(0xEF) . chr(0xBB) . chr(0xBF); // BOM UTF-8
         
         // En-têtes
         $headers = ['Vendeur', 'Nom du produit', 'Type', 'Variation', 'Prix HT', 'Devise', 'Site web', 'URL', 'Date de scraping', 'Image URL'];
-        $sheet->fromArray($headers, null, 'A1');
-        
-        // Style de l'en-tête
-        $headerStyle = [
-            'font' => [
-                'bold' => true,
-                'color' => ['rgb' => 'FFFFFF'],
-                'size' => 12
-            ],
-            'fill' => [
-                'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
-                'startColor' => ['rgb' => '4F46E5']
-            ],
-            'alignment' => [
-                'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
-                'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER
-            ]
-        ];
-        $sheet->getStyle('A1:J1')->applyFromArray($headerStyle);
+        $output .= implode(';', $headers) . "\r\n";
         
         // Données
-        $row = 2;
         foreach ($products as $product) {
             $site = Site::find($product->web_site_id);
             
-            $sheet->setCellValue('A' . $row, $product->vendor ?? '');
-            $sheet->setCellValue('B' . $row, $product->name ?? '');
-            $sheet->setCellValue('C' . $row, $product->type ?? '');
-            $sheet->setCellValue('D' . $row, $product->variation ?? '');
-            $sheet->setCellValue('E' . $row, $product->prix_ht ?? '');
-            $sheet->setCellValue('F' . $row, $product->currency ?? '');
-            $sheet->setCellValue('G' . $row, $site ? $site->name : '');
-            $sheet->setCellValue('H' . $row, $product->url ?? '');
-            $sheet->setCellValue('I' . $row, $product->created_at ? \Carbon\Carbon::parse($product->created_at)->format('d/m/Y H:i:s') : '');
-            $sheet->setCellValue('J' . $row, $product->image_url ?? '');
+            $row = [
+                $this->escapeCsv($product->vendor ?? ''),
+                $this->escapeCsv($product->name ?? ''),
+                $this->escapeCsv($product->type ?? ''),
+                $this->escapeCsv($product->variation ?? ''),
+                $product->prix_ht ?? '',
+                $product->currency ?? '',
+                $this->escapeCsv($site ? $site->name : ''),
+                $this->escapeCsv($product->url ?? ''),
+                $product->created_at ? \Carbon\Carbon::parse($product->created_at)->format('d/m/Y H:i:s') : '',
+                $this->escapeCsv($product->image_url ?? '')
+            ];
             
-            $row++;
+            $output .= implode(';', $row) . "\r\n";
         }
         
-        // Largeurs de colonnes
-        $sheet->getColumnDimension('A')->setWidth(20);  // Vendeur
-        $sheet->getColumnDimension('B')->setWidth(50);  // Nom
-        $sheet->getColumnDimension('C')->setWidth(20);  // Type
-        $sheet->getColumnDimension('D')->setWidth(20);  // Variation
-        $sheet->getColumnDimension('E')->setWidth(12);  // Prix
-        $sheet->getColumnDimension('F')->setWidth(8);   // Devise
-        $sheet->getColumnDimension('G')->setWidth(25);  // Site
-        $sheet->getColumnDimension('H')->setWidth(60);  // URL
-        $sheet->getColumnDimension('I')->setWidth(20);  // Date
-        $sheet->getColumnDimension('J')->setWidth(60);  // Image URL
-        
-        // Appliquer l'auto-filtre
-        $sheet->setAutoFilter('A1:J1');
-        
-        // Figer la première ligne
-        $sheet->freezePane('A2');
-        
-        // Créer le writer
-        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
-        
-        // Nom du fichier
-        $filename = 'produits_concurrents_' . date('Y-m-d_His') . '.xlsx';
-        
-        // Définir les headers HTTP
-        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        header('Content-Disposition: attachment;filename="' . $filename . '"');
-        header('Cache-Control: max-age=0');
-        
-        // Écrire le fichier
-        $writer->save('php://output');
-        exit;
+        // Retourner la réponse avec les bons headers
+        return response()->streamDownload(function() use ($output) {
+            echo $output;
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Cache-Control' => 'must-revalidate, post-check=0, pre-check=0',
+            'Expires' => '0',
+            'Pragma' => 'public'
+        ]);
+    }
+    
+    private function escapeCsv($value)
+    {
+        // Échapper les guillemets doubles et entourer de guillemets si nécessaire
+        if (strpos($value, ';') !== false || strpos($value, '"') !== false || strpos($value, "\n") !== false) {
+            return '"' . str_replace('"', '""', $value) . '"';
+        }
+        return $value;
     }
     
     public function with()
@@ -348,7 +316,7 @@ new class extends Component {
                 <x-button 
                     wire:click="exportCsv" 
                     icon="o-arrow-down-tray"
-                    label="Exporter Excel"
+                    label="Exporter CSV"
                     class="btn-success btn-sm"
                     spinner
                 />
@@ -502,7 +470,7 @@ new class extends Component {
                         <x-button 
                             wire:click="exportCsv" 
                             icon="o-arrow-down-tray"
-                            label="Exporter Excel ({{ $totalResults }})"
+                            label="Exporter CSV ({{ $totalResults }})"
                             class="btn-success btn-sm"
                             spinner
                         />
