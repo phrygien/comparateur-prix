@@ -51,161 +51,185 @@ new class extends Component {
         }
     }
     
-    public function exportCsv()
-    {
-        // Augmenter les limites pour les exports volumineux
-        set_time_limit(700); // 5 minutes
-        ini_set('memory_limit', '512M');
+public function exportCsv()
+{
+    // Augmenter les limites pour les exports volumineux
+    set_time_limit(700); // 5 minutes
+    ini_set('memory_limit', '512M');
 
-        // Récupérer tous les résultats filtrés (sans pagination)
-        $query = DB::table('last_price_scraped_product')
-            ->select('*');
-        
-        $query->where('variation', '!=', 'Standard');
+    // Récupérer tous les résultats filtrés (sans pagination)
+    $query = DB::table('last_price_scraped_product')
+        ->select('*');
+    
+    $query->where('variation', '!=', 'Standard');
 
-        if (!empty($this->vendor)) {
-            $query->where('vendor', 'like', '%' . $this->vendor . '%');
-        }
-        
-        if (!empty($this->name)) {
-            $query->where('name', 'like', '%' . $this->name . '%');
-        }
-        
-        if (!empty($this->type)) {
-            $query->where('type', 'like', '%' . $this->type . '%');
-        }
-        
-        if (!empty($this->variation)) {
-            $query->where('variation', 'like', '%' . $this->variation . '%');
-        }
-        
-        if (!empty($this->site_ids) && count($this->site_ids) > 0) {
-            $query->whereIn('web_site_id', $this->site_ids);
-        }
-        
-        $products = $query->orderBy('vendor', 'asc')->get();
-        
-        // Créer un fichier Excel avec PhpSpreadsheet
-        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet();
-        
-        // Définir le titre de la feuille
-        $sheet->setTitle('Produits Concurrents');
-        
-        // En-têtes
-        $headers = ['Vendeur', 'Nom du produit', 'Type', 'Variation', 'Prix HT', 'Devise', 'Site web', 'URL', 'Date de scraping', 'Image URL'];
-        $sheet->fromArray($headers, null, 'A1');
-        
-        // Style de l'en-tête - Fond bleu avec texte blanc
-        $headerStyle = [
-            'font' => [
-                'bold' => true,
-                'color' => ['rgb' => 'FFFFFF'],
-                'size' => 12
-            ],
-            'fill' => [
-                'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
-                'startColor' => ['rgb' => '4F46E5']
-            ],
-            'alignment' => [
-                'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
-                'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER
-            ],
-            'borders' => [
-                'allBorders' => [
-                    'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
-                    'color' => ['rgb' => '000000']
-                ]
-            ]
-        ];
-        $sheet->getStyle('A1:J1')->applyFromArray($headerStyle);
-        
-        // Augmenter la hauteur de la ligne d'en-tête
-        $sheet->getRowDimension(1)->setRowHeight(25);
-        
-        // Données
-        $row = 2;
-        foreach ($products as $product) {
-            $site = Site::find($product->web_site_id);
-            
-            $sheet->setCellValue('A' . $row, $product->vendor ?? '');
-            $sheet->setCellValue('B' . $row, $product->name ?? '');
-            $sheet->setCellValue('C' . $row, $product->type ?? '');
-            $sheet->setCellValue('D' . $row, $product->variation ?? '');
-            $sheet->setCellValue('E' . $row, $product->prix_ht ?? '');
-            $sheet->setCellValue('F' . $row, $product->currency ?? '');
-            $sheet->setCellValue('G' . $row, $site ? $site->name : '');
-            
-            // URL cliquable
-            if ($product->url) {
-                $sheet->setCellValue('H' . $row, $product->url);
-                $sheet->getCell('H' . $row)->getHyperlink()->setUrl($product->url);
-                $sheet->getStyle('H' . $row)->getFont()->getColor()->setRGB('0563C1');
-                $sheet->getStyle('H' . $row)->getFont()->setUnderline(true);
-            }
-            
-            $sheet->setCellValue('I' . $row, $product->created_at ? \Carbon\Carbon::parse($product->created_at)->format('d/m/Y H:i:s') : '');
-            
-            // Image URL cliquable
-            if ($product->image_url) {
-                $sheet->setCellValue('J' . $row, $product->image_url);
-                $sheet->getCell('J' . $row)->getHyperlink()->setUrl($product->image_url);
-                $sheet->getStyle('J' . $row)->getFont()->getColor()->setRGB('0563C1');
-                $sheet->getStyle('J' . $row)->getFont()->setUnderline(true);
-            }
-            
-            // Alterner les couleurs de lignes
-            if ($row % 2 == 0) {
-                $sheet->getStyle('A' . $row . ':J' . $row)->getFill()
-                    ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
-                    ->getStartColor()->setRGB('F9FAFB');
-            }
-            
-            $row++;
-        }
-        
-        // Bordures pour toutes les cellules de données
-        $lastRow = $row - 1;
-        $sheet->getStyle('A1:J' . $lastRow)->applyFromArray([
-            'borders' => [
-                'allBorders' => [
-                    'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
-                    'color' => ['rgb' => 'E5E7EB']
-                ]
-            ]
-        ]);
-        
-        // Largeurs de colonnes
-        $sheet->getColumnDimension('A')->setWidth(20);  // Vendeur
-        $sheet->getColumnDimension('B')->setWidth(50);  // Nom
-        $sheet->getColumnDimension('C')->setWidth(20);  // Type
-        $sheet->getColumnDimension('D')->setWidth(20);  // Variation
-        $sheet->getColumnDimension('E')->setWidth(12);  // Prix
-        $sheet->getColumnDimension('F')->setWidth(8);   // Devise
-        $sheet->getColumnDimension('G')->setWidth(25);  // Site
-        $sheet->getColumnDimension('H')->setWidth(60);  // URL
-        $sheet->getColumnDimension('I')->setWidth(20);  // Date
-        $sheet->getColumnDimension('J')->setWidth(60);  // Image URL
-        
-        // Appliquer l'auto-filtre sur les en-têtes
-        $sheet->setAutoFilter('A1:J1');
-        
-        // Figer la première ligne (en-têtes)
-        $sheet->freezePane('A2');
-        
-        // Créer le writer Excel
-        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
-        
-        // Nom du fichier
-        $filename = 'produits_concurrents_' . date('Y-m-d_His') . '.xlsx';
-        
-        // Créer un fichier temporaire
-        $temp_file = tempnam(sys_get_temp_dir(), 'excel_');
-        $writer->save($temp_file);
-        
-        // Retourner le fichier en téléchargement
-        return response()->download($temp_file, $filename)->deleteFileAfterSend(true);
+    if (!empty($this->vendor)) {
+        $query->where('vendor', 'like', '%' . $this->vendor . '%');
     }
+    
+    if (!empty($this->name)) {
+        $query->where('name', 'like', '%' . $this->name . '%');
+    }
+    
+    if (!empty($this->type)) {
+        $query->where('type', 'like', '%' . $this->type . '%');
+    }
+    
+    if (!empty($this->variation)) {
+        $query->where('variation', 'like', '%' . $this->variation . '%');
+    }
+    
+    if (!empty($this->site_ids) && count($this->site_ids) > 0) {
+        $query->whereIn('web_site_id', $this->site_ids);
+    }
+    
+    $products = $query->orderBy('vendor', 'asc')->get();
+    
+    // Créer un fichier Excel avec PhpSpreadsheet
+    $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $sheet = $spreadsheet->getActiveSheet();
+    
+    // Définir le titre de la feuille
+    $sheet->setTitle('Produits Concurrents');
+    
+    // En-têtes
+    $headers = ['Vendeur', 'Nom du produit', 'Type', 'Variation', 'Prix HT', 'Devise', 'Site web', 'URL Produit', 'Date de scraping', 'Image'];
+    $sheet->fromArray($headers, null, 'A1');
+    
+    // Style de l'en-tête - Fond bleu avec texte blanc
+    $headerStyle = [
+        'font' => [
+            'bold' => true,
+            'color' => ['rgb' => 'FFFFFF'],
+            'size' => 12
+        ],
+        'fill' => [
+            'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+            'startColor' => ['rgb' => '4F46E5']
+        ],
+        'alignment' => [
+            'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
+            'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER
+        ],
+        'borders' => [
+            'allBorders' => [
+                'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                'color' => ['rgb' => '000000']
+            ]
+        ]
+    ];
+    $sheet->getStyle('A1:J1')->applyFromArray($headerStyle);
+    
+    // Augmenter la hauteur de la ligne d'en-tête
+    $sheet->getRowDimension(1)->setRowHeight(25);
+    
+    // Données
+    $row = 2;
+    foreach ($products as $product) {
+        $site = Site::find($product->web_site_id);
+        
+        $sheet->setCellValue('A' . $row, $product->vendor ?? '');
+        $sheet->setCellValue('B' . $row, $product->name ?? '');
+        $sheet->setCellValue('C' . $row, $product->type ?? '');
+        $sheet->setCellValue('D' . $row, $product->variation ?? '');
+        $sheet->setCellValue('E' . $row, $product->prix_ht ?? '');
+        $sheet->setCellValue('F' . $row, $product->currency ?? '');
+        $sheet->setCellValue('G' . $row, $site ? $site->name : '');
+        
+        // URL Produit - Avec texte "Voir le produit"
+        if (!empty($product->url) && filter_var($product->url, FILTER_VALIDATE_URL)) {
+            $sheet->setCellValue('H' . $row, 'Voir le produit');
+            $sheet->getCell('H' . $row)->getHyperlink()->setUrl($product->url);
+            $sheet->getStyle('H' . $row)->applyFromArray([
+                'font' => [
+                    'color' => ['rgb' => '0563C1'],
+                    'underline' => \PhpOffice\PhpSpreadsheet\Style\Font::UNDERLINE_SINGLE
+                ]
+            ]);
+        } else {
+            $sheet->setCellValue('H' . $row, 'Pas d\'URL');
+        }
+        
+        $sheet->setCellValue('I' . $row, $product->created_at ? \Carbon\Carbon::parse($product->created_at)->format('d/m/Y H:i:s') : '');
+        
+        // Image URL - Avec texte "Voir image"
+        if (!empty($product->image_url) && filter_var($product->image_url, FILTER_VALIDATE_URL)) {
+            $sheet->setCellValue('J' . $row, 'Voir image');
+            $sheet->getCell('J' . $row)->getHyperlink()->setUrl($product->image_url);
+            $sheet->getStyle('J' . $row)->applyFromArray([
+                'font' => [
+                    'color' => ['rgb' => '0563C1'],
+                    'underline' => \PhpOffice\PhpSpreadsheet\Style\Font::UNDERLINE_SINGLE
+                ]
+            ]);
+        } else {
+            $sheet->setCellValue('J' . $row, 'Pas d\'image');
+        }
+        
+        // Alterner les couleurs de lignes
+        if ($row % 2 == 0) {
+            $sheet->getStyle('A' . $row . ':J' . $row)->getFill()
+                ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                ->getStartColor()->setRGB('F9FAFB');
+        }
+        
+        $row++;
+    }
+    
+    $lastRow = $row - 1;
+    
+    // Bordures pour toutes les cellules de données
+    $sheet->getStyle('A1:J' . $lastRow)->applyFromArray([
+        'borders' => [
+            'allBorders' => [
+                'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                'color' => ['rgb' => 'E5E7EB']
+            ]
+        ]
+    ]);
+    
+    // Largeurs de colonnes
+    $sheet->getColumnDimension('A')->setWidth(20);  // Vendeur
+    $sheet->getColumnDimension('B')->setWidth(50);  // Nom
+    $sheet->getColumnDimension('C')->setWidth(20);  // Type
+    $sheet->getColumnDimension('D')->setWidth(20);  // Variation
+    $sheet->getColumnDimension('E')->setWidth(12);  // Prix
+    $sheet->getColumnDimension('F')->setWidth(8);   // Devise
+    $sheet->getColumnDimension('G')->setWidth(25);  // Site
+    $sheet->getColumnDimension('H')->setWidth(18);  // URL Produit (réduit car texte court)
+    $sheet->getColumnDimension('I')->setWidth(20);  // Date
+    $sheet->getColumnDimension('J')->setWidth(15);  // Image (réduit car texte court)
+    
+    // Appliquer l'auto-filtre sur les en-têtes
+    $sheet->setAutoFilter('A1:J' . $lastRow);
+    
+    // Figer la première ligne (en-têtes)
+    $sheet->freezePane('A2');
+    
+    // Ajouter une note d'information
+    $infoRow = $lastRow + 3;
+    $sheet->setCellValue('A' . $infoRow, '💡 Conseil : Utilisez les filtres dans les en-têtes pour filtrer par Vendeur, Variation ou Site web');
+    $sheet->getStyle('A' . $infoRow)->applyFromArray([
+        'font' => [
+            'italic' => true,
+            'color' => ['rgb' => '0070C0']
+        ]
+    ]);
+    $sheet->mergeCells('A' . $infoRow . ':J' . $infoRow);
+    
+    // Créer le writer Excel
+    $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+    
+    // Nom du fichier
+    $filename = 'produits_concurrents_' . date('Y-m-d_His') . '.xlsx';
+    
+    // Créer un fichier temporaire
+    $temp_file = tempnam(sys_get_temp_dir(), 'excel_');
+    $writer->save($temp_file);
+    
+    // Retourner le fichier en téléchargement
+    return response()->download($temp_file, $filename)->deleteFileAfterSend(true);
+}
     
     private function escapeCsv($value)
     {

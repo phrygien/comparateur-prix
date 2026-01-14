@@ -64,7 +64,7 @@ new class extends Component {
 
         // Toujours afficher le tableau
         $this->showTable = true;
-        
+
         // Recherche automatique avec la même logique que la recherche manuelle
         $this->getCompetitorPrice($name);
     }
@@ -123,20 +123,30 @@ new class extends Component {
     private function extractDefaultVendor(string $search): void
     {
         $this->loadVendorsFromDatabase();
-        
+
         $vendor = '';
         $searchLower = mb_strtolower(trim($search));
-        
+
         // Extraire la première partie (avant le premier tiret)
         $parts = preg_split('/\s*-\s*/', $search, 2);
         $firstPart = trim($parts[0]);
-        
+
         // Mots-clés qui indiquent qu'on n'est plus dans le vendor
         $productKeywords = [
-            'eau de', 'edp', 'edt', 'parfum', 'coffret', 'spray', 'ml',
-            'vapo', 'vaporisateur', 'intense', 'pour homme', 'pour femme'
+            'eau de',
+            'edp',
+            'edt',
+            'parfum',
+            'coffret',
+            'spray',
+            'ml',
+            'vapo',
+            'vaporisateur',
+            'intense',
+            'pour homme',
+            'pour femme'
         ];
-        
+
         // Vérifier si la première partie contient un mot-clé produit
         $hasProductKeyword = false;
         foreach ($productKeywords as $keyword) {
@@ -145,15 +155,15 @@ new class extends Component {
                 break;
             }
         }
-        
+
         // Si pas de mot-clé produit, considérer comme vendor potentiel
         if (!$hasProductKeyword) {
             $cleanFirstPart = preg_replace('/\d+\s*ml/i', '', $firstPart);
             $cleanFirstPart = preg_replace('/[0-9]+/', '', $cleanFirstPart);
             $cleanFirstPart = trim($cleanFirstPart);
-            
+
             $vendor = $this->findMatchingVendor($cleanFirstPart);
-            
+
             // SI ON A TROUVÉ UN VENDOR, ON PEUT EXTRAIRE LE PREMIER MOT DU PRODUIT
             if (!empty($vendor) && isset($parts[1])) {
                 // Extraire le premier mot du produit pour référence
@@ -164,12 +174,12 @@ new class extends Component {
                 ]);
             }
         }
-        
+
         // Si toujours pas trouvé, faire une recherche plus large
         if (empty($vendor)) {
             $vendor = $this->guessVendorFromSearch($search);
         }
-        
+
         // Définir le vendor comme filtre par défaut
         if (!empty($vendor)) {
             $this->filters['vendor'] = $vendor;
@@ -184,64 +194,64 @@ new class extends Component {
         if (empty($searchVendor) || empty($this->knownVendors)) {
             return '';
         }
-        
+
         $searchVendorLower = mb_strtolower(trim($searchVendor));
         $bestMatch = '';
         $bestScore = 0;
-        
+
         foreach ($this->knownVendors as $knownVendor) {
             $knownVendorLower = mb_strtolower($knownVendor);
             $score = 0;
-            
+
             // 1. Correspondance exacte
             if ($searchVendorLower === $knownVendorLower) {
                 return $knownVendor;
             }
-            
+
             // 2. Le vendor recherché est contenu au début
             if (str_starts_with($knownVendorLower, $searchVendorLower)) {
                 $score = 90;
             }
-            
+
             // 3. Le vendor connu est contenu au début
             if (str_starts_with($searchVendorLower, $knownVendorLower)) {
                 $score = 85;
             }
-            
+
             // 4. Correspondance partielle
             if (str_contains($knownVendorLower, $searchVendorLower)) {
                 $score = max($score, 70);
             }
-            
+
             if (str_contains($searchVendorLower, $knownVendorLower)) {
                 $score = max($score, 65);
             }
-            
+
             // 5. Similarité de Levenshtein
             $levenshtein = levenshtein($searchVendorLower, $knownVendorLower);
             $maxLength = max(strlen($searchVendorLower), strlen($knownVendorLower));
-            
+
             if ($maxLength > 0) {
                 $similarity = (1 - ($levenshtein / $maxLength)) * 100;
                 if ($similarity > 80) {
                     $score = max($score, $similarity);
                 }
             }
-            
+
             // 6. Correspondance sans caractères spéciaux
             $searchNoSpecial = preg_replace('/[^a-z0-9]/i', '', $searchVendorLower);
             $knownNoSpecial = preg_replace('/[^a-z0-9]/i', '', $knownVendorLower);
-            
+
             if ($searchNoSpecial === $knownNoSpecial && !empty($searchNoSpecial)) {
                 $score = max($score, 95);
             }
-            
+
             if ($score > $bestScore) {
                 $bestScore = $score;
                 $bestMatch = $knownVendor;
             }
         }
-        
+
         // Seuil minimum de confiance
         return $bestScore >= 60 ? $bestMatch : '';
     }
@@ -252,50 +262,50 @@ new class extends Component {
     private function guessVendorFromSearch(string $search): string
     {
         $this->loadVendorsFromDatabase();
-        
+
         if (empty($this->knownVendors)) {
             return '';
         }
-        
+
         $searchLower = mb_strtolower($search);
         $scores = [];
-        
+
         foreach ($this->knownVendors as $vendor) {
             $vendorLower = mb_strtolower($vendor);
             $position = mb_stripos($searchLower, $vendorLower);
-            
+
             if ($position !== false) {
                 $score = 100 - ($position * 5);
-                
+
                 if ($position === 0) {
                     $score += 100;
                 }
-                
+
                 // Bonus pour mot complet
                 $before = $position > 0 ? mb_substr($searchLower, $position - 1, 1) : ' ';
-                $after = $position + mb_strlen($vendorLower) < mb_strlen($searchLower) 
-                    ? mb_substr($searchLower, $position + mb_strlen($vendorLower), 1) 
+                $after = $position + mb_strlen($vendorLower) < mb_strlen($searchLower)
+                    ? mb_substr($searchLower, $position + mb_strlen($vendorLower), 1)
                     : ' ';
-                
+
                 if (in_array($before, [' ', '-', '(', '[']) && in_array($after, [' ', '-', ')', ']', ','])) {
                     $score += 50;
                 }
-                
+
                 // Bonus pour la longueur
                 $score += mb_strlen($vendor) * 2;
-                
+
                 $scores[$vendor] = max(0, $score);
             }
         }
-        
+
         if (!empty($scores)) {
             arsort($scores);
             $bestVendor = array_key_first($scores);
             $bestScore = $scores[$bestVendor];
-            
+
             return $bestScore >= 50 ? $bestVendor : '';
         }
-        
+
         return '';
     }
 
@@ -307,13 +317,13 @@ new class extends Component {
     {
         // Nettoyer la recherche
         $search = trim($search);
-        
+
         // Supprimer le vendor si présent
         if (!empty($vendor)) {
             // Essayer de supprimer le vendor au début de la chaîne
             $pattern = '/^' . preg_quote($vendor, '/') . '\s*-\s*/i';
             $searchWithoutVendor = preg_replace($pattern, '', $search);
-            
+
             // Si la suppression a fonctionné, utiliser cette chaîne
             if ($searchWithoutVendor !== $search) {
                 $search = $searchWithoutVendor;
@@ -322,23 +332,31 @@ new class extends Component {
                 $search = str_ireplace($vendor, '', $search);
             }
         }
-        
+
         // Supprimer les préfixes communs
         $search = preg_replace('/^\s*-\s*/', '', $search);
-        
+
         // Extraire les parties séparées par des tirets
         $parts = preg_split('/\s*-\s*/', $search, 3);
-        
+
         // Le premier mot après le vendor est généralement dans la première partie
         // (ou la deuxième si on a bien supprimé le vendor)
         $potentialPart = $parts[0] ?? '';
-        
+
         // Si la partie contient des mots clés de produit, passer à la suivante
         $productKeywords = [
-            'eau de parfum', 'eau de toilette', 'parfum', 'edp', 'edt',
-            'coffret', 'spray', 'ml', 'pour homme', 'pour femme'
+            'eau de parfum',
+            'eau de toilette',
+            'parfum',
+            'edp',
+            'edt',
+            'coffret',
+            'spray',
+            'ml',
+            'pour homme',
+            'pour femme'
         ];
-        
+
         $hasProductKeyword = false;
         foreach ($productKeywords as $keyword) {
             if (stripos($potentialPart, $keyword) !== false) {
@@ -346,38 +364,40 @@ new class extends Component {
                 break;
             }
         }
-        
+
         if ($hasProductKeyword && isset($parts[1])) {
             $potentialPart = $parts[1];
         }
-        
+
         // Extraire le premier mot
         $words = preg_split('/\s+/', $potentialPart, 2);
         $firstWord = $words[0] ?? '';
-        
+
         // Nettoyer le mot (supprimer la ponctuation)
         $firstWord = preg_replace('/[^a-zA-ZÀ-ÿ0-9]/', '', $firstWord);
-        
+
         // Vérifier que ce n'est pas un mot vide ou un mot clé
         $stopWords = ['le', 'la', 'les', 'de', 'des', 'du', 'et', 'pour', 'avec'];
         if (strlen($firstWord) > 2 && !in_array(strtolower($firstWord), $stopWords)) {
             return $firstWord;
         }
-        
+
         // Si pas trouvé, essayer d'extraire un mot significatif de toute la chaîne
         $allWords = preg_split('/\s+/', $search);
         foreach ($allWords as $word) {
             $cleanWord = preg_replace('/[^a-zA-ZÀ-ÿ0-9]/', '', $word);
             if (strlen($cleanWord) > 2 && !in_array(strtolower($cleanWord), $stopWords)) {
                 // Vérifier que ce n'est pas un volume ou un mot clé technique
-                if (!is_numeric($cleanWord) && 
-                    !preg_match('/\d+ml/i', $cleanWord) && 
-                    !in_array(strtolower($cleanWord), ['ml', 'edp', 'edt', 'eau'])) {
+                if (
+                    !is_numeric($cleanWord) &&
+                    !preg_match('/\d+ml/i', $cleanWord) &&
+                    !in_array(strtolower($cleanWord), ['ml', 'edp', 'edt', 'eau'])
+                ) {
                     return $cleanWord;
                 }
             }
         }
-        
+
         return '';
     }
 
@@ -389,10 +409,10 @@ new class extends Component {
         $text = trim($text);
         $words = preg_split('/\s+/', $text, 2);
         $firstWord = $words[0] ?? '';
-        
+
         // Nettoyer la ponctuation
         $firstWord = preg_replace('/[^a-zA-ZÀ-ÿ0-9]/', '', $firstWord);
-        
+
         return $firstWord;
     }
 
@@ -409,54 +429,68 @@ new class extends Component {
             'volumes' => [],
             'type' => ''
         ];
-        
+
         // Extraire les volumes
         if (preg_match_all('/(\d+)\s*ml/i', $search, $matches)) {
             $components['volumes'] = $matches[1];
         }
-        
+
         // Extraire le vendor
         $vendor = $this->filters['vendor'] ?? $this->guessVendorFromSearch($search);
         $components['vendor'] = $vendor;
-        
+
         // Extraire le premier mot du produit
         $components['first_product_word'] = $this->extractFirstProductWord($search, $vendor);
-        
+
         // Nettoyer la recherche pour extraire le nom du produit
         $remainingSearch = $search;
-        
+
         if (!empty($vendor)) {
             // Supprimer le vendor
             $pattern = '/^' . preg_quote($vendor, '/') . '\s*-\s*/i';
             $remainingSearch = preg_replace($pattern, '', $remainingSearch);
-            
+
             // Si ça n'a pas fonctionné, essayer autrement
             if ($remainingSearch === $search) {
                 $remainingSearch = str_ireplace($vendor, '', $remainingSearch);
                 $remainingSearch = preg_replace('/^\s*-\s*/', '', $remainingSearch);
             }
         }
-        
+
         // Supprimer les parties technique (type, volume, etc.)
         $technicalParts = [
-            'eau de parfum', 'eau de toilette', 'eau fraiche', 'eau de cologne',
-            'edp', 'edt', 'edc', 'parfum', 'cologne', 'intense', 'absolu',
-            'coffret', 'spray', 'vapo', 'vaporisateur', 'pour homme', 'pour femme'
+            'eau de parfum',
+            'eau de toilette',
+            'eau fraiche',
+            'eau de cologne',
+            'edp',
+            'edt',
+            'edc',
+            'parfum',
+            'cologne',
+            'intense',
+            'absolu',
+            'coffret',
+            'spray',
+            'vapo',
+            'vaporisateur',
+            'pour homme',
+            'pour femme'
         ];
-        
+
         foreach ($technicalParts as $part) {
             $remainingSearch = str_ireplace($part, '', $remainingSearch);
         }
-        
+
         // Supprimer les volumes
         $remainingSearch = preg_replace('/\d+\s*ml/i', '', $remainingSearch);
-        
+
         // Nettoyer
         $remainingSearch = trim(preg_replace('/\s+/', ' ', $remainingSearch));
         $remainingSearch = preg_replace('/^\s*-\s*|\s*-\s*$/i', '', $remainingSearch);
-        
+
         $components['product_name'] = $remainingSearch;
-        
+
         // Extraire le type
         foreach ($technicalParts as $type) {
             if (stripos($search, $type) !== false) {
@@ -464,7 +498,7 @@ new class extends Component {
                 break;
             }
         }
-        
+
         return $components;
     }
 
@@ -477,40 +511,62 @@ new class extends Component {
         $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ\s]/', ' ', $search);
         $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
         $searchClean = mb_strtolower($searchClean);
-        
+
         // Extraire les mots significatifs
         $words = explode(' ', $searchClean);
         $significantWords = [];
         $stopWords = [
-            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou',
-            'pour', 'avec', 'the', 'a', 'an', 'and', 'or', 'eau', 'ml',
-            'edition', 'édition', 'coffret', 'spray', 'vapo', 'vaporisateur'
+            'de',
+            'le',
+            'la',
+            'les',
+            'un',
+            'une',
+            'des',
+            'du',
+            'et',
+            'ou',
+            'pour',
+            'avec',
+            'the',
+            'a',
+            'an',
+            'and',
+            'or',
+            'eau',
+            'ml',
+            'edition',
+            'édition',
+            'coffret',
+            'spray',
+            'vapo',
+            'vaporisateur'
         ];
-        
+
         foreach ($words as $word) {
             $word = trim($word);
             if (strlen($word) > 2 && !in_array($word, $stopWords)) {
                 $significantWords[] = '+' . $word . '*';
             }
         }
-        
+
         // Si peu de mots significatifs, utiliser une recherche plus permissive
         if (count($significantWords) < 2) {
             // Recherche moins restrictive
-            return implode(' ', array_map(function($word) {
+            return implode(' ', array_map(function ($word) {
                 $cleanWord = trim($word);
                 if (strlen($cleanWord) > 2) {
                     return '+' . $cleanWord . '*';
                 }
                 return '';
-            }, array_filter($words, function($word) use ($stopWords) {
+            }, array_filter($words, function ($word) use ($stopWords) {
                 return !in_array($word, $stopWords) && strlen($word) > 1;
             })));
         }
-        
+
         // Limiter à 5 mots maximum pour FULLTEXT
         $significantWords = array_slice($significantWords, 0, 5);
-        
+
         return implode(' ', $significantWords);
     }
 
@@ -520,13 +576,13 @@ new class extends Component {
     private function getVendorVariations(string $vendor): array
     {
         $variations = [trim($vendor)];
-        
+
         // Variations de casse
         $variations[] = mb_strtoupper($vendor);
         $variations[] = mb_strtolower($vendor);
         $variations[] = mb_convert_case($vendor, MB_CASE_TITLE);
         $variations[] = ucfirst(mb_strtolower($vendor));
-        
+
         // Variations sans espaces
         if (str_contains($vendor, ' ')) {
             $noSpace = str_replace(' ', '', $vendor);
@@ -534,7 +590,7 @@ new class extends Component {
             $variations[] = mb_strtoupper($noSpace);
             $variations[] = mb_strtolower($noSpace);
         }
-        
+
         // Variations avec tirets
         if (str_contains($vendor, ' ')) {
             $withDash = str_replace(' ', '-', $vendor);
@@ -542,25 +598,25 @@ new class extends Component {
             $variations[] = mb_strtoupper($withDash);
             $variations[] = mb_strtolower($withDash);
         }
-        
+
         // Chercher des variations similaires
         $this->loadVendorsFromDatabase();
         $vendorLower = mb_strtolower($vendor);
-        
+
         foreach ($this->knownVendors as $knownVendor) {
             $knownLower = mb_strtolower($knownVendor);
             $distance = levenshtein($vendorLower, $knownLower);
             $maxLength = max(strlen($vendorLower), strlen($knownLower));
-            
+
             if ($maxLength > 0 && ($distance / $maxLength) < 0.2) {
                 $variations[] = $knownVendor;
             }
-            
+
             if (str_contains($knownLower, $vendorLower) || str_contains($vendorLower, $knownLower)) {
                 $variations[] = $knownVendor;
             }
         }
-        
+
         return array_unique(array_filter($variations));
     }
 
@@ -630,40 +686,40 @@ new class extends Component {
     /**
      * Recherche manuelle
      */
-public function searchManual()
-{
-    try {
-        $this->hasData = false;
-        $this->matchedProducts = [];
-        $this->products = [];
+    public function searchManual()
+    {
+        try {
+            $this->hasData = false;
+            $this->matchedProducts = [];
+            $this->products = [];
 
-        $cacheKey = $this->getManualSearchCacheKey();
-        $cachedResults = $this->getCachedResults($cacheKey);
+            $cacheKey = $this->getManualSearchCacheKey();
+            $cachedResults = $this->getCachedResults($cacheKey);
 
-        if ($cachedResults !== null) {
-            $this->products = $cachedResults;
-            $this->matchedProducts = $cachedResults;
-            $this->hasData = !empty($cachedResults);
-            $this->isAutomaticSearch = false;
-            $this->hasAppliedFilters = true;
-            return;
-        }
-
-        // Construire les conditions de filtre
-        $vendorConditions = [];
-        $vendorParams = [];
-        
-        if (!empty($this->filters['vendor'])) {
-            $vendorVariations = $this->getVendorVariations($this->filters['vendor']);
-            
-            foreach ($vendorVariations as $variation) {
-                $vendorConditions[] = "t.vendor LIKE ?";
-                $vendorParams[] = '%' . $variation . '%';
+            if ($cachedResults !== null) {
+                $this->products = $cachedResults;
+                $this->matchedProducts = $cachedResults;
+                $this->hasData = !empty($cachedResults);
+                $this->isAutomaticSearch = false;
+                $this->hasAppliedFilters = true;
+                return;
             }
-        }
 
-        // Requête optimisée avec ROW_NUMBER
-        $sql = "SELECT 
+            // Construire les conditions de filtre
+            $vendorConditions = [];
+            $vendorParams = [];
+
+            if (!empty($this->filters['vendor'])) {
+                $vendorVariations = $this->getVendorVariations($this->filters['vendor']);
+
+                foreach ($vendorVariations as $variation) {
+                    $vendorConditions[] = "t.vendor LIKE ?";
+                    $vendorParams[] = '%' . $variation . '%';
+                }
+            }
+
+            // Requête optimisée avec ROW_NUMBER
+            $sql = "SELECT 
                     t.*,
                     ws.name as site_name,
                     t.url as product_url,
@@ -680,137 +736,137 @@ public function searchManual()
                 LEFT JOIN web_site ws ON t.web_site_id = ws.id
                 WHERE t.row_num = 1
                 AND (t.variation != 'Standard' OR t.variation IS NULL OR t.variation = '')";
-        
-        $params = [];
 
-        // Appliquer les filtres
-        if (!empty($vendorConditions)) {
-            $sql .= " AND (" . implode(' OR ', $vendorConditions) . ")";
-            $params = array_merge($params, $vendorParams);
-        }
+            $params = [];
 
-        if (!empty($this->filters['name'])) {
-            $sql .= " AND t.name LIKE ?";
-            $params[] = '%' . $this->filters['name'] . '%';
-        }
-
-        if (!empty($this->filters['variation'])) {
-            $sql .= " AND t.variation LIKE ?";
-            $params[] = '%' . $this->filters['variation'] . '%';
-        }
-
-        if (!empty($this->filters['type'])) {
-            $sql .= " AND t.type LIKE ?";
-            $params[] = '%' . $this->filters['type'] . '%';
-        }
-
-        // FILTRE MULTI-SELECT POUR SITE_SOURCE
-        if (!empty($this->filters['site_source']) && is_array($this->filters['site_source'])) {
-            $placeholders = implode(',', array_fill(0, count($this->filters['site_source']), '?'));
-            $sql .= " AND t.web_site_id IN (" . $placeholders . ")";
-            $params = array_merge($params, $this->filters['site_source']);
-        }
-
-        $sql .= " ORDER BY t.vendor ASC, t.prix_ht DESC LIMIT 100";
-
-        $result = DB::connection('mysql')->select($sql, $params);
-
-        // Traiter les résultats
-        $processedResults = [];
-        foreach ($result as $product) {
-            if (isset($product->prix_ht)) {
-                $product->prix_ht = $this->cleanPrice($product->prix_ht);
+            // Appliquer les filtres
+            if (!empty($vendorConditions)) {
+                $sql .= " AND (" . implode(' OR ', $vendorConditions) . ")";
+                $params = array_merge($params, $vendorParams);
             }
 
-            $product->product_url = $product->product_url ?? $product->url ?? null;
-            $product->image = $product->image ?? $product->image_url ?? null;
-            $product->similarity_score = null;
-            $product->match_level = null;
-            $product->is_manual_search = true;
+            if (!empty($this->filters['name'])) {
+                $sql .= " AND t.name LIKE ?";
+                $params[] = '%' . $this->filters['name'] . '%';
+            }
 
-            $processedResults[] = $product;
+            if (!empty($this->filters['variation'])) {
+                $sql .= " AND t.variation LIKE ?";
+                $params[] = '%' . $this->filters['variation'] . '%';
+            }
+
+            if (!empty($this->filters['type'])) {
+                $sql .= " AND t.type LIKE ?";
+                $params[] = '%' . $this->filters['type'] . '%';
+            }
+
+            // FILTRE MULTI-SELECT POUR SITE_SOURCE
+            if (!empty($this->filters['site_source']) && is_array($this->filters['site_source'])) {
+                $placeholders = implode(',', array_fill(0, count($this->filters['site_source']), '?'));
+                $sql .= " AND t.web_site_id IN (" . $placeholders . ")";
+                $params = array_merge($params, $this->filters['site_source']);
+            }
+
+            $sql .= " ORDER BY t.vendor ASC, t.prix_ht DESC LIMIT 100";
+
+            $result = DB::connection('mysql')->select($sql, $params);
+
+            // Traiter les résultats
+            $processedResults = [];
+            foreach ($result as $product) {
+                if (isset($product->prix_ht)) {
+                    $product->prix_ht = $this->cleanPrice($product->prix_ht);
+                }
+
+                $product->product_url = $product->product_url ?? $product->url ?? null;
+                $product->image = $product->image ?? $product->image_url ?? null;
+                $product->similarity_score = null;
+                $product->match_level = null;
+                $product->is_manual_search = true;
+
+                $processedResults[] = $product;
+            }
+
+            $this->products = $processedResults;
+            $this->matchedProducts = $processedResults;
+            $this->hasData = !empty($processedResults);
+            $this->isAutomaticSearch = false;
+            $this->hasAppliedFilters = true;
+
+            $this->cacheResults($cacheKey, $processedResults);
+
+        } catch (\Throwable $e) {
+            \Log::error('Error in manual search:', ['message' => $e->getMessage()]);
+            $this->products = [];
+            $this->hasData = false;
         }
-
-        $this->products = $processedResults;
-        $this->matchedProducts = $processedResults;
-        $this->hasData = !empty($processedResults);
-        $this->isAutomaticSearch = false;
-        $this->hasAppliedFilters = true;
-
-        $this->cacheResults($cacheKey, $processedResults);
-
-    } catch (\Throwable $e) {
-        \Log::error('Error in manual search:', ['message' => $e->getMessage()]);
-        $this->products = [];
-        $this->hasData = false;
     }
-}
 
     /**
      * Recherche automatique AVEC LA MÊME LOGIQUE QUE LA RECHERCHE MANUELLE
      */
-public function getCompetitorPrice($search)
-{
-    try {
-        if (empty($search)) {
-            return $this->resetSearchState();
-        }
-
-        $cacheKey = $this->getCacheKey($search, [], false);
-        $cachedData = $this->getCachedResults($cacheKey);
-
-        if ($cachedData !== null) {
-            $this->matchedProducts = $cachedData['products'];
-            $this->products = $cachedData['products'];
-            $this->originalAutomaticResults = $cachedData['products'];
-            $this->hasAppliedFilters = false;
-            $this->hasData = !empty($cachedData['products']);
-            $this->isAutomaticSearch = true;
-            $this->showTable = true;
-
-            return $cachedData['full_result'];
-        }
-
-        // Log pour débogage
-        \Log::info('Automatic search started:', [
-            'search' => $search,
-            'current_vendor_filter' => $this->filters['vendor']
-        ]);
-
-        // NOUVELLE MÉTHODE : Utiliser la même logique que la recherche manuelle
-        // mais sans les filtres sauf pour le vendor
-        $allProducts = [];
-        
-        // Construire les conditions comme dans la recherche manuelle
-        $vendorConditions = [];
-        $vendorParams = [];
-        
-        // Récupérer le vendor extrait
-        $vendor = $this->filters['vendor'] ?? '';
-        if (empty($vendor)) {
-            // Si pas de vendor, extraire depuis la recherche
-            $vendor = $this->guessVendorFromSearch($search);
-        }
-        
-        if (!empty($vendor)) {
-            $vendorVariations = $this->getVendorVariations($vendor);
-            
-            foreach ($vendorVariations as $variation) {
-                $vendorConditions[] = "lp.vendor LIKE ?";
-                $vendorParams[] = '%' . $variation . '%';
+    public function getCompetitorPrice($search)
+    {
+        try {
+            if (empty($search)) {
+                return $this->resetSearchState();
             }
-        }
-        
-        // Extraire le premier mot du nom du produit (après le vendor)
-        $firstProductWord = $this->extractFirstProductWord($search, $vendor);
-        \Log::info('Extracted first product word:', [
-            'search' => $search,
-            'vendor' => $vendor,
-            'first_product_word' => $firstProductWord
-        ]);
-        
-        // Construire la requête SQL comme dans la recherche manuelle
-        $sql = "SELECT 
+
+            $cacheKey = $this->getCacheKey($search, [], false);
+            $cachedData = $this->getCachedResults($cacheKey);
+
+            if ($cachedData !== null) {
+                $this->matchedProducts = $cachedData['products'];
+                $this->products = $cachedData['products'];
+                $this->originalAutomaticResults = $cachedData['products'];
+                $this->hasAppliedFilters = false;
+                $this->hasData = !empty($cachedData['products']);
+                $this->isAutomaticSearch = true;
+                $this->showTable = true;
+
+                return $cachedData['full_result'];
+            }
+
+            // Log pour débogage
+            \Log::info('Automatic search started:', [
+                'search' => $search,
+                'current_vendor_filter' => $this->filters['vendor']
+            ]);
+
+            // NOUVELLE MÉTHODE : Utiliser la même logique que la recherche manuelle
+            // mais sans les filtres sauf pour le vendor
+            $allProducts = [];
+
+            // Construire les conditions comme dans la recherche manuelle
+            $vendorConditions = [];
+            $vendorParams = [];
+
+            // Récupérer le vendor extrait
+            $vendor = $this->filters['vendor'] ?? '';
+            if (empty($vendor)) {
+                // Si pas de vendor, extraire depuis la recherche
+                $vendor = $this->guessVendorFromSearch($search);
+            }
+
+            if (!empty($vendor)) {
+                $vendorVariations = $this->getVendorVariations($vendor);
+
+                foreach ($vendorVariations as $variation) {
+                    $vendorConditions[] = "lp.vendor LIKE ?";
+                    $vendorParams[] = '%' . $variation . '%';
+                }
+            }
+
+            // Extraire le premier mot du nom du produit (après le vendor)
+            $firstProductWord = $this->extractFirstProductWord($search, $vendor);
+            \Log::info('Extracted first product word:', [
+                'search' => $search,
+                'vendor' => $vendor,
+                'first_product_word' => $firstProductWord
+            ]);
+
+            // Construire la requête SQL comme dans la recherche manuelle
+            $sql = "SELECT 
                     lp.*, 
                     ws.name as site_name, 
                     lp.url as product_url, 
@@ -818,48 +874,48 @@ public function getCompetitorPrice($search)
                 FROM last_price_scraped_product lp
                 LEFT JOIN web_site ws ON lp.web_site_id = ws.id
                 WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')";
-        
-        $params = [];
 
-        // Appliquer les conditions du vendor
-        if (!empty($vendorConditions)) {
-            $sql .= " AND (" . implode(' OR ', $vendorConditions) . ")";
-            $params = array_merge($params, $vendorParams);
-        }
-        
-        // Ajouter une condition pour le premier mot du produit si trouvé
-        if (!empty($firstProductWord)) {
-            $sql .= " AND (lp.name LIKE ? OR lp.variation LIKE ?)";
-            $params[] = '%' . $firstProductWord . '%';
-            $params[] = '%' . $firstProductWord . '%';
-        }
+            $params = [];
 
-        // FILTRE MULTI-SELECT POUR SITE_SOURCE (si appliqué)
-        if (!empty($this->filters['site_source']) && is_array($this->filters['site_source'])) {
-            $placeholders = implode(',', array_fill(0, count($this->filters['site_source']), '?'));
-            $sql .= " AND lp.web_site_id IN (" . $placeholders . ")";
-            $params = array_merge($params, $this->filters['site_source']);
-        }
+            // Appliquer les conditions du vendor
+            if (!empty($vendorConditions)) {
+                $sql .= " AND (" . implode(' OR ', $vendorConditions) . ")";
+                $params = array_merge($params, $vendorParams);
+            }
 
-        $sql .= " ORDER BY lp.prix_ht DESC LIMIT 100";
+            // Ajouter une condition pour le premier mot du produit si trouvé
+            if (!empty($firstProductWord)) {
+                $sql .= " AND (lp.name LIKE ? OR lp.variation LIKE ?)";
+                $params[] = '%' . $firstProductWord . '%';
+                $params[] = '%' . $firstProductWord . '%';
+            }
 
-        \Log::info('Automatic search SQL:', [
-            'sql' => $sql,
-            'params' => $params
-        ]);
+            // FILTRE MULTI-SELECT POUR SITE_SOURCE (si appliqué)
+            if (!empty($this->filters['site_source']) && is_array($this->filters['site_source'])) {
+                $placeholders = implode(',', array_fill(0, count($this->filters['site_source']), '?'));
+                $sql .= " AND lp.web_site_id IN (" . $placeholders . ")";
+                $params = array_merge($params, $this->filters['site_source']);
+            }
 
-        $allProducts = DB::connection('mysql')->select($sql, $params);
+            $sql .= " ORDER BY lp.prix_ht DESC LIMIT 100";
 
-        \Log::info('Total products found:', ['count' => count($allProducts)]);
+            \Log::info('Automatic search SQL:', [
+                'sql' => $sql,
+                'params' => $params
+            ]);
 
-        // Si peu de résultats avec cette méthode, essayer la méthode originale
-        if (count($allProducts) < 5) {
-            \Log::info('Too few results with manual-like search, trying full search');
-            
-            // ÉTAPE 2 : Recherche FULLTEXT comme avant
-            $searchQuery = $this->prepareAutomaticSearchTerms($search);
-            
-            $sqlFullSearch = "SELECT 
+            $allProducts = DB::connection('mysql')->select($sql, $params);
+
+            \Log::info('Total products found:', ['count' => count($allProducts)]);
+
+            // Si peu de résultats avec cette méthode, essayer la méthode originale
+            if (count($allProducts) < 5) {
+                \Log::info('Too few results with manual-like search, trying full search');
+
+                // ÉTAPE 2 : Recherche FULLTEXT comme avant
+                $searchQuery = $this->prepareAutomaticSearchTerms($search);
+
+                $sqlFullSearch = "SELECT 
                     lp.*, 
                     ws.name as site_name, 
                     lp.url as product_url, 
@@ -870,145 +926,145 @@ public function getCompetitorPrice($search)
                     AGAINST (? IN BOOLEAN MODE)
                 AND (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')";
 
-            $fullSearchParams = [$searchQuery];
+                $fullSearchParams = [$searchQuery];
 
-            // FILTRE MULTI-SELECT POUR SITE_SOURCE dans la recherche FULLTEXT
-            if (!empty($this->filters['site_source']) && is_array($this->filters['site_source'])) {
-                $placeholders = implode(',', array_fill(0, count($this->filters['site_source']), '?'));
-                $sqlFullSearch .= " AND lp.web_site_id IN (" . $placeholders . ")";
-                $fullSearchParams = array_merge($fullSearchParams, $this->filters['site_source']);
-            }
+                // FILTRE MULTI-SELECT POUR SITE_SOURCE dans la recherche FULLTEXT
+                if (!empty($this->filters['site_source']) && is_array($this->filters['site_source'])) {
+                    $placeholders = implode(',', array_fill(0, count($this->filters['site_source']), '?'));
+                    $sqlFullSearch .= " AND lp.web_site_id IN (" . $placeholders . ")";
+                    $fullSearchParams = array_merge($fullSearchParams, $this->filters['site_source']);
+                }
 
-            $sqlFullSearch .= " ORDER BY lp.prix_ht DESC LIMIT 200";
+                $sqlFullSearch .= " ORDER BY lp.prix_ht DESC LIMIT 200";
 
-            $fullSearchProducts = DB::connection('mysql')->select($sqlFullSearch, $fullSearchParams);
-            
-            // Combiner les résultats, éviter les doublons
-            $allProductsIds = [];
-            foreach ($allProducts as $product) {
-                $allProductsIds[] = $product->id ?? $product->url;
-            }
-            
-            foreach ($fullSearchProducts as $product) {
-                $productId = $product->id ?? $product->url;
-                if (!in_array($productId, $allProductsIds)) {
-                    $allProducts[] = $product;
-                    $allProductsIds[] = $productId;
+                $fullSearchProducts = DB::connection('mysql')->select($sqlFullSearch, $fullSearchParams);
+
+                // Combiner les résultats, éviter les doublons
+                $allProductsIds = [];
+                foreach ($allProducts as $product) {
+                    $allProductsIds[] = $product->id ?? $product->url;
+                }
+
+                foreach ($fullSearchProducts as $product) {
+                    $productId = $product->id ?? $product->url;
+                    if (!in_array($productId, $allProductsIds)) {
+                        $allProducts[] = $product;
+                        $allProductsIds[] = $productId;
+                    }
                 }
             }
-        }
 
-        \Log::info('Total products after all searches:', ['count' => count($allProducts)]);
+            \Log::info('Total products after all searches:', ['count' => count($allProducts)]);
 
-        if (empty($allProducts)) {
-            return $this->handleEmptyResults($cacheKey);
-        }
-
-        // Traiter les produits
-        $processedProducts = [];
-        foreach ($allProducts as $product) {
-            if (isset($product->prix_ht)) {
-                $product->prix_ht = $this->cleanPrice($product->prix_ht);
+            if (empty($allProducts)) {
+                return $this->handleEmptyResults($cacheKey);
             }
-            if (isset($product->vendor)) {
-                $product->vendor = $this->normalizeVendor($product->vendor);
+
+            // Traiter les produits
+            $processedProducts = [];
+            foreach ($allProducts as $product) {
+                if (isset($product->prix_ht)) {
+                    $product->prix_ht = $this->cleanPrice($product->prix_ht);
+                }
+                if (isset($product->vendor)) {
+                    $product->vendor = $this->normalizeVendor($product->vendor);
+                }
+                $product->product_url = $product->product_url ?? $product->url ?? null;
+                $product->image = $product->image ?? $product->image_url ?? null;
+                $product->is_manual_search = false;
+                $processedProducts[] = $product;
             }
-            $product->product_url = $product->product_url ?? $product->url ?? null;
-            $product->image = $product->image ?? $product->image_url ?? null;
-            $product->is_manual_search = false;
-            $processedProducts[] = $product;
-        }
 
-        // Extraction des composants pour la similarité
-        $components = $this->extractSearchComponents($search);
-        $this->searchVolumes = $components['volumes'];
-        $this->extractSearchVariationKeywords($search);
+            // Extraction des composants pour la similarité
+            $components = $this->extractSearchComponents($search);
+            $this->searchVolumes = $components['volumes'];
+            $this->extractSearchVariationKeywords($search);
 
-        \Log::info('Components extracted:', [
-            'vendor' => $components['vendor'],
-            'product_name' => $components['product_name'],
-            'first_product_word' => $components['first_product_word'],
-            'volumes' => $components['volumes']
-        ]);
-
-        // Calcul de similarité avec seuil réduit pour plus de résultats
-        $matchedProducts = [];
-        $tempThreshold = $this->similarityThreshold;
-        
-        // Si peu de résultats, baisser le seuil temporairement
-        if (count($processedProducts) < 10) {
-            $tempThreshold = max(0.3, $this->similarityThreshold - 0.2);
-            \Log::info('Lowering threshold for more results:', [
-                'original' => $this->similarityThreshold,
-                'temp' => $tempThreshold
+            \Log::info('Components extracted:', [
+                'vendor' => $components['vendor'],
+                'product_name' => $components['product_name'],
+                'first_product_word' => $components['first_product_word'],
+                'volumes' => $components['volumes']
             ]);
-        }
-        
-        foreach ($processedProducts as $product) {
-            $similarityScore = $this->computeOverallSimilarityImproved($product, $search, $components);
-            
-            if ($similarityScore >= $tempThreshold) {
-                $product->similarity_score = $similarityScore;
-                $product->match_level = $this->getMatchLevel($similarityScore);
-                $product->search_source = 'mixed';
-                $matchedProducts[] = $product;
+
+            // Calcul de similarité avec seuil réduit pour plus de résultats
+            $matchedProducts = [];
+            $tempThreshold = $this->similarityThreshold;
+
+            // Si peu de résultats, baisser le seuil temporairement
+            if (count($processedProducts) < 10) {
+                $tempThreshold = max(0.3, $this->similarityThreshold - 0.2);
+                \Log::info('Lowering threshold for more results:', [
+                    'original' => $this->similarityThreshold,
+                    'temp' => $tempThreshold
+                ]);
             }
+
+            foreach ($processedProducts as $product) {
+                $similarityScore = $this->computeOverallSimilarityImproved($product, $search, $components);
+
+                if ($similarityScore >= $tempThreshold) {
+                    $product->similarity_score = $similarityScore;
+                    $product->match_level = $this->getMatchLevel($similarityScore);
+                    $product->search_source = 'mixed';
+                    $matchedProducts[] = $product;
+                }
+            }
+
+            // Trier par score décroissant
+            usort($matchedProducts, function ($a, $b) {
+                return $b->similarity_score <=> $a->similarity_score;
+            });
+
+            \Log::info('Products after similarity filter:', [
+                'count' => count($matchedProducts),
+                'threshold_used' => $tempThreshold
+            ]);
+
+            // Préparer le résultat final
+            $fullResult = [
+                'count' => count($matchedProducts),
+                'has_data' => !empty($matchedProducts),
+                'products' => $matchedProducts,
+                'product' => $this->getOneProductDetails($this->id),
+                'query' => $search,
+                'vendor_used' => $vendor,
+                'first_product_word' => $firstProductWord,
+                'volumes' => $components['volumes'],
+                'variation_keywords' => $this->searchVariationKeywords,
+                'search_strategy' => 'manual_like_search'
+            ];
+
+            // Mettre en cache
+            $this->cacheResults($cacheKey, [
+                'products' => $matchedProducts,
+                'full_result' => $fullResult
+            ]);
+
+            // Mettre à jour les propriétés
+            $this->matchedProducts = $matchedProducts;
+            $this->products = $matchedProducts;
+            $this->originalAutomaticResults = $matchedProducts;
+            $this->hasAppliedFilters = false;
+            $this->hasData = !empty($matchedProducts);
+            $this->isAutomaticSearch = true;
+            $this->showTable = true;
+
+            return $fullResult;
+
+        } catch (\Throwable $e) {
+            \Log::error('Competitor price error:', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            $this->products = [];
+            $this->hasData = false;
+            $this->originalAutomaticResults = [];
+            $this->hasAppliedFilters = false;
+            $this->showTable = true;
+            return ['error' => $e->getMessage()];
         }
-
-        // Trier par score décroissant
-        usort($matchedProducts, function ($a, $b) {
-            return $b->similarity_score <=> $a->similarity_score;
-        });
-
-        \Log::info('Products after similarity filter:', [
-            'count' => count($matchedProducts),
-            'threshold_used' => $tempThreshold
-        ]);
-
-        // Préparer le résultat final
-        $fullResult = [
-            'count' => count($matchedProducts),
-            'has_data' => !empty($matchedProducts),
-            'products' => $matchedProducts,
-            'product' => $this->getOneProductDetails($this->id),
-            'query' => $search,
-            'vendor_used' => $vendor,
-            'first_product_word' => $firstProductWord,
-            'volumes' => $components['volumes'],
-            'variation_keywords' => $this->searchVariationKeywords,
-            'search_strategy' => 'manual_like_search'
-        ];
-
-        // Mettre en cache
-        $this->cacheResults($cacheKey, [
-            'products' => $matchedProducts,
-            'full_result' => $fullResult
-        ]);
-
-        // Mettre à jour les propriétés
-        $this->matchedProducts = $matchedProducts;
-        $this->products = $matchedProducts;
-        $this->originalAutomaticResults = $matchedProducts;
-        $this->hasAppliedFilters = false;
-        $this->hasData = !empty($matchedProducts);
-        $this->isAutomaticSearch = true;
-        $this->showTable = true;
-
-        return $fullResult;
-
-    } catch (\Throwable $e) {
-        \Log::error('Competitor price error:', [
-            'message' => $e->getMessage(),
-            'trace' => $e->getTraceAsString()
-        ]);
-        $this->products = [];
-        $this->hasData = false;
-        $this->originalAutomaticResults = [];
-        $this->hasAppliedFilters = false;
-        $this->showTable = true;
-        return ['error' => $e->getMessage()];
     }
-}
 
     /**
      * Méthode de similarité AMÉLIORÉE avec premier mot du produit
@@ -1061,25 +1117,25 @@ public function getCompetitorPrice($search)
         if (empty($firstProductWord)) {
             return 0;
         }
-        
+
         $productName = $product->name ?? '';
         $productVariation = $product->variation ?? '';
-        
+
         $searchLower = mb_strtolower($firstProductWord);
         $nameLower = mb_strtolower($productName);
         $variationLower = mb_strtolower($productVariation);
-        
+
         // Vérifier si le premier mot est dans le nom ou la variation
         if (str_contains($nameLower, $searchLower) || str_contains($variationLower, $searchLower)) {
             return 0.9;
         }
-        
+
         // Vérifier la similarité avec le début du nom
         $firstWordOfName = $this->extractFirstWordFromString($productName);
         if (!empty($firstWordOfName) && $this->computeStringSimilarity($searchLower, mb_strtolower($firstWordOfName)) > 0.8) {
             return 0.85;
         }
-        
+
         // Vérifier la similarité partielle
         $words = preg_split('/\s+/', $nameLower);
         foreach ($words as $word) {
@@ -1087,7 +1143,7 @@ public function getCompetitorPrice($search)
                 return 0.7;
             }
         }
-        
+
         return 0;
     }
 
@@ -1105,13 +1161,15 @@ public function getCompetitorPrice($search)
         $searchProductNameLower = mb_strtolower(trim($searchProductName));
 
         // Si le nom du produit contient le nom recherché (ou vice versa)
-        if (str_contains($productNameLower, $searchProductNameLower) || 
-            str_contains($searchProductNameLower, $productNameLower)) {
+        if (
+            str_contains($productNameLower, $searchProductNameLower) ||
+            str_contains($searchProductNameLower, $productNameLower)
+        ) {
             return 0.9;
         }
 
         // Extraire les mots clés du nom recherché
-        $searchKeywords = array_filter(explode(' ', $searchProductNameLower), function($word) {
+        $searchKeywords = array_filter(explode(' ', $searchProductNameLower), function ($word) {
             return strlen($word) > 2 && !$this->isStopWord($word);
         });
 
@@ -1141,7 +1199,7 @@ public function getCompetitorPrice($search)
     private function computeVariationSimilarityImproved($product, $search)
     {
         $productVariation = $product->variation ?? '';
-        
+
         if (empty($productVariation)) {
             return 0.5;
         }
@@ -1161,11 +1219,33 @@ public function getCompetitorPrice($search)
     private function isStopWord(string $word): bool
     {
         $stopWords = [
-            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou',
-            'pour', 'avec', 'the', 'a', 'an', 'and', 'or', 'eau', 'ml',
-            'edition', 'édition', 'coffret', 'spray', 'vapo', 'vaporisateur'
+            'de',
+            'le',
+            'la',
+            'les',
+            'un',
+            'une',
+            'des',
+            'du',
+            'et',
+            'ou',
+            'pour',
+            'avec',
+            'the',
+            'a',
+            'an',
+            'and',
+            'or',
+            'eau',
+            'ml',
+            'edition',
+            'édition',
+            'coffret',
+            'spray',
+            'vapo',
+            'vaporisateur'
         ];
-        
+
         return in_array(mb_strtolower($word), $stopWords);
     }
 
@@ -1175,7 +1255,7 @@ public function getCompetitorPrice($search)
     private function computeVendorSimilarityEnhanced($product, $searchVendor)
     {
         $productVendor = $product->vendor ?? '';
-        
+
         if (empty($productVendor) || empty($searchVendor)) {
             return 0;
         }
@@ -1186,11 +1266,11 @@ public function getCompetitorPrice($search)
         if ($productLower === $searchLower) {
             return 1.0;
         }
-        
+
         if (str_starts_with($productLower, $searchLower) || str_starts_with($searchLower, $productLower)) {
             return 0.95;
         }
-        
+
         if (str_contains($productLower, $searchLower) || str_contains($searchLower, $productLower)) {
             return 0.85;
         }
@@ -1214,7 +1294,7 @@ public function getCompetitorPrice($search)
         }
 
         $matches = array_intersect($searchVolumes, $productVolumes);
-        
+
         if (count($matches) === count($searchVolumes)) {
             return 1.0;
         }
@@ -1230,27 +1310,27 @@ public function getCompetitorPrice($search)
         if (empty(trim($vendor))) {
             return '';
         }
-        
+
         $this->loadVendorsFromDatabase();
         $vendorLower = mb_strtolower(trim($vendor));
-        
+
         foreach ($this->knownVendors as $knownVendor) {
             $knownLower = mb_strtolower($knownVendor);
-            
+
             if ($vendorLower === $knownLower) {
                 return $knownVendor;
             }
-            
+
             if (str_contains($knownLower, $vendorLower) || str_contains($vendorLower, $knownLower)) {
                 $levenshtein = levenshtein($vendorLower, $knownLower);
                 $maxLength = max(strlen($vendorLower), strlen($knownLower));
-                
+
                 if ($maxLength > 0 && ($levenshtein / $maxLength) < 0.3) {
                     return $knownVendor;
                 }
             }
         }
-        
+
         return trim($vendor);
     }
 
@@ -1311,7 +1391,7 @@ public function getCompetitorPrice($search)
                 $this->hasAppliedFilters = true;
             }
         }
-        
+
         $this->applyFilters();
     }
 
@@ -1463,9 +1543,12 @@ public function getCompetitorPrice($search)
 
     private function getMatchLevel($similarityScore)
     {
-        if ($similarityScore >= 0.9) return 'excellent';
-        if ($similarityScore >= 0.7) return 'bon';
-        if ($similarityScore >= 0.6) return 'moyen';
+        if ($similarityScore >= 0.9)
+            return 'excellent';
+        if ($similarityScore >= 0.7)
+            return 'bon';
+        if ($similarityScore >= 0.6)
+            return 'moyen';
         return 'faible';
     }
 
@@ -1492,8 +1575,26 @@ public function getCompetitorPrice($search)
         $words = explode(" ", $variationClean);
 
         $stopWords = [
-            'de', 'le', 'la', 'les', 'un', 'une', 'des', 'du', 'et', 'ou',
-            'pour', 'avec', 'the', 'a', 'an', 'and', 'or', 'ml', 'edition', 'édition'
+            'de',
+            'le',
+            'la',
+            'les',
+            'un',
+            'une',
+            'des',
+            'du',
+            'et',
+            'ou',
+            'pour',
+            'avec',
+            'the',
+            'a',
+            'an',
+            'and',
+            'or',
+            'ml',
+            'edition',
+            'édition'
         ];
 
         foreach ($words as $word) {
@@ -2124,300 +2225,301 @@ public function getCompetitorPrice($search)
 
 
 
-/**
- * Export des résultats vers Excel
- */
-public function exportToExcel()
-{
-    try {
-        // Vérifier qu'il y a des résultats à exporter
-        if (empty($this->matchedProducts)) {
-            session()->flash('error', 'Aucun produit à exporter.');
-            return;
-        }
+    /**
+     * Export des résultats vers Excel
+     */
+    public function exportToExcel()
+    {
+        try {
+            // Vérifier qu'il y a des résultats à exporter
+            if (empty($this->matchedProducts)) {
+                session()->flash('error', 'Aucun produit à exporter.');
+                return;
+            }
 
-        $spreadsheet = new Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet();
-        
-        // Définir le titre de la feuille
-        $sheet->setTitle('Résultats Recherche');
-        
-        // En-têtes de colonnes
-        $headers = ['Image URL', 'Vendor', 'Nom', 'Variation', 'Site Source', 'Prix HT', 'Date MAJ'];
-        
-        // Ajouter les colonnes de comparaison de prix si on a un prix de référence
-        if ($this->referencePrice) {
-            $headers[] = 'Prix Cosmaparfumerie';
-            $headers[] = 'Différence Cosmaparfumerie';
-            $headers[] = 'Différence %';
-            $headers[] = 'Prix Cosmashop';
-            $headers[] = 'Différence Cosmashop';
-            $headers[] = 'Différence Cosmashop %';
-        }
-        
-        $headers[] = 'Type';
-        $headers[] = 'URL Produit';
-        
-        // Ajouter les colonnes de score si recherche automatique
-        if ($this->isAutomaticSearch) {
-            array_splice($headers, 1, 0, ['Score %', 'Correspondance']);
-        }
-        
-        // Écrire les en-têtes
-        $col = 'A';
-        $headerColumns = [];
-        foreach ($headers as $index => $header) {
-            $sheet->setCellValue($col . '1', $header);
-            $headerColumns[$header] = $col; // Stocker la position de chaque colonne
-            
-            // Style des en-têtes
-            $sheet->getStyle($col . '1')->applyFromArray([
-                'font' => [
-                    'bold' => true,
-                    'color' => ['rgb' => 'FFFFFF'],
-                    'size' => 11
-                ],
-                'fill' => [
-                    'fillType' => Fill::FILL_SOLID,
-                    'startColor' => ['rgb' => '4472C4']
-                ],
-                'alignment' => [
-                    'horizontal' => Alignment::HORIZONTAL_CENTER,
-                    'vertical' => Alignment::VERTICAL_CENTER
-                ],
-                'borders' => [
-                    'allBorders' => [
-                        'borderStyle' => Border::BORDER_THIN,
-                        'color' => ['rgb' => '000000']
-                    ]
-                ]
-            ]);
-            
-            $col++;
-        }
-        
-        $lastHeaderColumn = $col;
-        $lastHeaderColumn--;
-        
-        // Données des produits
-        $row = 2;
-        foreach ($this->matchedProducts as $product) {
-            $col = 'A';
-            
-            // Image URL - CLIQUABLE
-            $imageUrl = $this->getProductImage($product);
-            if (!empty($imageUrl) && filter_var($imageUrl, FILTER_VALIDATE_URL)) {
-                $sheet->setCellValue($col . $row, 'Voir image');
-                $sheet->getCell($col . $row)->getHyperlink()->setUrl($imageUrl);
-                $sheet->getStyle($col . $row)->applyFromArray([
-                    'font' => [
-                        'color' => ['rgb' => '0563C1'],
-                        'underline' => \PhpOffice\PhpSpreadsheet\Style\Font::UNDERLINE_SINGLE
-                    ]
-                ]);
-            } else {
-                $sheet->setCellValue($col . $row, 'Pas d\'image');
-            }
-            $col++;
-            
-            // Score et Correspondance (si recherche automatique)
-            if ($this->isAutomaticSearch) {
-                $similarityScore = $product->similarity_score ?? null;
-                $matchLevel = $product->match_level ?? null;
-                
-                $sheet->setCellValue($col . $row, $similarityScore ? round($similarityScore * 100, 0) : 'N/A');
-                $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('0"%"');
-                $col++;
-                
-                $sheet->setCellValue($col++ . $row, $matchLevel ? ucfirst($matchLevel) : 'N/A');
-            }
-            
-            // Vendor
-            $sheet->setCellValue($col++ . $row, $product->vendor ?? 'N/A');
-            
-            // Nom
-            $sheet->setCellValue($col++ . $row, $product->name ?? 'N/A');
-            
-            // Variation
-            $sheet->setCellValue($col++ . $row, $product->variation ?? 'Standard');
-            
-            // Site Source
-            $productUrl = $this->getProductUrl($product);
-            $siteName = $product->site_name ?? $this->extractDomain($productUrl ?? '');
-            $sheet->setCellValue($col++ . $row, $siteName);
-            
-            // Prix HT
-            $prixHT = $this->cleanPrice($product->price_ht ?? $product->prix_ht);
-            $sheet->setCellValue($col . $row, $prixHT);
-            $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
-            $col++;
-            
-            // Date MAJ
-            $sheet->setCellValue($col++ . $row, \Carbon\Carbon::parse($product->updated_at)->format('d/m/Y H:i'));
-            
-            // Colonnes de comparaison de prix
+            $spreadsheet = new Spreadsheet();
+            $sheet = $spreadsheet->getActiveSheet();
+
+            // Définir le titre de la feuille
+            $sheet->setTitle('Résultats Recherche');
+
+            // En-têtes de colonnes
+            $headers = ['Image URL', 'Vendor', 'Nom', 'Variation', 'Site Source', 'Prix HT', 'Date MAJ'];
+
+            // Ajouter les colonnes de comparaison de prix si on a un prix de référence
             if ($this->referencePrice) {
-                $competitorPrice = $product->price_ht ?? $product->prix_ht;
-                $priceDifference = $this->calculatePriceDifference($competitorPrice);
-                $priceDifferencePercent = $this->calculatePriceDifferencePercentage($competitorPrice);
-                
-                // Prix Cosmaparfumerie
-                $sheet->setCellValue($col . $row, $this->cleanPrice($this->referencePrice));
-                $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
-                $col++;
-                
-                // Différence Cosmaparfumerie
-                $sheet->setCellValue($col . $row, $priceDifference);
-                $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
-                // Colorer en rouge si négatif, vert si positif
-                if ($priceDifference < 0) {
-                    $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('FF0000');
-                } elseif ($priceDifference > 0) {
-                    $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('00B050');
-                }
-                $col++;
-                
-                // Différence %
-                $sheet->setCellValue($col . $row, $priceDifferencePercent);
-                $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('0.0"%"');
-                if ($priceDifferencePercent < 0) {
-                    $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('FF0000');
-                } elseif ($priceDifferencePercent > 0) {
-                    $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('00B050');
-                }
-                $col++;
-                
-                // Prix Cosmashop
-                $sheet->setCellValue($col . $row, $this->cleanPrice($this->cosmashopPrice));
-                $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
-                $col++;
-                
-                // Différence Cosmashop
-                $cosmashopDifference = $this->calculateCosmashopPriceDifference($competitorPrice);
-                $sheet->setCellValue($col . $row, $cosmashopDifference);
-                $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
-                if ($cosmashopDifference < 0) {
-                    $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('FF0000');
-                } elseif ($cosmashopDifference > 0) {
-                    $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('00B050');
-                }
-                $col++;
-                
-                // Différence Cosmashop %
-                $cosmashopDifferencePercent = $this->calculateCosmashopPriceDifferencePercentage($competitorPrice);
-                $sheet->setCellValue($col . $row, $cosmashopDifferencePercent);
-                $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('0.0"%"');
-                if ($cosmashopDifferencePercent < 0) {
-                    $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('FF0000');
-                } elseif ($cosmashopDifferencePercent > 0) {
-                    $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('00B050');
-                }
-                $col++;
+                $headers[] = 'Prix Cosmaparfumerie';
+                $headers[] = 'Différence Cosmaparfumerie';
+                $headers[] = 'Différence %';
+                $headers[] = 'Prix Cosmashop';
+                $headers[] = 'Différence Cosmashop';
+                $headers[] = 'Différence Cosmashop %';
             }
-            
-            // Type
-            $sheet->setCellValue($col++ . $row, $product->type ?? 'N/A');
-            
-            // URL Produit - CLIQUABLE
-            if (!empty($productUrl) && filter_var($productUrl, FILTER_VALIDATE_URL)) {
-                $sheet->setCellValue($col . $row, 'Voir le produit');
-                $sheet->getCell($col . $row)->getHyperlink()->setUrl($productUrl);
-                $sheet->getStyle($col . $row)->applyFromArray([
+
+            $headers[] = 'Type';
+            $headers[] = 'URL Produit';
+
+            // Ajouter les colonnes de score si recherche automatique
+            if ($this->isAutomaticSearch) {
+                array_splice($headers, 1, 0, ['Score %', 'Correspondance']);
+            }
+
+            // Écrire les en-têtes
+            $col = 'A';
+            $headerColumns = [];
+            foreach ($headers as $index => $header) {
+                $sheet->setCellValue($col . '1', $header);
+                $headerColumns[$header] = $col; // Stocker la position de chaque colonne
+
+                // Style des en-têtes
+                $sheet->getStyle($col . '1')->applyFromArray([
                     'font' => [
-                        'color' => ['rgb' => '0563C1'],
-                        'underline' => \PhpOffice\PhpSpreadsheet\Style\Font::UNDERLINE_SINGLE
+                        'bold' => true,
+                        'color' => ['rgb' => 'FFFFFF'],
+                        'size' => 11
+                    ],
+                    'fill' => [
+                        'fillType' => Fill::FILL_SOLID,
+                        'startColor' => ['rgb' => '4472C4']
+                    ],
+                    'alignment' => [
+                        'horizontal' => Alignment::HORIZONTAL_CENTER,
+                        'vertical' => Alignment::VERTICAL_CENTER
+                    ],
+                    'borders' => [
+                        'allBorders' => [
+                            'borderStyle' => Border::BORDER_THIN,
+                            'color' => ['rgb' => '000000']
+                        ]
                     ]
                 ]);
-            } else {
-                $sheet->setCellValue($col . $row, 'Pas d\'URL');
+
+                $col++;
             }
-            $col++;
-            
-            // Alternance des couleurs de lignes
-            if ($row % 2 === 0) {
+
+            $lastHeaderColumn = $col;
+            $lastHeaderColumn--;
+
+            // Données des produits
+            $row = 2;
+            foreach ($this->matchedProducts as $product) {
+                $col = 'A';
+
+                // Image URL - CLIQUABLE
+                $imageUrl = $this->getProductImage($product);
+                if (!empty($imageUrl) && filter_var($imageUrl, FILTER_VALIDATE_URL)) {
+                    $sheet->setCellValue($col . $row, 'Voir image');
+                    $sheet->getCell($col . $row)->getHyperlink()->setUrl($imageUrl);
+                    $sheet->getStyle($col . $row)->applyFromArray([
+                        'font' => [
+                            'color' => ['rgb' => '0563C1'],
+                            'underline' => \PhpOffice\PhpSpreadsheet\Style\Font::UNDERLINE_SINGLE
+                        ]
+                    ]);
+                } else {
+                    $sheet->setCellValue($col . $row, 'Pas d\'image');
+                }
+                $col++;
+
+                // Score et Correspondance (si recherche automatique)
+                if ($this->isAutomaticSearch) {
+                    $similarityScore = $product->similarity_score ?? null;
+                    $matchLevel = $product->match_level ?? null;
+
+                    $sheet->setCellValue($col . $row, $similarityScore ? round($similarityScore * 100, 0) : 'N/A');
+                    $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('0"%"');
+                    $col++;
+
+                    $sheet->setCellValue($col++ . $row, $matchLevel ? ucfirst($matchLevel) : 'N/A');
+                }
+
+                // Vendor
+                $sheet->setCellValue($col++ . $row, $product->vendor ?? 'N/A');
+
+                // Nom
+                $sheet->setCellValue($col++ . $row, $product->name ?? 'N/A');
+
+                // Variation
+                $sheet->setCellValue($col++ . $row, $product->variation ?? 'Standard');
+
+                // Site Source
+                $productUrl = $this->getProductUrl($product);
+                $siteName = $product->site_name ?? $this->extractDomain($productUrl ?? '');
+                $sheet->setCellValue($col++ . $row, $siteName);
+
+                // Prix HT
+                $prixHT = $this->cleanPrice($product->price_ht ?? $product->prix_ht);
+                $sheet->setCellValue($col . $row, $prixHT);
+                $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
+                $col++;
+
+                // Date MAJ
+                $sheet->setCellValue($col++ . $row, \Carbon\Carbon::parse($product->updated_at)->format('d/m/Y H:i'));
+
+                // Colonnes de comparaison de prix
+                if ($this->referencePrice) {
+                    $competitorPrice = $product->price_ht ?? $product->prix_ht;
+                    $priceDifference = $this->calculatePriceDifference($competitorPrice);
+                    $priceDifferencePercent = $this->calculatePriceDifferencePercentage($competitorPrice);
+
+                    // Prix Cosmaparfumerie
+                    $sheet->setCellValue($col . $row, $this->cleanPrice($this->referencePrice));
+                    $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
+                    $col++;
+
+                    // Différence Cosmaparfumerie
+                    $sheet->setCellValue($col . $row, $priceDifference);
+                    $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
+                    // Colorer en rouge si négatif, vert si positif
+                    if ($priceDifference < 0) {
+                        $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('FF0000');
+                    } elseif ($priceDifference > 0) {
+                        $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('00B050');
+                    }
+                    $col++;
+
+                    // Différence %
+                    $sheet->setCellValue($col . $row, $priceDifferencePercent);
+                    $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('0.0"%"');
+                    if ($priceDifferencePercent < 0) {
+                        $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('FF0000');
+                    } elseif ($priceDifferencePercent > 0) {
+                        $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('00B050');
+                    }
+                    $col++;
+
+                    // Prix Cosmashop
+                    $sheet->setCellValue($col . $row, $this->cleanPrice($this->cosmashopPrice));
+                    $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
+                    $col++;
+
+                    // Différence Cosmashop
+                    $cosmashopDifference = $this->calculateCosmashopPriceDifference($competitorPrice);
+                    $sheet->setCellValue($col . $row, $cosmashopDifference);
+                    $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
+                    if ($cosmashopDifference < 0) {
+                        $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('FF0000');
+                    } elseif ($cosmashopDifference > 0) {
+                        $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('00B050');
+                    }
+                    $col++;
+
+                    // Différence Cosmashop %
+                    $cosmashopDifferencePercent = $this->calculateCosmashopPriceDifferencePercentage($competitorPrice);
+                    $sheet->setCellValue($col . $row, $cosmashopDifferencePercent);
+                    $sheet->getStyle($col . $row)->getNumberFormat()->setFormatCode('0.0"%"');
+                    if ($cosmashopDifferencePercent < 0) {
+                        $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('FF0000');
+                    } elseif ($cosmashopDifferencePercent > 0) {
+                        $sheet->getStyle($col . $row)->getFont()->getColor()->setRGB('00B050');
+                    }
+                    $col++;
+                }
+
+                // Type
+                $sheet->setCellValue($col++ . $row, $product->type ?? 'N/A');
+
+                // URL Produit - CLIQUABLE
+                if (!empty($productUrl) && filter_var($productUrl, FILTER_VALIDATE_URL)) {
+                    $sheet->setCellValue($col . $row, 'Voir le produit');
+                    $sheet->getCell($col . $row)->getHyperlink()->setUrl($productUrl);
+                    $sheet->getStyle($col . $row)->applyFromArray([
+                        'font' => [
+                            'color' => ['rgb' => '0563C1'],
+                            'underline' => \PhpOffice\PhpSpreadsheet\Style\Font::UNDERLINE_SINGLE
+                        ]
+                    ]);
+                } else {
+                    $sheet->setCellValue($col . $row, 'Pas d\'URL');
+                }
+                $col++;
+
+                // Alternance des couleurs de lignes
+                if ($row % 2 === 0) {
+                    $lastCol = $col;
+                    $lastCol--;
+                    $sheet->getStyle('A' . $row . ':' . $lastCol . $row)->applyFromArray([
+                        'fill' => [
+                            'fillType' => Fill::FILL_SOLID,
+                            'startColor' => ['rgb' => 'F2F2F2']
+                        ]
+                    ]);
+                }
+
+                // Bordures pour toute la ligne
                 $lastCol = $col;
                 $lastCol--;
                 $sheet->getStyle('A' . $row . ':' . $lastCol . $row)->applyFromArray([
-                    'fill' => [
-                        'fillType' => Fill::FILL_SOLID,
-                        'startColor' => ['rgb' => 'F2F2F2']
+                    'borders' => [
+                        'allBorders' => [
+                            'borderStyle' => Border::BORDER_THIN,
+                            'color' => ['rgb' => 'D0D0D0']
+                        ]
                     ]
                 ]);
+
+                $row++;
             }
-            
-            // Bordures pour toute la ligne
-            $lastCol = $col;
-            $lastCol--;
-            $sheet->getStyle('A' . $row . ':' . $lastCol . $row)->applyFromArray([
-                'borders' => [
-                    'allBorders' => [
-                        'borderStyle' => Border::BORDER_THIN,
-                        'color' => ['rgb' => 'D0D0D0']
-                    ]
+
+            $lastDataRow = $row - 1;
+
+            // AJOUTER LES FILTRES AUTOMATIQUES sur les colonnes Vendor, Variation et Site Source
+            // Appliquer le filtre sur toute la plage de données
+            $sheet->setAutoFilter('A1:' . $lastHeaderColumn . $lastDataRow);
+
+            // Ajuster automatiquement la largeur des colonnes
+            foreach (range('A', $sheet->getHighestColumn()) as $col) {
+                $sheet->getColumnDimension($col)->setAutoSize(true);
+            }
+
+            // Figer la première ligne
+            $sheet->freezePane('A2');
+
+            // Ajouter une note d'information dans une cellule séparée
+            $infoRow = $lastDataRow + 3;
+            $sheet->setCellValue('A' . $infoRow, '💡 Conseil : Utilisez les filtres dans les en-têtes pour filtrer par Vendor, Variation ou Site Source');
+            $sheet->getStyle('A' . $infoRow)->applyFromArray([
+                'font' => [
+                    'italic' => true,
+                    'color' => ['rgb' => '0070C0']
                 ]
             ]);
-            
-            $row++;
+            $sheet->mergeCells('A' . $infoRow . ':' . $lastHeaderColumn . $infoRow);
+
+            // Créer le nom du fichier
+            $filename = 'resultats_recherche_' . date('Y-m-d_His') . '.xlsx';
+
+            // Créer le writer et sauvegarder
+            $writer = new Xlsx($spreadsheet);
+
+            // Créer un fichier temporaire
+            $tempFile = tempnam(sys_get_temp_dir(), 'export_');
+            $writer->save($tempFile);
+
+            // Télécharger le fichier
+            return response()->download($tempFile, $filename)->deleteFileAfterSend(true);
+
+        } catch (\Throwable $e) {
+            \Log::error('Error exporting to Excel:', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            session()->flash('error', 'Erreur lors de l\'export Excel: ' . $e->getMessage());
+            return;
         }
-        
-        $lastDataRow = $row - 1;
-        
-        // AJOUTER LES FILTRES AUTOMATIQUES sur les colonnes Vendor, Variation et Site Source
-        // Appliquer le filtre sur toute la plage de données
-        $sheet->setAutoFilter('A1:' . $lastHeaderColumn . $lastDataRow);
-        
-        // Ajuster automatiquement la largeur des colonnes
-        foreach (range('A', $sheet->getHighestColumn()) as $col) {
-            $sheet->getColumnDimension($col)->setAutoSize(true);
-        }
-        
-        // Figer la première ligne
-        $sheet->freezePane('A2');
-        
-        // Ajouter une note d'information dans une cellule séparée
-        $infoRow = $lastDataRow + 3;
-        $sheet->setCellValue('A' . $infoRow, '💡 Conseil : Utilisez les filtres dans les en-têtes pour filtrer par Vendor, Variation ou Site Source');
-        $sheet->getStyle('A' . $infoRow)->applyFromArray([
-            'font' => [
-                'italic' => true,
-                'color' => ['rgb' => '0070C0']
-            ]
-        ]);
-        $sheet->mergeCells('A' . $infoRow . ':' . $lastHeaderColumn . $infoRow);
-        
-        // Créer le nom du fichier
-        $filename = 'resultats_recherche_' . date('Y-m-d_His') . '.xlsx';
-        
-        // Créer le writer et sauvegarder
-        $writer = new Xlsx($spreadsheet);
-        
-        // Créer un fichier temporaire
-        $tempFile = tempnam(sys_get_temp_dir(), 'export_');
-        $writer->save($tempFile);
-        
-        // Télécharger le fichier
-        return response()->download($tempFile, $filename)->deleteFileAfterSend(true);
-        
-    } catch (\Throwable $e) {
-        \Log::error('Error exporting to Excel:', [
-            'message' => $e->getMessage(),
-            'trace' => $e->getTraceAsString()
-        ]);
-        
-        session()->flash('error', 'Erreur lors de l\'export Excel: ' . $e->getMessage());
-        return;
     }
-}
-    
+
 }; ?>
 
 <div>
     <!-- Overlay de chargement global - Uniquement visible lors d'une action Livewire -->
     <div wire:loading.delay.flex class="hidden fixed inset-0 z-50 items-center justify-center bg-transparent">
-        <div class="flex flex-col items-center justify-center bg-white/90 backdrop-blur-sm rounded-2xl p-8 shadow-2xl border border-white/20 min-w-[200px]">
+        <div
+            class="flex flex-col items-center justify-center bg-white/90 backdrop-blur-sm rounded-2xl p-8 shadow-2xl border border-white/20 min-w-[200px]">
             <!-- Spinner -->
             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-            
+
             <!-- Texte de chargement -->
             <p class="text-lg font-semibold text-gray-800">Chargement</p>
             <p class="text-sm text-gray-600 mt-1">Veuillez patienter...</p>
@@ -2425,14 +2527,17 @@ public function exportToExcel()
     </div>
 
     <!-- Indicateur de chargement pour les filtres - Uniquement lors du filtrage -->
-    <div wire:loading.delay.flex wire:target="filters.vendor, filters.name, filters.variation, filters.type, filters.site_source" class="hidden fixed top-4 right-4 z-40 items-center justify-center">
-        <div class="bg-blue-500/90 backdrop-blur-sm text-white px-4 py-2 rounded-lg shadow-lg flex items-center space-x-2">
+    <div wire:loading.delay.flex
+        wire:target="filters.vendor, filters.name, filters.variation, filters.type, filters.site_source"
+        class="hidden fixed top-4 right-4 z-40 items-center justify-center">
+        <div
+            class="bg-blue-500/90 backdrop-blur-sm text-white px-4 py-2 rounded-lg shadow-lg flex items-center space-x-2">
             <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
             <span class="text-sm">Filtrage en cours...</span>
         </div>
     </div>
 
-    <livewire:plateformes.detail :id="$id"/>
+    <livewire:plateformes.detail :id="$id" />
 
     <!-- Section d'analyse des prix (uniquement si on a des données) -->
     @if($hasData && $referencePrice && count($matchedProducts) > 0)
@@ -2446,7 +2551,9 @@ public function exportToExcel()
                 <div class="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200 p-4 mb-4">
                     <h4 class="text-lg font-semibold text-purple-800 mb-3 flex items-center">
                         <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
+                            </path>
                         </svg>
                         Analyse Cosmaparfumerie
                     </h4>
@@ -2461,27 +2568,34 @@ public function exportToExcel()
                             <div class="text-xs text-gray-600">Prix maximum concurrent</div>
                         </div>
                         <div class="text-center p-3 bg-white rounded-lg shadow-sm">
-                            <div class="text-2xl font-bold text-blue-600">{{ $this->formatPrice($priceAnalysis['average']) }}</div>
+                            <div class="text-2xl font-bold text-blue-600">{{ $this->formatPrice($priceAnalysis['average']) }}
+                            </div>
                             <div class="text-xs text-gray-600">Prix moyen concurrent</div>
                         </div>
-                        <div class="text-center p-3 bg-white rounded-lg shadow-sm border-2 
-                            {{ $priceAnalysis['our_position'] === 'competitive' ? 'border-green-300' : 'border-yellow-300' }}">
-                            <div class="text-2xl font-bold text-purple-600">{{ $this->formatPrice($priceAnalysis['our_price']) }}</div>
-                            <div class="text-xs {{ $priceAnalysis['our_position'] === 'competitive' ? 'text-green-600' : 'text-yellow-600' }} font-semibold">
+                        <div
+                            class="text-center p-3 bg-white rounded-lg shadow-sm border-2 
+                                    {{ $priceAnalysis['our_position'] === 'competitive' ? 'border-green-300' : 'border-yellow-300' }}">
+                            <div class="text-2xl font-bold text-purple-600">
+                                {{ $this->formatPrice($priceAnalysis['our_price']) }}</div>
+                            <div
+                                class="text-xs {{ $priceAnalysis['our_position'] === 'competitive' ? 'text-green-600' : 'text-yellow-600' }} font-semibold">
                                 Notre prix actuel
                             </div>
                         </div>
                     </div>
 
                     <div class="text-sm text-purple-700">
-                        <strong>Analyse :</strong> 
-                        Notre prix est 
-                        <span class="font-semibold {{ $priceAnalysis['our_position'] === 'competitive' ? 'text-green-600' : 'text-yellow-600' }}">
+                        <strong>Analyse :</strong>
+                        Notre prix est
+                        <span
+                            class="font-semibold {{ $priceAnalysis['our_position'] === 'competitive' ? 'text-green-600' : 'text-yellow-600' }}">
                             {{ $priceAnalysis['our_position'] === 'competitive' ? 'compétitif' : 'au-dessus de la moyenne' }}
                         </span>
                         par rapport aux {{ $priceAnalysis['count'] }} concurrents analysés.
                         @if($priceAnalysis['our_price'] > $priceAnalysis['average'])
-                            <span class="text-yellow-600">({{ $this->formatPriceDifference($priceAnalysis['our_price'] - $priceAnalysis['average']) }} par rapport à la moyenne)</span>
+                            <span
+                                class="text-yellow-600">({{ $this->formatPriceDifference($priceAnalysis['our_price'] - $priceAnalysis['average']) }}
+                                par rapport à la moyenne)</span>
                         @endif
                     </div>
                 </div>
@@ -2490,26 +2604,32 @@ public function exportToExcel()
                 <div class="bg-gradient-to-r from-orange-50 to-amber-50 rounded-lg border border-orange-200 p-4">
                     <h4 class="text-lg font-semibold text-orange-800 mb-3 flex items-center">
                         <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z">
+                            </path>
                         </svg>
                         Analyse Cosmashop (Prix +5%)
                     </h4>
 
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
                         <div class="text-center p-3 bg-white rounded-lg shadow-sm">
-                            <div class="text-2xl font-bold text-green-600">{{ $this->formatPrice($cosmashopAnalysis['min']) }}</div>
+                            <div class="text-2xl font-bold text-green-600">{{ $this->formatPrice($cosmashopAnalysis['min']) }}
+                            </div>
                             <div class="text-xs text-gray-600">Prix minimum concurrent</div>
                         </div>
                         <div class="text-center p-3 bg-white rounded-lg shadow-sm">
-                            <div class="text-2xl font-bold text-red-600">{{ $this->formatPrice($cosmashopAnalysis['max']) }}</div>
+                            <div class="text-2xl font-bold text-red-600">{{ $this->formatPrice($cosmashopAnalysis['max']) }}
+                            </div>
                             <div class="text-xs text-gray-600">Prix maximum concurrent</div>
                         </div>
                         <div class="text-center p-3 bg-white rounded-lg shadow-sm">
-                            <div class="text-2xl font-bold text-blue-600">{{ $this->formatPrice($cosmashopAnalysis['average']) }}</div>
+                            <div class="text-2xl font-bold text-blue-600">
+                                {{ $this->formatPrice($cosmashopAnalysis['average']) }}</div>
                             <div class="text-xs text-gray-600">Prix moyen concurrent</div>
                         </div>
                         <div class="text-center p-3 bg-white rounded-lg shadow-sm border-2 border-orange-300">
-                            <div class="text-2xl font-bold text-orange-600">{{ $this->formatPrice($cosmashopAnalysis['cosmashop_price']) }}</div>
+                            <div class="text-2xl font-bold text-orange-600">
+                                {{ $this->formatPrice($cosmashopAnalysis['cosmashop_price']) }}</div>
                             <div class="text-xs text-orange-600 font-semibold">
                                 Prix Cosmashop
                             </div>
@@ -2517,13 +2637,16 @@ public function exportToExcel()
                     </div>
 
                     <div class="text-sm text-orange-700">
-                        <strong>Analyse :</strong> 
-                        Le prix Cosmashop serait 
-                        <span class="font-semibold {{ $cosmashopAnalysis['cosmashop_position'] === 'competitive' ? 'text-green-600' : 'text-yellow-600' }}">
+                        <strong>Analyse :</strong>
+                        Le prix Cosmashop serait
+                        <span
+                            class="font-semibold {{ $cosmashopAnalysis['cosmashop_position'] === 'competitive' ? 'text-green-600' : 'text-yellow-600' }}">
                             {{ $cosmashopAnalysis['cosmashop_position'] === 'competitive' ? 'compétitif' : 'au-dessus de la moyenne' }}
                         </span>.
-                        <span class="font-semibold text-green-600">{{ $cosmashopAnalysis['below_cosmashop'] }} concurrent(s)</span> en dessous et 
-                        <span class="font-semibold text-red-600">{{ $cosmashopAnalysis['above_cosmashop'] }} concurrent(s)</span> au-dessus.
+                        <span class="font-semibold text-green-600">{{ $cosmashopAnalysis['below_cosmashop'] }}
+                            concurrent(s)</span> en dessous et
+                        <span class="font-semibold text-red-600">{{ $cosmashopAnalysis['above_cosmashop'] }}
+                            concurrent(s)</span> au-dessus.
                     </div>
                 </div>
             </div>
@@ -2537,14 +2660,16 @@ public function exportToExcel()
             <div class="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <div class="flex items-center">
                     <svg class="w-5 h-5 text-yellow-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                     </svg>
                     <span class="text-sm font-medium text-yellow-800">
                         Aucun résultat trouvé automatiquement. Utilisez les filtres ci-dessous pour rechercher manuellement.
                     </span>
                 </div>
                 <p class="mt-2 text-sm text-yellow-700">
-                    Le vendor a été pré-rempli à partir de votre recherche. Vous pouvez ajuster les autres filtres pour trouver des produits.
+                    Le vendor a été pré-rempli à partir de votre recherche. Vous pouvez ajuster les autres filtres pour
+                    trouver des produits.
                 </p>
             </div>
         @endif
@@ -2556,35 +2681,38 @@ public function exportToExcel()
                     <div class="flex items-center justify-between">
                         <div class="flex items-center">
                             <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z">
+                                </path>
                             </svg>
                             <span class="text-sm font-medium text-blue-800">
-                                Algorithme de similarité activé - 
-                                {{ count($matchedProducts) }} produit(s) correspondant(s) au seuil de {{ $similarityThreshold * 100 }}%
+                                Algorithme de similarité activé -
+                                {{ count($matchedProducts) }} produit(s) correspondant(s) au seuil de
+                                {{ $similarityThreshold * 100 }}%
                             </span>
                         </div>
                         <div class="flex items-center space-x-2">
                             <span class="text-xs text-blue-600 font-semibold">Ajuster le seuil :</span>
                             <!-- Boutons avec indicateurs de chargement -->
-                            <button wire:click="adjustSimilarityThreshold(0.5)" 
-                                    class="px-2 py-1 text-xs {{ $similarityThreshold == 0.5 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors flex items-center justify-center min-w-[50px]"
-                                    wire:loading.attr="disabled">
+                            <button wire:click="adjustSimilarityThreshold(0.5)"
+                                class="px-2 py-1 text-xs {{ $similarityThreshold == 0.5 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors flex items-center justify-center min-w-[50px]"
+                                wire:loading.attr="disabled">
                                 <span wire:loading.remove wire:target="adjustSimilarityThreshold(0.5)">50%</span>
                                 <span wire:loading wire:target="adjustSimilarityThreshold(0.5)">
                                     <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
                                 </span>
                             </button>
-                            <button wire:click="adjustSimilarityThreshold(0.6)" 
-                                    class="px-2 py-1 text-xs {{ $similarityThreshold == 0.6 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors flex items-center justify-center min-w-[50px]"
-                                    wire:loading.attr="disabled">
+                            <button wire:click="adjustSimilarityThreshold(0.6)"
+                                class="px-2 py-1 text-xs {{ $similarityThreshold == 0.6 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors flex items-center justify-center min-w-[50px]"
+                                wire:loading.attr="disabled">
                                 <span wire:loading.remove wire:target="adjustSimilarityThreshold(0.6)">60%</span>
                                 <span wire:loading wire:target="adjustSimilarityThreshold(0.6)">
                                     <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
                                 </span>
                             </button>
-                            <button wire:click="adjustSimilarityThreshold(0.7)" 
-                                    class="px-2 py-1 text-xs {{ $similarityThreshold == 0.7 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors flex items-center justify-center min-w-[50px]"
-                                    wire:loading.attr="disabled">
+                            <button wire:click="adjustSimilarityThreshold(0.7)"
+                                class="px-2 py-1 text-xs {{ $similarityThreshold == 0.7 ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800' }} rounded transition-colors flex items-center justify-center min-w-[50px]"
+                                wire:loading.attr="disabled">
                                 <span wire:loading.remove wire:target="adjustSimilarityThreshold(0.7)">70%</span>
                                 <span wire:loading wire:target="adjustSimilarityThreshold(0.7)">
                                     <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
@@ -2617,7 +2745,8 @@ public function exportToExcel()
                     <div class="flex flex-col space-y-2">
                         <div class="flex items-center">
                             <svg class="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                             </svg>
                             <span class="text-sm font-medium text-blue-800">Critères de recherche détectés :</span>
                         </div>
@@ -2626,7 +2755,8 @@ public function exportToExcel()
                                 <div class="flex items-center">
                                     <span class="text-xs text-blue-700 mr-1">Volumes :</span>
                                     @foreach($searchVolumes as $volume)
-                                        <span class="bg-green-100 text-green-800 font-semibold px-2 py-1 rounded text-xs">{{ $volume }} ml</span>
+                                        <span class="bg-green-100 text-green-800 font-semibold px-2 py-1 rounded text-xs">{{ $volume }}
+                                            ml</span>
                                     @endforeach
                                 </div>
                             @endif
@@ -2636,7 +2766,8 @@ public function exportToExcel()
                             @if($searchVariation)
                                 <div class="flex items-center">
                                     <span class="text-xs text-blue-700 mr-1">Variation :</span>
-                                    <span class="bg-blue-100 text-blue-800 font-semibold px-2 py-1 rounded text-xs">{{ $searchVariation }}</span>
+                                    <span
+                                        class="bg-blue-100 text-blue-800 font-semibold px-2 py-1 rounded text-xs">{{ $searchVariation }}</span>
                                 </div>
                             @endif
                         </div>
@@ -2651,17 +2782,20 @@ public function exportToExcel()
                 <div class="flex items-center justify-between">
                     <div class="flex items-center">
                         <svg class="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z">
+                            </path>
                         </svg>
                         <span class="text-sm font-medium text-blue-800">Filtres actifs :</span>
                     </div>
                     <!-- Bouton Réinitialiser avec indicateur de chargement -->
-                    <button wire:click="resetFilters" 
-                            class="px-3 py-1.5 text-sm bg-red-50 text-red-700 hover:bg-red-100 rounded-md transition-colors duration-200 flex items-center border border-red-200"
-                            wire:loading.attr="disabled">
+                    <button wire:click="resetFilters"
+                        class="px-3 py-1.5 text-sm bg-red-50 text-red-700 hover:bg-red-100 rounded-md transition-colors duration-200 flex items-center border border-red-200"
+                        wire:loading.attr="disabled">
                         <span wire:loading.remove wire:target="resetFilters">
                             <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M6 18L18 6M6 6l12 12"></path>
                             </svg>
                             Réinitialiser les filtres
                         </span>
@@ -2675,11 +2809,11 @@ public function exportToExcel()
                 <div class="mt-2 flex flex-wrap gap-2">
                     <!-- FILTRE VENDOR AJOUTÉ -->
                     @if($filters['vendor'])
-                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
+                        <span
+                            class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
                             Marque: {{ $filters['vendor'] }}
-                            <button wire:click="$set('filters.vendor', '')" 
-                                    class="ml-2 text-blue-600 hover:text-blue-800 flex items-center"
-                                    wire:loading.attr="disabled">
+                            <button wire:click="$set('filters.vendor', '')"
+                                class="ml-2 text-blue-600 hover:text-blue-800 flex items-center" wire:loading.attr="disabled">
                                 <span wire:loading.remove wire:target="$set('filters.vendor', '')">×</span>
                                 <span wire:loading wire:target="$set('filters.vendor', '')">
                                     <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
@@ -2689,11 +2823,11 @@ public function exportToExcel()
                     @endif
 
                     @if($filters['name'])
-                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">
+                        <span
+                            class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">
                             Nom: {{ $filters['name'] }}
-                            <button wire:click="$set('filters.name', '')" 
-                                    class="ml-2 text-green-600 hover:text-green-800 flex items-center"
-                                    wire:loading.attr="disabled">
+                            <button wire:click="$set('filters.name', '')"
+                                class="ml-2 text-green-600 hover:text-green-800 flex items-center" wire:loading.attr="disabled">
                                 <span wire:loading.remove wire:target="$set('filters.name', '')">×</span>
                                 <span wire:loading wire:target="$set('filters.name', '')">
                                     <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-green-600"></div>
@@ -2703,11 +2837,12 @@ public function exportToExcel()
                     @endif
 
                     @if($filters['variation'])
-                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200">
+                        <span
+                            class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200">
                             Variation: {{ $filters['variation'] }}
-                            <button wire:click="$set('filters.variation', '')" 
-                                    class="ml-2 text-purple-600 hover:text-purple-800 flex items-center"
-                                    wire:loading.attr="disabled">
+                            <button wire:click="$set('filters.variation', '')"
+                                class="ml-2 text-purple-600 hover:text-purple-800 flex items-center"
+                                wire:loading.attr="disabled">
                                 <span wire:loading.remove wire:target="$set('filters.variation', '')">×</span>
                                 <span wire:loading wire:target="$set('filters.variation', '')">
                                     <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-purple-600"></div>
@@ -2717,11 +2852,12 @@ public function exportToExcel()
                     @endif
 
                     @if($filters['type'])
-                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200">
+                        <span
+                            class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200">
                             Type: {{ $filters['type'] }}
-                            <button wire:click="$set('filters.type', '')" 
-                                    class="ml-2 text-orange-600 hover:text-orange-800 flex items-center"
-                                    wire:loading.attr="disabled">
+                            <button wire:click="$set('filters.type', '')"
+                                class="ml-2 text-orange-600 hover:text-orange-800 flex items-center"
+                                wire:loading.attr="disabled">
                                 <span wire:loading.remove wire:target="$set('filters.type', '')">×</span>
                                 <span wire:loading wire:target="$set('filters.type', '')">
                                     <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-orange-600"></div>
@@ -2731,25 +2867,29 @@ public function exportToExcel()
                     @endif
 
                     @if($filters['site_source'])
-@if(!empty($this->filters['site_source']))
-    @foreach($this->filters['site_source'] as $siteId)
-        @php
-            $selectedSite = $sites->firstWhere('id', $siteId);
-            $siteName = $selectedSite ? $selectedSite->name : 'Site ID: ' . $siteId;
-        @endphp
-        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
-            Site: {{ $siteName }}
-            <button wire:click="$set('filters.site_source', {{ json_encode(array_values(array_diff($this->filters['site_source'], [$siteId]))) }})" 
-                    class="ml-2 text-indigo-600 hover:text-indigo-800 flex items-center"
-                    wire:loading.attr="disabled">
-                <span wire:loading.remove wire:target="$set('filters.site_source', {{ json_encode(array_values(array_diff($this->filters['site_source'], [$siteId]))) }})">×</span>
-                <span wire:loading wire:target="$set('filters.site_source', {{ json_encode(array_values(array_diff($this->filters['site_source'], [$siteId]))) }})">
-                    <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-indigo-600"></div>
-                </span>
-            </button>
-        </span>
-    @endforeach
-@endif
+                        @if(!empty($this->filters['site_source']))
+                            @foreach($this->filters['site_source'] as $siteId)
+                                @php
+                                    $selectedSite = $sites->firstWhere('id', $siteId);
+                                    $siteName = $selectedSite ? $selectedSite->name : 'Site ID: ' . $siteId;
+                                @endphp
+                                <span
+                                    class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
+                                    Site: {{ $siteName }}
+                                    <button
+                                        wire:click="$set('filters.site_source', {{ json_encode(array_values(array_diff($this->filters['site_source'], [$siteId]))) }})"
+                                        class="ml-2 text-indigo-600 hover:text-indigo-800 flex items-center"
+                                        wire:loading.attr="disabled">
+                                        <span wire:loading.remove
+                                            wire:target="$set('filters.site_source', {{ json_encode(array_values(array_diff($this->filters['site_source'], [$siteId]))) }})">×</span>
+                                        <span wire:loading
+                                            wire:target="$set('filters.site_source', {{ json_encode(array_values(array_diff($this->filters['site_source'], [$siteId]))) }})">
+                                            <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-indigo-600"></div>
+                                        </span>
+                                    </button>
+                                </span>
+                            @endforeach
+                        @endif
                     @endif
                 </div>
             </div>
@@ -2757,273 +2897,289 @@ public function exportToExcel()
 
         <!-- Tableau des résultats - TOUJOURS AFFICHÉ -->
         @if($showTable)
-            <div class="bg-white shadow-sm border border-gray-300 overflow-hidden" wire:loading.class="opacity-50" wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
-<div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-    <div>
-        <h3 class="text-lg font-medium text-gray-900">
-            @if($hasData)
-                @if($isAutomaticSearch)
-                    Résultats de la recherche automatique ({{ count($matchedProducts) }} produit(s))
-                @else
-                    Résultats de la recherche manuelle ({{ count($matchedProducts) }} produit(s))
-                @endif
-            @else
-                Recherche manuelle - Utilisez les filtres
-            @endif
-        </h3>
-        <p class="mt-1 text-sm text-gray-500">
-            @if($hasData)
-                <span wire:loading.remove wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
-                    {{ count($matchedProducts) }} produit(s) trouvé(s)
-                </span>
-            @else
-                Aucun résultat automatique. Utilisez les filtres pour rechercher manuellement.
-            @endif
-        </p>
-    </div>
-    
-    @if($hasData && count($matchedProducts) > 0)
-        <button wire:click="exportToExcel" 
-                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-200"
-                wire:loading.attr="disabled">
-            <span wire:loading.remove wire:target="exportToExcel">
-                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                </svg>
-                Exporter Excel
-            </span>
-            <span wire:loading wire:target="exportToExcel" class="flex items-center">
-                <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                Export en cours...
-            </span>
-        </button>
-    @endif
-</div>
+            <div class="bg-white shadow-sm border border-gray-300 overflow-hidden" wire:loading.class="opacity-50"
+                wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
+                <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                    <div>
+                        <h3 class="text-lg font-medium text-gray-900">
+                            @if($hasData)
+                                @if($isAutomaticSearch)
+                                    Résultats de la recherche automatique ({{ count($matchedProducts) }} produit(s))
+                                @else
+                                    Résultats de la recherche manuelle ({{ count($matchedProducts) }} produit(s))
+                                @endif
+                            @else
+                                Recherche manuelle - Utilisez les filtres
+                            @endif
+                        </h3>
+                        <p class="mt-1 text-sm text-gray-500">
+                            @if($hasData)
+                                <span wire:loading.remove wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
+                                    {{ count($matchedProducts) }} produit(s) trouvé(s)
+                                </span>
+                            @else
+                                Aucun résultat automatique. Utilisez les filtres pour rechercher manuellement.
+                            @endif
+                        </p>
+                    </div>
+
+                    @if($hasData && count($matchedProducts) > 0)
+                        <button wire:click="exportToExcel"
+                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-200"
+                            wire:loading.attr="disabled">
+                            <span wire:loading.remove wire:target="exportToExcel">
+                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                                    </path>
+                                </svg>
+                                Exporter Excel
+                            </span>
+                            <span wire:loading wire:target="exportToExcel" class="flex items-center">
+                                <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                                Export en cours...
+                            </span>
+                        </button>
+                    @endif
+                </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full border-collapse border border-gray-300">
                         <thead class="bg-gray-100">
                             <tr>
                                 <!-- NOUVELLE COLONNE : Image (TOUJOURS VISIBLE) -->
-                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
+                                <th
+                                    class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
                                     <div class="flex flex-col">
                                         <span>Image</span>
                                     </div>
                                 </th>
-                                
+
                                 @if($hasData && $isAutomaticSearch)
-                                <!-- Colonne Score (uniquement si résultats automatiques) -->
-                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
-                                    <div class="flex flex-col">
-                                        <span>Score</span>
-                                    </div>
-                                </th>
-                                
-                                <!-- Colonne Correspondance (uniquement si résultats automatiques) -->
-                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
-                                    <div class="flex flex-col">
-                                        <span>Correspondance</span>
-                                    </div>
-                                </th>
+                                    <!-- Colonne Score (uniquement si résultats automatiques) -->
+                                    <th
+                                        class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
+                                        <div class="flex flex-col">
+                                            <span>Score</span>
+                                        </div>
+                                    </th>
+
+                                    <!-- Colonne Correspondance (uniquement si résultats automatiques) -->
+                                    <th
+                                        class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
+                                        <div class="flex flex-col">
+                                            <span>Correspondance</span>
+                                        </div>
+                                    </th>
                                 @endif
-                                
+
                                 <!-- Colonne Vendor avec filtre AJOUTÉE -->
-                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200 min-w-48">
+                                <th
+                                    class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200 min-w-48">
                                     <div class="flex flex-col space-y-2">
                                         <span class="whitespace-nowrap">Marque/Vendor</span>
                                         <div class="relative">
-                                            <input type="text" 
-                                                   disabled
-                                                   wire:model.live.debounce.800ms="filters.vendor"
-                                                   placeholder="Filtrer par marque..."
-                                                   class="px-3 py-2 text-sm border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
-                                                   wire:loading.attr="disabled">
-                                            <div wire:loading wire:target="filters.vendor" class="absolute right-3 top-1/2 transform -translate-y-1/2">
-                                                <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                                            <input type="text" disabled wire:model.live.debounce.800ms="filters.vendor"
+                                                placeholder="Filtrer par marque..."
+                                                class="px-3 py-2 text-sm border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
+                                                wire:loading.attr="disabled">
+                                            <div wire:loading wire:target="filters.vendor"
+                                                class="absolute right-3 top-1/2 transform -translate-y-1/2">
+                                                <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600">
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                 </th>
-                                
+
                                 <!-- Colonne Nom avec filtre -->
-                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200 min-w-64" style="width: 30%;">
+                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200 min-w-64"
+                                    style="width: 30%;">
                                     <!-- Largeur ajustée -->
                                     <div class="flex flex-col space-y-2">
                                         <span class="whitespace-nowrap">Nom</span>
                                         <div class="relative">
-                                            <input type="text" 
-                                                wire:model.live.debounce.800ms="filters.name"
+                                            <input type="text" wire:model.live.debounce.800ms="filters.name"
                                                 placeholder="Filtrer..."
                                                 class="px-3 py-2 text-sm border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
                                                 wire:loading.attr="disabled">
-                                            <div wire:loading wire:target="filters.name" class="absolute right-3 top-1/2 transform -translate-y-1/2">
-                                                <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                                            <div wire:loading wire:target="filters.name"
+                                                class="absolute right-3 top-1/2 transform -translate-y-1/2">
+                                                <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600">
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                 </th>
-                                
+
                                 <!-- Colonne Variation avec filtre -->
-                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
+                                <th
+                                    class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
                                     <div class="flex flex-col space-y-1">
                                         <span>Variation</span>
                                         <div class="relative">
-                                            <input type="text" 
-                                                   wire:model.live.debounce.800ms="filters.variation"
-                                                   placeholder="Filtrer..."
-                                                   class="px-3 py-2 text-sm border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
-                                                   wire:loading.attr="disabled">
-                                            <div wire:loading wire:target="filters.variation" class="absolute right-2 top-1/2 transform -translate-y-1/2">
-                                                <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
+                                            <input type="text" wire:model.live.debounce.800ms="filters.variation"
+                                                placeholder="Filtrer..."
+                                                class="px-3 py-2 text-sm border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
+                                                wire:loading.attr="disabled">
+                                            <div wire:loading wire:target="filters.variation"
+                                                class="absolute right-2 top-1/2 transform -translate-y-1/2">
+                                                <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600">
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                 </th>
-                                
+
                                 <!-- Colonne Site Source avec filtre -->
-<!-- Colonne Site Source avec filtre multi-select personnalisé -->
-<th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
-    <div class="flex flex-col space-y-2">
-        <span>Site Source</span>
-        <div x-data="{ open: false }" @click.away="open = false" class="relative">
-            <!-- Display des sites sélectionnés - LARGEUR AUGMENTÉE -->
-            <div @click="open = !open" 
-                 class="min-h-[38px] min-w-[250px] px-3 py-2 text-xs border border-gray-400 rounded-lg cursor-pointer bg-white hover:border-blue-500 transition-colors"
-                 :class="{ 'ring-2 ring-blue-500 border-blue-500': open }">
-                @if(empty($filters['site_source']))
-                    <span class="text-gray-400 text-xs">Sélectionner des sites...</span>
-                @else
-                    <div class="flex flex-wrap gap-1">
-                        @foreach($filters['site_source'] as $siteId)
-                            @php
-                                $site = $sites->firstWhere('id', $siteId);
-                            @endphp
-                            @if($site)
-                                <!-- TAILLE DE TEXTE RÉDUITE -->
-                                <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-indigo-100 text-indigo-800 border border-indigo-300">
-                                    {{ $site->name }}
-                                    <button 
-                                        type="button"
-                                        wire:click.stop="$set('filters.site_source', {{ json_encode(array_values(array_diff($filters['site_source'], [$siteId]))) }})"
-                                        class="ml-1 text-indigo-600 hover:text-indigo-800 focus:outline-none text-xs"
-                                    >
-                                        ×
-                                    </button>
-                                </span>
-                            @endif
-                        @endforeach
-                    </div>
-                @endif
-                
-                <!-- Icône dropdown -->
-                <div class="absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none">
-                    <svg class="w-3 h-3 text-gray-400" :class="{ 'rotate-180': open }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                    </svg>
-                </div>
-            </div>
-            
-            <!-- Dropdown menu - LARGEUR AUGMENTÉE -->
-            <div x-show="open" 
-                 x-transition:enter="transition ease-out duration-100"
-                 x-transition:enter-start="transform opacity-0 scale-95"
-                 x-transition:enter-end="transform opacity-100 scale-100"
-                 x-transition:leave="transition ease-in duration-75"
-                 x-transition:leave-start="transform opacity-100 scale-100"
-                 x-transition:leave-end="transform opacity-0 scale-95"
-                 class="absolute z-50 mt-1 min-w-[250px] bg-white border border-gray-300 rounded-lg shadow-lg max-h-64 overflow-y-auto"
-                 style="display: none;">
-                
-                <!-- Boutons Tout sélectionner / Tout désélectionner - TEXTE RÉDUIT -->
-                <div class="sticky top-0 p-2 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
-                    <button 
-                        type="button"
-                        wire:click="$set('filters.site_source', {{ json_encode($sites->pluck('id')->toArray()) }})"
-                        class="text-[10px] text-blue-600 hover:text-blue-800 font-medium"
-                    >
-                        Tout sélectionner
-                    </button>
-                    <button 
-                        type="button"
-                        wire:click="$set('filters.site_source', [])"
-                        class="text-[10px] text-gray-600 hover:text-gray-800 font-medium"
-                    >
-                        Tout désélectionner
-                    </button>
-                </div>
-                
-                <!-- Liste des sites - TEXTE RÉDUIT -->
-                <div class="py-1">
-                    @foreach($sites as $site)
-                        <label class="flex items-center px-3 py-1.5 hover:bg-gray-50 cursor-pointer transition-colors">
-                            <input 
-                                type="checkbox" 
-                                value="{{ $site->id }}"
-                                wire:model.live="filters.site_source"
-                                class="h-3 w-3 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
-                            >
-                            <span class="ml-2 text-xs text-gray-700">{{ $site->name }}</span>
-                        </label>
-                    @endforeach
-                </div>
-            </div>
-            
-            <!-- Loading indicator -->
-            <div wire:loading wire:target="filters.site_source" class="absolute right-8 top-1/2 transform -translate-y-1/2">
-                <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
-            </div>
-        </div>
-    </div>
-</th>
-                                
+                                <!-- Colonne Site Source avec filtre multi-select personnalisé -->
+                                <th
+                                    class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
+                                    <div class="flex flex-col space-y-2">
+                                        <span>Site Source</span>
+                                        <div x-data="{ open: false }" @click.away="open = false" class="relative">
+                                            <!-- Display des sites sélectionnés - LARGEUR AUGMENTÉE -->
+                                            <div @click="open = !open"
+                                                class="min-h-[38px] min-w-[250px] px-3 py-2 text-xs border border-gray-400 rounded-lg cursor-pointer bg-white hover:border-blue-500 transition-colors"
+                                                :class="{ 'ring-2 ring-blue-500 border-blue-500': open }">
+                                                @if(empty($filters['site_source']))
+                                                    <span class="text-gray-400 text-xs">Sélectionner des sites...</span>
+                                                @else
+                                                    <div class="flex flex-wrap gap-1">
+                                                        @foreach($filters['site_source'] as $siteId)
+                                                            @php
+                                                                $site = $sites->firstWhere('id', $siteId);
+                                                            @endphp
+                                                            @if($site)
+                                                                <!-- TAILLE DE TEXTE RÉDUITE -->
+                                                                <span
+                                                                    class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-indigo-100 text-indigo-800 border border-indigo-300">
+                                                                    {{ $site->name }}
+                                                                    <button type="button"
+                                                                        wire:click.stop="$set('filters.site_source', {{ json_encode(array_values(array_diff($filters['site_source'], [$siteId]))) }})"
+                                                                        class="ml-1 text-indigo-600 hover:text-indigo-800 focus:outline-none text-xs">
+                                                                        ×
+                                                                    </button>
+                                                                </span>
+                                                            @endif
+                                                        @endforeach
+                                                    </div>
+                                                @endif
+
+                                                <!-- Icône dropdown -->
+                                                <div
+                                                    class="absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none">
+                                                    <svg class="w-3 h-3 text-gray-400" :class="{ 'rotate-180': open }"
+                                                        fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round"
+                                                            stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                                    </svg>
+                                                </div>
+                                            </div>
+
+                                            <!-- Dropdown menu - LARGEUR AUGMENTÉE -->
+                                            <div x-show="open" x-transition:enter="transition ease-out duration-100"
+                                                x-transition:enter-start="transform opacity-0 scale-95"
+                                                x-transition:enter-end="transform opacity-100 scale-100"
+                                                x-transition:leave="transition ease-in duration-75"
+                                                x-transition:leave-start="transform opacity-100 scale-100"
+                                                x-transition:leave-end="transform opacity-0 scale-95"
+                                                class="absolute z-50 mt-1 min-w-[250px] bg-white border border-gray-300 rounded-lg shadow-lg max-h-64 overflow-y-auto"
+                                                style="display: none;">
+
+                                                <!-- Boutons Tout sélectionner / Tout désélectionner - TEXTE RÉDUIT -->
+                                                <div
+                                                    class="sticky top-0 p-2 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+                                                    <button type="button"
+                                                        wire:click="$set('filters.site_source', {{ json_encode($sites->pluck('id')->toArray()) }})"
+                                                        class="text-[10px] text-blue-600 hover:text-blue-800 font-medium">
+                                                        Tout sélectionner
+                                                    </button>
+                                                    <button type="button" wire:click="$set('filters.site_source', [])"
+                                                        class="text-[10px] text-gray-600 hover:text-gray-800 font-medium">
+                                                        Tout désélectionner
+                                                    </button>
+                                                </div>
+
+                                                <!-- Liste des sites - TEXTE RÉDUIT -->
+                                                <div class="py-1">
+                                                    @foreach($sites as $site)
+                                                        <label
+                                                            class="flex items-center px-3 py-1.5 hover:bg-gray-50 cursor-pointer transition-colors">
+                                                            <input type="checkbox" value="{{ $site->id }}"
+                                                                wire:model.live="filters.site_source"
+                                                                class="h-3 w-3 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer">
+                                                            <span class="ml-2 text-xs text-gray-700">{{ $site->name }}</span>
+                                                        </label>
+                                                    @endforeach
+                                                </div>
+                                            </div>
+
+                                            <!-- Loading indicator -->
+                                            <div wire:loading wire:target="filters.site_source"
+                                                class="absolute right-8 top-1/2 transform -translate-y-1/2">
+                                                <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </th>
+
                                 <!-- Colonne Prix HT -->
-                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
+                                <th
+                                    class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
                                     <div class="flex flex-col">
                                         <span>Prix HT</span>
                                     </div>
                                 </th>
-                                
+
                                 <!-- Colonne Date MAJ Prix -->
-                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
+                                <th
+                                    class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
                                     <div class="flex flex-col">
                                         <span>Date MAJ Prix</span>
                                     </div>
                                 </th>
-                                
+
                                 @if($hasData && $referencePrice)
-                                <!-- Colonne Vs Cosmaparfumerie (uniquement si on a un prix de référence) -->
-                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
-                                    <div class="flex flex-col">
-                                        <span>Vs Cosmaparfumerie</span>
-                                    </div>
-                                </th>
-                                
-                                <!-- Colonne Vs Cosmashop (uniquement si on a un prix de référence) -->
-                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
-                                    <div class="flex flex-col">
-                                        <span>Vs Cosmashop</span>
-                                    </div>
-                                </th>
+                                    <!-- Colonne Vs Cosmaparfumerie (uniquement si on a un prix de référence) -->
+                                    <th
+                                        class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
+                                        <div class="flex flex-col">
+                                            <span>Vs Cosmaparfumerie</span>
+                                        </div>
+                                    </th>
+
+                                    <!-- Colonne Vs Cosmashop (uniquement si on a un prix de référence) -->
+                                    <th
+                                        class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
+                                        <div class="flex flex-col">
+                                            <span>Vs Cosmashop</span>
+                                        </div>
+                                    </th>
                                 @endif
-                                
+
                                 <!-- Colonne Type avec filtre -->
-                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
+                                <th
+                                    class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
                                     <div class="flex flex-col space-y-1">
                                         <span>Type</span>
                                         <div class="relative">
-                                            <input type="text" 
-                                                   wire:model.live.debounce.800ms="filters.type"
-                                                   placeholder="Filtrer..."
-                                                   class="px-2 py-1 text-xs border border-gray-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-full"
-                                                   wire:loading.attr="disabled">
-                                            <div wire:loading wire:target="filters.type" class="absolute right-2 top-1/2 transform -translate-y-1/2">
-                                                <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
+                                            <input type="text" wire:model.live.debounce.800ms="filters.type"
+                                                placeholder="Filtrer..."
+                                                class="px-2 py-1 text-xs border border-gray-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-full"
+                                                wire:loading.attr="disabled">
+                                            <div wire:loading wire:target="filters.type"
+                                                class="absolute right-2 top-1/2 transform -translate-y-1/2">
+                                                <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600">
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                 </th>
-                                
+
                                 <!-- Colonne Actions -->
-                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
+                                <th
+                                    class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
                                     <div class="flex flex-col">
                                         <span>Actions</span>
                                     </div>
@@ -3044,7 +3200,7 @@ public function exportToExcel()
                                             $similarityScore = $similarityData['similarity_score'];
                                             $matchLevel = $similarityData['match_level'];
                                         }
-                                        
+
                                         // Définir la classe de match si disponible
                                         if ($matchLevel) {
                                             $matchClass = [
@@ -3077,7 +3233,8 @@ public function exportToExcel()
                                         // Alternance des couleurs de ligne pour style Excel
                                         $rowClass = $index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
                                     @endphp
-                                    <tr class="{{ $rowClass }} hover:bg-gray-100 transition-colors duration-150 border-b border-gray-300">
+                                    <tr
+                                        class="{{ $rowClass }} hover:bg-gray-100 transition-colors duration-150 border-b border-gray-300">
                                         <!-- NOUVELLE COLONNE : Image (TOUJOURS VISIBLE) -->
                                         <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
                                             @php
@@ -3085,73 +3242,83 @@ public function exportToExcel()
                                                 $productName = $product->name ?? 'Produit sans nom';
                                             @endphp
                                             <div class="relative group">
-                                                <img src="{{ $productImage }}" 
-                                                     alt="{{ $productName }}" 
-                                                     class="h-20 w-20 object-cover border border-gray-300 hover:shadow-sm transition-shadow duration-200"
-                                                     loading="lazy"
-                                                     onerror="this.onerror=null; this.src='https://placehold.co/400x400/cccccc/999999?text=No+Image'">
-                                                
+                                                <img src="{{ $productImage }}" alt="{{ $productName }}"
+                                                    class="h-20 w-20 object-cover border border-gray-300 hover:shadow-sm transition-shadow duration-200"
+                                                    loading="lazy"
+                                                    onerror="this.onerror=null; this.src='https://placehold.co/400x400/cccccc/999999?text=No+Image'">
+
                                                 <!-- Overlay au survol pour agrandir -->
-                                                <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
-                                                    <svg class="w-6 h-6 text-white opacity-0 group-hover:opacity-70 transition-opacity duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path>
+                                                <div
+                                                    class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                                    <svg class="w-6 h-6 text-white opacity-0 group-hover:opacity-70 transition-opacity duration-200"
+                                                        fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7">
+                                                        </path>
                                                     </svg>
                                                 </div>
                                             </div>
-                                            
+
                                             <!-- Indicateur si pas d'image -->
                                             @if(!$this->isValidImageUrl($productImage) || str_contains($productImage, 'https://placehold.co/400x400/cccccc/999999?text=No+Image'))
                                                 <div class="mt-1 text-center">
-                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 border border-gray-300">
+                                                    <span
+                                                        class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 border border-gray-300">
                                                         <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z">
+                                                            </path>
                                                         </svg>
                                                         Sans image
                                                     </span>
                                                 </div>
                                             @endif
                                         </td>
-                                        
-                                        @if($hasData && $isAutomaticSearch)
-                                        <!-- Colonne Score (uniquement si résultats automatiques) -->
-                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
-                                            <div class="flex items-center">
-                                                <div class="w-16 bg-gray-300 rounded-full h-2 mr-3">
-                                                    <div class="h-2 rounded-full 
-                                                        @if($similarityScore >= 0.9) bg-green-500
-                                                        @elseif($similarityScore >= 0.7) bg-blue-500
-                                                        @elseif($similarityScore >= 0.6) bg-yellow-500
-                                                        @else bg-gray-500 @endif"
-                                                        style="width: {{ ($similarityScore ?? 0) * 100 }}%">
-                                                    </div>
-                                                </div>
-                                                <span class="text-sm font-mono font-semibold 
-                                                    @if($similarityScore >= 0.9) text-green-600
-                                                    @elseif($similarityScore >= 0.7) text-blue-600
-                                                    @elseif($similarityScore >= 0.6) text-yellow-600
-                                                    @else text-gray-600 @endif">
-                                                    {{ $similarityScore ? number_format($similarityScore * 100, 0) : 'N/A' }}%
-                                                </span>
-                                            </div>
-                                        </td>
 
-                                        <!-- Colonne Correspondance (uniquement si résultats automatiques) -->
-                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
-                                            @if($matchLevel)
-                                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border {{ $matchClass ?? '' }}">
-                                                    @if($matchLevel === 'excellent')
-                                                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
-                                                        </svg>
-                                                    @endif
-                                                    {{ ucfirst($matchLevel) }}
-                                                </span>
-                                            @else
-                                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border border-gray-300 bg-gray-100 text-gray-800">
-                                                    N/A
-                                                </span>
-                                            @endif
-                                        </td>
+                                        @if($hasData && $isAutomaticSearch)
+                                            <!-- Colonne Score (uniquement si résultats automatiques) -->
+                                            <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
+                                                <div class="flex items-center">
+                                                    <div class="w-16 bg-gray-300 rounded-full h-2 mr-3">
+                                                        <div class="h-2 rounded-full 
+                                                                        @if($similarityScore >= 0.9) bg-green-500
+                                                                        @elseif($similarityScore >= 0.7) bg-blue-500
+                                                                        @elseif($similarityScore >= 0.6) bg-yellow-500
+                                                                        @else bg-gray-500 @endif"
+                                                            style="width: {{ ($similarityScore ?? 0) * 100 }}%">
+                                                        </div>
+                                                    </div>
+                                                    <span class="text-sm font-mono font-semibold 
+                                                                    @if($similarityScore >= 0.9) text-green-600
+                                                                    @elseif($similarityScore >= 0.7) text-blue-600
+                                                                    @elseif($similarityScore >= 0.6) text-yellow-600
+                                                                    @else text-gray-600 @endif">
+                                                        {{ $similarityScore ? number_format($similarityScore * 100, 0) : 'N/A' }}%
+                                                    </span>
+                                                </div>
+                                            </td>
+
+                                            <!-- Colonne Correspondance (uniquement si résultats automatiques) -->
+                                            <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
+                                                @if($matchLevel)
+                                                    <span
+                                                        class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border {{ $matchClass ?? '' }}">
+                                                        @if($matchLevel === 'excellent')
+                                                            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                                <path fill-rule="evenodd"
+                                                                    d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                                                                    clip-rule="evenodd"></path>
+                                                            </svg>
+                                                        @endif
+                                                        {{ ucfirst($matchLevel) }}
+                                                    </span>
+                                                @else
+                                                    <span
+                                                        class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border border-gray-300 bg-gray-100 text-gray-800">
+                                                        N/A
+                                                    </span>
+                                                @endif
+                                            </td>
                                         @endif
 
                                         <!-- Colonne Vendor AJOUTÉE -->
@@ -3163,7 +3330,8 @@ public function exportToExcel()
 
                                         <!-- Colonne Nom -->
                                         <td class="border border-gray-300 px-4 py-3">
-                                            <div class="text-sm font-medium text-gray-900 max-w-xs" title="{{ $product->name ?? 'N/A' }}">
+                                            <div class="text-sm font-medium text-gray-900 max-w-xs"
+                                                title="{{ $product->name ?? 'N/A' }}">
                                                 @if($isAutomaticSearch && !empty($searchVolumes))
                                                     {!! $this->highlightMatchingTerms($product->name) !!}
                                                 @else
@@ -3175,15 +3343,18 @@ public function exportToExcel()
                                                 <div class="mt-2 flex flex-wrap gap-1">
                                                     @foreach($productVolumes as $volume)
                                                         <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium 
-                                                            @if($this->isVolumeMatching($volume))
-                                                                bg-green-100 text-green-800 border border-green-300
-                                                            @else
-                                                                bg-gray-100 text-gray-800 border border-gray-300
-                                                            @endif">
+                                                                                @if($this->isVolumeMatching($volume))
+                                                                                    bg-green-100 text-green-800 border border-green-300
+                                                                                @else
+                                                                                    bg-gray-100 text-gray-800 border border-gray-300
+                                                                                @endif">
                                                             {{ $volume }} ml
                                                             @if($this->isVolumeMatching($volume))
-                                                                <svg class="w-3 h-3 ml-1 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                                                                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                                                <svg class="w-3 h-3 ml-1 text-green-600" fill="currentColor"
+                                                                    viewBox="0 0 20 20">
+                                                                    <path fill-rule="evenodd"
+                                                                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                                                                        clip-rule="evenodd"></path>
                                                                 </svg>
                                                             @endif
                                                         </span>
@@ -3194,7 +3365,8 @@ public function exportToExcel()
 
                                         <!-- Colonne Variation -->
                                         <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
-                                            <div class="text-sm text-gray-900 max-w-xs" title="{{ $product->variation ?? 'Standard' }}">
+                                            <div class="text-sm text-gray-900 max-w-xs"
+                                                title="{{ $product->variation ?? 'Standard' }}">
                                                 @if($isAutomaticSearch && !empty($searchVariationKeywords))
                                                     {!! $this->highlightMatchingTerms($product->variation ?? 'Standard') !!}
                                                 @else
@@ -3203,9 +3375,12 @@ public function exportToExcel()
                                             </div>
                                             @if($hasData && $hasExactVariation)
                                                 <div class="mt-1">
-                                                    <span class="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full border border-blue-300">
+                                                    <span
+                                                        class="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full border border-blue-300">
                                                         <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                                            <path fill-rule="evenodd"
+                                                                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                                                                clip-rule="evenodd"></path>
                                                         </svg>
                                                         Variation identique
                                                     </span>
@@ -3216,7 +3391,8 @@ public function exportToExcel()
                                         <!-- Colonne Site Source -->
                                         <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
                                             <div class="flex items-center">
-                                                <div class="flex-shrink-0 h-8 w-8 bg-gray-100 rounded-full flex items-center justify-center mr-3 border border-gray-300">
+                                                <div
+                                                    class="flex-shrink-0 h-8 w-8 bg-gray-100 rounded-full flex items-center justify-center mr-3 border border-gray-300">
                                                     <span class="text-xs font-medium text-gray-600">
                                                         @php
                                                             $productUrl = $this->getProductUrl($product);
@@ -3230,9 +3406,9 @@ public function exportToExcel()
                                                         {{ $product->site_name ?? $this->extractDomain($productUrl ?? '') }}
                                                     </div>
                                                     {{-- @if(isset($product->web_site_id))
-                                                        <div class="text-xs text-gray-500">
-                                                            ID: {{ $product->web_site_id }}
-                                                        </div>
+                                                    <div class="text-xs text-gray-500">
+                                                        ID: {{ $product->web_site_id }}
+                                                    </div>
                                                     @endif --}}
                                                 </div>
                                             </div>
@@ -3253,70 +3429,75 @@ public function exportToExcel()
                                         </td>
 
                                         @if($referencePrice)
-                                        <!-- Colonne Vs Cosmaparfumerie (uniquement si référencePrice) -->
-                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
-                                            @if(is_numeric($competitorPrice) && is_numeric($referencePrice))
-                                                <div class="space-y-1">
-                                                    <div class="text-xs text-gray-500">
-                                                        prix cosma-parfumerie: {{ number_format($referencePrice, 2, ',', ' ') }} €
-                                                    </div>
-                                                    <!-- Statut -->
-                                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $priceStatusClass }}">
-                                                        {{ $priceStatusLabel }}
-                                                    </span>
-
-                                                    <!-- Différence -->
-                                                    <div class="text-xs font-semibold 
-                                                        {{ $priceDifference > 0 ? 'text-green-600' : ($priceDifference < 0 ? 'text-red-600' : 'text-blue-600') }}">
-                                                        {{ $this->formatPriceDifference($priceDifference) }}
-                                                    </div>
-
-                                                    <!-- Pourcentage -->
-                                                    @if($priceDifferencePercent !== null && $priceDifference != 0)
+                                            <!-- Colonne Vs Cosmaparfumerie (uniquement si référencePrice) -->
+                                            <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
+                                                @if(is_numeric($competitorPrice) && is_numeric($referencePrice))
+                                                    <div class="space-y-1">
                                                         <div class="text-xs text-gray-500">
-                                                            {{ $this->formatPercentageDifference($priceDifferencePercent) }}
+                                                            prix cosma-parfumerie: {{ number_format($referencePrice, 2, ',', ' ') }} €
                                                         </div>
-                                                    @endif
-                                                </div>
-                                            @else
-                                                <span class="text-xs text-gray-400">N/A</span>
-                                            @endif
-                                        </td>
+                                                        <!-- Statut -->
+                                                        <span
+                                                            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $priceStatusClass }}">
+                                                            {{ $priceStatusLabel }}
+                                                        </span>
 
-                                        <!-- Colonne Vs Cosmashop (uniquement si référencePrice) -->
-                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
-                                            @if(is_numeric($competitorPrice) && is_numeric($cosmashopPrice))
-                                                <div class="space-y-1">
-                                                    <div class="text-xs text-gray-500">
-                                                        prix cosmashop: {{ number_format($cosmashopPrice, 2, ',', ' ') }} €
+                                                        <!-- Différence -->
+                                                        <div
+                                                            class="text-xs font-semibold 
+                                                                            {{ $priceDifference > 0 ? 'text-green-600' : ($priceDifference < 0 ? 'text-red-600' : 'text-blue-600') }}">
+                                                            {{ $this->formatPriceDifference($priceDifference) }}
+                                                        </div>
+
+                                                        <!-- Pourcentage -->
+                                                        @if($priceDifferencePercent !== null && $priceDifference != 0)
+                                                            <div class="text-xs text-gray-500">
+                                                                {{ $this->formatPercentageDifference($priceDifferencePercent) }}
+                                                            </div>
+                                                        @endif
                                                     </div>
-                                                    <!-- Statut Cosmashop -->
-                                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $cosmashopStatusClass }}">
-                                                        {{ $cosmashopStatusLabel }}
-                                                    </span>
+                                                @else
+                                                    <span class="text-xs text-gray-400">N/A</span>
+                                                @endif
+                                            </td>
 
-                                                    <!-- Différence Cosmashop -->
-                                                    <div class="text-xs font-semibold 
-                                                        {{ $cosmashopDifference > 0 ? 'text-green-600' : ($cosmashopDifference < 0 ? 'text-red-600' : 'text-blue-600') }}">
-                                                        {{ $this->formatPriceDifference($cosmashopDifference) }}
-                                                    </div>
-
-                                                    <!-- Pourcentage Cosmashop -->
-                                                    @if($cosmashopDifferencePercent !== null && $cosmashopDifference != 0)
+                                            <!-- Colonne Vs Cosmashop (uniquement si référencePrice) -->
+                                            <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
+                                                @if(is_numeric($competitorPrice) && is_numeric($cosmashopPrice))
+                                                    <div class="space-y-1">
                                                         <div class="text-xs text-gray-500">
-                                                            {{ $this->formatPercentageDifference($cosmashopDifferencePercent) }}
+                                                            prix cosmashop: {{ number_format($cosmashopPrice, 2, ',', ' ') }} €
                                                         </div>
-                                                    @endif
-                                                </div>
-                                            @else
-                                                <span class="text-xs text-gray-400">N/A</span>
-                                            @endif
-                                        </td>
+                                                        <!-- Statut Cosmashop -->
+                                                        <span
+                                                            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $cosmashopStatusClass }}">
+                                                            {{ $cosmashopStatusLabel }}
+                                                        </span>
+
+                                                        <!-- Différence Cosmashop -->
+                                                        <div
+                                                            class="text-xs font-semibold 
+                                                                            {{ $cosmashopDifference > 0 ? 'text-green-600' : ($cosmashopDifference < 0 ? 'text-red-600' : 'text-blue-600') }}">
+                                                            {{ $this->formatPriceDifference($cosmashopDifference) }}
+                                                        </div>
+
+                                                        <!-- Pourcentage Cosmashop -->
+                                                        @if($cosmashopDifferencePercent !== null && $cosmashopDifference != 0)
+                                                            <div class="text-xs text-gray-500">
+                                                                {{ $this->formatPercentageDifference($cosmashopDifferencePercent) }}
+                                                            </div>
+                                                        @endif
+                                                    </div>
+                                                @else
+                                                    <span class="text-xs text-gray-400">N/A</span>
+                                                @endif
+                                            </td>
                                         @endif
 
                                         <!-- Colonne Type -->
                                         <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
-                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-300">
+                                            <span
+                                                class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-300">
                                                 {{ $product->type ?? 'N/A' }}
                                             </span>
                                         </td>
@@ -3332,14 +3513,18 @@ public function exportToExcel()
                                                         class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-full shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200">
                                                         <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                                                                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14">
+                                                            </path>
                                                         </svg>
                                                         Voir
                                                     </a>
                                                 @else
-                                                    <span class="inline-flex items-center px-2 py-1 text-xs text-gray-400 bg-gray-100 rounded-full">
+                                                    <span
+                                                        class="inline-flex items-center px-2 py-1 text-xs text-gray-400 bg-gray-100 rounded-full">
                                                         <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                                d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
+                                                            </path>
                                                         </svg>
                                                         Indisponible
                                                     </span>
@@ -3351,9 +3536,12 @@ public function exportToExcel()
                             @else
                                 <!-- Aucun résultat avec les filtres appliqués -->
                                 <tr>
-                                    <td colspan="{{ ($hasData && $isAutomaticSearch ? 15 : 13) }}" class="border border-gray-300 px-6 py-12 text-center">
-                                        <svg class="mx-auto h-16 w-16 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    <td colspan="{{ ($hasData && $isAutomaticSearch ? 15 : 13) }}"
+                                        class="border border-gray-300 px-6 py-12 text-center">
+                                        <svg class="mx-auto h-16 w-16 text-gray-400" fill="none" viewBox="0 0 24 24"
+                                            stroke="currentColor" aria-hidden="true">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                                d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                         </svg>
                                         <h3 class="mt-4 text-lg font-medium text-gray-900">
                                             @if(array_filter($filters))
@@ -3364,7 +3552,8 @@ public function exportToExcel()
                                         </h3>
                                         <p class="mt-2 text-sm text-gray-500">
                                             @if(array_filter($filters))
-                                                Aucun produit ne correspond à vos critères de recherche. Essayez de modifier les filtres.
+                                                Aucun produit ne correspond à vos critères de recherche. Essayez de modifier les
+                                                filtres.
                                             @else
                                                 Ajustez les filtres pour trouver des produits.
                                             @endif
@@ -3372,17 +3561,21 @@ public function exportToExcel()
                                         @if(array_filter($filters))
                                             <div class="mt-4 flex justify-center space-x-3">
                                                 <!-- Bouton Réinitialiser avec loading -->
-                                                <button wire:click="resetFilters" 
-                                                        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors duration-200"
-                                                        wire:loading.attr="disabled">
+                                                <button wire:click="resetFilters"
+                                                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors duration-200"
+                                                    wire:loading.attr="disabled">
                                                     <span wire:loading.remove wire:target="resetFilters">
-                                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor"
+                                                            viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                                                            </path>
                                                         </svg>
                                                         Réinitialiser les filtres
                                                     </span>
                                                     <span wire:loading wire:target="resetFilters">
-                                                        <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                                        <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2">
+                                                        </div>
                                                         Réinitialisation...
                                                     </span>
                                                 </button>
@@ -3399,209 +3592,219 @@ public function exportToExcel()
     </div>
 
 
-  
-@push('styles')
-    <style>
-        /* Style Excel-like pour le tableau */
-        table {
-            border-collapse: collapse;
-            border-spacing: 0;
-        }
-        
-        th, td {
-            border: 1px solid #d1d5db;
-        }
-        
-        th {
-            background-color: #f3f4f6;
-            font-weight: 600;
-            color: #374151;
-            border-bottom: 2px solid #9ca3af;
-        }
-        
-        /* Alternance des lignes comme Excel */
-        tbody tr:nth-child(even) {
-            background-color: #f9fafb;
-        }
-        
-        tbody tr:hover {
-            background-color: #f0f9ff;
-        }
-        
-        /* Style pour les cellules avec des bordures complètes */
-        .border-gray-300 {
-            border-color: #d1d5db !important;
-        }
-        
-        /* Style pour les inputs de filtres - préservé */
-        input[type="text"], select {
-            transition: all 0.2s ease;
-            border: 1px solid #d1d5db;
-        }
 
-        input[type="text"]:focus, select:focus {
-            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-            border-color: #3b82f6;
-        }
-
-        /* Style pour les boutons - préservé */
-        button {
-            transition: all 0.2s ease;
-        }
-
-        button:hover {
-            transform: translateY(-1px);
-        }
-
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        /* Animation de spin pour les loaders */
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-
-        .animate-spin {
-            animation: spin 1s linear infinite;
-        }
-
-        /* Style pour l'overlay de chargement global - Transparent */
-        .fixed.inset-0 {
-            z-index: 9999;
-            background-color: transparent !important;
-        }
-
-        .fixed.inset-0 > div {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(8px);
-            box-shadow: 
-                0 20px 40px rgba(0, 0, 0, 0.1),
-                0 0 0 1px rgba(255, 255, 255, 0.1);
-            animation: slideIn 0.3s ease-out;
-        }
-
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(-20px) scale(0.95);
+    @push('styles')
+        <style>
+            /* Style Excel-like pour le tableau */
+            table {
+                border-collapse: collapse;
+                border-spacing: 0;
             }
-            to {
-                opacity: 1;
-                transform: translateY(0) scale(1);
+
+            th,
+            td {
+                border: 1px solid #d1d5db;
             }
-        }
 
-        /* Style pour le loader des filtres */
-        .fixed.top-4.right-4 {
-            z-index: 9998;
-            animation: slideInRight 0.3s ease-out;
-        }
-
-        @keyframes slideInRight {
-            from {
-                opacity: 0;
-                transform: translateX(20px);
+            th {
+                background-color: #f3f4f6;
+                font-weight: 600;
+                color: #374151;
+                border-bottom: 2px solid #9ca3af;
             }
-            to {
-                opacity: 1;
-                transform: translateX(0);
+
+            /* Alternance des lignes comme Excel */
+            tbody tr:nth-child(even) {
+                background-color: #f9fafb;
             }
-        }
 
-        /* Transition pour l'opacité du tableau */
-        .opacity-50 {
-            transition: opacity 0.3s ease;
-        }
+            tbody tr:hover {
+                background-color: #f0f9ff;
+            }
 
-        /* Style pour les images */
-        img {
-            border: 1px solid #d1d5db;
-        }
+            /* Style pour les cellules avec des bordures complètes */
+            .border-gray-300 {
+                border-color: #d1d5db !important;
+            }
 
-        /* Style pour les badges */
-        .rounded-full {
-            border-radius: 9999px;
-        }
+            /* Style pour les inputs de filtres - préservé */
+            input[type="text"],
+            select {
+                transition: all 0.2s ease;
+                border: 1px solid #d1d5db;
+            }
 
-        /* Conteneur principal du tableau */
-        .overflow-x-auto {
-            scrollbar-width: thin;
-            scrollbar-color: #cbd5e1 #f1f5f9;
-        }
+            input[type="text"]:focus,
+            select:focus {
+                box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+                border-color: #3b82f6;
+            }
 
-        .overflow-x-auto::-webkit-scrollbar {
-            height: 8px;
-        }
+            /* Style pour les boutons - préservé */
+            button {
+                transition: all 0.2s ease;
+            }
 
-        .overflow-x-auto::-webkit-scrollbar-track {
-            background: #f1f5f9;
-        }
+            button:hover {
+                transform: translateY(-1px);
+            }
 
-        .overflow-x-auto::-webkit-scrollbar-thumb {
-            background-color: #cbd5e1;
-            border-radius: 4px;
-        }
+            button:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+                transform: none;
+            }
 
-                /* Styles pour le dropdown multi-select */
-        .sites-dropdown::-webkit-scrollbar {
-            width: 8px;
-        }
-        
-        .sites-dropdown::-webkit-scrollbar-track {
-            background: #f1f5f9;
-            border-radius: 4px;
-        }
-        
-        .sites-dropdown::-webkit-scrollbar-thumb {
-            background-color: #cbd5e1;
-            border-radius: 4px;
-        }
-        
-        .sites-dropdown::-webkit-scrollbar-thumb:hover {
-            background-color: #94a3b8;
-        }
-        
-        /* Animation de rotation pour l'icône */
-        .rotate-180 {
-            transform: rotate(180deg);
-            transition: transform 0.2s ease;
-        }
-        
-        /* Style pour les checkboxes */
-        input[type="checkbox"]:checked {
-            background-color: #3b82f6;
-            border-color: #3b82f6;
-        }
-        
-        /* Effet hover sur les options */
-        label:has(input[type="checkbox"]):hover {
-            background-color: #f9fafb;
-        }
-    </style>
-@endpush
+            /* Animation de spin pour les loaders */
+            @keyframes spin {
+                from {
+                    transform: rotate(0deg);
+                }
 
-@push('scripts')
-    <script>
-        // Script pour gérer les indicateurs de chargement
-        document.addEventListener('livewire:init', () => {
-            // Désactiver les inputs pendant le chargement
-            Livewire.hook('request', ({ fail }) => {
-                // Ajouter un indicateur visuel
-                document.body.style.cursor = 'wait';
+                to {
+                    transform: rotate(360deg);
+                }
+            }
 
-                fail(() => {
+            .animate-spin {
+                animation: spin 1s linear infinite;
+            }
+
+            /* Style pour l'overlay de chargement global - Transparent */
+            .fixed.inset-0 {
+                z-index: 9999;
+                background-color: transparent !important;
+            }
+
+            .fixed.inset-0>div {
+                background: rgba(255, 255, 255, 0.95);
+                backdrop-filter: blur(8px);
+                box-shadow:
+                    0 20px 40px rgba(0, 0, 0, 0.1),
+                    0 0 0 1px rgba(255, 255, 255, 0.1);
+                animation: slideIn 0.3s ease-out;
+            }
+
+            @keyframes slideIn {
+                from {
+                    opacity: 0;
+                    transform: translateY(-20px) scale(0.95);
+                }
+
+                to {
+                    opacity: 1;
+                    transform: translateY(0) scale(1);
+                }
+            }
+
+            /* Style pour le loader des filtres */
+            .fixed.top-4.right-4 {
+                z-index: 9998;
+                animation: slideInRight 0.3s ease-out;
+            }
+
+            @keyframes slideInRight {
+                from {
+                    opacity: 0;
+                    transform: translateX(20px);
+                }
+
+                to {
+                    opacity: 1;
+                    transform: translateX(0);
+                }
+            }
+
+            /* Transition pour l'opacité du tableau */
+            .opacity-50 {
+                transition: opacity 0.3s ease;
+            }
+
+            /* Style pour les images */
+            img {
+                border: 1px solid #d1d5db;
+            }
+
+            /* Style pour les badges */
+            .rounded-full {
+                border-radius: 9999px;
+            }
+
+            /* Conteneur principal du tableau */
+            .overflow-x-auto {
+                scrollbar-width: thin;
+                scrollbar-color: #cbd5e1 #f1f5f9;
+            }
+
+            .overflow-x-auto::-webkit-scrollbar {
+                height: 8px;
+            }
+
+            .overflow-x-auto::-webkit-scrollbar-track {
+                background: #f1f5f9;
+            }
+
+            .overflow-x-auto::-webkit-scrollbar-thumb {
+                background-color: #cbd5e1;
+                border-radius: 4px;
+            }
+
+            /* Styles pour le dropdown multi-select */
+            .sites-dropdown::-webkit-scrollbar {
+                width: 8px;
+            }
+
+            .sites-dropdown::-webkit-scrollbar-track {
+                background: #f1f5f9;
+                border-radius: 4px;
+            }
+
+            .sites-dropdown::-webkit-scrollbar-thumb {
+                background-color: #cbd5e1;
+                border-radius: 4px;
+            }
+
+            .sites-dropdown::-webkit-scrollbar-thumb:hover {
+                background-color: #94a3b8;
+            }
+
+            /* Animation de rotation pour l'icône */
+            .rotate-180 {
+                transform: rotate(180deg);
+                transition: transform 0.2s ease;
+            }
+
+            /* Style pour les checkboxes */
+            input[type="checkbox"]:checked {
+                background-color: #3b82f6;
+                border-color: #3b82f6;
+            }
+
+            /* Effet hover sur les options */
+            label:has(input[type="checkbox"]):hover {
+                background-color: #f9fafb;
+            }
+        </style>
+    @endpush
+
+    @push('scripts')
+        <script>
+            // Script pour gérer les indicateurs de chargement
+            document.addEventListener('livewire:init', () => {
+                // Désactiver les inputs pendant le chargement
+                Livewire.hook('request', ({ fail }) => {
+                    // Ajouter un indicateur visuel
+                    document.body.style.cursor = 'wait';
+
+                    fail(() => {
+                        document.body.style.cursor = 'default';
+                    });
+                });
+
+                Livewire.hook('response', ({ component }) => {
                     document.body.style.cursor = 'default';
                 });
             });
-
-            Livewire.hook('response', ({ component }) => {
-                document.body.style.cursor = 'default';
-            });
-        });
-    </script>
-@endpush  
+        </script>
+    @endpush
 </div>
