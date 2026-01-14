@@ -392,7 +392,7 @@ new class extends Component {
     </style>
     
     <x-header title="Produits de concurent" subtitle="Tous les prix des produits sur le concurent" separator>
-        @if($showResults && $products->count() > 0)
+        {{-- @if($showResults && $products->count() > 0)
             <x-slot:actions>
                 <x-button 
                     wire:click="exportCsv" 
@@ -402,7 +402,7 @@ new class extends Component {
                     spinner
                 />
             </x-slot:actions>
-        @endif
+        @endif --}}
     </x-header>
     
     <!-- Filtres -->
