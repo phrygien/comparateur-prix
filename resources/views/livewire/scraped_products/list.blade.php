@@ -10,7 +10,7 @@ new class extends Component {
     public $name = '';
     public $type = '';
     public $variation = '';
-    public $site_id = '';
+    public $site_ids = []; // Changé de site_id à site_ids (array)
     public $showResults = false;
     public $currentPage = 1;
     public $perPage = 50;
@@ -18,7 +18,7 @@ new class extends Component {
     public function applyFilter()
     {
         $this->showResults = true;
-        $this->currentPage = 1; // Réinitialiser à la première page
+        $this->currentPage = 1;
     }
     
     public function resetFilter()
@@ -27,7 +27,7 @@ new class extends Component {
         $this->name = '';
         $this->type = '';
         $this->variation = '';
-        $this->site_id = '';
+        $this->site_ids = [];
         $this->showResults = false;
         $this->currentPage = 1;
     }
@@ -61,14 +61,11 @@ new class extends Component {
             ];
         }
         
-        // Utiliser la vue à la place de la sous-requête
         $query = DB::table('last_price_scraped_product')
             ->select('*');
         
-        // Exclure les produits avec variation = "Standard"
         $query->where('variation', '!=', 'Standard');
 
-        // Appliquer les filtres individuellement
         if (!empty($this->vendor)) {
             $query->where('vendor', 'like', '%' . $this->vendor . '%');
         }
@@ -85,20 +82,18 @@ new class extends Component {
             $query->where('variation', 'like', '%' . $this->variation . '%');
         }
         
-        if (!empty($this->site_id)) {
-            $query->where('web_site_id', $this->site_id);
+        // Filtre multi-sites
+        if (!empty($this->site_ids) && count($this->site_ids) > 0) {
+            $query->whereIn('web_site_id', $this->site_ids);
         }
         
-        // Compter le total des résultats
         $totalResults = $query->count();
         
-        // Récupérer les résultats paginés
         $products = $query->orderBy('vendor', 'asc')
             ->skip(($this->currentPage - 1) * $this->perPage)
             ->take($this->perPage)
             ->get();
         
-        // Créer un paginator manuel
         $paginator = new LengthAwarePaginator(
             $products,
             $totalResults,
@@ -118,9 +113,7 @@ new class extends Component {
 }; ?>
 
 <div>
-    <!-- Styles inline pour éviter les problèmes d'éléments multiples -->
     <style>
-        /* Styles Excel-like supplémentaires */
         .excel-table {
             border-spacing: 0;
         }
@@ -143,241 +136,360 @@ new class extends Component {
             background-color: #f9fafb;
         }
         
-        /* Amélioration du truncate */
         .excel-truncate {
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
         
-        /* Style pour les cellules avec badges */
         .excel-badge-cell {
             max-width: 200px;
         }
+
+        /* Styles pour le select multi-sites */
+        .sites-select-wrapper {
+            position: relative;
+        }
+        
+        .sites-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            margin-top: 0.25rem;
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 50;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        }
+        
+        .site-option {
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: background-color 0.15s;
+        }
+        
+        .site-option:hover {
+            background-color: #f3f4f6;
+        }
+        
+        .site-option input[type="checkbox"] {
+            cursor: pointer;
+        }
+        
+        .selected-sites-display {
+            min-height: 2.5rem;
+            padding: 0.5rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .selected-sites-display:hover {
+            border-color: #3b82f6;
+        }
+        
+        .selected-sites-display:focus-within {
+            border-color: #3b82f6;
+            ring: 2px;
+            ring-color: rgba(59, 130, 246, 0.2);
+        }
+        
+        .site-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.25rem 0.5rem;
+            background-color: #dbeafe;
+            color: #1e40af;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            margin: 0.125rem;
+        }
+        
+        .site-badge button {
+            margin-left: 0.25rem;
+            color: #1e40af;
+            font-weight: bold;
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+        
+        .site-badge button:hover {
+            color: #1e3a8a;
+        }
     </style>
     
-    <x-header title="Produits de concurent" subtitle="Tous les prix des produits sur le concurent" separator>
-        {{-- <x-slot:actions>
-            <x-button icon="o-plus" class="btn-primary" />
-        </x-slot:actions> --}}
-    </x-header>
+    <x-header title="Produits de concurent" subtitle="Tous les prix des produits sur le concurent" separator />
     
-<!-- Filtres -->
-<div class="card bg-base-100 shadow-sm mb-4">
-    <div class="card-body p-3">
-        <h3 class="card-title text-base font-medium mb-2">Filtres de recherche</h3>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-2">
-            <!-- Vendeur -->
-            <div>
-                <x-input 
-                    wire:model="vendor"
-                    label="Vendeur" 
-                    placeholder="Filtrer par vendeur..."
-                    icon="o-building-storefront"
-                    class="input-sm"
-                    hint="Exemple: Dior, Prada, etc..."
-                    input-class="border border-gray-300 rounded-lg focus:border-primary focus:ring-2 focus:ring-primary/20 transition-colors"
-                />
+    <!-- Filtres -->
+    <div class="card bg-base-100 shadow-sm mb-4">
+        <div class="card-body p-3">
+            <h3 class="card-title text-base font-medium mb-2">Filtres de recherche</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-2">
+                <!-- Vendeur -->
+                <div>
+                    <x-input 
+                        wire:model="vendor"
+                        label="Vendeur" 
+                        placeholder="Filtrer par vendeur..."
+                        icon="o-building-storefront"
+                        class="input-sm"
+                        hint="Exemple: Dior, Prada, etc..."
+                        input-class="border border-gray-300 rounded-lg focus:border-primary focus:ring-2 focus:ring-primary/20 transition-colors"
+                    />
+                </div>
+                
+                <!-- Nom du produit -->
+                <div>
+                    <x-input 
+                        wire:model="name"
+                        label="Nom du produit" 
+                        placeholder="Filtrer par nom..."
+                        icon="o-tag"
+                        class="input-sm"
+                        input-class="border border-gray-300 rounded-lg focus:border-primary focus:ring-2 focus:ring-primary/20 transition-colors"
+                    />
+                </div>
+                
+                <!-- Type -->
+                <div>
+                    <x-input 
+                        wire:model="type"
+                        label="Type" 
+                        placeholder="Filtrer par type..."
+                        icon="o-cube"
+                        class="input-sm"
+                        input-class="border border-gray-300 rounded-lg focus:border-primary focus:ring-2 focus:ring-primary/20 transition-colors"
+                    />
+                </div>
+                
+                <!-- Variation -->
+                <div>
+                    <x-input 
+                        wire:model="variation"
+                        label="Variation" 
+                        placeholder="Filtrer par variation..."
+                        icon="o-arrows-pointing-out"
+                        class="input-sm"
+                        input-class="border border-gray-300 rounded-lg focus:border-primary focus:ring-2 focus:ring-primary/20 transition-colors"
+                    />
+                </div>
+                
+                <!-- Sites web (Multi-select) -->
+                <div x-data="{ open: false }" @click.away="open = false" class="sites-select-wrapper">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        <x-icon name="o-globe-alt" class="w-4 h-4 inline" />
+                        Sites web
+                    </label>
+                    
+                    <div @click="open = !open" class="selected-sites-display">
+                        @if(empty($site_ids))
+                            <span class="text-gray-400 text-sm">Sélectionner des sites...</span>
+                        @else
+                            <div class="flex flex-wrap gap-1">
+                                @foreach($site_ids as $siteId)
+                                    @php
+                                        $site = $sites->firstWhere('id', $siteId);
+                                    @endphp
+                                    @if($site)
+                                        <span class="site-badge">
+                                            {{ $site->name }}
+                                            <button 
+                                                type="button"
+                                                wire:click.stop="$set('site_ids', {{ json_encode(array_values(array_diff($site_ids, [$siteId]))) }})"
+                                            >
+                                                ×
+                                            </button>
+                                        </span>
+                                    @endif
+                                @endforeach
+                            </div>
+                        @endif
+                    </div>
+                    
+                    <div x-show="open" x-transition class="sites-dropdown">
+                        <div class="p-2 border-b border-gray-200 bg-gray-50">
+                            <button 
+                                type="button"
+                                wire:click="$set('site_ids', {{ json_encode($sites->pluck('id')->toArray()) }})"
+                                class="text-xs text-blue-600 hover:text-blue-800 mr-2"
+                            >
+                                Tout sélectionner
+                            </button>
+                            <button 
+                                type="button"
+                                wire:click="$set('site_ids', [])"
+                                class="text-xs text-gray-600 hover:text-gray-800"
+                            >
+                                Tout désélectionner
+                            </button>
+                        </div>
+                        
+                        @foreach($sites as $site)
+                            <label class="site-option">
+                                <input 
+                                    type="checkbox" 
+                                    value="{{ $site->id }}"
+                                    wire:model.live="site_ids"
+                                    class="checkbox checkbox-sm checkbox-primary"
+                                >
+                                <span class="text-sm">{{ $site->name }}</span>
+                            </label>
+                        @endforeach
+                    </div>
+                </div>
             </div>
             
-            <!-- Nom du produit -->
-            <div>
-                <x-input 
-                    wire:model="name"
-                    label="Nom du produit" 
-                    placeholder="Filtrer par nom..."
-                    icon="o-tag"
-                    class="input-sm"
-                    input-class="border border-gray-300 rounded-lg focus:border-primary focus:ring-2 focus:ring-primary/20 transition-colors"
-                />
+            <!-- Boutons d'action -->
+            <div class="flex justify-between items-center mt-3">
+                <div class="text-sm text-gray-600">
+                    @if(!empty($site_ids))
+                        <span class="font-medium">{{ count($site_ids) }}</span> site(s) sélectionné(s)
+                    @endif
+                </div>
+                <div class="flex gap-2">
+                    @if($showResults)
+                        <x-button 
+                            wire:click="resetFilter" 
+                            icon="o-x-mark"
+                            label="Réinitialiser"
+                            class="btn-ghost btn-sm"
+                        />
+                    @endif
+                    <x-button 
+                        wire:click="applyFilter" 
+                        icon="o-funnel"
+                        label="Appliquer les filtres"
+                        class="btn-primary btn-sm"
+                        spinner
+                    />
+                </div>
             </div>
-            
-            <!-- Type -->
-            <div>
-                <x-input 
-                    wire:model="type"
-                    label="Type" 
-                    placeholder="Filtrer par type..."
-                    icon="o-cube"
-                    class="input-sm"
-                    input-class="border border-gray-300 rounded-lg focus:border-primary focus:ring-2 focus:ring-primary/20 transition-colors"
-                />
-            </div>
-            
-            <!-- Variation -->
-            <div>
-                <x-input 
-                    wire:model="variation"
-                    label="Variation" 
-                    placeholder="Filtrer par variation..."
-                    icon="o-arrows-pointing-out"
-                    class="input-sm"
-                    input-class="border border-gray-300 rounded-lg focus:border-primary focus:ring-2 focus:ring-primary/20 transition-colors"
-                />
-            </div>
-            
-            <!-- Site web -->
-            <div>
-                <x-select 
-                    wire:model="site_id"
-                    label="Site web" 
-                    placeholder="Tous les sites"
-                    icon="o-globe-alt"
-                    class="select-sm"
-                    :options="$sites->map(function($site) {
-                        return ['id' => $site->id, 'name' => $site->name];
-                    })->toArray()"
-                    option-value="id"
-                    option-label="name"
-                    select-class="border border-gray-300 rounded-lg focus:border-primary focus:ring-2 focus:ring-primary/20 transition-colors"
-                />
-            </div>
-        </div>
-        
-        <!-- Boutons d'action -->
-        <div class="flex justify-end gap-2 mt-3">
-            @if($showResults)
-                <x-button 
-                    wire:click="resetFilter" 
-                    icon="o-x-mark"
-                    label="Réinitialiser"
-                    class="btn-ghost btn-sm"
-                />
-            @endif
-            <x-button 
-                wire:click="applyFilter" 
-                icon="o-funnel"
-                label="Appliquer les filtres"
-                class="btn-primary btn-sm"
-                spinner
-            />
         </div>
     </div>
-</div>
-    <!-- Affichage des résultats -->
+    
+    <!-- Reste du code identique... -->
     @if($showResults)
         <div class="overflow-x-auto rounded-none border border-gray-300 bg-white shadow-sm mb-6">
             @if($products->count() > 0)
                 <table class="excel-table table-auto border-collapse w-full">
-<thead>
-    <tr class="bg-gray-100 border-b border-gray-300">
-        {{-- <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-12">#</th> --}}
-        <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-16 hidden sm:table-cell">Image</th>
-        <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32 lg:min-w-40">Vendeur</th>
-        <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-48 lg:min-w-56 xl:min-w-64">Nom</th>
-        <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32 max-w-48 excel-truncate hidden md:table-cell">Type</th>
-        <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32 max-w-48 excel-truncate hidden lg:table-cell">Variation</th>
-        <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-32">Prix HT</th>
-        <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32 hidden xl:table-cell">Site</th>
-        <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-32 hidden lg:table-cell">Date</th>
-        <th class="font-bold text-gray-700 text-sm px-3 py-2 text-center w-24">Actions</th>
-    </tr>
-</thead>
-<tbody>
-    @foreach($products as $index => $product)
-        @php
-            $rowNumber = (($currentPage - 1) * $perPage) + $index + 1;
-            $site = \App\Models\Site::find($product->web_site_id);
-        @endphp
-        <tr class="border-b border-gray-200 hover:bg-gray-50 even:bg-gray-50/50">
-            <!-- Colonne # -->
-            {{-- <td class="text-gray-600 text-sm px-3 py-2 border-r border-gray-300 text-center font-mono">{{ $rowNumber }}</td> --}}
-            
-            <!-- Colonne Image (cachée sur mobile) -->
-            <td class="px-3 py-2 border-r border-gray-300 text-center hidden sm:table-cell">
-                @if($product->image_url)
-                    <div class="avatar mx-auto">
-                        <div class="mask mask-squircle w-10 h-10">
-                            <img src="{{ $product->image_url }}" 
-                                 alt="{{ $product->name }}"
-                                 class="object-cover"
-                                 onerror="this.src='https://via.placeholder.com/40x40?text=No+Image'">
-                        </div>
-                    </div>
-                @else
-                    <div class="text-gray-300 mx-auto">
-                        <x-icon name="o-photo" class="w-5 h-5" />
-                    </div>
-                @endif
-            </td>
-            
-            <!-- Colonne Vendeur -->
-            <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 excel-truncate" 
-                title="{{ $product->vendor }}">
-                <div class="block lg:hidden font-semibold">Marque:</div>
-                {{ $product->vendor }}
-            </td>
-            
-            <!-- Colonne Nom -->
-            <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 excel-truncate" 
-                title="{{ $product->name }}">
-                <div class="block lg:hidden font-semibold">Produit:</div>
-                {{ $product->name }}
-            </td>
-            
-            <!-- Colonne Type (cachée sur mobile et tablette) -->
-            <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 hidden md:table-cell" 
-                title="{{ $product->type ?? 'N/A' }}">
-                <div class="inline-flex items-center px-2 py-1 rounded bg-blue-50 text-blue-700 border border-blue-200 text-xs excel-truncate">
-                    {{ $product->type ?? 'N/A' }}
-                </div>
-            </td>
-            
-            <!-- Colonne Variation (cachée sur mobile et tablette) -->
-            <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 hidden lg:table-cell" 
-                title="{{ $product->variation ?? 'N/A' }}">
-                <div class="inline-flex items-center px-2 py-1 rounded bg-gray-50 text-gray-700 border border-gray-200 text-xs excel-truncate">
-                    {{ $product->variation ?? 'N/A' }}
-                </div>
-            </td>
-            
-            <!-- Colonne Prix HT -->
-            <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 text-center font-semibold text-green-600">
-                <div class="block lg:hidden font-semibold text-gray-600">Prix:</div>
-                {{ $product->prix_ht }} {{ $product->currency }}
-            </td>
-            
-            <!-- Colonne Site (cachée sur mobile et tablette) -->
-            <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 hidden xl:table-cell">
-                @if($site)
-                    <div class="flex items-center gap-1 excel-truncate" title="{{ $site->name }}">
-                        <x-icon name="o-globe-alt" class="w-3 h-3 text-gray-400 flex-shrink-0" />
-                        <span class="excel-truncate">{{ $site->name }}</span>
-                    </div>
-                @else
-                    <span class="text-gray-400 italic">N/A</span>
-                @endif
-            </td>
-            
-            <!-- Colonne Date (cachée sur mobile et tablette) -->
-            <td class="text-gray-600 text-sm px-3 py-2 border-r border-gray-300 hidden lg:table-cell">
-                <div class="whitespace-nowrap">
-                    {{ \Carbon\Carbon::parse($product->created_at)->format('d/m/Y') }}
-                </div>
-                <div class="text-xs text-gray-400">
-                    {{ \Carbon\Carbon::parse($product->created_at)->format('H:i') }}
-                </div>
-            </td>
-            
-            <!-- Colonne Actions -->
-            <td class="px-3 py-2 text-center">
-                <div class="flex justify-center gap-1">
-                    @if($product->url)
-                        <a href="{{ $product->url }}" 
-                           target="_blank" 
-                           class="btn btn-xs btn-outline btn-square border-gray-300 hover:bg-blue-50 hover:border-blue-300"
-                           title="Voir sur le site">
-                            <x-icon name="o-arrow-top-right-on-square" class="w-3 h-3" />
-                        </a>
-                    @endif
-                    <button class="btn btn-xs btn-ghost btn-square border border-gray-300 hover:bg-gray-100" title="Voir détails">
-                        <x-icon name="o-eye" class="w-3 h-3" />
-                    </button>
-                </div>
-            </td>
-        </tr>
-    @endforeach
-</tbody>
+                    <thead>
+                        <tr class="bg-gray-100 border-b border-gray-300">
+                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-16 hidden sm:table-cell">Image</th>
+                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32 lg:min-w-40">Vendeur</th>
+                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-48 lg:min-w-56 xl:min-w-64">Nom</th>
+                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32 max-w-48 excel-truncate hidden md:table-cell">Type</th>
+                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32 max-w-48 excel-truncate hidden lg:table-cell">Variation</th>
+                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-32">Prix HT</th>
+                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32 hidden xl:table-cell">Site</th>
+                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-32 hidden lg:table-cell">Date</th>
+                            <th class="font-bold text-gray-700 text-sm px-3 py-2 text-center w-24">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($products as $index => $product)
+                            @php
+                                $rowNumber = (($currentPage - 1) * $perPage) + $index + 1;
+                                $site = \App\Models\Site::find($product->web_site_id);
+                            @endphp
+                            <tr class="border-b border-gray-200 hover:bg-gray-50 even:bg-gray-50/50">
+                                <td class="px-3 py-2 border-r border-gray-300 text-center hidden sm:table-cell">
+                                    @if($product->image_url)
+                                        <div class="avatar mx-auto">
+                                            <div class="mask mask-squircle w-10 h-10">
+                                                <img src="{{ $product->image_url }}" 
+                                                     alt="{{ $product->name }}"
+                                                     class="object-cover"
+                                                     onerror="this.src='https://via.placeholder.com/40x40?text=No+Image'">
+                                            </div>
+                                        </div>
+                                    @else
+                                        <div class="text-gray-300 mx-auto">
+                                            <x-icon name="o-photo" class="w-5 h-5" />
+                                        </div>
+                                    @endif
+                                </td>
+                                
+                                <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 excel-truncate" 
+                                    title="{{ $product->vendor }}">
+                                    <div class="block lg:hidden font-semibold">Marque:</div>
+                                    {{ $product->vendor }}
+                                </td>
+                                
+                                <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 excel-truncate" 
+                                    title="{{ $product->name }}">
+                                    <div class="block lg:hidden font-semibold">Produit:</div>
+                                    {{ $product->name }}
+                                </td>
+                                
+                                <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 hidden md:table-cell" 
+                                    title="{{ $product->type ?? 'N/A' }}">
+                                    <div class="inline-flex items-center px-2 py-1 rounded bg-blue-50 text-blue-700 border border-blue-200 text-xs excel-truncate">
+                                        {{ $product->type ?? 'N/A' }}
+                                    </div>
+                                </td>
+                                
+                                <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 hidden lg:table-cell" 
+                                    title="{{ $product->variation ?? 'N/A' }}">
+                                    <div class="inline-flex items-center px-2 py-1 rounded bg-gray-50 text-gray-700 border border-gray-200 text-xs excel-truncate">
+                                        {{ $product->variation ?? 'N/A' }}
+                                    </div>
+                                </td>
+                                
+                                <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 text-center font-semibold text-green-600">
+                                    <div class="block lg:hidden font-semibold text-gray-600">Prix:</div>
+                                    {{ $product->prix_ht }} {{ $product->currency }}
+                                </td>
+                                
+                                <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 hidden xl:table-cell">
+                                    @if($site)
+                                        <div class="flex items-center gap-1 excel-truncate" title="{{ $site->name }}">
+                                            <x-icon name="o-globe-alt" class="w-3 h-3 text-gray-400 flex-shrink-0" />
+                                            <span class="excel-truncate">{{ $site->name }}</span>
+                                        </div>
+                                    @else
+                                        <span class="text-gray-400 italic">N/A</span>
+                                    @endif
+                                </td>
+                                
+                                <td class="text-gray-600 text-sm px-3 py-2 border-r border-gray-300 hidden lg:table-cell">
+                                    <div class="whitespace-nowrap">
+                                        {{ \Carbon\Carbon::parse($product->created_at)->format('d/m/Y') }}
+                                    </div>
+                                    <div class="text-xs text-gray-400">
+                                        {{ \Carbon\Carbon::parse($product->created_at)->format('H:i') }}
+                                    </div>
+                                </td>
+                                
+                                <td class="px-3 py-2 text-center">
+                                    <div class="flex justify-center gap-1">
+                                        @if($product->url)
+                                            <a href="{{ $product->url }}" 
+                                               target="_blank" 
+                                               class="btn btn-xs btn-outline btn-square border-gray-300 hover:bg-blue-50 hover:border-blue-300"
+                                               title="Voir sur le site">
+                                                <x-icon name="o-arrow-top-right-on-square" class="w-3 h-3" />
+                                            </a>
+                                        @endif
+                                        <button class="btn btn-xs btn-ghost btn-square border border-gray-300 hover:bg-gray-100" title="Voir détails">
+                                            <x-icon name="o-eye" class="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
                 </table>
             @else
                 <div class="p-8 text-center">
@@ -403,7 +515,6 @@ new class extends Component {
             <div class="card bg-white border border-gray-300 shadow-sm">
                 <div class="card-body">
                     <div class="flex flex-col md:flex-row justify-between items-center gap-4">
-                        <!-- Informations sur les résultats -->
                         <div class="text-sm text-gray-600">
                             Affichage de 
                             <span class="font-semibold">{{ (($currentPage - 1) * $perPage) + 1 }}</span>
@@ -417,9 +528,7 @@ new class extends Component {
                             <span class="font-semibold">{{ $totalPages }}</span>
                         </div>
                         
-                        <!-- Contrôles de pagination -->
                         <div class="join border border-gray-300 rounded">
-                            <!-- Bouton Précédent -->
                             <button 
                                 wire:click="previousPage" 
                                 class="join-item btn btn-sm bg-white border-gray-300 hover:bg-gray-50 {{ $currentPage <= 1 ? 'btn-disabled opacity-50' : '' }}"
@@ -428,7 +537,6 @@ new class extends Component {
                                 <x-icon name="o-chevron-left" class="w-3 h-3" />
                             </button>
                             
-                            <!-- Pages -->
                             @php
                                 $startPage = max(1, $currentPage - 2);
                                 $endPage = min($totalPages, $currentPage + 2);
@@ -467,7 +575,6 @@ new class extends Component {
                                 </button>
                             @endif
                             
-                            <!-- Bouton Suivant -->
                             <button 
                                 wire:click="nextPage" 
                                 class="join-item btn btn-sm bg-white border-gray-300 hover:bg-gray-50 {{ $currentPage >= $totalPages ? 'btn-disabled opacity-50' : '' }}"
@@ -477,7 +584,6 @@ new class extends Component {
                             </button>
                         </div>
                         
-                        <!-- Sélection du nombre de résultats par page -->
                         <div class="flex items-center gap-2">
                             <span class="text-sm text-gray-600">Résultats par page:</span>
                             <select class="select select-bordered select-sm border-gray-300 bg-white" wire:model.live="perPage">
