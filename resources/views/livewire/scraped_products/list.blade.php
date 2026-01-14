@@ -522,7 +522,22 @@ new class extends Component {
         }
 
     </style>
-<!-- Modal de progression de l'export -->
+
+    <x-header title="Produits de concurent" subtitle="Tous les prix des produits sur le concurent" separator>
+        {{-- @if($showResults && $products->count() > 0)
+            <x-slot:actions>
+                <x-button 
+                    wire:click="exportCsv" 
+                    icon="o-arrow-down-tray"
+                    label="Exporter CSV"
+                    class="btn-success btn-sm"
+                    spinner
+                />
+            </x-slot:actions>
+        @endif --}}
+    </x-header>
+    
+    <!-- Modal de progression de l'export -->
     @if($isExporting)
         <div class="progress-modal-overlay" wire:loading.class="opacity-100" wire:target="exportCsv">
             <div class="progress-modal">
@@ -553,21 +568,6 @@ new class extends Component {
             </div>
         </div>
     @endif
-        
-    <x-header title="Produits de concurent" subtitle="Tous les prix des produits sur le concurent" separator>
-        {{-- @if($showResults && $products->count() > 0)
-            <x-slot:actions>
-                <x-button 
-                    wire:click="exportCsv" 
-                    icon="o-arrow-down-tray"
-                    label="Exporter CSV"
-                    class="btn-success btn-sm"
-                    spinner
-                />
-            </x-slot:actions>
-        @endif --}}
-    </x-header>
-    
     <!-- Filtres -->
     <div class="card bg-base-100 shadow-sm mb-4">
         <div class="card-body p-3">
