@@ -51,86 +51,6 @@ new class extends Component {
         }
     }
     
-    public function exportCsv()
-    {
-        // Récupérer tous les résultats filtrés (sans pagination)
-        $query = DB::table('last_price_scraped_product')
-            ->select('*');
-        
-        $query->where('variation', '!=', 'Standard');
-
-        if (!empty($this->vendor)) {
-            $query->where('vendor', 'like', '%' . $this->vendor . '%');
-        }
-        
-        if (!empty($this->name)) {
-            $query->where('name', 'like', '%' . $this->name . '%');
-        }
-        
-        if (!empty($this->type)) {
-            $query->where('type', 'like', '%' . $this->type . '%');
-        }
-        
-        if (!empty($this->variation)) {
-            $query->where('variation', 'like', '%' . $this->variation . '%');
-        }
-        
-        if (!empty($this->site_ids) && count($this->site_ids) > 0) {
-            $query->whereIn('web_site_id', $this->site_ids);
-        }
-        
-        $products = $query->orderBy('vendor', 'asc')->get();
-        
-        // Nom du fichier
-        $filename = 'produits_concurrents_' . date('Y-m-d_His') . '.csv';
-        
-        // Créer le CSV avec BOM UTF-8 pour Excel
-        $output = chr(0xEF) . chr(0xBB) . chr(0xBF); // BOM UTF-8
-        
-        // En-têtes
-        $headers = ['Vendeur', 'Nom du produit', 'Type', 'Variation', 'Prix HT', 'Devise', 'Site web', 'URL', 'Date de scraping', 'Image URL'];
-        $output .= implode(';', $headers) . "\r\n";
-        
-        // Données
-        foreach ($products as $product) {
-            $site = Site::find($product->web_site_id);
-            
-            $row = [
-                $this->escapeCsv($product->vendor ?? ''),
-                $this->escapeCsv($product->name ?? ''),
-                $this->escapeCsv($product->type ?? ''),
-                $this->escapeCsv($product->variation ?? ''),
-                $product->prix_ht ?? '',
-                $product->currency ?? '',
-                $this->escapeCsv($site ? $site->name : ''),
-                $this->escapeCsv($product->url ?? ''),
-                $product->created_at ? \Carbon\Carbon::parse($product->created_at)->format('d/m/Y H:i:s') : '',
-                $this->escapeCsv($product->image_url ?? '')
-            ];
-            
-            $output .= implode(';', $row) . "\r\n";
-        }
-        
-        // Retourner la réponse avec les bons headers
-        return response()->streamDownload(function() use ($output) {
-            echo $output;
-        }, $filename, [
-            'Content-Type' => 'text/csv; charset=UTF-8',
-            'Cache-Control' => 'must-revalidate, post-check=0, pre-check=0',
-            'Expires' => '0',
-            'Pragma' => 'public'
-        ]);
-    }
-    
-    private function escapeCsv($value)
-    {
-        // Échapper les guillemets doubles et entourer de guillemets si nécessaire
-        if (strpos($value, ';') !== false || strpos($value, '"') !== false || strpos($value, "\n") !== false) {
-            return '"' . str_replace('"', '""', $value) . '"';
-        }
-        return $value;
-    }
-    
     public function with()
     {
         if (!$this->showResults) {
@@ -310,19 +230,7 @@ new class extends Component {
         }
     </style>
     
-    <x-header title="Produits de concurent" subtitle="Tous les prix des produits sur le concurent" separator>
-        @if($showResults && $products->count() > 0)
-            <x-slot:actions>
-                <x-button 
-                    wire:click="exportCsv" 
-                    icon="o-arrow-down-tray"
-                    label="Exporter CSV"
-                    class="btn-success btn-sm"
-                    spinner
-                />
-            </x-slot:actions>
-        @endif
-    </x-header>
+    <x-header title="Produits de concurent" subtitle="Tous les prix des produits sur le concurent" separator />
     
     <!-- Filtres -->
     <div class="card bg-base-100 shadow-sm mb-4">
@@ -466,15 +374,6 @@ new class extends Component {
                         class="btn-primary btn-sm"
                         spinner
                     />
-                    @if($showResults && $totalResults > 0)
-                        <x-button 
-                            wire:click="exportCsv" 
-                            icon="o-arrow-down-tray"
-                            label="Exporter CSV ({{ $totalResults }})"
-                            class="btn-success btn-sm"
-                            spinner
-                        />
-                    @endif
                 </div>
             </div>
         </div>
