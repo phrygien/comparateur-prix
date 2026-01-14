@@ -466,7 +466,6 @@ new class extends Component {
                 <!-- Sites web (Multi-select) -->
                 <div x-data="{ open: false }" @click.away="open = false" class="sites-select-wrapper">
                     <label class="block text-sm font-medium text-gray-700 mb-1">
-                        <x-icon name="o-globe-alt" class="w-4 h-4 inline" />
                         Sites web
                     </label>
                     
