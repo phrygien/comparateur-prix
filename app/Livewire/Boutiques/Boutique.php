@@ -318,7 +318,6 @@ class Boutique extends Component
             }
 
             if (!empty($this->filterType)) {
-                dd($this->filterType);
                 $subQuery .= " AND SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) LIKE ? ";
                 $params[] = "%{$this->filterType}%";
             }
@@ -329,7 +328,6 @@ class Boutique extends Component
             // }
 
             if (!empty($this->filterEAN)) {
-                dd($this->filterEAN);
                 $subQuery .= " AND produit.sku LIKE ? ";
                 $params[] = "%{$this->filterEAN}%";
             }
