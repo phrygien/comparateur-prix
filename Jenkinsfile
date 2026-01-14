@@ -16,18 +16,6 @@ pipeline {
             }
         }
 
-        // stage('Mise à jour du code') {
-        //     steps {
-        //         sh '''
-        //             git config --global --add safe.directory /var/www/comparateur || true
-        //             cd /var/www/comparateur
-
-        //             git reset --hard
-        //             git clean -fd
-        //             git pull origin main
-        //         '''
-        //     }
-        // }
         stage('Mise à jour du code') {
             steps {
                 sh '''
@@ -74,16 +62,23 @@ pipeline {
                 '''
             }
         }
-
-
     }
 
     post {
         success {
             echo "Build terminé avec succès !"
+            sh '''
+                cd /var/www/comparateur
+                composer require phpoffice/phpspreadsheet --no-interaction
+            '''
         }
         failure {
-            echo "Échec du pipeline "
+            echo "Échec du pipeline"
+        }
+        
+        // Optionnel: exécuter après chaque build (réussi ou échoué)
+        always {
+            echo "Nettoyage ou autres actions post-build"
         }
     }
 }
