@@ -49,7 +49,6 @@ class Boutique extends Component
 
     public function applyFilters()
     {
-        dd($this->filterEAN);
         $this->resetPage();
         $this->dispatch('close-drawer');
     }
@@ -328,7 +327,7 @@ class Boutique extends Component
             // }
 
             if (!empty($this->filterEAN)) {
-                $subQuery .= " AND produit.sku LIKE ? ";
+                $subQuery .= " AND produit.sku = ? ";
                 $params[] = $this->filterEAN;
             }
 
