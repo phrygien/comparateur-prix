@@ -81,50 +81,131 @@ new class extends Component {
         
         $products = $query->orderBy('vendor', 'asc')->get();
         
-        // Nom du fichier
-        $filename = 'produits_concurrents_' . date('Y-m-d_His') . '.csv';
+        // Créer un fichier Excel avec PhpSpreadsheet
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
         
-        // Créer le CSV avec BOM UTF-8 pour Excel
-        $output = chr(0xEF) . chr(0xBB) . chr(0xBF); // BOM UTF-8
+        // Définir le titre de la feuille
+        $sheet->setTitle('Produits Concurrents');
         
         // En-têtes
         $headers = ['Vendeur', 'Nom du produit', 'Type', 'Variation', 'Prix HT', 'Devise', 'Site web', 'URL', 'Date de scraping', 'Image URL'];
-        $output .= implode(';', $headers) . "\r\n";
+        $sheet->fromArray($headers, null, 'A1');
+        
+        // Style de l'en-tête - Fond bleu avec texte blanc
+        $headerStyle = [
+            'font' => [
+                'bold' => true,
+                'color' => ['rgb' => 'FFFFFF'],
+                'size' => 12
+            ],
+            'fill' => [
+                'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                'startColor' => ['rgb' => '4F46E5']
+            ],
+            'alignment' => [
+                'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
+                'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER
+            ],
+            'borders' => [
+                'allBorders' => [
+                    'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                    'color' => ['rgb' => '000000']
+                ]
+            ]
+        ];
+        $sheet->getStyle('A1:J1')->applyFromArray($headerStyle);
+        
+        // Augmenter la hauteur de la ligne d'en-tête
+        $sheet->getRowDimension(1)->setRowHeight(25);
         
         // Données
+        $row = 2;
         foreach ($products as $product) {
             $site = Site::find($product->web_site_id);
             
-            $row = [
-                $this->escapeCsv($product->vendor ?? ''),
-                $this->escapeCsv($product->name ?? ''),
-                $this->escapeCsv($product->type ?? ''),
-                $this->escapeCsv($product->variation ?? ''),
-                $product->prix_ht ?? '',
-                $product->currency ?? '',
-                $this->escapeCsv($site ? $site->name : ''),
-                $this->escapeCsv($product->url ?? ''),
-                $product->created_at ? \Carbon\Carbon::parse($product->created_at)->format('d/m/Y H:i:s') : '',
-                $this->escapeCsv($product->image_url ?? '')
-            ];
+            $sheet->setCellValue('A' . $row, $product->vendor ?? '');
+            $sheet->setCellValue('B' . $row, $product->name ?? '');
+            $sheet->setCellValue('C' . $row, $product->type ?? '');
+            $sheet->setCellValue('D' . $row, $product->variation ?? '');
+            $sheet->setCellValue('E' . $row, $product->prix_ht ?? '');
+            $sheet->setCellValue('F' . $row, $product->currency ?? '');
+            $sheet->setCellValue('G' . $row, $site ? $site->name : '');
             
-            $output .= implode(';', $row) . "\r\n";
+            // URL cliquable
+            if ($product->url) {
+                $sheet->setCellValue('H' . $row, $product->url);
+                $sheet->getCell('H' . $row)->getHyperlink()->setUrl($product->url);
+                $sheet->getStyle('H' . $row)->getFont()->getColor()->setRGB('0563C1');
+                $sheet->getStyle('H' . $row)->getFont()->setUnderline(true);
+            }
+            
+            $sheet->setCellValue('I' . $row, $product->created_at ? \Carbon\Carbon::parse($product->created_at)->format('d/m/Y H:i:s') : '');
+            
+            // Image URL cliquable
+            if ($product->image_url) {
+                $sheet->setCellValue('J' . $row, $product->image_url);
+                $sheet->getCell('J' . $row)->getHyperlink()->setUrl($product->image_url);
+                $sheet->getStyle('J' . $row)->getFont()->getColor()->setRGB('0563C1');
+                $sheet->getStyle('J' . $row)->getFont()->setUnderline(true);
+            }
+            
+            // Alterner les couleurs de lignes
+            if ($row % 2 == 0) {
+                $sheet->getStyle('A' . $row . ':J' . $row)->getFill()
+                    ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                    ->getStartColor()->setRGB('F9FAFB');
+            }
+            
+            $row++;
         }
         
-        // Retourner la réponse avec les bons headers
-        return response()->streamDownload(function() use ($output) {
-            echo $output;
-        }, $filename, [
-            'Content-Type' => 'text/csv; charset=UTF-8',
-            'Cache-Control' => 'must-revalidate, post-check=0, pre-check=0',
-            'Expires' => '0',
-            'Pragma' => 'public'
+        // Bordures pour toutes les cellules de données
+        $lastRow = $row - 1;
+        $sheet->getStyle('A1:J' . $lastRow)->applyFromArray([
+            'borders' => [
+                'allBorders' => [
+                    'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                    'color' => ['rgb' => 'E5E7EB']
+                ]
+            ]
         ]);
+        
+        // Largeurs de colonnes
+        $sheet->getColumnDimension('A')->setWidth(20);  // Vendeur
+        $sheet->getColumnDimension('B')->setWidth(50);  // Nom
+        $sheet->getColumnDimension('C')->setWidth(20);  // Type
+        $sheet->getColumnDimension('D')->setWidth(20);  // Variation
+        $sheet->getColumnDimension('E')->setWidth(12);  // Prix
+        $sheet->getColumnDimension('F')->setWidth(8);   // Devise
+        $sheet->getColumnDimension('G')->setWidth(25);  // Site
+        $sheet->getColumnDimension('H')->setWidth(60);  // URL
+        $sheet->getColumnDimension('I')->setWidth(20);  // Date
+        $sheet->getColumnDimension('J')->setWidth(60);  // Image URL
+        
+        // Appliquer l'auto-filtre sur les en-têtes
+        $sheet->setAutoFilter('A1:J1');
+        
+        // Figer la première ligne (en-têtes)
+        $sheet->freezePane('A2');
+        
+        // Créer le writer Excel
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        
+        // Nom du fichier
+        $filename = 'produits_concurrents_' . date('Y-m-d_His') . '.xlsx';
+        
+        // Créer un fichier temporaire
+        $temp_file = tempnam(sys_get_temp_dir(), 'excel_');
+        $writer->save($temp_file);
+        
+        // Retourner le fichier en téléchargement
+        return response()->download($temp_file, $filename)->deleteFileAfterSend(true);
     }
     
     private function escapeCsv($value)
     {
-        // Échapper les guillemets doubles et entourer de guillemets si nécessaire
+        // Méthode gardée pour compatibilité mais non utilisée
         if (strpos($value, ';') !== false || strpos($value, '"') !== false || strpos($value, "\n") !== false) {
             return '"' . str_replace('"', '""', $value) . '"';
         }
