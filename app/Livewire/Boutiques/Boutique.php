@@ -312,13 +312,13 @@ class Boutique extends Component
             }
 
             if (!empty($this->filterMarque)) {
-                $subQuery .= " AND SUBSTRING_INDEX(product_char.name, ' - ', 1) = ? ";
-                $params[] = $this->filterMarque;
+                $subQuery .= " AND SUBSTRING_INDEX(product_char.name, ' - ', 1) LIKE ? ";
+                $params[] = "%{$this->filterMarque}%";
             }
 
             if (!empty($this->filterType)) {
-                $subQuery .= " AND SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) = ? ";
-                $params[] = $this->filterType;
+                $subQuery .= " AND SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) LIKE ? ";
+                $params[] = "%{$this->filterType}%";
             }
 
             // if (!empty($this->filterCapacity)) {
@@ -327,8 +327,8 @@ class Boutique extends Component
             // }
 
             if (!empty($this->filterEAN)) {
-                $subQuery .= " AND produit.sku = ? ";
-                $params[] = $this->filterEAN;
+                $subQuery .= " AND produit.sku LIKE ? ";
+                $params[] = "%{$this->filterEAN}%";
             }
 
             // Filtre pour prix > 0
