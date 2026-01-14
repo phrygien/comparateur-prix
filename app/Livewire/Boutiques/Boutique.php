@@ -59,6 +59,7 @@ class Boutique extends Component
         $this->filterMarque = "";
         $this->filterType = "";
         $this->filterCapacity = "";
+        $this->filterEAN = "";
         $this->search = "";
         $this->resetPage();
         $this->dispatch('close-drawer');
@@ -317,6 +318,7 @@ class Boutique extends Component
             }
 
             if (!empty($this->filterType)) {
+                dd($this->filterType);
                 $subQuery .= " AND SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) LIKE ? ";
                 $params[] = "%{$this->filterType}%";
             }
@@ -327,6 +329,7 @@ class Boutique extends Component
             // }
 
             if (!empty($this->filterEAN)) {
+                dd($this->filterEAN);
                 $subQuery .= " AND produit.sku LIKE ? ";
                 $params[] = "%{$this->filterEAN}%";
             }
