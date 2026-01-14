@@ -10,14 +10,10 @@ new class extends Component {
     public $name = '';
     public $type = '';
     public $variation = '';
-    public $site_ids = [];
+    public $site_ids = []; // Changé de site_id à site_ids (array)
     public $showResults = false;
     public $currentPage = 1;
     public $perPage = 50;
-    public $exportProgress = 0;
-    public $isExporting = false;
-    public $exportTotal = 0;
-    public $exportCurrent = 0;
     
     public function applyFilter()
     {
@@ -55,257 +51,189 @@ new class extends Component {
         }
     }
     
-    public function exportCsv()
-    {
-        // Initialiser l'état d'export
-        $this->isExporting = true;
-        $this->exportProgress = 5; // 5% pour initialisation
-        $this->exportCurrent = 0;
-        
-        // Étape 1: Compter le total des produits
-        $query = DB::table('last_price_scraped_product')
-            ->select('*')
-            ->where('variation', '!=', 'Standard');
-        
-        if (!empty($this->vendor)) {
-            $query->where('vendor', 'like', '%' . $this->vendor . '%');
-        }
-        
-        if (!empty($this->name)) {
-            $query->where('name', 'like', '%' . $this->name . '%');
-        }
-        
-        if (!empty($this->type)) {
-            $query->where('type', 'like', '%' . $this->type . '%');
-        }
-        
-        if (!empty($this->variation)) {
-            $query->where('variation', 'like', '%' . $this->variation . '%');
-        }
-        
-        if (!empty($this->site_ids) && count($this->site_ids) > 0) {
-            $query->whereIn('web_site_id', $this->site_ids);
-        }
-        
-        $totalProducts = $query->count();
-        $this->exportTotal = $totalProducts;
-        
-        if ($totalProducts === 0) {
-            $this->isExporting = false;
-            session()->flash('error', 'Aucun produit à exporter.');
-            return;
-        }
-        
-        $this->exportProgress = 10; // 10% pour comptage terminé
-        
-        // Augmenter les limites pour les exports volumineux
-        set_time_limit(300);
-        ini_set('memory_limit', '512M');
-        
-        // Créer le fichier Excel
-        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet();
-        $sheet->setTitle('Produits Concurrents');
-        
-        // En-têtes
-        $headers = ['Vendeur', 'Nom du produit', 'Type', 'Variation', 'Prix HT', 'Devise', 'Site web', 'URL Produit', 'Date de scraping', 'Image'];
-        $sheet->fromArray($headers, null, 'A1');
-        
-        // Style de l'en-tête
-        $headerStyle = [
-            'font' => [
-                'bold' => true,
-                'color' => ['rgb' => 'FFFFFF'],
-                'size' => 12
-            ],
-            'fill' => [
-                'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
-                'startColor' => ['rgb' => '4F46E5']
-            ],
-            'alignment' => [
-                'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
-                'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER
-            ],
-            'borders' => [
-                'allBorders' => [
-                    'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
-                    'color' => ['rgb' => '000000']
-                ]
-            ]
-        ];
-        $sheet->getStyle('A1:J1')->applyFromArray($headerStyle);
-        $sheet->getRowDimension(1)->setRowHeight(25);
-        
-        $this->exportProgress = 15; // 15% pour en-têtes créés
-        
-        // Récupérer les produits par lots
-        $batchSize = 1000;
-        $offset = 0;
-        $row = 2;
-        $processed = 0;
-        
-        do {
-            // Récupérer un lot de produits
-            $batchQuery = DB::table('last_price_scraped_product')
-                ->select('*')
-                ->where('variation', '!=', 'Standard');
-            
-            if (!empty($this->vendor)) {
-                $batchQuery->where('vendor', 'like', '%' . $this->vendor . '%');
-            }
-            
-            if (!empty($this->name)) {
-                $batchQuery->where('name', 'like', '%' . $this->name . '%');
-            }
-            
-            if (!empty($this->type)) {
-                $batchQuery->where('type', 'like', '%' . $this->type . '%');
-            }
-            
-            if (!empty($this->variation)) {
-                $batchQuery->where('variation', 'like', '%' . $this->variation . '%');
-            }
-            
-            if (!empty($this->site_ids) && count($this->site_ids) > 0) {
-                $batchQuery->whereIn('web_site_id', $this->site_ids);
-            }
-            
-            $products = $batchQuery->orderBy('vendor', 'asc')
-                ->offset($offset)
-                ->limit($batchSize)
-                ->get();
-            
-            foreach ($products as $product) {
-                $site = Site::find($product->web_site_id);
-                
-                $sheet->setCellValue('A' . $row, $product->vendor ?? '');
-                $sheet->setCellValue('B' . $row, $product->name ?? '');
-                $sheet->setCellValue('C' . $row, $product->type ?? '');
-                $sheet->setCellValue('D' . $row, $product->variation ?? '');
-                $sheet->setCellValue('E' . $row, $product->prix_ht ?? '');
-                $sheet->setCellValue('F' . $row, $product->currency ?? '');
-                $sheet->setCellValue('G' . $row, $site ? $site->name : '');
-                
-                // URL Produit
-                if (!empty($product->url) && filter_var($product->url, FILTER_VALIDATE_URL)) {
-                    $sheet->setCellValue('H' . $row, 'Voir le produit');
-                    $sheet->getCell('H' . $row)->getHyperlink()->setUrl($product->url);
-                    $sheet->getStyle('H' . $row)->applyFromArray([
-                        'font' => [
-                            'color' => ['rgb' => '0563C1'],
-                            'underline' => \PhpOffice\PhpSpreadsheet\Style\Font::UNDERLINE_SINGLE
-                        ]
-                    ]);
-                } else {
-                    $sheet->setCellValue('H' . $row, 'Pas d\'URL');
-                }
-                
-                $sheet->setCellValue('I' . $row, $product->created_at ? \Carbon\Carbon::parse($product->created_at)->format('d/m/Y H:i:s') : '');
-                
-                // Image URL
-                if (!empty($product->image_url) && filter_var($product->image_url, FILTER_VALIDATE_URL)) {
-                    $sheet->setCellValue('J' . $row, 'Voir image');
-                    $sheet->getCell('J' . $row)->getHyperlink()->setUrl($product->image_url);
-                    $sheet->getStyle('J' . $row)->applyFromArray([
-                        'font' => [
-                            'color' => ['rgb' => '0563C1'],
-                            'underline' => \PhpOffice\PhpSpreadsheet\Style\Font::UNDERLINE_SINGLE
-                        ]
-                    ]);
-                } else {
-                    $sheet->setCellValue('J' . $row, 'Pas d\'image');
-                }
-                
-                // Alterner les couleurs
-                if ($row % 2 == 0) {
-                    $sheet->getStyle('A' . $row . ':J' . $row)->getFill()
-                        ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
-                        ->getStartColor()->setRGB('F9FAFB');
-                }
-                
-                $row++;
-                $processed++;
-                $this->exportCurrent = $processed;
-                
-                // Mettre à jour la progression
-                if ($processed % 100 === 0 || $processed === $totalProducts) {
-                    $this->exportProgress = min(95, 15 + round(($processed / $totalProducts) * 75));
-                }
-            }
-            
-            $offset += $batchSize;
-            
-        } while ($products->count() === $batchSize);
-        
-        $this->exportProgress = 95; // 95% pour données ajoutées
-        
-        // Appliquer le style final
-        $lastRow = $row - 1;
-        
-        $sheet->getStyle('A1:J' . $lastRow)->applyFromArray([
-            'borders' => [
-                'allBorders' => [
-                    'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
-                    'color' => ['rgb' => 'E5E7EB']
-                ]
-            ]
-        ]);
-        
-        // Largeurs de colonnes
-        $sheet->getColumnDimension('A')->setWidth(20);
-        $sheet->getColumnDimension('B')->setWidth(50);
-        $sheet->getColumnDimension('C')->setWidth(20);
-        $sheet->getColumnDimension('D')->setWidth(20);
-        $sheet->getColumnDimension('E')->setWidth(12);
-        $sheet->getColumnDimension('F')->setWidth(8);
-        $sheet->getColumnDimension('G')->setWidth(25);
-        $sheet->getColumnDimension('H')->setWidth(18);
-        $sheet->getColumnDimension('I')->setWidth(20);
-        $sheet->getColumnDimension('J')->setWidth(15);
-        
-        $sheet->setAutoFilter('A1:J' . $lastRow);
-        $sheet->freezePane('A2');
-        
-        // Note d'information
-        $infoRow = $lastRow + 3;
-        $sheet->setCellValue('A' . $infoRow, '💡 Conseil : Utilisez les filtres dans les en-têtes pour filtrer par Vendeur, Variation ou Site web');
-        $sheet->getStyle('A' . $infoRow)->applyFromArray([
-            'font' => [
-                'italic' => true,
-                'color' => ['rgb' => '0070C0']
-            ]
-        ]);
-        $sheet->mergeCells('A' . $infoRow . ':J' . $infoRow);
-        
-        $this->exportProgress = 98; // 98% pour styles appliqués
-        
-        // Sauvegarder le fichier
-        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
-        $filename = 'produits_concurrents_' . date('Y-m-d_His') . '.xlsx';
-        $temp_file = tempnam(sys_get_temp_dir(), 'excel_');
-        $writer->save($temp_file);
-        
-        $this->exportProgress = 100; // 100% pour fichier créé
-        
-        // Petite pause pour montrer le 100%
-        usleep(500000); // 0.5 seconde
-        
-        // Télécharger le fichier
-        $this->isExporting = false;
-        
-        return response()->download($temp_file, $filename)->deleteFileAfterSend(true);
+public function exportCsv()
+{
+    // Augmenter les limites pour les exports volumineux
+    set_time_limit(700); // 5 minutes
+    ini_set('memory_limit', '512M');
+
+    // Récupérer tous les résultats filtrés (sans pagination)
+    $query = DB::table('last_price_scraped_product')
+        ->select('*');
+    
+    $query->where('variation', '!=', 'Standard');
+
+    if (!empty($this->vendor)) {
+        $query->where('vendor', 'like', '%' . $this->vendor . '%');
     }
     
-    public function cancelExport()
-    {
-        $this->isExporting = false;
-        $this->exportProgress = 0;
-        $this->exportCurrent = 0;
-        $this->exportTotal = 0;
+    if (!empty($this->name)) {
+        $query->where('name', 'like', '%' . $this->name . '%');
     }
+    
+    if (!empty($this->type)) {
+        $query->where('type', 'like', '%' . $this->type . '%');
+    }
+    
+    if (!empty($this->variation)) {
+        $query->where('variation', 'like', '%' . $this->variation . '%');
+    }
+    
+    if (!empty($this->site_ids) && count($this->site_ids) > 0) {
+        $query->whereIn('web_site_id', $this->site_ids);
+    }
+    
+    $products = $query->orderBy('vendor', 'asc')->get();
+    
+    // Créer un fichier Excel avec PhpSpreadsheet
+    $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $sheet = $spreadsheet->getActiveSheet();
+    
+    // Définir le titre de la feuille
+    $sheet->setTitle('Produits Concurrents');
+    
+    // En-têtes
+    $headers = ['Vendeur', 'Nom du produit', 'Type', 'Variation', 'Prix HT', 'Devise', 'Site web', 'URL Produit', 'Date de scraping', 'Image'];
+    $sheet->fromArray($headers, null, 'A1');
+    
+    // Style de l'en-tête - Fond bleu avec texte blanc
+    $headerStyle = [
+        'font' => [
+            'bold' => true,
+            'color' => ['rgb' => 'FFFFFF'],
+            'size' => 12
+        ],
+        'fill' => [
+            'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+            'startColor' => ['rgb' => '4F46E5']
+        ],
+        'alignment' => [
+            'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
+            'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER
+        ],
+        'borders' => [
+            'allBorders' => [
+                'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                'color' => ['rgb' => '000000']
+            ]
+        ]
+    ];
+    $sheet->getStyle('A1:J1')->applyFromArray($headerStyle);
+    
+    // Augmenter la hauteur de la ligne d'en-tête
+    $sheet->getRowDimension(1)->setRowHeight(25);
+    
+    // Données
+    $row = 2;
+    foreach ($products as $product) {
+        $site = Site::find($product->web_site_id);
+        
+        $sheet->setCellValue('A' . $row, $product->vendor ?? '');
+        $sheet->setCellValue('B' . $row, $product->name ?? '');
+        $sheet->setCellValue('C' . $row, $product->type ?? '');
+        $sheet->setCellValue('D' . $row, $product->variation ?? '');
+        $sheet->setCellValue('E' . $row, $product->prix_ht ?? '');
+        $sheet->setCellValue('F' . $row, $product->currency ?? '');
+        $sheet->setCellValue('G' . $row, $site ? $site->name : '');
+        
+        // URL Produit - Avec texte "Voir le produit"
+        if (!empty($product->url) && filter_var($product->url, FILTER_VALIDATE_URL)) {
+            $sheet->setCellValue('H' . $row, 'Voir le produit');
+            $sheet->getCell('H' . $row)->getHyperlink()->setUrl($product->url);
+            $sheet->getStyle('H' . $row)->applyFromArray([
+                'font' => [
+                    'color' => ['rgb' => '0563C1'],
+                    'underline' => \PhpOffice\PhpSpreadsheet\Style\Font::UNDERLINE_SINGLE
+                ]
+            ]);
+        } else {
+            $sheet->setCellValue('H' . $row, 'Pas d\'URL');
+        }
+        
+        $sheet->setCellValue('I' . $row, $product->created_at ? \Carbon\Carbon::parse($product->created_at)->format('d/m/Y H:i:s') : '');
+        
+        // Image URL - Avec texte "Voir image"
+        if (!empty($product->image_url) && filter_var($product->image_url, FILTER_VALIDATE_URL)) {
+            $sheet->setCellValue('J' . $row, 'Voir image');
+            $sheet->getCell('J' . $row)->getHyperlink()->setUrl($product->image_url);
+            $sheet->getStyle('J' . $row)->applyFromArray([
+                'font' => [
+                    'color' => ['rgb' => '0563C1'],
+                    'underline' => \PhpOffice\PhpSpreadsheet\Style\Font::UNDERLINE_SINGLE
+                ]
+            ]);
+        } else {
+            $sheet->setCellValue('J' . $row, 'Pas d\'image');
+        }
+        
+        // Alterner les couleurs de lignes
+        if ($row % 2 == 0) {
+            $sheet->getStyle('A' . $row . ':J' . $row)->getFill()
+                ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                ->getStartColor()->setRGB('F9FAFB');
+        }
+        
+        $row++;
+    }
+    
+    $lastRow = $row - 1;
+    
+    // Bordures pour toutes les cellules de données
+    $sheet->getStyle('A1:J' . $lastRow)->applyFromArray([
+        'borders' => [
+            'allBorders' => [
+                'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                'color' => ['rgb' => 'E5E7EB']
+            ]
+        ]
+    ]);
+    
+    // Largeurs de colonnes
+    $sheet->getColumnDimension('A')->setWidth(20);  // Vendeur
+    $sheet->getColumnDimension('B')->setWidth(50);  // Nom
+    $sheet->getColumnDimension('C')->setWidth(20);  // Type
+    $sheet->getColumnDimension('D')->setWidth(20);  // Variation
+    $sheet->getColumnDimension('E')->setWidth(12);  // Prix
+    $sheet->getColumnDimension('F')->setWidth(8);   // Devise
+    $sheet->getColumnDimension('G')->setWidth(25);  // Site
+    $sheet->getColumnDimension('H')->setWidth(18);  // URL Produit (réduit car texte court)
+    $sheet->getColumnDimension('I')->setWidth(20);  // Date
+    $sheet->getColumnDimension('J')->setWidth(15);  // Image (réduit car texte court)
+    
+    // Appliquer l'auto-filtre sur les en-têtes
+    $sheet->setAutoFilter('A1:J' . $lastRow);
+    
+    // Figer la première ligne (en-têtes)
+    $sheet->freezePane('A2');
+    
+    // Ajouter une note d'information
+    $infoRow = $lastRow + 3;
+    $sheet->setCellValue('A' . $infoRow, '💡 Conseil : Utilisez les filtres dans les en-têtes pour filtrer par Vendeur, Variation ou Site web');
+    $sheet->getStyle('A' . $infoRow)->applyFromArray([
+        'font' => [
+            'italic' => true,
+            'color' => ['rgb' => '0070C0']
+        ]
+    ]);
+    $sheet->mergeCells('A' . $infoRow . ':J' . $infoRow);
+    
+    // Créer le writer Excel
+    $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+    
+    // Nom du fichier
+    $filename = 'produits_concurrents_' . date('Y-m-d_His') . '.xlsx';
+    
+    // Créer un fichier temporaire
+    $temp_file = tempnam(sys_get_temp_dir(), 'excel_');
+    $writer->save($temp_file);
+    
+    // Retourner le fichier en téléchargement
+    return response()->download($temp_file, $filename)->deleteFileAfterSend(true);
+}
     
     private function escapeCsv($value)
     {
+        // Méthode gardée pour compatibilité mais non utilisée
         if (strpos($value, ';') !== false || strpos($value, '"') !== false || strpos($value, "\n") !== false) {
             return '"' . str_replace('"', '""', $value) . '"';
         }
@@ -489,28 +417,6 @@ new class extends Component {
         .site-badge button:hover {
             color: #1e3a8a;
         }
-
-        /* Styles pour la barre de progression */
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        .animate-spin {
-            animation: spin 1s linear infinite;
-        }
-
-        .animate-pulse {
-            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
-
-        .progress-bar {
-            transition: width 0.3s ease-in-out;
-        }
     </style>
     
     <x-header title="Produits de concurent" subtitle="Tous les prix des produits sur le concurent" separator>
@@ -526,94 +432,6 @@ new class extends Component {
             </x-slot:actions>
         @endif --}}
     </x-header>
-
-    <!-- Modal de progression d'export -->
-    @if($isExporting)
-        <div class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-            <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
-                <div class="flex flex-col items-center">
-                    <!-- Icône de chargement -->
-                    <div class="relative mb-6">
-                        <div class="w-20 h-20">
-                            <div class="animate-spin rounded-full h-20 w-20 border-t-4 border-b-4 border-blue-500"></div>
-                        </div>
-                        <div class="absolute inset-0 flex items-center justify-center">
-                            <span class="text-blue-600 font-bold text-lg">{{ $exportProgress }}%</span>
-                        </div>
-                    </div>
-                    
-                    <!-- Titre -->
-                    <h3 class="text-xl font-semibold mb-2 text-gray-800">Export en cours...</h3>
-                    <p class="text-gray-600 text-center mb-6">
-                        Préparation du fichier Excel. Veuillez patienter...
-                    </p>
-                    
-                    <!-- Informations de progression -->
-                    <div class="w-full mb-4">
-                        <div class="flex justify-between text-sm text-gray-600 mb-2">
-                            <span class="font-medium">{{ $exportCurrent }} / {{ $exportTotal }} produits</span>
-                            <span class="font-semibold">{{ $exportProgress }}%</span>
-                        </div>
-                        
-                        <!-- Barre de progression -->
-                        <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                            <div 
-                                class="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full progress-bar"
-                                style="width: {{ $exportProgress }}%"
-                            ></div>
-                        </div>
-                    </div>
-                    
-                    <!-- Indicateur de statut -->
-                    <div class="mt-4">
-                        <div class="flex items-center justify-center text-sm text-gray-600">
-                            <div class="animate-pulse flex items-center space-x-2">
-                                <div class="w-2 h-2 bg-blue-500 rounded-full"></div>
-                                <span class="font-medium">
-                                    @if($exportProgress < 20)
-                                        Initialisation de l'export...
-                                    @elseif($exportProgress < 40)
-                                        Récupération des données...
-                                    @elseif($exportProgress < 60)
-                                        Traitement des produits...
-                                    @elseif($exportProgress < 80)
-                                        Formatage des données...
-                                    @elseif($exportProgress < 95)
-                                        Génération du fichier Excel...
-                                    @else
-                                        Finalisation du téléchargement...
-                                    @endif
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Temps estimé (optionnel) -->
-                    <div class="mt-4 text-xs text-gray-500 text-center">
-                        <div class="flex items-center justify-center space-x-1">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <span>Temps estimé: {{ ceil($exportTotal / 500) }} secondes</span>
-                        </div>
-                    </div>
-                    
-                    <!-- Bouton annuler -->
-                    <button 
-                        wire:click="cancelExport"
-                        class="mt-8 px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-all duration-200 hover:shadow-sm"
-                    >
-                        <div class="flex items-center space-x-2">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                            <span>Annuler l'export</span>
-                        </div>
-                    </button>
-                </div>
-            </div>
-        </div>
-    @endif
     
     <!-- Filtres -->
     <div class="card bg-base-100 shadow-sm mb-4">
@@ -760,10 +578,9 @@ new class extends Component {
                         <x-button 
                             wire:click="exportCsv" 
                             icon="o-arrow-down-tray"
-                            label="Exporter Excel ({{ $totalResults }})"
+                            label="Exporter CSV ({{ $totalResults }})"
                             class="btn-success btn-sm"
                             spinner
-                            :disabled="$isExporting"
                         />
                     @endif
                 </div>
