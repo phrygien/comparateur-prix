@@ -11,7 +11,7 @@
             <div class="flex items-center gap-4">
                 <!-- Sélecteur d'éléments par page -->
                 <div class="form-control">
-                    <select wire:model.live="perPage" class="select select-bordered select-sm">
+                    <select wire:model.live="perPage" class="select select-bordered select-sm" style="width: max-content">
                         <option value="30">30 par page</option>
                         <option value="60">60 par page</option>
                         <option value="90">90 par page</option>
