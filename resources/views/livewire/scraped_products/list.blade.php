@@ -58,16 +58,15 @@ new class extends Component {
     
 public function exportCsv()
 {
-    // Augmenter les limites pour les exports volumineux
-    set_time_limit(300); // 5 minutes
+    set_time_limit(300);
     ini_set('memory_limit', '512M');
     
-    // Récupérer tous les résultats filtrés (sans pagination)
     $query = DB::table('last_price_scraped_product')
         ->select('*');
     
-    $query->where('variation', '!=', 'Standard');
-
+    // CORRECTION : Supprimer ou ajuster ce filtre si nécessaire
+    // $query->where('variation', '!=', 'Standard'); // Commenter si ce filtre n'est pas nécessaire
+    
     if (!empty($this->vendor)) {
         $query->where('vendor', 'like', '%' . $this->vendor . '%');
     }
@@ -88,21 +87,15 @@ public function exportCsv()
         $query->whereIn('web_site_id', $this->site_ids);
     }
     
-    // Utiliser chunk pour traiter par lots et économiser la mémoire
-    $totalProducts = $query->count();
-    
-    // Créer un fichier Excel avec PhpSpreadsheet
     $spreadsheet = new Spreadsheet();
     $sheet = $spreadsheet->getActiveSheet();
-    
-    // Définir le titre de la feuille
     $sheet->setTitle('Produits Concurrents');
     
-    // En-têtes (sans Image URL)
+    // En-têtes
     $headers = ['Image', 'Vendeur', 'Nom du produit', 'Type', 'Variation', 'Prix HT', 'Devise', 'Site web', 'URL', 'Date de scraping'];
     $sheet->fromArray($headers, null, 'A1');
     
-    // Style de l'en-tête - Fond bleu avec texte blanc
+    // Style de l'en-tête
     $headerStyle = [
         'font' => [
             'bold' => true,
@@ -125,16 +118,12 @@ public function exportCsv()
         ]
     ];
     $sheet->getStyle('A1:J1')->applyFromArray($headerStyle);
-    
-    // Augmenter la hauteur de la ligne d'en-tête
     $sheet->getRowDimension(1)->setRowHeight(25);
+    $sheet->getDefaultRowDimension()->setRowHeight(100); // Hauteur réduite pour mieux s'adapter
     
-    // Augmenter la hauteur des lignes pour les images
-    $sheet->getDefaultRowDimension()->setRowHeight(120); // Augmenté de 60 à 120 pour plus de lisibilité
-    
-    // Traiter les données par chunks pour optimiser la mémoire
+    // Traiter les données
     $row = 2;
-    $chunkSize = 500; // Traiter 500 lignes à la fois
+    $chunkSize = 500;
     
     $query->orderBy('vendor', 'asc')->chunk($chunkSize, function($products) use ($sheet, &$row) {
         foreach ($products as $product) {
@@ -151,47 +140,58 @@ public function exportCsv()
             $sheet->setCellValue('I' . $row, $product->url ?? '');
             $sheet->setCellValue('J' . $row, $product->created_at ? \Carbon\Carbon::parse($product->created_at)->format('d/m/Y H:i:s') : '');
             
-            // Utiliser la formule IMAGE() pour afficher l'image depuis l'URL
-            if ($product->image_url) {
+            // OPTION 1 : Formule IMAGE() - Méthode recommandée
+            if ($product->image_url && filter_var($product->image_url, FILTER_VALIDATE_URL)) {
                 try {
-                    // Formule Excel IMAGE() sans @ au début
-                    $imageUrl = str_replace('"', '""', $product->image_url);
+                    // Nettoyer l'URL
+                    $imageUrl = str_replace('"', '""', trim($product->image_url));
+                    $imageUrl = htmlspecialchars_decode($imageUrl);
                     
-                    // Paramètres optionnels pour mieux contrôler la taille de l'image dans Excel:
-                    // 1 = Ajuster l'image à la cellule tout en conservant les proportions (recommandé)
-                    // 3 = Image à taille réelle
+                    // Créer la formule Excel IMAGE()
+                    // Paramètres : =IMAGE(url, [mode], [hauteur], [largeur])
+                    // mode: 1=Ajuster à la cellule, 2=Remplir en conservant le ratio, 3=Taille originale, 4=Personnalisé
                     $formula = '=IMAGE("' . $imageUrl . '", 1)';
                     
-                    $sheet->setCellValue('A' . $row, $formula);
+                    // Définir la formule sans guillemets
+                    $cell = $sheet->getCell('A' . $row);
+                    $cell->setValueExplicit($formula, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_FORMULA);
                     
-                    // Définir un style explicite pour éviter l'ajout automatique de @
-                    $sheet->getCell('A' . $row)->getStyle()
-                        ->setQuotePrefix(false); // Important: éviter que Excel ajoute ' automatiquement
+                    // IMPORTANT : Désactiver le préfixe de citation
+                    $cell->getStyle()->setQuotePrefix(false);
                     
+                    // Ajuster la hauteur spécifique pour cette ligne
+                    $sheet->getRowDimension($row)->setRowHeight(80);
+                    
+                    // Centrer l'image
+                    $sheet->getStyle('A' . $row)->getAlignment()
+                        ->setHorizontal(Alignment::HORIZONTAL_CENTER)
+                        ->setVertical(Alignment::VERTICAL_CENTER);
+                        
                 } catch (\Exception $e) {
-                    // Si la formule échoue, mettre juste l'URL
+                    // En cas d'erreur, mettre l'URL en texte
                     $sheet->setCellValue('A' . $row, $product->image_url);
+                    $sheet->getStyle('A' . $row)->getFont()->setColor(
+                        new \PhpOffice\PhpSpreadsheet\Style\Color(\PhpOffice\PhpSpreadsheet\Style\Color::COLOR_BLUE)
+                    );
                 }
             } else {
-                $sheet->setCellValue('A' . $row, '');
+                $sheet->setCellValue('A' . $row, 'Pas d\'image');
             }
             
-            // URL cliquable (si présente) - Colonne I maintenant
-            if ($product->url) {
-                $sheet->getCell('I' . $row)->getHyperlink()->setUrl($product->url);
-                $sheet->getStyle('I' . $row)->getFont()->getColor()->setRGB('0563C1');
-                $sheet->getStyle('I' . $row)->getFont()->setUnderline(true);
+            // Rendre l'URL cliquable
+            if ($product->url && filter_var($product->url, FILTER_VALIDATE_URL)) {
+                try {
+                    $sheet->getCell('I' . $row)->getHyperlink()->setUrl($product->url);
+                    $sheet->getStyle('I' . $row)->getFont()->setColor(
+                        new \PhpOffice\PhpSpreadsheet\Style\Color(\PhpOffice\PhpSpreadsheet\Style\Color::COLOR_BLUE)
+                    );
+                    $sheet->getStyle('I' . $row)->getFont()->setUnderline(true);
+                } catch (\Exception $e) {
+                    // Si l'URL n'est pas valide, ne rien faire
+                }
             }
             
-            // Centrer l'image dans la cellule
-            $sheet->getStyle('A' . $row)->getAlignment()
-                ->setHorizontal(Alignment::HORIZONTAL_CENTER)
-                ->setVertical(Alignment::VERTICAL_CENTER);
-            
-            // Définir la largeur spécifique de la colonne A pour les images
-            $sheet->getColumnDimension('A')->setWidth(20); // Augmenté à 20 pour plus de largeur
-            
-            // Définir l'habillage du texte pour les autres colonnes
+            // Habillage du texte pour les autres colonnes
             $sheet->getStyle('C' . $row . ':I' . $row)->getAlignment()
                 ->setWrapText(true)
                 ->setVertical(Alignment::VERTICAL_CENTER);
@@ -207,53 +207,39 @@ public function exportCsv()
         }
     });
     
-    $lastRow = $row - 1;
-    
-    // Bordures pour toutes les cellules de données (appliquer en une seule fois)
-    if ($lastRow > 1) {
-        $sheet->getStyle('A1:J' . $lastRow)->applyFromArray([
-            'borders' => [
-                'allBorders' => [
-                    'borderStyle' => Border::BORDER_THIN,
-                    'color' => ['rgb' => 'E5E7EB']
-                ]
-            ]
-        ]);
-    }
-    
-    // Largeurs de colonnes ajustées pour plus de lisibilité
-    $sheet->getColumnDimension('A')->setWidth(25);  // Image - augmenté
+    // Configuration des colonnes
+    $sheet->getColumnDimension('A')->setWidth(25);  // Image
     $sheet->getColumnDimension('B')->setWidth(20);  // Vendeur
-    $sheet->getColumnDimension('C')->setWidth(50);  // Nom
+    $sheet->getColumnDimension('C')->setWidth(40);  // Nom
     $sheet->getColumnDimension('D')->setWidth(20);  // Type
     $sheet->getColumnDimension('E')->setWidth(20);  // Variation
-    $sheet->getColumnDimension('F')->setWidth(12);  // Prix
-    $sheet->getColumnDimension('G')->setWidth(8);   // Devise
+    $sheet->getColumnDimension('F')->setWidth(15);  // Prix
+    $sheet->getColumnDimension('G')->setWidth(10);  // Devise
     $sheet->getColumnDimension('H')->setWidth(25);  // Site
-    $sheet->getColumnDimension('I')->setWidth(60);  // URL
+    $sheet->getColumnDimension('I')->setWidth(50);  // URL
     $sheet->getColumnDimension('J')->setWidth(20);  // Date
     
-    // Appliquer l'auto-filtre sur les en-têtes
+    // Auto-filtre
     $sheet->setAutoFilter('A1:J1');
     
-    // Figer la première ligne (en-têtes)
+    // Figer la première ligne
     $sheet->freezePane('A2');
     
-    // Créer le writer Excel
+    // Ajuster automatiquement la largeur des colonnes (optionnel)
+    foreach(range('B','J') as $column) {
+        $sheet->getColumnDimension($column)->setAutoSize(true);
+    }
+    
+    // Créer le fichier
     $writer = new Xlsx($spreadsheet);
-    
-    // Nom du fichier
     $filename = 'produits_concurrents_' . date('Y-m-d_His') . '.xlsx';
-    
-    // Créer un fichier temporaire
     $temp_file = tempnam(sys_get_temp_dir(), 'excel_');
     $writer->save($temp_file);
     
-    // Libérer la mémoire
+    // Nettoyer
     $spreadsheet->disconnectWorksheets();
     unset($spreadsheet);
     
-    // Retourner le fichier en téléchargement
     return response()->download($temp_file, $filename)->deleteFileAfterSend(true);
 }
     
