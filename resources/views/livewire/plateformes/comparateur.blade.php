@@ -2124,9 +2124,6 @@ public function getCompetitorPrice($search)
 
 
 
-/**
- * Export des résultats vers Excel
- */
 public function exportToExcel()
 {
     try {
@@ -2156,7 +2153,7 @@ public function exportToExcel()
         }
         
         $headers[] = 'Type';
-        $headers[] = 'URL';
+        $headers[] = 'URL Produit';
         
         // Ajouter les colonnes de score si recherche automatique
         if ($this->isAutomaticSearch) {
@@ -2199,9 +2196,21 @@ public function exportToExcel()
         foreach ($this->matchedProducts as $product) {
             $col = 'A';
             
-            // Image URL
+            // Image URL - CLIQUABLE
             $imageUrl = $this->getProductImage($product);
-            $sheet->setCellValue($col++ . $row, $imageUrl);
+            if (!empty($imageUrl) && filter_var($imageUrl, FILTER_VALIDATE_URL)) {
+                $sheet->setCellValue($col . $row, 'Voir image');
+                $sheet->getCell($col . $row)->getHyperlink()->setUrl($imageUrl);
+                $sheet->getStyle($col . $row)->applyFromArray([
+                    'font' => [
+                        'color' => ['rgb' => '0563C1'],
+                        'underline' => \PhpOffice\PhpSpreadsheet\Style\Font::UNDERLINE_SINGLE
+                    ]
+                ]);
+            } else {
+                $sheet->setCellValue($col . $row, 'Pas d\'image');
+            }
+            $col++;
             
             // Score et Correspondance (si recherche automatique)
             if ($this->isAutomaticSearch) {
@@ -2301,8 +2310,20 @@ public function exportToExcel()
             // Type
             $sheet->setCellValue($col++ . $row, $product->type ?? 'N/A');
             
-            // URL
-            $sheet->setCellValue($col++ . $row, $productUrl ?? 'N/A');
+            // URL Produit - CLIQUABLE
+            if (!empty($productUrl) && filter_var($productUrl, FILTER_VALIDATE_URL)) {
+                $sheet->setCellValue($col . $row, 'Voir le produit');
+                $sheet->getCell($col . $row)->getHyperlink()->setUrl($productUrl);
+                $sheet->getStyle($col . $row)->applyFromArray([
+                    'font' => [
+                        'color' => ['rgb' => '0563C1'],
+                        'underline' => \PhpOffice\PhpSpreadsheet\Style\Font::UNDERLINE_SINGLE
+                    ]
+                ]);
+            } else {
+                $sheet->setCellValue($col . $row, 'Pas d\'URL');
+            }
+            $col++;
             
             // Alternance des couleurs de lignes
             if ($row % 2 === 0) {
@@ -2362,7 +2383,7 @@ public function exportToExcel()
         return;
     }
 }
-
+    
 }; ?>
 
 <div>
@@ -2711,8 +2732,8 @@ public function exportToExcel()
 
         <!-- Tableau des résultats - TOUJOURS AFFICHÉ -->
         @if($showTable)
-
-        <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+            <div class="bg-white shadow-sm border border-gray-300 overflow-hidden" wire:loading.class="opacity-50" wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
+<div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
     <div>
         <h3 class="text-lg font-medium text-gray-900">
             @if($hasData)
@@ -2753,30 +2774,6 @@ public function exportToExcel()
         </button>
     @endif
 </div>
-
-            <div class="bg-white shadow-sm border border-gray-300 overflow-hidden" wire:loading.class="opacity-50" wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
-                <div class="px-6 py-4 border-b border-gray-200">
-                    <h3 class="text-lg font-medium text-gray-900">
-                        @if($hasData)
-                            @if($isAutomaticSearch)
-                                Résultats de la recherche automatique ({{ count($matchedProducts) }} produit(s))
-                            @else
-                                Résultats de la recherche manuelle ({{ count($matchedProducts) }} produit(s))
-                            @endif
-                        @else
-                            Recherche manuelle - Utilisez les filtres
-                        @endif
-                    </h3>
-                    <p class="mt-1 text-sm text-gray-500">
-                        @if($hasData)
-                            <span wire:loading.remove wire:target="adjustSimilarityThreshold, resetFilters, updatedFilters">
-                                {{ count($matchedProducts) }} produit(s) trouvé(s)
-                            </span>
-                        @else
-                            Aucun résultat automatique. Utilisez les filtres pour rechercher manuellement.
-                        @endif
-                    </p>
-                </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full border-collapse border border-gray-300">
                         <thead class="bg-gray-100">
