@@ -34,14 +34,19 @@ new class extends Component {
         'name' => '',
         'variation' => '',
         'type' => '',
-        //'site_source' => ''
-        'site_source' => [] // Changé de '' à []
+        'site_source' => []
     ];
     public $sites = [];
     public $showTable = false;
     public $isAutomaticSearch = true;
     public $originalAutomaticResults = [];
     public $hasAppliedFilters = false;
+    
+    // Nouvelles propriétés pour les sélections
+    public $selectedProducts = [];
+    public $selectAll = false;
+    public $showAnalysis = false;
+    public $selectedAnalysis = [];
 
     // Cache des vendors
     private array $knownVendors = [];
@@ -692,6 +697,7 @@ new class extends Component {
             $this->hasData = false;
             $this->matchedProducts = [];
             $this->products = [];
+            $this->resetSelection(); // Réinitialiser la sélection lors d'une nouvelle recherche
 
             $cacheKey = $this->getManualSearchCacheKey();
             $cachedResults = $this->getCachedResults($cacheKey);
@@ -823,6 +829,7 @@ new class extends Component {
                 $this->hasData = !empty($cachedData['products']);
                 $this->isAutomaticSearch = true;
                 $this->showTable = true;
+                $this->resetSelection(); // Réinitialiser la sélection
 
                 return $cachedData['full_result'];
             }
@@ -1049,6 +1056,7 @@ new class extends Component {
             $this->hasData = !empty($matchedProducts);
             $this->isAutomaticSearch = true;
             $this->showTable = true;
+            $this->resetSelection(); // Réinitialiser la sélection
 
             return $fullResult;
 
@@ -1062,6 +1070,7 @@ new class extends Component {
             $this->originalAutomaticResults = [];
             $this->hasAppliedFilters = false;
             $this->showTable = true;
+            $this->resetSelection(); // Réinitialiser la sélection
             return ['error' => $e->getMessage()];
         }
     }
@@ -1364,7 +1373,7 @@ new class extends Component {
             'name' => '',
             'variation' => '',
             'type' => '',
-            'site_source' => ''
+            'site_source' => []
         ];
 
         $this->hasAppliedFilters = false;
@@ -1379,6 +1388,8 @@ new class extends Component {
                 $this->getCompetitorPrice($this->searchQuery);
             }
         }
+        
+        $this->resetSelection(); // Réinitialiser la sélection
     }
 
     public function updatedFilters($value, $key)
@@ -1402,6 +1413,7 @@ new class extends Component {
         $this->originalAutomaticResults = [];
         $this->hasAppliedFilters = false;
         $this->showTable = true;
+        $this->resetSelection(); // Réinitialiser la sélection
         return null;
     }
 
@@ -1430,6 +1442,7 @@ new class extends Component {
         $this->hasAppliedFilters = false;
         $this->showTable = true;
         $this->isAutomaticSearch = true;
+        $this->resetSelection(); // Réinitialiser la sélection
 
         return $emptyResult;
     }
@@ -1687,7 +1700,7 @@ new class extends Component {
                 LEFT JOIN product_media ON product_media.entity_id = produit.entity_id
                 LEFT JOIN product_categorie ON product_categorie.entity_id = produit.entity_id 
                 LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id 
-                LEFT JOIN cataloginventory_stock_status AS stock_status ON stock_item.product_id = stock_status.product_id 
+                LEFT JOIN cataloginventory_stock_status AS stock_status ON stock_status.product_id = stock_item.product_id 
                 LEFT JOIN option_super_attribut AS options ON options.simple_product_id = produit.entity_id 
                 LEFT JOIN eav_attribute_set AS eas ON produit.attribute_set_id = eas.attribute_set_id 
                 LEFT JOIN catalog_product_entity as produit_parent ON parent_child_table.parent_id = produit_parent.entity_id 
@@ -2223,7 +2236,166 @@ new class extends Component {
         return in_array(strtolower($extension), $imageExtensions);
     }
 
+    /**
+     * NOUVELLES MÉTHODES POUR LA SÉLECTION CORRIGÉES
+     */
 
+    /**
+     * Bascule la sélection d'un produit
+     */
+    public function toggleProduct($productId)
+    {
+        $key = array_search($productId, $this->selectedProducts);
+        
+        if ($key !== false) {
+            // Désélectionner
+            unset($this->selectedProducts[$key]);
+            $this->selectedProducts = array_values($this->selectedProducts); // Réindexer
+        } else {
+            // Sélectionner
+            $this->selectedProducts[] = $productId;
+        }
+        
+        // Mettre à jour l'état de "Sélectionner tout"
+        $this->selectAll = count($this->selectedProducts) === count($this->matchedProducts);
+    }
+
+    /**
+     * Sélectionne/désélectionne tous les produits
+     */
+    public function toggleSelectAll()
+    {
+        if ($this->selectAll) {
+            // Désélectionner tous
+            $this->selectedProducts = [];
+        } else {
+            // Sélectionner tous les produits visibles
+            $this->selectedProducts = collect($this->matchedProducts)
+                ->map(function($product) {
+                    return $product->id ?? $product->url; // Utiliser URL si pas d'ID
+                })
+                ->filter()
+                ->toArray();
+        }
+    }
+
+    /**
+     * Analyse les prix des produits sélectionnés
+     */
+    public function analyzeSelectedProducts()
+    {
+        if (empty($this->selectedProducts)) {
+            session()->flash('error', 'Veuillez sélectionner au moins un produit.');
+            return;
+        }
+        
+        $this->selectedAnalysis = [];
+        
+        // Filtrer les produits sélectionnés
+        $selectedProductsData = collect($this->matchedProducts)
+            ->filter(function($product) {
+                $productId = $product->id ?? $product->url;
+                return in_array($productId, $this->selectedProducts);
+            });
+        
+        // Calculer les statistiques
+        $prices = $selectedProductsData->map(function($product) {
+            return $this->cleanPrice($product->price_ht ?? $product->prix_ht);
+        })->filter()->values();
+        
+        if ($prices->isEmpty()) {
+            session()->flash('error', 'Aucun prix valide trouvé dans les produits sélectionnés.');
+            return;
+        }
+        
+        $this->selectedAnalysis = [
+            'count' => $selectedProductsData->count(),
+            'min_price' => $prices->min(),
+            'max_price' => $prices->max(),
+            'avg_price' => $prices->avg(),
+            'median_price' => $this->calculateMedian($prices->toArray()),
+            'our_price' => $this->cleanPrice($this->referencePrice),
+            'cosmashop_price' => $this->cleanPrice($this->cosmashopPrice),
+            'prices' => $prices->toArray(),
+            'products' => $selectedProductsData->values()->toArray(),
+            'price_distribution' => $this->calculatePriceDistribution($prices->toArray()),
+        ];
+        
+        $this->showAnalysis = true;
+    }
+
+    /**
+     * Calcule la médiane des prix
+     */
+    private function calculateMedian(array $prices): ?float
+    {
+        if (empty($prices)) {
+            return null;
+        }
+        
+        sort($prices);
+        $count = count($prices);
+        $middle = floor($count / 2);
+        
+        if ($count % 2 == 0) {
+            return ($prices[$middle - 1] + $prices[$middle]) / 2;
+        } else {
+            return $prices[$middle];
+        }
+    }
+
+    /**
+     * Calcule la distribution des prix
+     */
+    private function calculatePriceDistribution(array $prices): array
+    {
+        if (empty($prices)) {
+            return [];
+        }
+        
+        $min = min($prices);
+        $max = max($prices);
+        $range = $max - $min;
+        
+        if ($range == 0) {
+            return [['range' => $min, 'count' => count($prices)]];
+        }
+        
+        $buckets = 5;
+        $bucketSize = $range / $buckets;
+        
+        $distribution = [];
+        for ($i = 0; $i < $buckets; $i++) {
+            $lower = $min + ($i * $bucketSize);
+            $upper = $min + (($i + 1) * $bucketSize);
+            
+            $count = count(array_filter($prices, function($price) use ($lower, $upper, $i, $buckets) {
+                if ($i == $buckets - 1) {
+                    return $price >= $lower && $price <= $upper;
+                }
+                return $price >= $lower && $price < $upper;
+            }));
+            
+            $distribution[] = [
+                'range' => number_format($lower, 2) . ' - ' . number_format($upper, 2) . ' €',
+                'count' => $count,
+                'percentage' => ($count / count($prices)) * 100
+            ];
+        }
+        
+        return $distribution;
+    }
+
+    /**
+     * Réinitialise la sélection
+     */
+    public function resetSelection()
+    {
+        $this->selectedProducts = [];
+        $this->selectAll = false;
+        $this->showAnalysis = false;
+        $this->selectedAnalysis = [];
+    }
 
     /**
      * Export des résultats vers Excel
@@ -2895,6 +3067,52 @@ new class extends Component {
             </div>
         @endif
 
+        <!-- Boutons d'analyse des produits sélectionnés -->
+        @if($hasData && count($selectedProducts) > 0)
+            <div class="mb-4 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 text-purple-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01">
+                            </path>
+                        </svg>
+                        <span class="text-sm font-medium text-purple-800">
+                            {{ count($selectedProducts) }} produit(s) sélectionné(s)
+                        </span>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button wire:click="analyzeSelectedProducts"
+                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition-colors duration-200"
+                            wire:loading.attr="disabled">
+                            <span wire:loading.remove wire:target="analyzeSelectedProducts">
+                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
+                                    </path>
+                                </svg>
+                                Analyser les produits sélectionnés
+                            </span>
+                            <span wire:loading wire:target="analyzeSelectedProducts" class="flex items-center">
+                                <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                                Analyse en cours...
+                            </span>
+                        </button>
+                        
+                        <button wire:click="resetSelection"
+                            class="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
+                            wire:loading.attr="disabled">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                            Réinitialiser
+                        </button>
+                    </div>
+                </div>
+            </div>
+        @endif
+
         <!-- Tableau des résultats - TOUJOURS AFFICHÉ -->
         @if($showTable)
             <div class="bg-white shadow-sm border border-gray-300 overflow-hidden" wire:loading.class="opacity-50"
@@ -2946,6 +3164,21 @@ new class extends Component {
                     <table class="min-w-full border-collapse border border-gray-300">
                         <thead class="bg-gray-100">
                             <tr>
+                                <!-- COLONNE SÉLECTION CORRIGÉE -->
+                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
+                                    <div class="flex flex-col items-center space-y-2">
+                                        <span>Sélection</span>
+                                        <label class="inline-flex items-center">
+                                            <input type="checkbox" 
+                                                   @if($selectAll) checked @endif
+                                                   wire:click="toggleSelectAll"
+                                                   class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                                                   wire:loading.attr="disabled">
+                                            <span class="ml-2 text-xs text-gray-700">Tout</span>
+                                        </label>
+                                    </div>
+                                </th>
+
                                 <!-- NOUVELLE COLONNE : Image (TOUJOURS VISIBLE) -->
                                 <th
                                     class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
@@ -3214,6 +3447,8 @@ new class extends Component {
                                         $productVolumes = $this->extractVolumesFromText($product->name . ' ' . $product->variation);
                                         $hasMatchingVolume = $this->hasMatchingVolume($product);
                                         $hasExactVariation = $this->hasExactVariationMatch($product);
+                                        $productId = $product->id ?? $product->url;
+                                        $isSelected = in_array($productId, $selectedProducts);
 
                                         // Données pour la comparaison de prix (uniquement si référencePrice)
                                         if ($referencePrice) {
@@ -3235,6 +3470,21 @@ new class extends Component {
                                     @endphp
                                     <tr
                                         class="{{ $rowClass }} hover:bg-gray-100 transition-colors duration-150 border-b border-gray-300">
+                                        <!-- COLONNE SÉLECTION CORRIGÉE -->
+                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap text-center">
+                                            @php
+                                                $productId = $product->id ?? $product->url;
+                                                $isSelected = in_array($productId, $selectedProducts);
+                                            @endphp
+                                            <label class="inline-flex items-center">
+                                                <input type="checkbox" 
+                                                       @if($isSelected) checked @endif
+                                                       wire:click="toggleProduct('{{ $productId }}')"
+                                                       class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                                                       wire:loading.attr="disabled">
+                                            </label>
+                                        </td>
+
                                         <!-- NOUVELLE COLONNE : Image (TOUJOURS VISIBLE) -->
                                         <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
                                             @php
@@ -3381,7 +3631,7 @@ new class extends Component {
                                                             <path fill-rule="evenodd"
                                                                 d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
                                                                 clip-rule="evenodd"></path>
-                                                        </svg>
+                                                            </svg>
                                                         Variation identique
                                                     </span>
                                                 </div>
@@ -3405,11 +3655,6 @@ new class extends Component {
                                                     <div class="text-sm font-medium text-gray-900">
                                                         {{ $product->site_name ?? $this->extractDomain($productUrl ?? '') }}
                                                     </div>
-                                                    {{-- @if(isset($product->web_site_id))
-                                                    <div class="text-xs text-gray-500">
-                                                        ID: {{ $product->web_site_id }}
-                                                    </div>
-                                                    @endif --}}
                                                 </div>
                                             </div>
                                         </td>
@@ -3523,7 +3768,7 @@ new class extends Component {
                                                         class="inline-flex items-center px-2 py-1 text-xs text-gray-400 bg-gray-100 rounded-full">
                                                         <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                                d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
+                                                                d="M12 15v2m-6 4h12a2 2 0 002-2v6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
                                                             </path>
                                                         </svg>
                                                         Indisponible
@@ -3536,7 +3781,7 @@ new class extends Component {
                             @else
                                 <!-- Aucun résultat avec les filtres appliqués -->
                                 <tr>
-                                    <td colspan="{{ ($hasData && $isAutomaticSearch ? 15 : 13) }}"
+                                    <td colspan="{{ ($hasData && $isAutomaticSearch ? 16 : 14) }}"
                                         class="border border-gray-300 px-6 py-12 text-center">
                                         <svg class="mx-auto h-16 w-16 text-gray-400" fill="none" viewBox="0 0 24 24"
                                             stroke="currentColor" aria-hidden="true">
@@ -3589,8 +3834,169 @@ new class extends Component {
                 </div>
             </div>
         @endif
-    </div>
 
+        <!-- Section d'analyse des produits sélectionnés -->
+        @if($showAnalysis && !empty($selectedAnalysis))
+        <div class="mt-8 p-6 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200 shadow-sm">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-xl font-bold text-purple-800 flex items-center">
+                    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                    </svg>
+                    Analyse des {{ $selectedAnalysis['count'] }} produit(s) sélectionné(s)
+                </h3>
+                <button wire:click="resetSelection"
+                    class="px-3 py-1.5 text-sm bg-white text-purple-700 hover:bg-purple-50 rounded-md transition-colors duration-200 flex items-center border border-purple-200">
+                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                    Fermer
+                </button>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                <!-- Statistiques de base -->
+                <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                    <div class="text-sm text-gray-600 mb-1">Prix Minimum</div>
+                    <div class="text-2xl font-bold text-green-600">{{ $this->formatPrice($selectedAnalysis['min_price']) }}</div>
+                </div>
+                
+                <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                    <div class="text-sm text-gray-600 mb-1">Prix Maximum</div>
+                    <div class="text-2xl font-bold text-red-600">{{ $this->formatPrice($selectedAnalysis['max_price']) }}</div>
+                </div>
+                
+                <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                    <div class="text-sm text-gray-600 mb-1">Prix Moyen</div>
+                    <div class="text-2xl font-bold text-blue-600">{{ $this->formatPrice($selectedAnalysis['avg_price']) }}</div>
+                </div>
+                
+                <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                    <div class="text-sm text-gray-600 mb-1">Prix Médian</div>
+                    <div class="text-2xl font-bold text-purple-600">{{ $this->formatPrice($selectedAnalysis['median_price']) }}</div>
+                </div>
+            </div>
+            
+            <!-- Comparaison avec nos prix -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                    <h4 class="font-semibold text-gray-800 mb-3">Comparaison avec Cosmaparfumerie</h4>
+                    @php
+                        $ourPriceDiff = $selectedAnalysis['our_price'] - $selectedAnalysis['avg_price'];
+                        $ourPriceDiffPercent = $selectedAnalysis['avg_price'] > 0 ? ($ourPriceDiff / $selectedAnalysis['avg_price']) * 100 : 0;
+                    @endphp
+                    <div class="space-y-2">
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Notre prix:</span>
+                            <span class="font-bold">{{ $this->formatPrice($selectedAnalysis['our_price']) }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Prix moyen concurrents:</span>
+                            <span class="font-bold">{{ $this->formatPrice($selectedAnalysis['avg_price']) }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Différence:</span>
+                            <span class="font-bold {{ $ourPriceDiff > 0 ? 'text-red-600' : 'text-green-600' }}">
+                                {{ $this->formatPriceDifference($ourPriceDiff) }}
+                                ({{ $this->formatPercentageDifference($ourPriceDiffPercent) }})
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                    <h4 class="font-semibold text-gray-800 mb-3">Comparaison avec Cosmashop</h4>
+                    @php
+                        $cosmaPriceDiff = $selectedAnalysis['cosmashop_price'] - $selectedAnalysis['avg_price'];
+                        $cosmaPriceDiffPercent = $selectedAnalysis['avg_price'] > 0 ? ($cosmaPriceDiff / $selectedAnalysis['avg_price']) * 100 : 0;
+                    @endphp
+                    <div class="space-y-2">
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Prix Cosmashop:</span>
+                            <span class="font-bold">{{ $this->formatPrice($selectedAnalysis['cosmashop_price']) }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Prix moyen concurrents:</span>
+                            <span class="font-bold">{{ $this->formatPrice($selectedAnalysis['avg_price']) }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Différence:</span>
+                            <span class="font-bold {{ $cosmaPriceDiff > 0 ? 'text-red-600' : 'text-green-600' }}">
+                                {{ $this->formatPriceDifference($cosmaPriceDiff) }}
+                                ({{ $this->formatPercentageDifference($cosmaPriceDiffPercent) }})
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Distribution des prix -->
+            @if(!empty($selectedAnalysis['price_distribution']))
+            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                <h4 class="font-semibold text-gray-800 mb-3">Distribution des prix</h4>
+                <div class="space-y-2">
+                    @foreach($selectedAnalysis['price_distribution'] as $distribution)
+                    <div class="flex items-center">
+                        <div class="w-32 text-sm text-gray-600">{{ $distribution['range'] }}</div>
+                        <div class="flex-1 mx-4">
+                            <div class="w-full bg-gray-200 rounded-full h-2.5">
+                                <div class="bg-blue-600 h-2.5 rounded-full" 
+                                     style="width: {{ $distribution['percentage'] }}%"></div>
+                            </div>
+                        </div>
+                        <div class="w-16 text-right text-sm">
+                            {{ number_format($distribution['percentage'], 1) }}%
+                            <div class="text-xs text-gray-500">({{ $distribution['count'] }})</div>
+                        </div>
+                    </div>
+                    @endforeach
+                </div>
+            </div>
+            @endif
+            
+            <!-- Liste des produits analysés -->
+            <div class="mt-6">
+                <h4 class="font-semibold text-gray-800 mb-3">Produits analysés</h4>
+                <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Vendor</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Nom</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Prix HT</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Différence</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200">
+                            @foreach($selectedAnalysis['products'] as $product)
+                            @php
+                                $productPrice = $this->cleanPrice($product->price_ht ?? $product->prix_ht);
+                                $diff = $productPrice - $selectedAnalysis['our_price'];
+                                $diffPercent = $selectedAnalysis['our_price'] > 0 ? ($diff / $selectedAnalysis['our_price']) * 100 : 0;
+                            @endphp
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-4 py-2 text-sm">{{ $product->vendor ?? 'N/A' }}</td>
+                                <td class="px-4 py-2 text-sm">{{ $product->name ?? 'N/A' }}</td>
+                                <td class="px-4 py-2 text-sm font-semibold {{ $productPrice < $selectedAnalysis['our_price'] ? 'text-green-600' : 'text-red-600' }}">
+                                    {{ $this->formatPrice($productPrice) }}
+                                </td>
+                                <td class="px-4 py-2 text-sm">
+                                    <span class="{{ $diff < 0 ? 'text-green-600' : 'text-red-600' }}">
+                                        {{ $this->formatPriceDifference($diff) }}
+                                        ({{ $this->formatPercentageDifference($diffPercent) }})
+                                    </span>
+                                </td>
+                            </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        @endif
+    </div>
 
 
     @push('styles')
