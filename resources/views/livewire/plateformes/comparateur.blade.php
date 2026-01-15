@@ -2715,7 +2715,7 @@ private function calculatePriceDistribution(array $prices): array
     <livewire:plateformes.detail :id="$id" />
 
     <!-- Section d'analyse des prix (uniquement si on a des données) -->
-    @if($hasData && $referencePrice && count($matchedProducts) > 0)
+    {{-- @if($hasData && $referencePrice && count($matchedProducts) > 0)
         @php
             $priceAnalysis = $this->getPriceAnalysis();
             $cosmashopAnalysis = $this->getCosmashopPriceAnalysis();
@@ -2826,7 +2826,7 @@ private function calculatePriceDistribution(array $prices): array
                 </div>
             </div>
         @endif
-    @endif
+    @endif --}}
 
     <!-- Section des résultats - TOUJOURS AFFICHÉE -->
     <div class="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">
