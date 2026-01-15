@@ -2240,33 +2240,49 @@ new class extends Component {
      * NOUVELLES MÉTHODES POUR LA SÉLECTION
      */
 
-    /**
-     * Sélectionne/désélectionne tous les produits
-     */
-    public function toggleSelectAll()
-    {
-        if ($this->selectAll) {
-            // Sélectionner tous les produits visibles
-            $this->selectedProducts = collect($this->matchedProducts)
-                ->map(function($product) {
-                    return $product->id ?? $product->url; // Utiliser URL si pas d'ID
-                })
-                ->filter()
-                ->toArray();
-        } else {
-            // Désélectionner tous
-            $this->selectedProducts = [];
-        }
+/**
+ * Sélectionne/désélectionne tous les produits
+ */
+public function toggleSelectAll()
+{
+    if ($this->selectAll) {
+        // Sélectionner tous les produits visibles
+        $this->selectedProducts = collect($this->matchedProducts)
+            ->map(function($product) {
+                return $product->id ?? $product->url; // Utiliser URL si pas d'ID
+            })
+            ->filter()
+            ->toArray();
+    } else {
+        // Désélectionner tous
+        $this->selectedProducts = [];
     }
+    
+    // Inversez la logique car selectAll est déjà mis à jour par wire:model
+    $this->selectAll = !$this->selectAll;
+}
+
+// Ajoutez cette méthode pour réinitialiser selectAll quand les données changent
+public function updatedMatchedProducts()
+{
+    // Réinitialiser selectAll quand les résultats changent
+    $this->selectAll = false;
+    $this->selectedProducts = [];
+}
 
     /**
      * Bascule la sélection d'un produit
      */
     public function toggleProduct($productId)
     {
-        if (in_array($productId, $this->selectedProducts)) {
-            $this->selectedProducts = array_diff($this->selectedProducts, [$productId]);
+        $key = array_search($productId, $this->selectedProducts);
+        
+        if ($key !== false) {
+            // Désélectionner
+            unset($this->selectedProducts[$key]);
+            $this->selectedProducts = array_values($this->selectedProducts); // Réindexer
         } else {
+            // Sélectionner
             $this->selectedProducts[] = $productId;
         }
         
@@ -3159,19 +3175,20 @@ new class extends Component {
                     <table class="min-w-full border-collapse border border-gray-300">
                         <thead class="bg-gray-100">
                             <tr>
-                                <!-- NOUVELLE COLONNE : Sélection -->
-                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
-                                    <div class="flex flex-col items-center space-y-2">
-                                        <span>Sélection</span>
-                                        <label class="inline-flex items-center">
-                                            <input type="checkbox" wire:model.live="selectAll" 
-                                                   wire:click="toggleSelectAll"
-                                                   class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
-                                                   wire:loading.attr="disabled">
-                                            <span class="ml-2 text-xs text-gray-700">Tout</span>
-                                        </label>
-                                    </div>
-                                </th>
+<!-- Colonne Sélection avec checkbox "Tout sélectionner" -->
+<th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
+    <div class="flex flex-col items-center space-y-2">
+        <span>Sélection</span>
+        <label class="inline-flex items-center">
+            <input type="checkbox" 
+                   @if($selectAll) checked @endif
+                   wire:click="toggleSelectAll"
+                   class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                   wire:loading.attr="disabled">
+            <span class="ml-2 text-xs text-gray-700">Tout</span>
+        </label>
+    </div>
+</th>
 
                                 <!-- NOUVELLE COLONNE : Image (TOUJOURS VISIBLE) -->
                                 <th
@@ -3464,19 +3481,19 @@ new class extends Component {
                                     @endphp
                                     <tr
                                         class="{{ $rowClass }} hover:bg-gray-100 transition-colors duration-150 border-b border-gray-300">
-                                        <!-- NOUVELLE COLONNE : Sélection -->
-                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap text-center">
-                                            <label class="inline-flex items-center">
-                                                <input type="checkbox" 
-                                                       wire:model.live="selectedProducts" 
-                                                       value="{{ $productId }}"
-                                                       wire:click="toggleProduct('{{ $productId }}')"
-                                                       @if($isSelected) checked @endif
-                                                       class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
-                                                       wire:loading.attr="disabled">
-                                            </label>
-                                        </td>
-
+<td class="border border-gray-300 px-4 py-3 whitespace-nowrap text-center">
+    @php
+        $productId = $product->id ?? $product->url;
+        $isSelected = in_array($productId, $selectedProducts);
+    @endphp
+    <label class="inline-flex items-center">
+        <input type="checkbox" 
+               @if($isSelected) checked @endif
+               wire:click="toggleProduct('{{ $productId }}')"
+               class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+               wire:loading.attr="disabled">
+    </label>
+</td>
                                         <!-- NOUVELLE COLONNE : Image (TOUJOURS VISIBLE) -->
                                         <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
                                             @php
