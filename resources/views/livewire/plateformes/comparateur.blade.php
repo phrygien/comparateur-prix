@@ -2831,6 +2831,7 @@ new class extends Component {
     @endif
     @endif --}}
     @if($showAnalysis && !empty($selectedAnalysis))
+    <div class="mx-auto w-full px-4 py-4 sm:px-6 lg:px-8">
         <div class="w-full mt-8 px-4 py-4 sm:px-6 lg:px-8 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200 shadow-sm">
             <div class="flex justify-between items-center mb-6">
                 <h3 class="text-xl font-bold text-purple-800 flex items-center">
@@ -2996,6 +2997,8 @@ new class extends Component {
                 </div>
             </div>
         </div>
+        </div>
+        
     @endif
     <!-- Section des résultats - TOUJOURS AFFICHÉE -->
     <div class="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">
