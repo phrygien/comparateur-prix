@@ -41,7 +41,7 @@ new class extends Component {
     public $isAutomaticSearch = true;
     public $originalAutomaticResults = [];
     public $hasAppliedFilters = false;
-    
+
     // Nouvelles propriétés pour les sélections
     public $selectedProducts = [];
     public $selectAll = false;
@@ -1388,7 +1388,7 @@ new class extends Component {
                 $this->getCompetitorPrice($this->searchQuery);
             }
         }
-        
+
         $this->resetSelection(); // Réinitialiser la sélection
     }
 
@@ -2246,7 +2246,7 @@ new class extends Component {
     public function toggleProduct($productId)
     {
         $key = array_search($productId, $this->selectedProducts);
-        
+
         if ($key !== false) {
             // Désélectionner
             unset($this->selectedProducts[$key]);
@@ -2255,7 +2255,7 @@ new class extends Component {
             // Sélectionner
             $this->selectedProducts[] = $productId;
         }
-        
+
         // Mettre à jour l'état de "Sélectionner tout"
         $this->selectAll = count($this->selectedProducts) === count($this->matchedProducts);
     }
@@ -2271,7 +2271,7 @@ new class extends Component {
         } else {
             // Sélectionner tous les produits visibles
             $this->selectedProducts = collect($this->matchedProducts)
-                ->map(function($product) {
+                ->map(function ($product) {
                     return $product->id ?? $product->url; // Utiliser URL si pas d'ID
                 })
                 ->filter()
@@ -2288,26 +2288,26 @@ new class extends Component {
             session()->flash('error', 'Veuillez sélectionner au moins un produit.');
             return;
         }
-        
+
         $this->selectedAnalysis = [];
-        
+
         // Filtrer les produits sélectionnés
         $selectedProductsData = collect($this->matchedProducts)
-            ->filter(function($product) {
+            ->filter(function ($product) {
                 $productId = $product->id ?? $product->url;
                 return in_array($productId, $this->selectedProducts);
             });
-        
+
         // Calculer les statistiques
-        $prices = $selectedProductsData->map(function($product) {
+        $prices = $selectedProductsData->map(function ($product) {
             return $this->cleanPrice($product->price_ht ?? $product->prix_ht);
         })->filter()->values();
-        
+
         if ($prices->isEmpty()) {
             session()->flash('error', 'Aucun prix valide trouvé dans les produits sélectionnés.');
             return;
         }
-        
+
         $this->selectedAnalysis = [
             'count' => $selectedProductsData->count(),
             'min_price' => $prices->min(),
@@ -2320,7 +2320,7 @@ new class extends Component {
             'products' => $selectedProductsData->values()->toArray(),
             'price_distribution' => $this->calculatePriceDistribution($prices->toArray()),
         ];
-        
+
         $this->showAnalysis = true;
     }
 
@@ -2332,11 +2332,11 @@ new class extends Component {
         if (empty($prices)) {
             return null;
         }
-        
+
         sort($prices);
         $count = count($prices);
         $middle = floor($count / 2);
-        
+
         if ($count % 2 == 0) {
             return ($prices[$middle - 1] + $prices[$middle]) / 2;
         } else {
@@ -2344,50 +2344,52 @@ new class extends Component {
         }
     }
 
-private function calculatePriceDistribution(array $prices): array
-{
-    if (empty($prices)) {
-        return [];
+    private function calculatePriceDistribution(array $prices): array
+    {
+        if (empty($prices)) {
+            return [];
+        }
+
+        $min = min($prices);
+        $max = max($prices);
+        $range = $max - $min;
+
+        if ($range == 0) {
+            return [
+                [
+                    'range' => number_format($min, 2) . ' €',
+                    'count' => count($prices),
+                    'percentage' => 100
+                ]
+            ];
+        }
+
+        $buckets = min(5, count($prices)); // S'assurer qu'on n'a pas plus de buckets que de prix
+        $bucketSize = $range / $buckets;
+
+        $distribution = [];
+        for ($i = 0; $i < $buckets; $i++) {
+            $lower = $min + ($i * $bucketSize);
+            $upper = $min + (($i + 1) * $bucketSize);
+
+            $count = count(array_filter($prices, function ($price) use ($lower, $upper, $i, $buckets) {
+                if ($i == $buckets - 1) {
+                    return $price >= $lower && $price <= $upper;
+                }
+                return $price >= $lower && $price < $upper;
+            }));
+
+            $percentage = count($prices) > 0 ? ($count / count($prices)) * 100 : 0;
+
+            $distribution[] = [
+                'range' => number_format($lower, 2) . ' - ' . number_format($upper, 2) . ' €',
+                'count' => $count,
+                'percentage' => $percentage
+            ];
+        }
+
+        return $distribution;
     }
-    
-    $min = min($prices);
-    $max = max($prices);
-    $range = $max - $min;
-    
-    if ($range == 0) {
-        return [[
-            'range' => number_format($min, 2) . ' €', 
-            'count' => count($prices),
-            'percentage' => 100
-        ]];
-    }
-    
-    $buckets = min(5, count($prices)); // S'assurer qu'on n'a pas plus de buckets que de prix
-    $bucketSize = $range / $buckets;
-    
-    $distribution = [];
-    for ($i = 0; $i < $buckets; $i++) {
-        $lower = $min + ($i * $bucketSize);
-        $upper = $min + (($i + 1) * $bucketSize);
-        
-        $count = count(array_filter($prices, function($price) use ($lower, $upper, $i, $buckets) {
-            if ($i == $buckets - 1) {
-                return $price >= $lower && $price <= $upper;
-            }
-            return $price >= $lower && $price < $upper;
-        }));
-        
-        $percentage = count($prices) > 0 ? ($count / count($prices)) * 100 : 0;
-        
-        $distribution[] = [
-            'range' => number_format($lower, 2) . ' - ' . number_format($upper, 2) . ' €',
-            'count' => $count,
-            'percentage' => $percentage
-        ];
-    }
-    
-    return $distribution;
-}
 
     /**
      * Réinitialise la sélection
@@ -2716,160 +2718,166 @@ private function calculatePriceDistribution(array $prices): array
 
     <!-- Section d'analyse des prix (uniquement si on a des données) -->
     {{-- @if($hasData && $referencePrice && count($matchedProducts) > 0)
-        @php
-            $priceAnalysis = $this->getPriceAnalysis();
-            $cosmashopAnalysis = $this->getCosmashopPriceAnalysis();
-        @endphp
-        @if($priceAnalysis && $cosmashopAnalysis)
-            <div class="mx-auto w-full px-4 py-4 sm:px-6 lg:px-8">
-                <!-- Analyse Cosmaparfumerie -->
-                <div class="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200 p-4 mb-4">
-                    <h4 class="text-lg font-semibold text-purple-800 mb-3 flex items-center">
-                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
-                            </path>
-                        </svg>
-                        Analyse Cosmaparfumerie
-                    </h4>
+    @php
+    $priceAnalysis = $this->getPriceAnalysis();
+    $cosmashopAnalysis = $this->getCosmashopPriceAnalysis();
+    @endphp
+    @if($priceAnalysis && $cosmashopAnalysis)
+    <div class="mx-auto w-full px-4 py-4 sm:px-6 lg:px-8">
+        <!-- Analyse Cosmaparfumerie -->
+        <div class="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200 p-4 mb-4">
+            <h4 class="text-lg font-semibold text-purple-800 mb-3 flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
+                    </path>
+                </svg>
+                Analyse Cosmaparfumerie
+            </h4>
 
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
-                        <div class="text-center p-3 bg-white rounded-lg shadow-sm">
-                            <div class="text-2xl font-bold text-green-600">{{ $this->formatPrice($priceAnalysis['min']) }}</div>
-                            <div class="text-xs text-gray-600">Prix minimum concurrent</div>
-                        </div>
-                        <div class="text-center p-3 bg-white rounded-lg shadow-sm">
-                            <div class="text-2xl font-bold text-red-600">{{ $this->formatPrice($priceAnalysis['max']) }}</div>
-                            <div class="text-xs text-gray-600">Prix maximum concurrent</div>
-                        </div>
-                        <div class="text-center p-3 bg-white rounded-lg shadow-sm">
-                            <div class="text-2xl font-bold text-blue-600">{{ $this->formatPrice($priceAnalysis['average']) }}
-                            </div>
-                            <div class="text-xs text-gray-600">Prix moyen concurrent</div>
-                        </div>
-                        <div
-                            class="text-center p-3 bg-white rounded-lg shadow-sm border-2 
-                                    {{ $priceAnalysis['our_position'] === 'competitive' ? 'border-green-300' : 'border-yellow-300' }}">
-                            <div class="text-2xl font-bold text-purple-600">
-                                {{ $this->formatPrice($priceAnalysis['our_price']) }}</div>
-                            <div
-                                class="text-xs {{ $priceAnalysis['our_position'] === 'competitive' ? 'text-green-600' : 'text-yellow-600' }} font-semibold">
-                                Notre prix actuel
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="text-sm text-purple-700">
-                        <strong>Analyse :</strong>
-                        Notre prix est
-                        <span
-                            class="font-semibold {{ $priceAnalysis['our_position'] === 'competitive' ? 'text-green-600' : 'text-yellow-600' }}">
-                            {{ $priceAnalysis['our_position'] === 'competitive' ? 'compétitif' : 'au-dessus de la moyenne' }}
-                        </span>
-                        par rapport aux {{ $priceAnalysis['count'] }} concurrents analysés.
-                        @if($priceAnalysis['our_price'] > $priceAnalysis['average'])
-                            <span
-                                class="text-yellow-600">({{ $this->formatPriceDifference($priceAnalysis['our_price'] - $priceAnalysis['average']) }}
-                                par rapport à la moyenne)</span>
-                        @endif
-                    </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
+                <div class="text-center p-3 bg-white rounded-lg shadow-sm">
+                    <div class="text-2xl font-bold text-green-600">{{ $this->formatPrice($priceAnalysis['min']) }}</div>
+                    <div class="text-xs text-gray-600">Prix minimum concurrent</div>
                 </div>
-
-                <!-- Analyse Cosmashop -->
-                <div class="bg-gradient-to-r from-orange-50 to-amber-50 rounded-lg border border-orange-200 p-4">
-                    <h4 class="text-lg font-semibold text-orange-800 mb-3 flex items-center">
-                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z">
-                            </path>
-                        </svg>
-                        Analyse Cosmashop (Prix +5%)
-                    </h4>
-
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
-                        <div class="text-center p-3 bg-white rounded-lg shadow-sm">
-                            <div class="text-2xl font-bold text-green-600">{{ $this->formatPrice($cosmashopAnalysis['min']) }}
-                            </div>
-                            <div class="text-xs text-gray-600">Prix minimum concurrent</div>
-                        </div>
-                        <div class="text-center p-3 bg-white rounded-lg shadow-sm">
-                            <div class="text-2xl font-bold text-red-600">{{ $this->formatPrice($cosmashopAnalysis['max']) }}
-                            </div>
-                            <div class="text-xs text-gray-600">Prix maximum concurrent</div>
-                        </div>
-                        <div class="text-center p-3 bg-white rounded-lg shadow-sm">
-                            <div class="text-2xl font-bold text-blue-600">
-                                {{ $this->formatPrice($cosmashopAnalysis['average']) }}</div>
-                            <div class="text-xs text-gray-600">Prix moyen concurrent</div>
-                        </div>
-                        <div class="text-center p-3 bg-white rounded-lg shadow-sm border-2 border-orange-300">
-                            <div class="text-2xl font-bold text-orange-600">
-                                {{ $this->formatPrice($cosmashopAnalysis['cosmashop_price']) }}</div>
-                            <div class="text-xs text-orange-600 font-semibold">
-                                Prix Cosmashop
-                            </div>
-                        </div>
+                <div class="text-center p-3 bg-white rounded-lg shadow-sm">
+                    <div class="text-2xl font-bold text-red-600">{{ $this->formatPrice($priceAnalysis['max']) }}</div>
+                    <div class="text-xs text-gray-600">Prix maximum concurrent</div>
+                </div>
+                <div class="text-center p-3 bg-white rounded-lg shadow-sm">
+                    <div class="text-2xl font-bold text-blue-600">{{ $this->formatPrice($priceAnalysis['average']) }}
                     </div>
-
-                    <div class="text-sm text-orange-700">
-                        <strong>Analyse :</strong>
-                        Le prix Cosmashop serait
-                        <span
-                            class="font-semibold {{ $cosmashopAnalysis['cosmashop_position'] === 'competitive' ? 'text-green-600' : 'text-yellow-600' }}">
-                            {{ $cosmashopAnalysis['cosmashop_position'] === 'competitive' ? 'compétitif' : 'au-dessus de la moyenne' }}
-                        </span>.
-                        <span class="font-semibold text-green-600">{{ $cosmashopAnalysis['below_cosmashop'] }}
-                            concurrent(s)</span> en dessous et
-                        <span class="font-semibold text-red-600">{{ $cosmashopAnalysis['above_cosmashop'] }}
-                            concurrent(s)</span> au-dessus.
+                    <div class="text-xs text-gray-600">Prix moyen concurrent</div>
+                </div>
+                <div
+                    class="text-center p-3 bg-white rounded-lg shadow-sm border-2 
+                                    {{ $priceAnalysis['our_position'] === 'competitive' ? 'border-green-300' : 'border-yellow-300' }}">
+                    <div class="text-2xl font-bold text-purple-600">
+                        {{ $this->formatPrice($priceAnalysis['our_price']) }}</div>
+                    <div
+                        class="text-xs {{ $priceAnalysis['our_position'] === 'competitive' ? 'text-green-600' : 'text-yellow-600' }} font-semibold">
+                        Notre prix actuel
                     </div>
                 </div>
             </div>
-        @endif
+
+            <div class="text-sm text-purple-700">
+                <strong>Analyse :</strong>
+                Notre prix est
+                <span
+                    class="font-semibold {{ $priceAnalysis['our_position'] === 'competitive' ? 'text-green-600' : 'text-yellow-600' }}">
+                    {{ $priceAnalysis['our_position'] === 'competitive' ? 'compétitif' : 'au-dessus de la moyenne' }}
+                </span>
+                par rapport aux {{ $priceAnalysis['count'] }} concurrents analysés.
+                @if($priceAnalysis['our_price'] > $priceAnalysis['average'])
+                <span class="text-yellow-600">({{ $this->formatPriceDifference($priceAnalysis['our_price'] -
+                    $priceAnalysis['average']) }}
+                    par rapport à la moyenne)</span>
+                @endif
+            </div>
+        </div>
+
+        <!-- Analyse Cosmashop -->
+        <div class="bg-gradient-to-r from-orange-50 to-amber-50 rounded-lg border border-orange-200 p-4">
+            <h4 class="text-lg font-semibold text-orange-800 mb-3 flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z">
+                    </path>
+                </svg>
+                Analyse Cosmashop (Prix +5%)
+            </h4>
+
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
+                <div class="text-center p-3 bg-white rounded-lg shadow-sm">
+                    <div class="text-2xl font-bold text-green-600">{{ $this->formatPrice($cosmashopAnalysis['min']) }}
+                    </div>
+                    <div class="text-xs text-gray-600">Prix minimum concurrent</div>
+                </div>
+                <div class="text-center p-3 bg-white rounded-lg shadow-sm">
+                    <div class="text-2xl font-bold text-red-600">{{ $this->formatPrice($cosmashopAnalysis['max']) }}
+                    </div>
+                    <div class="text-xs text-gray-600">Prix maximum concurrent</div>
+                </div>
+                <div class="text-center p-3 bg-white rounded-lg shadow-sm">
+                    <div class="text-2xl font-bold text-blue-600">
+                        {{ $this->formatPrice($cosmashopAnalysis['average']) }}</div>
+                    <div class="text-xs text-gray-600">Prix moyen concurrent</div>
+                </div>
+                <div class="text-center p-3 bg-white rounded-lg shadow-sm border-2 border-orange-300">
+                    <div class="text-2xl font-bold text-orange-600">
+                        {{ $this->formatPrice($cosmashopAnalysis['cosmashop_price']) }}</div>
+                    <div class="text-xs text-orange-600 font-semibold">
+                        Prix Cosmashop
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-sm text-orange-700">
+                <strong>Analyse :</strong>
+                Le prix Cosmashop serait
+                <span
+                    class="font-semibold {{ $cosmashopAnalysis['cosmashop_position'] === 'competitive' ? 'text-green-600' : 'text-yellow-600' }}">
+                    {{ $cosmashopAnalysis['cosmashop_position'] === 'competitive' ? 'compétitif' : 'au-dessus de la
+                    moyenne' }}
+                </span>.
+                <span class="font-semibold text-green-600">{{ $cosmashopAnalysis['below_cosmashop'] }}
+                    concurrent(s)</span> en dessous et
+                <span class="font-semibold text-red-600">{{ $cosmashopAnalysis['above_cosmashop'] }}
+                    concurrent(s)</span> au-dessus.
+            </div>
+        </div>
+    </div>
+    @endif
     @endif --}}
-        @if($showAnalysis && !empty($selectedAnalysis))
-        <div class="mt-8 p-6 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200 shadow-sm">
+    @if($showAnalysis && !empty($selectedAnalysis))
+        <div class="w-full mt-8 px-4 py-4 sm:px-6 lg:px-8 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200 shadow-sm">
             <div class="flex justify-between items-center mb-6">
                 <h3 class="text-xl font-bold text-purple-800 flex items-center">
                     <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                              d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
+                        </path>
                     </svg>
                     Analyse des {{ $selectedAnalysis['count'] }} produit(s) sélectionné(s)
                 </h3>
                 <button wire:click="resetSelection"
                     class="px-3 py-1.5 text-sm bg-white text-purple-700 hover:bg-purple-50 rounded-md transition-colors duration-200 flex items-center border border-purple-200">
                     <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                              d="M6 18L18 6M6 6l12 12"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                        </path>
                     </svg>
                     Fermer
                 </button>
             </div>
-            
+
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
                 <!-- Statistiques de base -->
                 <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
                     <div class="text-sm text-gray-600 mb-1">Prix Minimum</div>
-                    <div class="text-2xl font-bold text-green-600">{{ $this->formatPrice($selectedAnalysis['min_price']) }}</div>
+                    <div class="text-2xl font-bold text-green-600">{{ $this->formatPrice($selectedAnalysis['min_price']) }}
+                    </div>
                 </div>
-                
+
                 <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
                     <div class="text-sm text-gray-600 mb-1">Prix Maximum</div>
-                    <div class="text-2xl font-bold text-red-600">{{ $this->formatPrice($selectedAnalysis['max_price']) }}</div>
+                    <div class="text-2xl font-bold text-red-600">{{ $this->formatPrice($selectedAnalysis['max_price']) }}
+                    </div>
                 </div>
-                
+
                 <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
                     <div class="text-sm text-gray-600 mb-1">Prix Moyen</div>
-                    <div class="text-2xl font-bold text-blue-600">{{ $this->formatPrice($selectedAnalysis['avg_price']) }}</div>
+                    <div class="text-2xl font-bold text-blue-600">{{ $this->formatPrice($selectedAnalysis['avg_price']) }}
+                    </div>
                 </div>
-                
+
                 <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
                     <div class="text-sm text-gray-600 mb-1">Prix Médian</div>
-                    <div class="text-2xl font-bold text-purple-600">{{ $this->formatPrice($selectedAnalysis['median_price']) }}</div>
+                    <div class="text-2xl font-bold text-purple-600">
+                        {{ $this->formatPrice($selectedAnalysis['median_price']) }}</div>
                 </div>
             </div>
-            
+
             <!-- Comparaison avec nos prix -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                 <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
@@ -2896,7 +2904,7 @@ private function calculatePriceDistribution(array $prices): array
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
                     <h4 class="font-semibold text-gray-800 mb-3">Comparaison avec Cosmashop</h4>
                     @php
@@ -2922,31 +2930,32 @@ private function calculatePriceDistribution(array $prices): array
                     </div>
                 </div>
             </div>
-            
-<!-- Dans la section Distribution des prix -->
-@if(!empty($selectedAnalysis['price_distribution']))
-<div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-    <h4 class="font-semibold text-gray-800 mb-3">Distribution des prix</h4>
-    <div class="space-y-2">
-        @foreach($selectedAnalysis['price_distribution'] as $distribution)
-        <div class="flex items-center">
-            <div class="w-32 text-sm text-gray-600">{{ $distribution['range'] ?? 'N/A' }}</div>
-            <div class="flex-1 mx-4">
-                <div class="w-full bg-gray-200 rounded-full h-2.5">
-                    <div class="bg-blue-600 h-2.5 rounded-full" 
-                         style="width: {{ isset($distribution['percentage']) ? $distribution['percentage'] : 0 }}%"></div>
+
+            <!-- Dans la section Distribution des prix -->
+            @if(!empty($selectedAnalysis['price_distribution']))
+                <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                    <h4 class="font-semibold text-gray-800 mb-3">Distribution des prix</h4>
+                    <div class="space-y-2">
+                        @foreach($selectedAnalysis['price_distribution'] as $distribution)
+                            <div class="flex items-center">
+                                <div class="w-32 text-sm text-gray-600">{{ $distribution['range'] ?? 'N/A' }}</div>
+                                <div class="flex-1 mx-4">
+                                    <div class="w-full bg-gray-200 rounded-full h-2.5">
+                                        <div class="bg-blue-600 h-2.5 rounded-full"
+                                            style="width: {{ isset($distribution['percentage']) ? $distribution['percentage'] : 0 }}%">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="w-16 text-right text-sm">
+                                    {{ isset($distribution['percentage']) ? number_format($distribution['percentage'], 1) : 0 }}%
+                                    <div class="text-xs text-gray-500">({{ $distribution['count'] ?? 0 }})</div>
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
                 </div>
-            </div>
-            <div class="w-16 text-right text-sm">
-                {{ isset($distribution['percentage']) ? number_format($distribution['percentage'], 1) : 0 }}%
-                <div class="text-xs text-gray-500">({{ $distribution['count'] ?? 0 }})</div>
-            </div>
-        </div>
-        @endforeach
-    </div>
-</div>
-@endif
-            
+            @endif
+
             <!-- Liste des produits analysés -->
             <div class="mt-6">
                 <h4 class="font-semibold text-gray-800 mb-3">Produits analysés</h4>
@@ -2962,31 +2971,32 @@ private function calculatePriceDistribution(array $prices): array
                         </thead>
                         <tbody class="divide-y divide-gray-200">
                             @foreach($selectedAnalysis['products'] as $product)
-                            @php
-                                $productPrice = $this->cleanPrice($product->price_ht ?? $product->prix_ht);
-                                $diff = $productPrice - $selectedAnalysis['our_price'];
-                                $diffPercent = $selectedAnalysis['our_price'] > 0 ? ($diff / $selectedAnalysis['our_price']) * 100 : 0;
-                            @endphp
-                            <tr class="hover:bg-gray-50">
-                                <td class="px-4 py-2 text-sm">{{ $product->vendor ?? 'N/A' }}</td>
-                                <td class="px-4 py-2 text-sm">{{ $product->name ?? 'N/A' }}</td>
-                                <td class="px-4 py-2 text-sm font-semibold {{ $productPrice < $selectedAnalysis['our_price'] ? 'text-green-600' : 'text-red-600' }}">
-                                    {{ $this->formatPrice($productPrice) }}
-                                </td>
-                                <td class="px-4 py-2 text-sm">
-                                    <span class="{{ $diff < 0 ? 'text-green-600' : 'text-red-600' }}">
-                                        {{ $this->formatPriceDifference($diff) }}
-                                        ({{ $this->formatPercentageDifference($diffPercent) }})
-                                    </span>
-                                </td>
-                            </tr>
+                                @php
+                                    $productPrice = $this->cleanPrice($product->price_ht ?? $product->prix_ht);
+                                    $diff = $productPrice - $selectedAnalysis['our_price'];
+                                    $diffPercent = $selectedAnalysis['our_price'] > 0 ? ($diff / $selectedAnalysis['our_price']) * 100 : 0;
+                                @endphp
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-4 py-2 text-sm">{{ $product->vendor ?? 'N/A' }}</td>
+                                    <td class="px-4 py-2 text-sm">{{ $product->name ?? 'N/A' }}</td>
+                                    <td
+                                        class="px-4 py-2 text-sm font-semibold {{ $productPrice < $selectedAnalysis['our_price'] ? 'text-green-600' : 'text-red-600' }}">
+                                        {{ $this->formatPrice($productPrice) }}
+                                    </td>
+                                    <td class="px-4 py-2 text-sm">
+                                        <span class="{{ $diff < 0 ? 'text-green-600' : 'text-red-600' }}">
+                                            {{ $this->formatPriceDifference($diff) }}
+                                            ({{ $this->formatPercentageDifference($diffPercent) }})
+                                        </span>
+                                    </td>
+                                </tr>
                             @endforeach
                         </tbody>
                     </table>
                 </div>
             </div>
         </div>
-        @endif
+    @endif
     <!-- Section des résultats - TOUJOURS AFFICHÉE -->
     <div class="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">
         <!-- Message d'information si pas de résultats automatiques -->
@@ -3260,7 +3270,7 @@ private function calculatePriceDistribution(array $prices): array
                                 Analyse en cours...
                             </span>
                         </button>
-                        
+
                         <button wire:click="resetSelection"
                             class="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
                             wire:loading.attr="disabled">
@@ -3327,15 +3337,15 @@ private function calculatePriceDistribution(array $prices): array
                         <thead class="bg-gray-100">
                             <tr>
                                 <!-- COLONNE SÉLECTION CORRIGÉE -->
-                                <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
+                                <th
+                                    class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
                                     <div class="flex flex-col items-center space-y-2">
                                         <span>Sélection</span>
                                         <label class="inline-flex items-center">
-                                            <input type="checkbox" 
-                                                   @if($selectAll) checked @endif
-                                                   wire:click="toggleSelectAll"
-                                                   class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
-                                                   wire:loading.attr="disabled">
+                                            <input type="checkbox" @if($selectAll) checked @endif
+                                                wire:click="toggleSelectAll"
+                                                class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                                                wire:loading.attr="disabled">
                                             <span class="ml-2 text-xs text-gray-700">Tout</span>
                                         </label>
                                     </div>
@@ -3639,11 +3649,10 @@ private function calculatePriceDistribution(array $prices): array
                                                 $isSelected = in_array($productId, $selectedProducts);
                                             @endphp
                                             <label class="inline-flex items-center">
-                                                <input type="checkbox" 
-                                                       @if($isSelected) checked @endif
-                                                       wire:click="toggleProduct('{{ $productId }}')"
-                                                       class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
-                                                       wire:loading.attr="disabled">
+                                                <input type="checkbox" @if($isSelected) checked @endif
+                                                    wire:click="toggleProduct('{{ $productId }}')"
+                                                    class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                                                    wire:loading.attr="disabled">
                                             </label>
                                         </td>
 
@@ -3693,18 +3702,18 @@ private function calculatePriceDistribution(array $prices): array
                                                 <div class="flex items-center">
                                                     <div class="w-16 bg-gray-300 rounded-full h-2 mr-3">
                                                         <div class="h-2 rounded-full 
-                                                                        @if($similarityScore >= 0.9) bg-green-500
-                                                                        @elseif($similarityScore >= 0.7) bg-blue-500
-                                                                        @elseif($similarityScore >= 0.6) bg-yellow-500
-                                                                        @else bg-gray-500 @endif"
+                                                                                        @if($similarityScore >= 0.9) bg-green-500
+                                                                                        @elseif($similarityScore >= 0.7) bg-blue-500
+                                                                                        @elseif($similarityScore >= 0.6) bg-yellow-500
+                                                                                        @else bg-gray-500 @endif"
                                                             style="width: {{ ($similarityScore ?? 0) * 100 }}%">
                                                         </div>
                                                     </div>
                                                     <span class="text-sm font-mono font-semibold 
-                                                                    @if($similarityScore >= 0.9) text-green-600
-                                                                    @elseif($similarityScore >= 0.7) text-blue-600
-                                                                    @elseif($similarityScore >= 0.6) text-yellow-600
-                                                                    @else text-gray-600 @endif">
+                                                                                    @if($similarityScore >= 0.9) text-green-600
+                                                                                    @elseif($similarityScore >= 0.7) text-blue-600
+                                                                                    @elseif($similarityScore >= 0.6) text-yellow-600
+                                                                                    @else text-gray-600 @endif">
                                                         {{ $similarityScore ? number_format($similarityScore * 100, 0) : 'N/A' }}%
                                                     </span>
                                                 </div>
@@ -3755,11 +3764,11 @@ private function calculatePriceDistribution(array $prices): array
                                                 <div class="mt-2 flex flex-wrap gap-1">
                                                     @foreach($productVolumes as $volume)
                                                         <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium 
-                                                                                @if($this->isVolumeMatching($volume))
-                                                                                    bg-green-100 text-green-800 border border-green-300
-                                                                                @else
-                                                                                    bg-gray-100 text-gray-800 border border-gray-300
-                                                                                @endif">
+                                                                                                    @if($this->isVolumeMatching($volume))
+                                                                                                        bg-green-100 text-green-800 border border-green-300
+                                                                                                    @else
+                                                                                                        bg-gray-100 text-gray-800 border border-gray-300
+                                                                                                    @endif">
                                                             {{ $volume }} ml
                                                             @if($this->isVolumeMatching($volume))
                                                                 <svg class="w-3 h-3 ml-1 text-green-600" fill="currentColor"
@@ -3793,7 +3802,7 @@ private function calculatePriceDistribution(array $prices): array
                                                             <path fill-rule="evenodd"
                                                                 d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
                                                                 clip-rule="evenodd"></path>
-                                                            </svg>
+                                                        </svg>
                                                         Variation identique
                                                     </span>
                                                 </div>
@@ -3852,7 +3861,7 @@ private function calculatePriceDistribution(array $prices): array
                                                         <!-- Différence -->
                                                         <div
                                                             class="text-xs font-semibold 
-                                                                            {{ $priceDifference > 0 ? 'text-green-600' : ($priceDifference < 0 ? 'text-red-600' : 'text-blue-600') }}">
+                                                                                                {{ $priceDifference > 0 ? 'text-green-600' : ($priceDifference < 0 ? 'text-red-600' : 'text-blue-600') }}">
                                                             {{ $this->formatPriceDifference($priceDifference) }}
                                                         </div>
 
@@ -3884,7 +3893,7 @@ private function calculatePriceDistribution(array $prices): array
                                                         <!-- Différence Cosmashop -->
                                                         <div
                                                             class="text-xs font-semibold 
-                                                                            {{ $cosmashopDifference > 0 ? 'text-green-600' : ($cosmashopDifference < 0 ? 'text-red-600' : 'text-blue-600') }}">
+                                                                                                {{ $cosmashopDifference > 0 ? 'text-green-600' : ($cosmashopDifference < 0 ? 'text-red-600' : 'text-blue-600') }}">
                                                             {{ $this->formatPriceDifference($cosmashopDifference) }}
                                                         </div>
 
@@ -3999,55 +4008,62 @@ private function calculatePriceDistribution(array $prices): array
 
         <!-- Section d'analyse des produits sélectionnés -->
         {{-- @if($showAnalysis && !empty($selectedAnalysis))
-        <div class="mt-8 p-6 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200 shadow-sm">
+        <div
+            class="mt-8 p-6 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200 shadow-sm">
             <div class="flex justify-between items-center mb-6">
                 <h3 class="text-xl font-bold text-purple-800 flex items-center">
                     <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                              d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
+                        </path>
                     </svg>
                     Analyse des {{ $selectedAnalysis['count'] }} produit(s) sélectionné(s)
                 </h3>
                 <button wire:click="resetSelection"
                     class="px-3 py-1.5 text-sm bg-white text-purple-700 hover:bg-purple-50 rounded-md transition-colors duration-200 flex items-center border border-purple-200">
                     <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                              d="M6 18L18 6M6 6l12 12"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                        </path>
                     </svg>
                     Fermer
                 </button>
             </div>
-            
+
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
                 <!-- Statistiques de base -->
                 <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
                     <div class="text-sm text-gray-600 mb-1">Prix Minimum</div>
-                    <div class="text-2xl font-bold text-green-600">{{ $this->formatPrice($selectedAnalysis['min_price']) }}</div>
+                    <div class="text-2xl font-bold text-green-600">{{ $this->formatPrice($selectedAnalysis['min_price'])
+                        }}</div>
                 </div>
-                
+
                 <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
                     <div class="text-sm text-gray-600 mb-1">Prix Maximum</div>
-                    <div class="text-2xl font-bold text-red-600">{{ $this->formatPrice($selectedAnalysis['max_price']) }}</div>
+                    <div class="text-2xl font-bold text-red-600">{{ $this->formatPrice($selectedAnalysis['max_price'])
+                        }}</div>
                 </div>
-                
+
                 <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
                     <div class="text-sm text-gray-600 mb-1">Prix Moyen</div>
-                    <div class="text-2xl font-bold text-blue-600">{{ $this->formatPrice($selectedAnalysis['avg_price']) }}</div>
+                    <div class="text-2xl font-bold text-blue-600">{{ $this->formatPrice($selectedAnalysis['avg_price'])
+                        }}</div>
                 </div>
-                
+
                 <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
                     <div class="text-sm text-gray-600 mb-1">Prix Médian</div>
-                    <div class="text-2xl font-bold text-purple-600">{{ $this->formatPrice($selectedAnalysis['median_price']) }}</div>
+                    <div class="text-2xl font-bold text-purple-600">{{
+                        $this->formatPrice($selectedAnalysis['median_price']) }}</div>
                 </div>
             </div>
-            
+
             <!-- Comparaison avec nos prix -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                 <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
                     <h4 class="font-semibold text-gray-800 mb-3">Comparaison avec Cosmaparfumerie</h4>
                     @php
-                        $ourPriceDiff = $selectedAnalysis['our_price'] - $selectedAnalysis['avg_price'];
-                        $ourPriceDiffPercent = $selectedAnalysis['avg_price'] > 0 ? ($ourPriceDiff / $selectedAnalysis['avg_price']) * 100 : 0;
+                    $ourPriceDiff = $selectedAnalysis['our_price'] - $selectedAnalysis['avg_price'];
+                    $ourPriceDiffPercent = $selectedAnalysis['avg_price'] > 0 ? ($ourPriceDiff /
+                    $selectedAnalysis['avg_price']) * 100 : 0;
                     @endphp
                     <div class="space-y-2">
                         <div class="flex justify-between">
@@ -4067,17 +4083,19 @@ private function calculatePriceDistribution(array $prices): array
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
                     <h4 class="font-semibold text-gray-800 mb-3">Comparaison avec Cosmashop</h4>
                     @php
-                        $cosmaPriceDiff = $selectedAnalysis['cosmashop_price'] - $selectedAnalysis['avg_price'];
-                        $cosmaPriceDiffPercent = $selectedAnalysis['avg_price'] > 0 ? ($cosmaPriceDiff / $selectedAnalysis['avg_price']) * 100 : 0;
+                    $cosmaPriceDiff = $selectedAnalysis['cosmashop_price'] - $selectedAnalysis['avg_price'];
+                    $cosmaPriceDiffPercent = $selectedAnalysis['avg_price'] > 0 ? ($cosmaPriceDiff /
+                    $selectedAnalysis['avg_price']) * 100 : 0;
                     @endphp
                     <div class="space-y-2">
                         <div class="flex justify-between">
                             <span class="text-gray-600">Prix Cosmashop:</span>
-                            <span class="font-bold">{{ $this->formatPrice($selectedAnalysis['cosmashop_price']) }}</span>
+                            <span class="font-bold">{{ $this->formatPrice($selectedAnalysis['cosmashop_price'])
+                                }}</span>
                         </div>
                         <div class="flex justify-between">
                             <span class="text-gray-600">Prix moyen concurrents:</span>
@@ -4093,31 +4111,33 @@ private function calculatePriceDistribution(array $prices): array
                     </div>
                 </div>
             </div>
-            
-<!-- Dans la section Distribution des prix -->
-@if(!empty($selectedAnalysis['price_distribution']))
-<div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-    <h4 class="font-semibold text-gray-800 mb-3">Distribution des prix</h4>
-    <div class="space-y-2">
-        @foreach($selectedAnalysis['price_distribution'] as $distribution)
-        <div class="flex items-center">
-            <div class="w-32 text-sm text-gray-600">{{ $distribution['range'] ?? 'N/A' }}</div>
-            <div class="flex-1 mx-4">
-                <div class="w-full bg-gray-200 rounded-full h-2.5">
-                    <div class="bg-blue-600 h-2.5 rounded-full" 
-                         style="width: {{ isset($distribution['percentage']) ? $distribution['percentage'] : 0 }}%"></div>
+
+            <!-- Dans la section Distribution des prix -->
+            @if(!empty($selectedAnalysis['price_distribution']))
+            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                <h4 class="font-semibold text-gray-800 mb-3">Distribution des prix</h4>
+                <div class="space-y-2">
+                    @foreach($selectedAnalysis['price_distribution'] as $distribution)
+                    <div class="flex items-center">
+                        <div class="w-32 text-sm text-gray-600">{{ $distribution['range'] ?? 'N/A' }}</div>
+                        <div class="flex-1 mx-4">
+                            <div class="w-full bg-gray-200 rounded-full h-2.5">
+                                <div class="bg-blue-600 h-2.5 rounded-full"
+                                    style="width: {{ isset($distribution['percentage']) ? $distribution['percentage'] : 0 }}%">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="w-16 text-right text-sm">
+                            {{ isset($distribution['percentage']) ? number_format($distribution['percentage'], 1) : 0
+                            }}%
+                            <div class="text-xs text-gray-500">({{ $distribution['count'] ?? 0 }})</div>
+                        </div>
+                    </div>
+                    @endforeach
                 </div>
             </div>
-            <div class="w-16 text-right text-sm">
-                {{ isset($distribution['percentage']) ? number_format($distribution['percentage'], 1) : 0 }}%
-                <div class="text-xs text-gray-500">({{ $distribution['count'] ?? 0 }})</div>
-            </div>
-        </div>
-        @endforeach
-    </div>
-</div>
-@endif
-            
+            @endif
+
             <!-- Liste des produits analysés -->
             <div class="mt-6">
                 <h4 class="font-semibold text-gray-800 mb-3">Produits analysés</h4>
@@ -4128,20 +4148,23 @@ private function calculatePriceDistribution(array $prices): array
                                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Vendor</th>
                                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Nom</th>
                                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Prix HT</th>
-                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Différence</th>
+                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Différence
+                                </th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-200">
                             @foreach($selectedAnalysis['products'] as $product)
                             @php
-                                $productPrice = $this->cleanPrice($product->price_ht ?? $product->prix_ht);
-                                $diff = $productPrice - $selectedAnalysis['our_price'];
-                                $diffPercent = $selectedAnalysis['our_price'] > 0 ? ($diff / $selectedAnalysis['our_price']) * 100 : 0;
+                            $productPrice = $this->cleanPrice($product->price_ht ?? $product->prix_ht);
+                            $diff = $productPrice - $selectedAnalysis['our_price'];
+                            $diffPercent = $selectedAnalysis['our_price'] > 0 ? ($diff / $selectedAnalysis['our_price'])
+                            * 100 : 0;
                             @endphp
                             <tr class="hover:bg-gray-50">
                                 <td class="px-4 py-2 text-sm">{{ $product->vendor ?? 'N/A' }}</td>
                                 <td class="px-4 py-2 text-sm">{{ $product->name ?? 'N/A' }}</td>
-                                <td class="px-4 py-2 text-sm font-semibold {{ $productPrice < $selectedAnalysis['our_price'] ? 'text-green-600' : 'text-red-600' }}">
+                                <td
+                                    class="px-4 py-2 text-sm font-semibold {{ $productPrice < $selectedAnalysis['our_price'] ? 'text-green-600' : 'text-red-600' }}">
                                     {{ $this->formatPrice($productPrice) }}
                                 </td>
                                 <td class="px-4 py-2 text-sm">
