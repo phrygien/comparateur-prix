@@ -3020,7 +3020,7 @@ new class extends Component {
                                     </p>
                                     <div class="mt-2 p-2 bg-white rounded border-l-4 border-purple-400">
                                         <span class="font-medium text-purple-700">
-                                            👉 Cosmaparfumerie est {{ $this->formatPercentageDifference(abs($ourPriceDiffPercent)) }} 
+                                            Cosmaparfumerie est {{ $this->formatPercentageDifference(abs($ourPriceDiffPercent)) }} 
                                             {{ $ourPriceDiff > 0 ? 'plus cher' : 'moins cher' }} que le prix moyen des concurrents analysés.
                                         </span>
                                     </div>
@@ -3044,7 +3044,7 @@ new class extends Component {
                                     </p>
                                     <div class="mt-2 p-2 bg-white rounded border-l-4 border-orange-400">
                                         <span class="font-medium text-orange-700">
-                                            👉 Cosmashop serait {{ $this->formatPercentageDifference(abs($cosmaPriceDiffPercent)) }} 
+                                            Cosmashop serait {{ $this->formatPercentageDifference(abs($cosmaPriceDiffPercent)) }} 
                                             {{ $cosmaPriceDiff > 0 ? 'plus cher' : 'moins cher' }} que le prix moyen des concurrents.
                                         </span>
                                     </div>
@@ -3096,7 +3096,7 @@ new class extends Component {
                                     @if(!$isOurPriceInRange || !$isCosmaPriceInRange)
                                         <div class="space-y-2">
                                             <div class="p-2 bg-yellow-50 rounded border border-yellow-200">
-                                                <p class="font-medium text-yellow-800 mb-1">🎯 Pour être plus compétitifs :</p>
+                                                <p class="font-medium text-yellow-800 mb-1">Pour être plus compétitifs :</p>
                                                 <ul class="list-disc ml-4 text-yellow-700">
                                                     <li>Envisagez d'aligner vos prix sur la fourchette 
                                                         <strong>{{ $selectedAnalysis['price_distribution'][0]['range'] ?? '' }}</strong>
@@ -3125,7 +3125,7 @@ new class extends Component {
 
                 <!-- Graphique de distribution des prix (toujours visible) -->
                 <div class="space-y-2 mb-4">
-                    <h5 class="font-semibold text-gray-700 mb-2">📈 Distribution des prix analysés</h5>
+                    <h5 class="font-semibold text-gray-700 mb-2">Distribution des prix analysés</h5>
                     @foreach($selectedAnalysis['price_distribution'] as $distribution)
                         <div class="flex items-center">
                             <div class="w-32 text-sm text-gray-600">{{ $distribution['range'] ?? 'N/A' }}</div>
