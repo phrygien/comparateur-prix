@@ -2844,7 +2844,7 @@ new class extends Component {
                         d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
                     </path>
                 </svg>
-                Analyse des {{ $selectedAnalysis['count'] }} produit(s) sélectionné(s)
+                Analyse par rapport aux {{ $selectedAnalysis['count'] }} produits sélectionnés
             </h3>
             <button wire:click="resetSelection"
                 class="px-3 py-1.5 text-sm bg-white text-purple-700 hover:bg-purple-50 rounded-md transition-colors duration-200 flex items-center border border-purple-200">
