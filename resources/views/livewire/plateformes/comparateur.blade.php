@@ -3221,6 +3221,8 @@ new class extends Component {
                         <tr>
                             <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Vendor</th>
                             <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Nom</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Variation</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
                             <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Site web concurrent</th>
                             <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Prix HT</th>
                             <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Différence vs nous</th>
@@ -3235,6 +3237,12 @@ new class extends Component {
                             <tr class="hover:bg-gray-50">
                                 <td class="px-4 py-2 text-sm">{{ $product->vendor ?? 'N/A' }}</td>
                                 <td class="px-4 py-2 text-sm">{{ $product->name ?? 'N/A' }}</td>
+                                <td class="px-4 py-2 text-sm">{{ $product->variation ?? 'N/A' }}</td>
+                                <td class="px-4 py-2 text-sm">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-300">
+                                        {{ $product->type ?? 'N/A' }}
+                                    </span>
+                                </td>
                                 <td class="px-4 py-2 text-sm">{{ $product->site_name ?? 'N/A' }}</td>
                                 <td
                                     class="px-4 py-2 text-sm font-semibold {{ $productPrice < $selectedAnalysis['our_price'] ? 'text-green-600' : 'text-red-600' }}">
