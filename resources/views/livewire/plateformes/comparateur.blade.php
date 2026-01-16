@@ -3219,6 +3219,7 @@ new class extends Component {
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
                         <tr>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Image</th>
                             <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Vendor</th>
                             <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Nom</th>
                             <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Variation</th>
@@ -3235,6 +3236,45 @@ new class extends Component {
                                 $diff = $productPrice - $selectedAnalysis['our_price'];
                             @endphp
                             <tr class="hover:bg-gray-50">
+                                                                        <!-- NOUVELLE COLONNE : Image (TOUJOURS VISIBLE) -->
+                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
+                                            @php
+                                                $productImage = $this->getProductImage($product);
+                                                $productName = $product->name ?? 'Produit sans nom';
+                                            @endphp
+                                            <div class="relative group">
+                                                <img src="{{ $productImage }}" alt="{{ $productName }}"
+                                                    class="h-20 w-20 object-cover border border-gray-300 hover:shadow-sm transition-shadow duration-200"
+                                                    loading="lazy"
+                                                    onerror="this.onerror=null; this.src='https://placehold.co/400x400/cccccc/999999?text=No+Image'">
+
+                                                <!-- Overlay au survol pour agrandir -->
+                                                <div
+                                                    class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                                    <svg class="w-6 h-6 text-white opacity-0 group-hover:opacity-70 transition-opacity duration-200"
+                                                        fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7">
+                                                        </path>
+                                                    </svg>
+                                                </div>
+                                            </div>
+
+                                            <!-- Indicateur si pas d'image -->
+                                            @if(!$this->isValidImageUrl($productImage) || str_contains($productImage, 'https://placehold.co/400x400/cccccc/999999?text=No+Image'))
+                                                <div class="mt-1 text-center">
+                                                    <span
+                                                        class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 border border-gray-300">
+                                                        <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z">
+                                                            </path>
+                                                        </svg>
+                                                        Sans image
+                                                    </span>
+                                                </div>
+                                            @endif
+                                        </td>
                                 <td class="px-4 py-2 text-sm">{{ $product->vendor ?? 'N/A' }}</td>
                                 <td class="px-4 py-2 text-sm">{{ $product->name ?? 'N/A' }}</td>
                                 <td class="px-4 py-2 text-sm">{{ $product->variation ?? 'N/A' }}</td>
