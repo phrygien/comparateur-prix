@@ -3023,7 +3023,7 @@ new class extends Component {
                                     </p>
                                     <div class="mt-2 p-2 bg-white rounded border-l-4 border-purple-400">
                                         <span class="font-medium text-purple-700">
-                                            👉 Cosmaparfumerie est {{ $this->formatPrice(abs($ourPriceDiff)) }} 
+                                            Cosmaparfumerie est {{ $this->formatPrice(abs($ourPriceDiff)) }} 
                                             {{ $ourPriceDiff > 0 ? 'plus cher' : 'moins cher' }} que le prix moyen des concurrents analysés.
                                         </span>
                                     </div>
@@ -3046,7 +3046,7 @@ new class extends Component {
                                     </p>
                                     <div class="mt-2 p-2 bg-white rounded border-l-4 border-orange-400">
                                         <span class="font-medium text-orange-700">
-                                            👉 Cosmashop serait {{ $this->formatPrice(abs($cosmaPriceDiff)) }} 
+                                            Cosmashop serait {{ $this->formatPrice(abs($cosmaPriceDiff)) }} 
                                             {{ $cosmaPriceDiff > 0 ? 'plus cher' : 'moins cher' }} que le prix moyen des concurrents.
                                         </span>
                                     </div>
@@ -3127,7 +3127,7 @@ new class extends Component {
 
                 <!-- Graphique de distribution des prix (toujours visible) -->
                 <div class="space-y-2 mb-4">
-                    <h5 class="font-semibold text-gray-700 mb-2">📈 Distribution des prix analysés</h5>
+                    <h5 class="font-semibold text-gray-700 mb-2">Distribution des prix analysés</h5>
                     @foreach($selectedAnalysis['price_distribution'] as $distribution)
                         <div class="flex items-center">
                             <div class="w-32 text-sm text-gray-600">{{ $distribution['range'] ?? 'N/A' }}</div>
