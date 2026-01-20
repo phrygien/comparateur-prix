@@ -92,7 +92,7 @@ new class extends Component {
                                 type="text" 
                                 class="input w-full" 
                                 wire:model="skus.{{ $index }}.sku"
-                                placeholder="Ex: IPHONE15-128-BLK"
+                                placeholder="Ex: 121315454578"
                             />
                         </div>
                         
@@ -117,7 +117,7 @@ new class extends Component {
                     type="button"
                     class="btn-outline btn-sm"
                     icon="o-plus"
-                    label="Ajouter un SKU"
+                    label="Ajouter un SKU à la liste à comparer"
                     wire:click="addSku"
                 />
             </div>
