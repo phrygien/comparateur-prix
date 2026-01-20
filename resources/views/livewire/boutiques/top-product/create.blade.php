@@ -81,8 +81,8 @@ new class extends Component {
         </fieldset>
 
         <fieldset class="fieldset bg-base-200 border-base-300 rounded-box w-full border p-4">
-            <legend class="fieldset-legend">SKUs à comparer</legend>
-            <p class="label mb-4">Ajoutez les SKUs des produits que vous souhaitez comparer</p>
+            <legend class="fieldset-legend">EAN à comparer</legend>
+            <p class="label mb-4">Ajoutez les EAN des produits que vous souhaitez comparer</p>
             
             <div class="space-y-4">
                 @foreach($skus as $index => $sku)
@@ -97,7 +97,7 @@ new class extends Component {
                         </div>
                         
                         @if(count($skus) > 1)
-                            <x-button  wire:click="removeSku({{ $index }})" label="Supprimer ce SKU" icon-right="o-x-circle" />
+                            <x-button  wire:click="removeSku({{ $index }})" label="Supprimer ce EAN" icon-right="o-x-circle" />
                         @endif
                     </div>
                 @endforeach
@@ -108,7 +108,7 @@ new class extends Component {
                     type="button"
                     class="btn-outline btn-sm"
                     icon="o-plus"
-                    label="Ajouter un SKU à la liste à comparer"
+                    label="Ajouter un EAN à la liste à comparer"
                     wire:click="addSku"
                 />
             </div>
