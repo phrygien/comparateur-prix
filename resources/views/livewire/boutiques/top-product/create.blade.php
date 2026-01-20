@@ -97,7 +97,7 @@ new class extends Component {
                         </div>
                         
                         @if(count($skus) > 1)
-                            <x-button  wire:click="removeSku({{ $index }})" label="Supprimer ce EAN" icon-right="o-x-circle" />
+                            <x-button  wire:click="removeSku({{ $index }})" label="Supprimer ce EAN" icon-right="o-x-circle" class="color-red-200" />
                         @endif
                     </div>
                 @endforeach
