@@ -101,7 +101,7 @@ new class extends Component {
                         {{ $this->formatDateFr($comparaison->updated_at) }}
                     </td>
                     <td>
-                        <x-button label="Details" class="btn-primary" />
+                        <x-button label="Détails" class="btn-primary" />
                     </td>
                 </tr>
                 @endforeach
