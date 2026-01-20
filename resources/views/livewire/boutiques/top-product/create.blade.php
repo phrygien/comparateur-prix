@@ -7,7 +7,7 @@ new class extends Component {
 }; ?>
 
 <div class="mx-auto max-w-5xl">
-    <x-header title="Creer la liste a commpararer" separator>
+    <x-header title="Créer la liste à comparer" separator>
         <x-slot:middle class="!justify-end">
         </x-slot:middle>
         <x-slot:actions>
