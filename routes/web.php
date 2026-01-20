@@ -14,4 +14,7 @@ Route::middleware(['check.auth', 'boutique.cache'])->group(function () {
     Volt::route('/sites', 'sites.page')->name('sites');
     Volt::route('/scraped_products', 'scraped_products.page')->name('scraped_products');
     Route::get('/boutique', action: Boutique::class)->name('boutiques');
+
+    // Modular lst
+    Volt::route('/top-product', 'boutiques.top-product')->name('boutiques.top-product');
 });
