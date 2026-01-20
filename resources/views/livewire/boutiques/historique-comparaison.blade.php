@@ -70,10 +70,10 @@ new class extends Component {
         <table class="table table-zebra">
             <thead>
                 <tr>
-                    <th>Libellé</th>
-                    <th>Statut</th>
-                    <th>Date de création</th>
-                    <th>Dernière modification</th>
+                    <th class="uppercase">Libellé</th>
+                    <th class="uppercase">Statut</th>
+                    <th class="uppercase">Date de création</th>
+                    <th class="uppercase">Dernière modification</th>
                 </tr>
             </thead>
             <tbody>
