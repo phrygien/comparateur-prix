@@ -79,7 +79,7 @@ new class extends Component {
             <thead>
                 <tr>
                     <th class="uppercase">Libellé</th>
-                    <th class="uppercase">Statut</th>
+                    {{-- <th class="uppercase">Statut</th> --}}
                     <th class="uppercase">Date de création</th>
                     <th class="uppercase">Dernière modification</th>
                     <th class="uppercase">DETAILS</th>
@@ -89,11 +89,11 @@ new class extends Component {
                 @foreach($comparaisons as $comparaison)
                 <tr wire:key="comparaison-{{ $comparaison->id }}">
                     <td>{{ $comparaison->libelle }}</td>
-                    <td>
+                    {{-- <td>
                         <span class="badge {{ $comparaison->status ? 'badge-success' : 'badge-error' }}">
                             {{ $comparaison->status ? 'Actif' : 'Inactif' }}
                         </span>
-                    </td>
+                    </td> --}}
                     <td>
                         {{ $this->formatDateFr($comparaison->created_at) }}
                     </td>
