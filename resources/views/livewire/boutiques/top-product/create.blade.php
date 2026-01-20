@@ -6,6 +6,6 @@ new class extends Component {
     //
 }; ?>
 
-<div>
+<div class="mx-auto max-w-5xl">
     //
 </div>

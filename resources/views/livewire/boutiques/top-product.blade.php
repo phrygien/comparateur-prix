@@ -14,7 +14,7 @@ new class extends Component {
 
         </x-slot:middle>
         <x-slot:actions>
-            <x-button icon="o-plus-circle" class="btn-primary uppercase" label="Créer une liste à comparer" />
+            <x-button link="/top-product/create" icon="o-plus-circle" class="btn-primary uppercase" label="Créer une liste à comparer" />
         </x-slot:actions>
     </x-header>
 
