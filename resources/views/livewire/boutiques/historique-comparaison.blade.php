@@ -15,7 +15,6 @@ new class extends Component {
     
     public function mount()
     {
-        // Initialiser comme une collection vide
         $this->comparaisons = collect();
         $this->loadData();
     }
@@ -33,10 +32,8 @@ new class extends Component {
             ->take($this->perPage)
             ->get();
             
-        // Fusionner les collections
         $this->comparaisons = $this->comparaisons->concat($newComparaisons);
         
-        // Vérifie s'il y a plus de données
         $totalItems = Comparaison::count();
         $this->hasMore = ($this->page * $this->perPage) < $totalItems;
         
@@ -49,17 +46,14 @@ new class extends Component {
         $this->loadData();
     }
 
-    // Fonction pour formater la date en français
     public function formatDateFr($date)
     {
         if (!$date) {
             return '-';
         }
         
-        // Définir la locale française
         Carbon::setLocale('fr');
         
-        // Formater la date : "15 Janvier 2025 à 15h30"
         return Carbon::parse($date)->isoFormat('D MMMM YYYY [à] HH[h]mm');
     }    
 }; ?>
