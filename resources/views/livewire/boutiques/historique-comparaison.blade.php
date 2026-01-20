@@ -4,7 +4,7 @@ namespace App\Http\Livewire;
 
 use Livewire\Volt\Component;
 use App\Models\Comparaison;
-use Illuminate\Support\Collection;
+use Carbon\Carbon;
 
 new class extends Component {
     public $perPage = 15;
@@ -48,6 +48,20 @@ new class extends Component {
     {
         $this->loadData();
     }
+
+    // Fonction pour formater la date en français
+    public function formatDateFr($date)
+    {
+        if (!$date) {
+            return '-';
+        }
+        
+        // Définir la locale française
+        Carbon::setLocale('fr');
+        
+        // Formater la date : "15 Janvier 2025 à 15h30"
+        return Carbon::parse($date)->isoFormat('D MMMM YYYY [à] HH[h]mm');
+    }    
 }; ?>
 
 <div 
@@ -85,8 +99,12 @@ new class extends Component {
                             {{ $comparaison->status ? 'Actif' : 'Inactif' }}
                         </span>
                     </td>
-                    <td>{{ $comparaison->created_at->format('d/m/Y H:i') }}</td>
-                    <td>{{ $comparaison->updated_at->format('d/m/Y H:i') }}</td>
+                    <td>
+                        {{ $this->formatDateFr($comparaison->created_at) }}
+                    </td>
+                    <td>
+                        {{ $this->formatDateFr($comparaison->updated_at) }}
+                    </td>
                 </tr>
                 @endforeach
                 
