@@ -82,6 +82,7 @@ new class extends Component {
                     <th class="uppercase">Statut</th>
                     <th class="uppercase">Date de création</th>
                     <th class="uppercase">Dernière modification</th>
+                    <th class="uppercase">DETAILS</th>
                 </tr>
             </thead>
             <tbody>
@@ -98,6 +99,9 @@ new class extends Component {
                     </td>
                     <td>
                         {{ $this->formatDateFr($comparaison->updated_at) }}
+                    </td>
+                    <td>
+                        <x-button label="Details" class="btn-primary" />
                     </td>
                 </tr>
                 @endforeach
