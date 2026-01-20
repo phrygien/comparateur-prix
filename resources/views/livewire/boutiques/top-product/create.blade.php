@@ -11,8 +11,8 @@ new class extends Component {
         <x-slot:middle class="!justify-end">
         </x-slot:middle>
         <x-slot:actions>
-            <x-button class="btn-error" />
-            <x-button class="btn-primary" />
+            <x-button class="btn-error" label="Annuler" />
+            <x-button class="btn-primary" label="Valider" />
         </x-slot:actions>
     </x-header>
 </div>
