@@ -2,13 +2,10 @@
 
 use Livewire\Volt\Component;
 use Livewire\Attributes\On;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Cache;
 
 new class extends Component {
     public $page = 1;
-    public $perPage = 60;
+    public $perPage = 20;
     public $hasMore = true;
     public $loading = false;
     
@@ -19,18 +16,8 @@ new class extends Component {
     public $filterType = '';
     public $filterEAN = '';
     
-    // Pour stocker les produits
-    public $products = [];
-    public $totalItems = 0;
-    
     // Cache
     protected $cacheTTL = 3600;
-    
-    public function mount()
-    {
-        // Premier chargement
-        $this->loading = true;
-    }
     
     public function loadMore()
     {
@@ -48,7 +35,6 @@ new class extends Component {
         Log::info('loadMore: Chargement page ' . ($this->page + 1));
         
         $this->page++;
-        $this->loading = true;
     }
     
     public function updatedSearch()
@@ -80,13 +66,11 @@ new class extends Component {
     {
         $this->page = 1;
         $this->hasMore = true;
-        $this->loading = true;
-        $this->products = [];
     }
     
     public function with(): array
     {
-        // NE PAS modifier loading ici - il sera géré par loadMore()
+        $this->loading = true;
         
         try {
             $allProducts = [];
@@ -112,7 +96,6 @@ new class extends Component {
                 // Si moins de produits que demandé, on a atteint la fin
                 if (count($newProducts) < $this->perPage) {
                     $this->hasMore = false;
-                    Log::info('Fin des produits: ' . count($newProducts) . ' < ' . $this->perPage);
                     break;
                 }
             }
@@ -120,27 +103,20 @@ new class extends Component {
             // Vérifier si on a atteint la fin
             if (count($allProducts) >= $totalItems) {
                 $this->hasMore = false;
-                Log::info('Fin des produits: total atteint');
             }
             
-            // Stocker les produits et le total
-            $this->products = $allProducts;
-            $this->totalItems = $totalItems;
-            
-            // Désactiver le loading après chargement
             $this->loading = false;
             
             return [
-                'products' => $this->products,
-                'totalItems' => $this->totalItems,
+                'products' => $allProducts,
+                'totalItems' => $totalItems,
             ];
             
         } catch (\Exception $e) {
             Log::error('Erreur with(): ' . $e->getMessage());
-            $this->hasMore = false;
+            Log::error($e->getTraceAsString());
             $this->loading = false;
-            $this->products = [];
-            $this->totalItems = 0;
+            $this->hasMore = false;
             
             return [
                 'products' => [],
@@ -347,6 +323,7 @@ new class extends Component {
         return redirect()->to('/previous-page');
     }
 }; ?>
+
 <div class="mx-auto max-w-5xl">
     <x-header title="Créer la liste à comparer" separator>
         <x-slot:middle class="!justify-end">
@@ -400,38 +377,43 @@ new class extends Component {
         />
     </div>
 
-    <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100">
-        <!-- Conteneur avec infinite scroll SIMPLE -->
+    <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100 relative">
         <div 
-            x-data="{
-                initObserver() {
-                    const observer = new IntersectionObserver((entries) => {
-                        entries.forEach(entry => {
-                            if (entry.isIntersecting && !@this.loading && @this.hasMore) {
-                                console.log('Chargement déclenché');
-                                @this.loadMore();
-                            }
-                        });
-                    }, {
-                        root: null,
-                        rootMargin: '100px',
-                        threshold: 0.1
-                    });
-                    
-                    const target = this.$refs.loadingTrigger;
-                    if (target) {
-                        observer.observe(target);
-                    }
-                    
-                    // Nettoyer
-                    return () => observer.disconnect();
-                }
+            x-data="{ 
+                loading: @entangle('loading').live,
+                hasMore: @entangle('hasMore').live,
+                throttleTimer: null
             }"
-            x-init="initObserver()"
-            class="max-h-[600px] overflow-y-auto"
+            x-init="
+                $el.addEventListener('scroll', function(e) {
+                    if (throttleTimer) return;
+                    
+                    throttleTimer = setTimeout(() => {
+                        throttleTimer = null;
+                        
+                        const scrollTop = $el.scrollTop;
+                        const scrollHeight = $el.scrollHeight;
+                        const clientHeight = $el.clientHeight;
+                        const scrollPercentage = (scrollTop / (scrollHeight - clientHeight)) * 100;
+                        
+                        if (scrollPercentage > 80 && hasMore && !loading) {
+                            $wire.loadMore();
+                        }
+                    }, 150);
+                });
+            "
+            class="max-h-[600px] overflow-y-auto relative"
         >
-            <table class="table table-sm w-full">
-                <thead class="sticky top-0 bg-base-200 z-10">
+            <!-- Overlay semi-transparent pendant le chargement -->
+            <div 
+                x-show="loading"
+                x-transition.opacity
+                class="absolute inset-0 bg-black/30 backdrop-blur-[1px] z-10 pointer-events-none"
+            ></div>
+            
+            <!-- Table -->
+            <table class="table table-sm w-full relative">
+                <thead class="sticky top-0 bg-base-200 z-20">
                     <tr>
                         <th>Image</th>
                         <th>SKU</th>
@@ -443,9 +425,12 @@ new class extends Component {
                         <th>Statut</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody class="relative">
                     @forelse($products as $index => $product)
-                        <tr wire:key="product-{{ $product['id'] ?? $index }}">
+                        <tr 
+                            wire:key="product-{{ $product['id'] ?? $index }}"
+                            :class="{ 'opacity-50': loading }"
+                        >
                             <td>
                                 @if(!empty($product['thumbnail']))
                                     <div class="avatar">
@@ -454,6 +439,7 @@ new class extends Component {
                                                 src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
                                                 alt="{{ $product['title'] ?? '' }}"
                                             >
+
                                         </div>
                                     </div>
                                 @else
@@ -499,10 +485,24 @@ new class extends Component {
                                 </span>
                             </td>
                         </tr>
+                        
+                        <!-- Indicateur de chargement après chaque produit pendant le chargement infini -->
+                        @if($loop->last && $loading && $hasMore)
+                            <tr id="loading-row" class="relative" x-show="loading">
+                                <td colspan="8" class="text-center py-4 bg-base-100/90 backdrop-blur-sm">
+                                    <div class="flex items-center justify-center gap-3 py-4">
+                                        <span class="loading loading-spinner loading-md text-primary"></span>
+                                        <span class="text-base-content/70 font-medium">
+                                            Chargement de plus de produits...
+                                        </span>
+                                    </div>
+                                </td>
+                            </tr>
+                        @endif
                     @empty
                         <tr>
                             <td colspan="8" class="text-center py-12 text-base-content/50">
-                                @if($loading)
+                                @if($loading && count($products) === 0)
                                     <div class="flex flex-col items-center gap-3">
                                         <span class="loading loading-spinner loading-lg text-primary"></span>
                                         <span class="text-lg">Chargement des produits...</span>
@@ -520,42 +520,52 @@ new class extends Component {
                         </tr>
                     @endforelse
                     
-                    <!-- Élément déclencheur pour infinite scroll -->
-                    @if($hasMore)
-                        <tr x-ref="loadingTrigger">
-                            <td colspan="8" class="text-center py-8">
-                                @if($loading)
-                                    <div class="flex flex-col items-center justify-center gap-3">
-                                        <div class="flex items-center space-x-2">
-                                            <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 0ms"></div>
-                                            <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 150ms"></div>
-                                            <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 300ms"></div>
-                                        </div>
-                                        <span class="text-sm text-base-content/70 font-medium">
-                                            Chargement de {{ $perPage }} produits supplémentaires...
-                                        </span>
-                                    </div>
-                                @else
-                                    <!-- Élément invisible pour le déclencheur -->
-                                    <div class="h-4"></div>
-                                @endif
+                    <!-- Indicateur de chargement pour le premier chargement -->
+                    @if($loading && count($products) === 0)
+                        <tr>
+                            <td colspan="8" class="text-center py-12">
+                                <div class="flex flex-col items-center gap-3">
+                                    <span class="loading loading-spinner loading-lg text-primary"></span>
+                                    <span class="text-lg">Chargement des produits...</span>
+                                </div>
                             </td>
                         </tr>
                     @endif
                 </tbody>
             </table>
             
-            <!-- Message de fin -->
-            @if(!$hasMore && count($products) > 0)
-                <div class="text-center py-6 text-base-content/70 bg-base-100 border-t border-base-content/5">
-                    <div class="inline-flex items-center gap-2 bg-success/10 text-success px-6 py-3 rounded-full">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-                        </svg>
-                        <span class="font-medium">Tous les produits chargés ({{ $totalItems }} au total)</span>
+            <!-- Overlay avec spinner central pour le chargement infini -->
+            <div 
+                x-show="loading && {{ count($products) }} > 0"
+                x-transition:enter="transition ease-out duration-200"
+                x-transition:enter-start="opacity-0"
+                x-transition:enter-end="opacity-100"
+                x-transition:leave="transition ease-in duration-150"
+                x-transition:leave-start="opacity-100"
+                x-transition:leave-end="opacity-0"
+                class="absolute inset-0 flex items-center justify-center z-30 pointer-events-none"
+                style="display: none;"
+            >
+                <!-- Spinner central -->
+                <div class="absolute inset-0 bg-black/20 backdrop-blur-[1px]"></div>
+                <div class="relative z-40 bg-base-100/90 border border-base-content/10 rounded-xl shadow-2xl px-8 py-6 flex flex-col items-center gap-3 backdrop-blur-sm">
+                    <div class="relative">
+                        <span class="loading loading-spinner loading-lg text-primary"></span>
                     </div>
+                    <p class="font-medium text-base-content">Chargement de plus de produits...</p>
                 </div>
-            @endif
+            </div>
         </div>
+        
+        @if(!$hasMore && count($products) > 0 && !$loading)
+            <div class="text-center py-6 text-base-content/70 bg-base-100 border-t border-base-content/5">
+                <div class="inline-flex items-center gap-2 bg-success/10 text-success px-6 py-3 rounded-full">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                    </svg>
+                    <span class="font-medium">Tous les produits chargés ({{ $totalItems }} au total)</span>
+                </div>
+            </div>
+        @endif
     </div>
 </div>
