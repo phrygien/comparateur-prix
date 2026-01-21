@@ -208,7 +208,7 @@ new class extends Component {
         $this->listName = 'Liste du ' . date('d/m/Y H:i');
         
         // Charger les détails avant d'ouvrir le modal
-        dd($this->loadSelectedProductsDetails());
+        //dd($this->loadSelectedProductsDetails());
         
         Log::info('Ouverture modal avec ' . count($this->selectedProducts) . ' produits sélectionnés');
         Log::info('Détails chargés: ' . count($this->selectedProductsDetails));
