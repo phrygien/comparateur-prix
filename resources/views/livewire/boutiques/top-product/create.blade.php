@@ -459,4 +459,4 @@ function infiniteScroll() {
         }
     }
 }
-</script
+</script>
