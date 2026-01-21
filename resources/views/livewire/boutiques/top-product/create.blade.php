@@ -209,6 +209,8 @@ new class extends Component {
             return;
         }
         
+
+        dd($this->selectedProducts);
         $this->listName = 'Liste du ' . date('d/m/Y H:i');
         
         // Charger les détails avant d'ouvrir le modal
