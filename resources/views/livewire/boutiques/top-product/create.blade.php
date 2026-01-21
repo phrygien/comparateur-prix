@@ -12,7 +12,9 @@ new class extends Component {
     public $hasMore = true;
     public $loading = false;
     public $loadingMore = false;
-    public $currentBatchLoaded = false; // Pour suivre si le lot actuel est chargé
+    
+    // Pour suivre le nombre de produits avant chargement
+    public $previousProductCount = 0;
     
     // Filtres
     public $search = '';
@@ -28,24 +30,29 @@ new class extends Component {
     {
         // Premier chargement
         $this->loading = true;
+        $this->previousProductCount = 0;
     }
     
     public function loadMore()
     {
         // Vérification stricte
         if (!$this->hasMore) {
+            Log::info('loadMore: Plus de produits à charger');
             return;
         }
         
-        if ($this->loading || $this->loadingMore) {
+        if ($this->loadingMore) {
+            Log::info('loadMore: Déjà en cours de chargement');
             return;
         }
         
         Log::info('loadMore: Chargement page ' . ($this->page + 1));
         
-        // Activer le loading pour le nouveau lot
+        // Sauvegarder le nombre actuel de produits
+        $this->previousProductCount = count($this->products ?? []);
+        
+        // Activer le loading
         $this->loadingMore = true;
-        $this->currentBatchLoaded = false;
         $this->page++;
     }
     
@@ -83,18 +90,21 @@ new class extends Component {
     {
         $this->page = 1;
         $this->hasMore = true;
+        $this->loading = false;
         $this->loadingMore = false;
-        $this->currentBatchLoaded = true;
+        $this->previousProductCount = 0;
     }
     
     public function with(): array
     {
-        // NE PAS modifier loading ici
+        // Pour le premier chargement
+        if ($this->page === 1) {
+            $this->loading = true;
+        }
         
         try {
             $allProducts = [];
             $totalItems = 0;
-            $previousCount = count($this->products ?? []);
             
             // Charger toutes les pages jusqu'à la page actuelle
             for ($i = 1; $i <= $this->page; $i++) {
@@ -116,6 +126,7 @@ new class extends Component {
                 // Si moins de produits que demandé, on a atteint la fin
                 if (count($newProducts) < $this->perPage) {
                     $this->hasMore = false;
+                    Log::info('Fin des produits: ' . count($newProducts) . ' < ' . $this->perPage);
                     break;
                 }
             }
@@ -123,16 +134,14 @@ new class extends Component {
             // Vérifier si on a atteint la fin
             if (count($allProducts) >= $totalItems) {
                 $this->hasMore = false;
+                Log::info('Fin des produits: total atteint');
             }
             
-            // Vérifier si le lot actuel est complètement chargé
+            // Calculer combien de nouveaux produits ont été chargés
             $newCount = count($allProducts);
-            $batchLoaded = ($newCount - $previousCount) >= $this->perPage || !$this->hasMore;
+            $loadedCount = $newCount - $this->previousProductCount;
             
-            if ($batchLoaded) {
-                $this->currentBatchLoaded = true;
-                Log::info("Lot de {$this->perPage} produits chargé avec succès");
-            }
+            Log::info("Chargement terminé: {$loadedCount} nouveaux produits (total: {$newCount})");
             
             return [
                 'products' => $allProducts,
@@ -142,7 +151,8 @@ new class extends Component {
         } catch (\Exception $e) {
             Log::error('Erreur with(): ' . $e->getMessage());
             $this->hasMore = false;
-            $this->currentBatchLoaded = true;
+            $this->loading = false;
+            $this->loadingMore = false;
             
             return [
                 'products' => [],
@@ -151,16 +161,15 @@ new class extends Component {
         }
     }
     
-    // Hook pour réinitialiser le loading après le rendu
+    // Hook après le rendu - DÉSACTIVER LE LOADING
     #[On('rendered')]
     public function afterRender()
     {
-        // Si le lot actuel est chargé, désactiver le loading
-        if ($this->currentBatchLoaded) {
-            $this->loading = false;
-            $this->loadingMore = false;
-            Log::info('Loading désactivé - lot chargé');
-        }
+        // Toujours désactiver les loadings après le rendu
+        $this->loading = false;
+        $this->loadingMore = false;
+        
+        Log::info('afterRender: Loading désactivé');
     }
     
     /**
@@ -416,46 +425,59 @@ new class extends Component {
     </div>
 
     <div class="rounded-box border border-base-content/5 bg-base-100 overflow-hidden">
-        <!-- Conteneur principal -->
+        <!-- Conteneur principal avec infinite scroll SIMPLE -->
         <div 
             x-data="{
-                isLoadingMore: @entangle('loadingMore'),
-                hasMore: @entangle('hasMore'),
-                batchLoaded: @entangle('currentBatchLoaded'),
-                scrollLock: false,
+                isLoadingMore: @entangle('loadingMore').defer,
+                hasMore: @entangle('hasMore').defer,
+                isScrolling: false,
+                throttleTimer: null,
+                
                 init() {
-                    // Détection du scroll
-                    this.$el.addEventListener('scroll', (e) => {
-                        if (this.scrollLock) {
-                            return;
-                        }
-                        
-                        const el = this.$el;
-                        const scrollTop = el.scrollTop;
-                        const scrollHeight = el.scrollHeight;
-                        const clientHeight = el.clientHeight;
-                        
-                        // Détecter quand on est tout en bas (95%)
-                        const scrollThreshold = 0.95;
-                        const scrollPosition = (scrollTop + clientHeight) / scrollHeight;
-                        
-                        if (scrollPosition >= scrollThreshold) {
-                            if (this.hasMore && !this.isLoadingMore) {
-                                this.scrollLock = true;
-                                @this.loadMore();
-                            }
-                        }
+                    console.log('Alpine init - Infinite scroll');
+                    
+                    // Observer les changements de Livewire
+                    Livewire.hook('request', ({ component, succeed }) => {
+                        succeed(() => {
+                            console.log('Livewire request succeeded');
+                        });
                     });
                     
-                    // Observer quand le lot est chargé
-                    this.$watch('batchLoaded', (value) => {
-                        if (value) {
-                            this.scrollLock = false;
-                        }
+                    // Gestionnaire de scroll simple
+                    this.$el.addEventListener('scroll', (e) => {
+                        if (this.throttleTimer) return;
+                        
+                        this.throttleTimer = setTimeout(() => {
+                            this.throttleTimer = null;
+                            
+                            const el = this.$el;
+                            const scrollTop = el.scrollTop;
+                            const scrollHeight = el.scrollHeight;
+                            const clientHeight = el.clientHeight;
+                            
+                            // Calculer combien il reste à scroller
+                            const remainingScroll = scrollHeight - (scrollTop + clientHeight);
+                            
+                            console.log('Scroll:', {
+                                scrollTop,
+                                scrollHeight,
+                                clientHeight,
+                                remaining: remainingScroll,
+                                isLoadingMore: this.isLoadingMore,
+                                hasMore: this.hasMore
+                            });
+                            
+                            // Détecter quand on est à 100px du bas
+                            if (remainingScroll <= 100 && !this.isLoadingMore && this.hasMore) {
+                                console.log('🚀 Déclenchement loadMore!');
+                                @this.loadMore();
+                            }
+                        }, 200);
                     });
                 }
             }"
             class="max-h-[600px] overflow-y-auto"
+            wire:ignore.self
         >
             <!-- Tableau -->
             <table class="table table-sm w-full">
@@ -550,40 +572,25 @@ new class extends Component {
                 </tbody>
             </table>
             
-            <!-- Indicateur de chargement pour chaque lot -->
+            <!-- Indicateur de chargement SIMPLE en bas -->
             <div 
-                x-show="isLoadingMore && !batchLoaded"
-                x-transition:enter="transition ease-out duration-300"
-                x-transition:enter-start="opacity-0 translate-y-4"
-                x-transition:enter-end="opacity-100 translate-y-0"
-                x-transition:leave="transition ease-in duration-200"
-                x-transition:leave-start="opacity-100 translate-y-0"
-                x-transition:leave-end="opacity-0 translate-y-4"
-                class="sticky bottom-0 left-0 right-0 bg-gradient-to-t from-base-100 to-base-100/80 backdrop-blur-sm border-t border-primary/20 py-4 z-20"
+                x-show="isLoadingMore"
+                x-transition.opacity
+                class="sticky bottom-0 left-0 right-0 bg-base-100/95 border-t border-base-content/10 py-3"
                 style="display: none;"
             >
-                <div class="container mx-auto px-4">
-                    <div class="flex flex-col items-center justify-center gap-3">
-                        <!-- Spinner et texte -->
-                        <div class="flex items-center gap-3">
-                            <span class="loading loading-spinner loading-md text-primary"></span>
-                            <div class="text-center">
-                                <p class="font-medium text-base-content">
-                                    Chargement de {{ $perPage }} produits...
-                                </p>
-                                <p class="text-sm text-base-content/60">
-                                    Lot {{ $page }} en cours
-                                </p>
-                            </div>
-                        </div>
-                    </div>
+                <div class="flex items-center justify-center gap-3 px-4">
+                    <span class="loading loading-spinner loading-sm text-primary"></span>
+                    <span class="text-sm font-medium text-base-content">
+                        Chargement de {{ $perPage }} produits supplémentaires...
+                    </span>
                 </div>
             </div>
         </div>
         
         <!-- Message de fin -->
         @if(!$hasMore && count($products) > 0 && !$loading && !$loadingMore)
-            <div class="text-center py-6 text-base-content/70 bg-base-100 border-t border-base-content/5">
+            <div class="text-center py-4 text-base-content/70 bg-base-100 border-t border-base-content/5">
                 <div class="inline-flex items-center gap-2 bg-success/10 text-success px-6 py-3 rounded-full">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                         <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
@@ -594,3 +601,19 @@ new class extends Component {
         @endif
     </div>
 </div>
+
+<script>
+// Script pour déboguer et aider
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM chargé - Infinite Scroll Component');
+    
+    // Observer les événements Livewire
+    Livewire.hook('element.initialized', (el, component) => {
+        console.log('Livewire component initialized:', component.name);
+    });
+    
+    Livewire.hook('message.processed', (message, component) => {
+        console.log('Livewire message processed - loading state:', component.$wire.loading, 'loadingMore:', component.$wire.loadingMore);
+    });
+});
+</script>
