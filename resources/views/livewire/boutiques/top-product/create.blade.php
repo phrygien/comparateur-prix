@@ -434,68 +434,6 @@ new class extends Component {
             class="max-h-[600px] overflow-y-auto relative"
             wire:ignore.self
         >
-            <!-- Overlay de chargement avec Alpine.js -->
-            <div 
-                x-show="showLoading && productCount > 0"
-                x-transition:enter="transition ease-out duration-300"
-                x-transition:enter-start="opacity-0"
-                x-transition:enter-end="opacity-100"
-                x-transition:leave="transition ease-in duration-200"
-                x-transition:leave-start="opacity-100"
-                x-transition:leave-end="opacity-0"
-                class="absolute inset-0 z-50 flex items-center justify-center"
-                style="display: none;"
-            >
-                <!-- Overlay avec blur -->
-                <div class="absolute inset-0 bg-black/40 backdrop-blur-md"></div>
-                
-                <!-- Modal de chargement -->
-                <div class="relative z-10 bg-base-100/90 backdrop-blur-xl border-2 border-primary/20 rounded-2xl shadow-2xl p-8 max-w-md mx-4">
-                    <!-- Contenu du loading -->
-                    <div class="text-center">
-                        <!-- Spinner animé -->
-                        <div class="mb-6">
-                            <div class="relative inline-block">
-                                <div class="w-20 h-20 border-4 border-primary/20 rounded-full"></div>
-                                <div class="w-20 h-20 border-4 border-primary border-t-transparent rounded-full animate-spin absolute top-0 left-0"></div>
-                                <!-- Icône au centre -->
-                                <div class="absolute inset-0 flex items-center justify-center">
-                                    <svg class="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                                    </svg>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Texte de chargement -->
-                        <div class="space-y-2">
-                            <h3 class="text-2xl font-bold text-base-content">
-                                Chargement de plus de produits...
-                            </h3>
-                            <p class="text-base-content/70">
-                                Patientez pendant que nous chargeons les produits suivants
-                            </p>
-                        </div>
-                        
-                        <!-- Animation de points -->
-                        <div class="mt-6 flex justify-center space-x-2">
-                            <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 0ms"></div>
-                            <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 150ms"></div>
-                            <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 300ms"></div>
-                        </div>
-                        
-                        <!-- Compteur -->
-                        <div class="mt-6">
-                            <div class="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full">
-                                <span class="text-sm font-medium">
-                                    {{ count($products) }} produits chargés
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
             <!-- Effet blur sur le tableau pendant le chargement -->
             <div 
                 x-show="showLoading && productCount > 0"
