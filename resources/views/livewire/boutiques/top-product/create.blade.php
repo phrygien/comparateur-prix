@@ -389,6 +389,16 @@ new class extends Component {
     </div>
 
     <div class="rounded-box border border-base-content/5 bg-base-100 overflow-hidden relative">
+        <!-- Overlay de chargement principal (plein écran) -->
+        @if($loading && count($products) === 0)
+            <div class="absolute inset-0 z-50 flex items-center justify-center bg-base-100/95 backdrop-blur-md">
+                <div class="text-center">
+                    <span class="loading loading-spinner loading-lg text-primary mb-4"></span>
+                    <p class="text-lg font-medium text-base-content">Chargement des produits...</p>
+                </div>
+            </div>
+        @endif
+        
         <!-- Conteneur principal avec infinite scroll -->
         <div 
             x-data="{
@@ -433,7 +443,7 @@ new class extends Component {
                 x-transition:leave="transition ease-in duration-200"
                 x-transition:leave-start="opacity-100"
                 x-transition:leave-end="opacity-0"
-                class="fixed inset-0 z-50 flex items-center justify-center"
+                class="absolute inset-0 z-50 flex items-center justify-center"
                 style="display: none;"
             >
                 <!-- Overlay avec blur -->
@@ -616,69 +626,3 @@ new class extends Component {
         @endif
     </div>
 </div>
-
-<style>
-/* Animation pour le spinner */
-@keyframes spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
-}
-
-.animate-spin {
-    animation: spin 1s linear infinite;
-}
-
-/* Animation pour les points qui rebondissent */
-@keyframes bounce {
-    0%, 100% {
-        transform: translateY(0);
-    }
-    50% {
-        transform: translateY(-10px);
-    }
-}
-
-.animate-bounce {
-    animation: bounce 0.6s infinite;
-}
-
-/* Transition pour l'opacité */
-.transition-opacity {
-    transition: opacity 0.3s ease-in-out;
-}
-
-/* Style pour le modal de chargement */
-.backdrop-blur-xl {
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-}
-
-/* Effet glassmorphism */
-.glass-effect {
-    background: rgba(255, 255, 255, 0.25);
-    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-}
-</style>
-
-<script>
-// Script pour déboguer et s'assurer qu'Alpine fonctionne
-document.addEventListener('alpine:init', () => {
-    console.log('Alpine.js initialisé');
-});
-
-// Vérifier l'état du loading
-document.addEventListener('livewire:init', () => {
-    Livewire.hook('commit', ({ component, commit, respond, succeed, fail }) => {
-        succeed(({ snapshot, effect }) => {
-            console.log('Livewire commit succeeded, loading state:', component.$wire.loading);
-        });
-    });
-});
-</script>
