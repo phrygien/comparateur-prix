@@ -588,7 +588,7 @@ new class extends Component {
                         </td>
                         <td>
                             @if($product->thumbnail)
-                                <img src="{{ $product->thumbnail }}" 
+                                <img src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $product->thumbnail) }}"
                                      alt="{{ $product->title }}"
                                      class="h-12 w-12 object-cover rounded">
                             @else
