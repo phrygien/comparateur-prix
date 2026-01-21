@@ -187,22 +187,22 @@ new class extends Component {
             // Filtres avancés
             if (!empty($this->filterName)) {
                 $subQuery .= " AND product_char.name LIKE ? ";
-                $params[] = "%{$this->filterName}%";
+                $params[] = '%' . $this->filterName . '%';
             }
             
             if (!empty($this->filterMarque)) {
                 $subQuery .= " AND SUBSTRING_INDEX(product_char.name, ' - ', 1) LIKE ? ";
-                $params[] = "%{$this->filterMarque}%";
+                $params[] = '%' . $this->filterMarque . '%';
             }
             
             if (!empty($this->filterType)) {
                 $subQuery .= " AND SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) LIKE ? ";
-                $params[] = "%{$this->filterType}%";
+                $params[] = '%' . $this->filterType . '%';
             }
             
             if (!empty($this->filterEAN)) {
                 $subQuery .= " AND produit.sku LIKE ? ";
-                $params[] = "%{$this->filterEAN}%";
+                $params[] = '%' . $this->filterEAN . '%';
             }
             
             // Filtre pour prix > 0
