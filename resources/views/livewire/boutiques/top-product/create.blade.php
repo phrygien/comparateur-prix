@@ -70,6 +70,8 @@ new class extends Component {
     
     public function with(): array
     {
+        Log::info('with() appelé - Page: ' . $this->page . ', Loading: ' . ($this->loading ? 'true' : 'false'));
+        
         $this->loading = true;
         
         try {
@@ -105,7 +107,10 @@ new class extends Component {
                 $this->hasMore = false;
             }
             
-            $this->loading = false;
+            Log::info('Produits chargés: ' . count($allProducts) . ' / ' . $totalItems);
+            
+            // IMPORTANT: On ne remet pas loading à false ici
+            // On le fait après un court délai pour que l'animation soit visible
             
             return [
                 'products' => $allProducts,
@@ -115,13 +120,15 @@ new class extends Component {
         } catch (\Exception $e) {
             Log::error('Erreur with(): ' . $e->getMessage());
             Log::error($e->getTraceAsString());
-            $this->loading = false;
             $this->hasMore = false;
             
             return [
                 'products' => [],
                 'totalItems' => 0,
             ];
+        } finally {
+            // Remettre loading à false après le rendu
+            $this->dispatch('loading-finished');
         }
     }
     
@@ -381,8 +388,28 @@ new class extends Component {
         
         <!-- Loading indicator pour infinite scroll -->
         <div 
-            x-data="{ show: @entangle('loading').live }"
-            x-show="show && {{ count($products) }} > 0"
+            x-data="{ 
+                show: false,
+                productCount: {{ count($products) }}
+            }"
+            x-init="
+                console.log('Modal init - ProductCount:', productCount);
+                
+                // Écouter les changements de loading
+                Livewire.on('loading-finished', () => {
+                    console.log('❌ Loading finished event received');
+                    setTimeout(() => {
+                        show = false;
+                    }, 300);
+                });
+                
+                // Observer directement la propriété loading via wire
+                $watch('$wire.loading', (value) => {
+                    console.log('👁️ $wire.loading changed to:', value);
+                    show = value && productCount > 0;
+                });
+            "
+            x-show="show"
             x-transition:enter="transition ease-out duration-200"
             x-transition:enter-start="opacity-0"
             x-transition:enter-end="opacity-100"
@@ -552,3 +579,21 @@ new class extends Component {
         </div>
     </div>
 </div>
+
+<!-- Styles inline pour l'animation de la barre de progression -->
+<style>
+    @keyframes loading {
+        0% {
+            width: 0%;
+            margin-left: 0%;
+        }
+        50% {
+            width: 50%;
+            margin-left: 25%;
+        }
+        100% {
+            width: 0%;
+            margin-left: 100%;
+        }
+    }
+</style>
