@@ -23,14 +23,23 @@ new class extends Component {
     
     public function mount()
     {
-        dd($this->loadProducts());
+        $this->loadProducts();
     }
     
     public function loadMore()
     {
-        if (!$this->hasMore || $this->loading) {
+        // Vérification stricte
+        if (!$this->hasMore) {
+            Log::info('loadMore: Plus de produits à charger');
             return;
         }
+        
+        if ($this->loading) {
+            Log::info('loadMore: Déjà en cours de chargement');
+            return;
+        }
+        
+        Log::info('loadMore: Chargement page ' . ($this->page + 1));
         
         $this->page++;
         $this->loadProducts();
@@ -71,24 +80,52 @@ new class extends Component {
     
     protected function loadProducts()
     {
-        $this->loading = true;
-        
-        $result = $this->fetchProductsFromDatabase($this->search, $this->page, $this->perPage);
-        
-        $this->totalItems = $result['total_item'];
-        
-        if (count($result['data']) < $this->perPage) {
+        try {
+            $this->loading = true;
+            
+            // Forcer le rendu pour afficher le loading
+            $this->dispatch('loading-started');
+            
+            $result = $this->fetchProductsFromDatabase($this->search, $this->page, $this->perPage);
+            
+            // Vérifier si on a une erreur
+            if (isset($result['error'])) {
+                Log::error('Erreur DB: ' . $result['error']);
+                $this->hasMore = false;
+                return;
+            }
+            
+            // Mettre à jour le total
+            $this->totalItems = $result['total_item'] ?? 0;
+            
+            // Vérifier s'il y a encore des produits
+            $newProducts = $result['data'] ?? [];
+            
+            if (count($newProducts) < $this->perPage) {
+                $this->hasMore = false;
+            }
+            
+            // Convertir les objets stdClass en tableaux pour Livewire
+            $newProducts = array_map(function($product) {
+                return (array) $product;
+            }, $newProducts);
+            
+            // Si c'est la première page, on remplace, sinon on ajoute
+            if ($this->page === 1) {
+                $this->products = $newProducts;
+            } else {
+                $this->products = array_merge($this->products, $newProducts);
+            }
+            
+            Log::info("Produits chargés: " . count($newProducts) . " (Total: " . count($this->products) . ")");
+            
+        } catch (\Exception $e) {
+            Log::error('Erreur loadProducts: ' . $e->getMessage());
+            Log::error($e->getTraceAsString());
             $this->hasMore = false;
+        } finally {
+            $this->loading = false;
         }
-        
-        // Si c'est la première page, on remplace, sinon on ajoute
-        if ($this->page === 1) {
-            $this->products = $result['data'];
-        } else {
-            $this->products = array_merge($this->products, $result['data']);
-        }
-        
-        $this->loading = false;
     }
     
     /**
@@ -340,21 +377,54 @@ new class extends Component {
 
     <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100">
         <div 
+            wire:ignore
             x-data="{ 
-                isLoading: @entangle('loading').live, 
-                hasMore: @entangle('hasMore').live,
+                isLoading: false,
+                hasMore: true,
+                lastScrollTime: 0,
+                init() {
+                    // Synchroniser avec Livewire
+                    Livewire.on('loading-started', () => {
+                        this.isLoading = true;
+                    });
+                    
+                    // Observer les changements
+                    this.$watch('$wire.loading', value => {
+                        this.isLoading = value;
+                        console.log('Loading state changed:', value);
+                    });
+                    
+                    this.$watch('$wire.hasMore', value => {
+                        this.hasMore = value;
+                        console.log('HasMore state changed:', value);
+                    });
+                },
                 handleScroll() {
-                    const threshold = 200;
+                    // Throttle pour éviter trop d'appels
+                    const now = Date.now();
+                    if (now - this.lastScrollTime < 200) {
+                        return;
+                    }
+                    this.lastScrollTime = now;
+                    
+                    const threshold = 300;
                     const scrollTop = this.$el.scrollTop;
                     const scrollHeight = this.$el.scrollHeight;
                     const clientHeight = this.$el.clientHeight;
                     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
                     
-                    console.log('Scroll:', { scrollTop, scrollHeight, clientHeight, distanceFromBottom, hasMore: this.hasMore, isLoading: this.isLoading });
+                    console.log('Scroll:', { 
+                        distanceFromBottom, 
+                        hasMore: this.hasMore, 
+                        isLoading: this.isLoading,
+                        wireHasMore: this.$wire.hasMore,
+                        wireLoading: this.$wire.loading
+                    });
                     
                     if (distanceFromBottom < threshold && this.hasMore && !this.isLoading) {
-                        console.log('Loading more...');
-                        $wire.loadMore();
+                        console.log('🔄 Triggering loadMore...');
+                        this.isLoading = true;
+                        this.$wire.loadMore();
                     }
                 }
             }"
@@ -375,13 +445,13 @@ new class extends Component {
                     </tr>
                 </thead>
                 <tbody>
-                    @forelse($products as $product)
-                        <tr wire:key="product-{{ $product->id }}">
+                    @forelse($products as $index => $product)
+                        <tr wire:key="product-{{ $product['id'] ?? $index }}">
                             <td>
-                                @if($product->thumbnail)
+                                @if(!empty($product['thumbnail']))
                                     <div class="avatar">
                                         <div class="w-10 h-10 rounded">
-                                            <img src="{{ $product->thumbnail }}" alt="{{ $product->title }}" />
+                                            <img src="{{ $product['thumbnail'] }}" alt="{{ $product['title'] ?? '' }}" />
                                         </div>
                                     </div>
                                 @else
@@ -390,40 +460,40 @@ new class extends Component {
                                     </div>
                                 @endif
                             </td>
-                            <td class="font-mono text-xs">{{ $product->sku }}</td>
+                            <td class="font-mono text-xs">{{ $product['sku'] ?? '' }}</td>
                             <td>
-                                <div class="max-w-xs truncate" title="{{ $product->title }}">
-                                    {{ $product->title }}
+                                <div class="max-w-xs truncate" title="{{ $product['title'] ?? '' }}">
+                                    {{ $product['title'] ?? '' }}
                                 </div>
                             </td>
-                            <td>{{ $product->vendor }}</td>
+                            <td>{{ $product['vendor'] ?? '' }}</td>
                             <td>
-                                <span class="badge badge-sm">{{ $product->type }}</span>
+                                <span class="badge badge-sm">{{ $product['type'] ?? '' }}</span>
                             </td>
                             <td>
-                                @if($product->special_price)
+                                @if(!empty($product['special_price']))
                                     <div class="flex flex-col">
                                         <span class="line-through text-xs text-base-content/50">
-                                            {{ number_format($product->price, 2) }} €
+                                            {{ number_format($product['price'] ?? 0, 2) }} €
                                         </span>
                                         <span class="text-error font-semibold">
-                                            {{ number_format($product->special_price, 2) }} €
+                                            {{ number_format($product['special_price'], 2) }} €
                                         </span>
                                     </div>
                                 @else
                                     <span class="font-semibold">
-                                        {{ number_format($product->price ?? 0, 2) }} €
+                                        {{ number_format($product['price'] ?? 0, 2) }} €
                                     </span>
                                 @endif
                             </td>
                             <td>
-                                <span class="{{ $product->quatity > 0 ? 'text-success' : 'text-error' }}">
-                                    {{ $product->quatity ?? 0 }}
+                                <span class="{{ ($product['quatity'] ?? 0) > 0 ? 'text-success' : 'text-error' }}">
+                                    {{ $product['quatity'] ?? 0 }}
                                 </span>
                             </td>
                             <td>
-                                <span class="badge badge-sm {{ $product->quatity_status == 1 ? 'badge-success' : 'badge-error' }}">
-                                    {{ $product->quatity_status == 1 ? 'En stock' : 'Rupture' }}
+                                <span class="badge badge-sm {{ ($product['quatity_status'] ?? 0) == 1 ? 'badge-success' : 'badge-error' }}">
+                                    {{ ($product['quatity_status'] ?? 0) == 1 ? 'En stock' : 'Rupture' }}
                                 </span>
                             </td>
                         </tr>
