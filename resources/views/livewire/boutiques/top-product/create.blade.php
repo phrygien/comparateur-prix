@@ -760,7 +760,7 @@ new class extends Component {
             </div>
             
             <!-- Résumé -->
-            <div class="bg-base-200 p-4 rounded-box">
+            {{-- <div class="bg-base-200 p-4 rounded-box">
                 <div class="flex items-center justify-between mb-3">
                     <span class="font-semibold">Résumé</span>
                     <span class="badge badge-primary">{{ count($selectedProducts) }} produits</span>
@@ -819,7 +819,7 @@ new class extends Component {
                         <p>Chargement des détails des produits...</p>
                     </div>
                 @endif
-            </div>
+            </div> --}}
             
             <!-- Avertissement -->
             <div class="alert alert-info">
