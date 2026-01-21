@@ -35,7 +35,7 @@ new class extends Component {
     protected $cacheTTL = 3600;
     
     // Table de résumé des produits sélectionnés
-    public $showSummaryTable = true;
+    public $showSummaryTable = true; // Nouveau: contrôle l'affichage du résumé
     
     public function mount($listId = null)
     {
@@ -70,14 +70,23 @@ new class extends Component {
         
         $query = "
             SELECT 
+                produit.entity_id as id,
                 produit.sku as sku,
                 CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) as title,
-                product_char.thumbnail as thumbnail
+                SUBSTRING_INDEX(product_char.name, ' - ', 1) as vendor,
+                SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) as type,
+                product_char.thumbnail as thumbnail,
+                ROUND(product_decimal.price, 2) as price,
+                ROUND(product_decimal.special_price, 2) as special_price,
+                stock_item.qty as quantity
             FROM catalog_product_entity as produit
             LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+            LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
+            LEFT JOIN product_int ON product_int.entity_id = produit.entity_id
+            LEFT JOIN eav_attribute_set AS eas ON produit.attribute_set_id = eas.attribute_set_id 
+            LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id 
             WHERE produit.sku IN ($placeholders)
             ORDER BY FIELD(produit.sku, " . implode(',', $skus) . ")
-            LIMIT 100
         ";
         
         try {
@@ -101,28 +110,16 @@ new class extends Component {
     }
     
     // Gestion de la sélection
-    public function toggleSelect($sku, $title = '', $thumbnail = '')
+    public function toggleSelect($sku)
     {
         if (in_array($sku, $this->selectedProducts)) {
-            // Retirer de la sélection
             $this->selectedProducts = array_diff($this->selectedProducts, [$sku]);
-            // Retirer du résumé
-            $this->selectedProductsDetails = array_filter($this->selectedProductsDetails, 
-                fn($product) => $product['sku'] !== $sku
-            );
         } else {
-            // Ajouter à la sélection
             $this->selectedProducts[] = $sku;
-            // Ajouter au résumé immédiatement
-            $this->selectedProductsDetails[] = [
-                'sku' => $sku,
-                'title' => $title,
-                'thumbnail' => $thumbnail
-            ];
         }
         
-        // Mettre à jour l'état de la checkbox "Tout sélectionner"
-        $this->updateSelectAllState();
+        // Mettre à jour les détails après un délai pour éviter trop de requêtes
+        $this->dispatch('selection-updated');
     }
     
     public function updatedSelectAll($value)
@@ -130,61 +127,27 @@ new class extends Component {
         if ($value) {
             // Sélectionner tous les produits visibles
             $visibleSkus = collect($this->products)->pluck('sku')->toArray();
-            $visibleDetails = collect($this->products)->map(function($product) {
-                return [
-                    'sku' => $product['sku'] ?? '',
-                    'title' => $product['title'] ?? '',
-                    'thumbnail' => $product['thumbnail'] ?? ''
-                ];
-            })->toArray();
-            
             $this->selectedProducts = array_unique(array_merge($this->selectedProducts, $visibleSkus));
-            $this->selectedProductsDetails = array_merge($this->selectedProductsDetails, $visibleDetails);
-            $this->selectedProductsDetails = array_unique($this->selectedProductsDetails, SORT_REGULAR);
         } else {
             // Désélectionner tous les produits visibles
             $visibleSkus = collect($this->products)->pluck('sku')->toArray();
             $this->selectedProducts = array_diff($this->selectedProducts, $visibleSkus);
-            
-            // Retirer du résumé
-            $this->selectedProductsDetails = array_filter($this->selectedProductsDetails, 
-                fn($product) => !in_array($product['sku'], $visibleSkus)
-            );
         }
-    }
-    
-    // Mettre à jour l'état de "Tout sélectionner"
-    protected function updateSelectAllState()
-    {
-        $visibleSkus = collect($this->products)->pluck('sku')->toArray();
-        $selectedVisibleCount = count(array_intersect($this->selectedProducts, $visibleSkus));
         
-        if ($selectedVisibleCount === 0) {
-            $this->selectAll = false;
-        } elseif ($selectedVisibleCount === count($visibleSkus)) {
-            $this->selectAll = true;
-        } else {
-            // État indéterminé
-            $this->selectAll = false;
-        }
+        $this->dispatch('selection-updated');
     }
     
-    // Toggle pour afficher/masquer le résumé
+    // Écouter la mise à jour de la sélection
+    #[On('selection-updated')]
+    public function updateSelectedDetails()
+    {
+        $this->loadSelectedProductsDetails();
+    }
+    
+    // Nouveau: Toggle pour afficher/masquer le résumé
     public function toggleSummaryTable()
     {
         $this->showSummaryTable = !$this->showSummaryTable;
-    }
-    
-    // Supprimer un produit du résumé
-    public function removeFromSummary($sku)
-    {
-        if (in_array($sku, $this->selectedProducts)) {
-            $this->selectedProducts = array_diff($this->selectedProducts, [$sku]);
-            $this->selectedProductsDetails = array_filter($this->selectedProductsDetails, 
-                fn($product) => $product['sku'] !== $sku
-            );
-            $this->updateSelectAllState();
-        }
     }
     
     // Réinitialiser les produits
@@ -295,7 +258,7 @@ new class extends Component {
             
             $this->dispatch('notify', [
                 'type' => 'success',
-                'message' => 'Liste sauvegardée avec ' . count($batchData) . ' produit(s).'
+                'message' => 'Liste "' . $this->listName . '" sauvegardée avec ' . count($batchData) . ' produit(s).'
             ]);
             
             // Émettre un événement pour le parent
@@ -623,21 +586,21 @@ new class extends Component {
                 <span class="font-semibold">Sélectionner tout ({{ count($products) }} produits affichés)</span>
             </label>
             <div class="badge badge-primary badge-lg">
-                {{ count($selectedProducts) }} produits sélectionnés
+                {{ count($selectedProducts) }} produits sélectionnés au total
             </div>
         </div>
     </div>
 
-    <!-- Section de résumé des produits sélectionnés -->
+    <!-- Nouveau: Section de résumé des produits sélectionnés avec bouton afficher/masquer -->
     @if(count($selectedProducts) > 0)
         <div class="mb-6 border rounded-box border-base-content/10 bg-base-100 overflow-hidden">
             <div class="flex items-center justify-between p-4 bg-base-200 border-b border-base-content/5">
                 <div class="flex items-center gap-3">
                     <h3 class="font-semibold text-lg flex items-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clip-rule="evenodd" />
+                            <path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd" />
                         </svg>
-                        Produits sélectionnés
+                        Résumé des produits sélectionnés
                         <span class="badge badge-primary">{{ count($selectedProducts) }}</span>
                     </h3>
                 </div>
@@ -661,17 +624,29 @@ new class extends Component {
             </div>
             
             @if($showSummaryTable)
-                <div class="p-4">
-                    <!-- Liste des produits sélectionnés sous forme de cartes -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                        @foreach($selectedProductsDetails as $index => $product)
-                            <div class="relative group border rounded-lg p-3 bg-base-100 hover:bg-base-200 transition-colors">
-                                <div class="flex items-start gap-3">
-                                    <!-- Image -->
-                                    <div class="flex-shrink-0">
+                <div class="overflow-x-auto">
+                    <table class="table table-sm table-zebra">
+                        <thead>
+                            <tr class="bg-base-200">
+                                <th class="w-12">#</th>
+                                <th>Image</th>
+                                <th>SKU</th>
+                                <th>Nom</th>
+                                <th>Marque</th>
+                                <th>Type</th>
+                                <th>Prix</th>
+                                <th>Stock</th>
+                                <th class="w-20">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @forelse($selectedProductsDetails as $index => $product)
+                                <tr wire:key="selected-{{ $product['id'] ?? $index }}">
+                                    <td class="font-semibold">{{ $index + 1 }}</td>
+                                    <td>
                                         @if(!empty($product['thumbnail']))
                                             <div class="avatar">
-                                                <div class="w-12 h-12 rounded border">
+                                                <div class="w-8 h-8 rounded">
                                                     <img 
                                                         src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
                                                         alt="{{ $product['title'] ?? '' }}"
@@ -680,52 +655,89 @@ new class extends Component {
                                                 </div>
                                             </div>
                                         @else
-                                            <div class="w-12 h-12 bg-base-300 rounded border flex items-center justify-center">
-                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                                </svg>
+                                            <div class="w-8 h-8 bg-base-300 rounded flex items-center justify-center">
+                                                <span class="text-xs">N/A</span>
                                             </div>
                                         @endif
-                                    </div>
-                                    
-                                    <!-- Info produit -->
-                                    <div class="flex-grow min-w-0">
-                                        <div class="font-mono text-xs text-base-content/60 mb-1">
-                                            {{ $product['sku'] ?? '' }}
+                                    </td>
+                                    <td class="font-mono text-xs">{{ $product['sku'] ?? '' }}</td>
+                                    <td>
+                                        <div class="max-w-xs truncate" title="{{ $product['title'] ?? '' }}">
+                                            {{ $product['title'] ?? '' }}
                                         </div>
-                                        <div class="font-medium text-sm truncate" title="{{ $product['title'] ?? '' }}">
-                                            {{ $product['title'] ?? 'Chargement...' }}
+                                    </td>
+                                    <td>{{ $product['vendor'] ?? '' }}</td>
+                                    <td>
+                                        <span class="badge badge-sm">{{ $product['type'] ?? '' }}</span>
+                                    </td>
+                                    <td>
+                                        @if(!empty($product['special_price']))
+                                            <div class="flex flex-col">
+                                                <span class="line-through text-xs text-base-content/50">
+                                                    {{ number_format($product['price'] ?? 0, 2) }} €
+                                                </span>
+                                                <span class="text-error font-semibold">
+                                                    {{ number_format($product['special_price'], 2) }} €
+                                                </span>
+                                            </div>
+                                        @else
+                                            <span class="font-semibold">
+                                                {{ number_format($product['price'] ?? 0, 2) }} €
+                                            </span>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        <span class="{{ ($product['quantity'] ?? 0) > 0 ? 'text-success' : 'text-error' }}">
+                                            {{ $product['quantity'] ?? 0 }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <button 
+                                            wire:click="toggleSelect('{{ $product['sku'] }}')"
+                                            class="btn btn-xs btn-error"
+                                            title="Retirer de la sélection"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                                            </svg>
+                                        </button>
+                                    </td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="9" class="text-center py-8 text-base-content/50">
+                                        <div class="flex flex-col items-center gap-2">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                                            </svg>
+                                            <span>Chargement des détails...</span>
                                         </div>
-                                    </div>
-                                    
-                                    <!-- Bouton de suppression -->
-                                    <button 
-                                        wire:click="removeFromSummary('{{ $product['sku'] }}')"
-                                        class="btn btn-xs btn-error btn-square"
-                                        title="Retirer de la sélection"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                            <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
-                                        </svg>
-                                    </button>
-                                </div>
-                                
-                                <!-- Indicateur de position -->
-                                <div class="absolute top-2 right-2">
-                                    <span class="badge badge-sm badge-neutral">{{ $index + 1 }}</span>
-                                </div>
-                            </div>
-                        @endforeach
-                    </div>
-                    
-                    <!-- Message si chargement incomplet -->
-                    @if(count($selectedProductsDetails) < count($selectedProducts))
-                        <div class="mt-4 text-center text-sm text-warning">
-                            <span class="loading loading-spinner loading-xs"></span>
-                            Chargement des détails des produits...
-                            ({{ count($selectedProductsDetails) }}/{{ count($selectedProducts) }})
-                        </div>
-                    @endif
+                                    </td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                        <tfoot class="bg-base-200">
+                            <tr>
+                                <td colspan="5" class="font-semibold text-right">Total:</td>
+                                <td class="font-semibold">{{ count($selectedProductsDetails) }} produits</td>
+                                <td class="font-semibold">
+                                    @php
+                                        $totalPrice = collect($selectedProductsDetails)->sum(function($product) {
+                                            return $product['special_price'] ?? $product['price'] ?? 0;
+                                        });
+                                    @endphp
+                                    {{ number_format($totalPrice, 2) }} €
+                                </td>
+                                <td class="font-semibold">
+                                    @php
+                                        $totalStock = collect($selectedProductsDetails)->sum('quantity');
+                                    @endphp
+                                    {{ $totalStock }}
+                                </td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
                 </div>
             @endif
         </div>
@@ -753,17 +765,14 @@ new class extends Component {
                 </thead>
                 <tbody>
                     @forelse($products as $index => $product)
-                        @php
-                            $isSelected = in_array($product['sku'], $selectedProducts);
-                        @endphp
                         <tr wire:key="product-{{ $product['id'] ?? $index }}"
-                            class="{{ $isSelected ? 'bg-primary/5' : '' }}">
+                            class="{{ in_array($product['sku'], $selectedProducts) ? 'bg-primary/5' : '' }}">
                             <td>
                                 <input 
                                     type="checkbox" 
                                     class="checkbox checkbox-primary checkbox-xs" 
-                                    {{ $isSelected ? 'checked' : '' }}
-                                    wire:click="toggleSelect('{{ $product['sku'] }}', '{{ addslashes($product['title'] ?? '') }}', '{{ $product['thumbnail'] ?? '' }}')"
+                                    wire:model.live="selectedProducts"
+                                    value="{{ $product['sku'] }}"
                                 >
                             </td>
                             <td>
@@ -919,12 +928,26 @@ new class extends Component {
                         <span>Nombre de produits:</span>
                         <span class="font-semibold">{{ count($selectedProducts) }}</span>
                     </div>
-                    <div class="flex items-center gap-2 text-sm text-base-content/70">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clip-rule="evenodd" />
-                        </svg>
-                        <span>Les produits sont visibles dans le panneau de résumé</span>
-                    </div>
+                    @if(count($selectedProductsDetails) > 0)
+                        <div class="flex justify-between">
+                            <span>Valeur totale:</span>
+                            @php
+                                $totalPrice = collect($selectedProductsDetails)->sum(function($product) {
+                                    return $product['special_price'] ?? $product['price'] ?? 0;
+                                });
+                            @endphp
+                            <span class="font-semibold">{{ number_format($totalPrice, 2) }} €</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Stock total:</span>
+                            @php
+                                $totalStock = collect($selectedProductsDetails)->sum('quantity');
+                            @endphp
+                            <span class="font-semibold {{ $totalStock > 0 ? 'text-success' : 'text-error' }}">
+                                {{ $totalStock }}
+                            </span>
+                        </div>
+                    @endif
                 </div>
             </div>
             
