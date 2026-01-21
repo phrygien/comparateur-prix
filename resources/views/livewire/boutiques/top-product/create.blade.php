@@ -9,10 +9,17 @@ new class extends Component {
     public $perPage = 20;
     public $hasMore = true;
     public $loading = false;
+    public $totalItems = 0;
     
-    // Paramètres de recherche/filtres
-    public $subQuery = '';
-    public $params = [];
+    // Filtres
+    public $search = '';
+    public $filterName = '';
+    public $filterMarque = '';
+    public $filterType = '';
+    public $filterEAN = '';
+    
+    // Cache
+    protected $cacheTTL = 3600;
     
     public function mount()
     {
@@ -30,39 +37,163 @@ new class extends Component {
         $this->loadProducts();
     }
     
+    public function updatedSearch()
+    {
+        $this->resetProducts();
+    }
+    
+    public function updatedFilterName()
+    {
+        $this->resetProducts();
+    }
+    
+    public function updatedFilterMarque()
+    {
+        $this->resetProducts();
+    }
+    
+    public function updatedFilterType()
+    {
+        $this->resetProducts();
+    }
+    
+    public function updatedFilterEAN()
+    {
+        $this->resetProducts();
+    }
+    
+    protected function resetProducts()
+    {
+        $this->page = 1;
+        $this->products = [];
+        $this->hasMore = true;
+        $this->loadProducts();
+    }
+    
     protected function loadProducts()
     {
         $this->loading = true;
         
-        $offset = ($this->page - 1) * $this->perPage;
+        $result = $this->fetchProductsFromDatabase($this->search, $this->page, $this->perPage);
         
-        $newProducts = $this->getProducts($this->subQuery, $this->params, $this->perPage, $offset);
+        $this->totalItems = $result['total_item'];
         
-        if (count($newProducts) < $this->perPage) {
+        if (count($result['data']) < $this->perPage) {
             $this->hasMore = false;
         }
         
-        $this->products = array_merge($this->products, $newProducts);
+        // Si c'est la première page, on remplace, sinon on ajoute
+        if ($this->page === 1) {
+            $this->products = $result['data'];
+        } else {
+            $this->products = array_merge($this->products, $result['data']);
+        }
+        
         $this->loading = false;
     }
     
-    protected function getProducts($subQuery, $params, $limit, $offset)
+    /**
+     * Récupère les produits depuis la base de données
+     */
+    protected function fetchProductsFromDatabase($search = "", $page = 1, $perPage = null)
     {
-        $cacheKey = $this->getCacheKey('products', md5($subQuery . serialize($params) . $limit . $offset));
-        
-        return Cache::remember($cacheKey, $this->cacheTTL ?? 3600, function () use ($subQuery, $params, $limit, $offset) {
-            $results = DB::connection('mysqlMagento')->select("
+        try {
+            $offset = ($page - 1) * $perPage;
+
+            $subQuery = "";
+            $params = [];
+
+            // Global search
+            if (!empty($search)) {
+                $searchClean = str_replace("'", "", $search);
+                $words = explode(" ", $searchClean);
+
+                $subQuery = " AND ( ";
+                $and = "";
+
+                foreach ($words as $word) {
+                    $subQuery .= " $and CONCAT(product_char.name, ' ', COALESCE(options.attribute_value, '')) LIKE ? ";
+                    $params[] = "%$word%";
+                    $and = "AND";
+                }
+
+                $subQuery .= " OR produit.sku LIKE ? ) ";
+                $params[] = "%$searchClean%";
+            }
+
+            // Filtres avancés
+            if (!empty($this->filterName)) {
+                $subQuery .= " AND product_char.name LIKE ? ";
+                $params[] = "%{$this->filterName}%";
+            }
+
+            if (!empty($this->filterMarque)) {
+                $subQuery .= " AND SUBSTRING_INDEX(product_char.name, ' - ', 1) LIKE ? ";
+                $params[] = "%{$this->filterMarque}%";
+            }
+
+            if (!empty($this->filterType)) {
+                $subQuery .= " AND SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) LIKE ? ";
+                $params[] = "%{$this->filterType}%";
+            }
+
+            if (!empty($this->filterEAN)) {
+                $subQuery .= " AND produit.sku LIKE ? ";
+                $params[] = "%{$this->filterEAN}%";
+            }
+
+            // Filtre pour prix > 0
+            $subQuery .= " AND product_decimal.price > 0 ";
+
+            // Total count (mis en cache séparément)
+            $total = $this->getProductCount($subQuery, $params);
+            $nbPage = ceil($total / $perPage);
+
+            if ($page > $nbPage && $nbPage > 0) {
+                $page = 1;
+                $offset = 0;
+            }
+
+            // Paginated data
+            $dataQuery = "
                 SELECT 
-                    produit.entity_id,
-                    product_char.sku,
-                    product_char.name,
-                    product_text.description,
-                    product_decimal.price,
-                    product_int.status,
-                    stock_item.qty,
-                    stock_status.stock_status,
-                    product_media.image,
-                    eas.attribute_set_name
+                    produit.entity_id as id,
+                    produit.sku as sku,
+                    product_char.reference as parkode,
+                    CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) as title,
+                    CAST(product_parent_char.name AS CHAR CHARACTER SET utf8mb4) as parent_title,
+                    SUBSTRING_INDEX(product_char.name, ' - ', 1) as vendor,
+                    SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) as type,
+                    product_char.thumbnail as thumbnail,
+                    product_char.swatch_image as swatch_image,
+                    product_char.reference as parkode,
+                    product_char.reference_us as reference_us,
+                    CAST(product_text.description AS CHAR CHARACTER SET utf8mb4) as description,
+                    CAST(product_text.short_description AS CHAR CHARACTER SET utf8mb4) as short_description,
+                    CAST(product_parent_text.description AS CHAR CHARACTER SET utf8mb4) as parent_description,
+                    CAST(product_parent_text.short_description AS CHAR CHARACTER SET utf8mb4) as parent_short_description,
+                    CAST(product_text.composition AS CHAR CHARACTER SET utf8mb4) as composition,
+                    CAST(product_text.olfactive_families AS CHAR CHARACTER SET utf8mb4) as olfactive_families,
+                    CAST(product_text.product_benefit AS CHAR CHARACTER SET utf8mb4) as product_benefit,
+                    ROUND(product_decimal.price, 2) as price,
+                    ROUND(product_decimal.special_price, 2) as special_price,
+                    ROUND(product_decimal.cost, 2) as cost,
+                    ROUND(product_decimal.pvc, 2) as pvc,
+                    ROUND(product_decimal.prix_achat_ht, 2) as prix_achat_ht,
+                    ROUND(product_decimal.prix_us, 2) as prix_us,
+                    product_int.status as status,
+                    product_int.color as color,
+                    product_int.capacity as capacity,
+                    product_int.product_type as product_type,
+                    product_media.media_gallery as media_gallery,
+                    CAST(product_categorie.name AS CHAR CHARACTER SET utf8mb4) as categorie,
+                    REPLACE(product_categorie.name, ' > ', ',') as tags,
+                    stock_item.qty as quatity,
+                    stock_status.stock_status as quatity_status,
+                    options.configurable_product_id as configurable_product_id,
+                    parent_child_table.parent_id as parent_id,
+                    options.attribute_code as option_name,
+                    options.attribute_value as option_value
                 FROM catalog_product_entity as produit
                 LEFT JOIN catalog_product_relation as parent_child_table ON parent_child_table.child_id = produit.entity_id 
                 LEFT JOIN catalog_product_super_link as cpsl ON cpsl.product_id = produit.entity_id 
@@ -80,16 +211,72 @@ new class extends Component {
                 LEFT JOIN product_char as product_parent_char ON product_parent_char.entity_id = produit_parent.entity_id
                 LEFT JOIN product_text as product_parent_text ON product_parent_text.entity_id = produit_parent.entity_id 
                 WHERE product_int.status >= 0 $subQuery
+                ORDER BY product_char.entity_id DESC
                 LIMIT ? OFFSET ?
-            ", array_merge($params, [$limit, $offset]));
+            ";
 
-            return $results;
+            $params[] = $perPage;
+            $params[] = $offset;
+
+            $result = DB::connection('mysqlMagento')->select($dataQuery, $params);
+
+            return [
+                "total_item" => $total,
+                "per_page" => $perPage,
+                "total_page" => $nbPage,
+                "current_page" => $page,
+                "data" => $result,
+                "cached_at" => now()->toDateTimeString(),
+                "cache_key" => $this->getCacheKey('products', $page, $perPage)
+            ];
+
+        } catch (\Throwable $e) {
+            Log::error('Error fetching products: ' . $e->getMessage());
+            
+            return [
+                "total_item" => 0,
+                "per_page" => $perPage,
+                "total_page" => 0,
+                "current_page" => 1,
+                "data" => [],
+                "error" => $e->getMessage()
+            ];
+        }
+    }
+    
+    protected function getProductCount($subQuery, $params)
+    {
+        $countCacheKey = $this->getCacheKey('count', md5($subQuery . serialize($params)));
+        
+        return Cache::remember($countCacheKey, $this->cacheTTL, function () use ($subQuery, $params) {
+            $resultTotal = DB::connection('mysqlMagento')->selectOne("
+                SELECT COUNT(*) as nb
+                FROM catalog_product_entity as produit
+                LEFT JOIN catalog_product_relation as parent_child_table ON parent_child_table.child_id = produit.entity_id 
+                LEFT JOIN catalog_product_super_link as cpsl ON cpsl.product_id = produit.entity_id 
+                LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+                LEFT JOIN product_text ON product_text.entity_id = produit.entity_id 
+                LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
+                LEFT JOIN product_int ON product_int.entity_id = produit.entity_id
+                LEFT JOIN product_media ON product_media.entity_id = produit.entity_id
+                LEFT JOIN product_categorie ON product_categorie.entity_id = produit.entity_id 
+                LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id 
+                LEFT JOIN cataloginventory_stock_status AS stock_status ON stock_item.product_id = stock_status.product_id 
+                LEFT JOIN option_super_attribut AS options ON options.simple_product_id = produit.entity_id 
+                LEFT JOIN eav_attribute_set AS eas ON produit.attribute_set_id = eas.attribute_set_id 
+                LEFT JOIN catalog_product_entity as produit_parent ON parent_child_table.parent_id = produit_parent.entity_id 
+                LEFT JOIN product_char as product_parent_char ON product_parent_char.entity_id = produit_parent.entity_id
+                LEFT JOIN product_text as product_parent_text ON product_parent_text.entity_id = produit_parent.entity_id 
+                WHERE product_int.status >= 0 $subQuery
+            ", $params);
+
+            return $resultTotal->nb ?? 0;
         });
     }
     
-    protected function getCacheKey($type, $identifier)
+    protected function getCacheKey($type, ...$params)
     {
-        return "products_{$type}_{$identifier}";
+        return "products_{$type}_" . md5(serialize($params));
     }
     
     public function save()
@@ -107,6 +294,9 @@ new class extends Component {
 <div class="mx-auto max-w-5xl">
     <x-header title="Créer la liste à comparer" separator>
         <x-slot:middle class="!justify-end">
+            <div class="text-sm text-base-content/70">
+                {{ count($products) }} / {{ $totalItems }} produits chargés
+            </div>
         </x-slot:middle>
         <x-slot:actions>
             <x-button class="btn-error" label="Annuler" wire:click="cancel"
@@ -115,6 +305,40 @@ new class extends Component {
         </x-slot:actions>
     </x-header>
 
+    <!-- Filtres -->
+    <div class="mb-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+        <x-input 
+            label="Recherche globale" 
+            wire:model.live.debounce.500ms="search" 
+            placeholder="Nom, SKU..."
+            icon="o-magnifying-glass"
+        />
+        
+        <x-input 
+            label="Nom du produit" 
+            wire:model.live.debounce.500ms="filterName" 
+            placeholder="Filtrer par nom"
+        />
+        
+        <x-input 
+            label="Marque" 
+            wire:model.live.debounce.500ms="filterMarque" 
+            placeholder="Filtrer par marque"
+        />
+        
+        <x-input 
+            label="Type" 
+            wire:model.live.debounce.500ms="filterType" 
+            placeholder="Filtrer par type"
+        />
+        
+        <x-input 
+            label="EAN/SKU" 
+            wire:model.live.debounce.500ms="filterEAN" 
+            placeholder="Filtrer par EAN"
+        />
+    </div>
+
     <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100">
         <div 
             x-data="infiniteScroll()" 
@@ -122,12 +346,14 @@ new class extends Component {
             class="max-h-[600px] overflow-y-auto"
             @scroll="onScroll"
         >
-            <table class="table">
+            <table class="table table-sm">
                 <thead class="sticky top-0 bg-base-200 z-10">
                     <tr>
-                        <th>ID</th>
+                        <th>Image</th>
                         <th>SKU</th>
                         <th>Nom</th>
+                        <th>Marque</th>
+                        <th>Type</th>
                         <th>Prix</th>
                         <th>Stock</th>
                         <th>Statut</th>
@@ -135,38 +361,81 @@ new class extends Component {
                 </thead>
                 <tbody>
                     @forelse($products as $product)
-                        <tr wire:key="product-{{ $product->entity_id }}">
-                            <th>{{ $product->entity_id }}</th>
-                            <td>{{ $product->sku }}</td>
-                            <td>{{ $product->name }}</td>
-                            <td>{{ number_format($product->price ?? 0, 2) }} €</td>
-                            <td>{{ $product->qty ?? 0 }}</td>
+                        <tr wire:key="product-{{ $product->id }}">
                             <td>
-                                <span class="badge {{ $product->stock_status == 1 ? 'badge-success' : 'badge-error' }}">
-                                    {{ $product->stock_status == 1 ? 'En stock' : 'Rupture' }}
+                                @if($product->thumbnail)
+                                    <div class="avatar">
+                                        <div class="w-10 h-10 rounded">
+                                            <img src="{{ $product->thumbnail }}" alt="{{ $product->title }}" />
+                                        </div>
+                                    </div>
+                                @else
+                                    <div class="w-10 h-10 bg-base-300 rounded flex items-center justify-center">
+                                        <span class="text-xs">N/A</span>
+                                    </div>
+                                @endif
+                            </td>
+                            <td class="font-mono text-xs">{{ $product->sku }}</td>
+                            <td>
+                                <div class="max-w-xs truncate" title="{{ $product->title }}">
+                                    {{ $product->title }}
+                                </div>
+                            </td>
+                            <td>{{ $product->vendor }}</td>
+                            <td>
+                                <span class="badge badge-sm">{{ $product->type }}</span>
+                            </td>
+                            <td>
+                                @if($product->special_price)
+                                    <div class="flex flex-col">
+                                        <span class="line-through text-xs text-base-content/50">
+                                            {{ number_format($product->price, 2) }} €
+                                        </span>
+                                        <span class="text-error font-semibold">
+                                            {{ number_format($product->special_price, 2) }} €
+                                        </span>
+                                    </div>
+                                @else
+                                    <span class="font-semibold">
+                                        {{ number_format($product->price ?? 0, 2) }} €
+                                    </span>
+                                @endif
+                            </td>
+                            <td>
+                                <span class="{{ $product->quatity > 0 ? 'text-success' : 'text-error' }}">
+                                    {{ $product->quatity ?? 0 }}
+                                </span>
+                            </td>
+                            <td>
+                                <span class="badge badge-sm {{ $product->quatity_status == 1 ? 'badge-success' : 'badge-error' }}">
+                                    {{ $product->quatity_status == 1 ? 'En stock' : 'Rupture' }}
                                 </span>
                             </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="6" class="text-center py-8 text-base-content/50">
-                                Aucun produit trouvé
+                            <td colspan="8" class="text-center py-8 text-base-content/50">
+                                @if($loading)
+                                    Chargement des produits...
+                                @else
+                                    Aucun produit trouvé
+                                @endif
                             </td>
                         </tr>
                     @endforelse
                 </tbody>
             </table>
 
-            @if($loading)
-                <div class="flex justify-center py-4">
+            @if($loading && count($products) > 0)
+                <div class="flex justify-center py-4 bg-base-100">
                     <span class="loading loading-spinner loading-md"></span>
-                    <span class="ml-2">Chargement...</span>
+                    <span class="ml-2">Chargement de plus de produits...</span>
                 </div>
             @endif
 
             @if(!$hasMore && count($products) > 0)
-                <div class="text-center py-4 text-base-content/50">
-                    Tous les produits ont été chargés
+                <div class="text-center py-4 text-base-content/50 bg-base-100">
+                    ✓ Tous les produits ont été chargés ({{ $totalItems }} total)
                 </div>
             @endif
         </div>
@@ -177,16 +446,17 @@ new class extends Component {
 function infiniteScroll() {
     return {
         init() {
-            // Initialisation si nécessaire
+            // Initialisation
         },
         onScroll(event) {
             const element = event.target;
-            const threshold = 100; // pixels avant la fin
+            const threshold = 200; // pixels avant la fin
             
+            // Vérifie si on est proche du bas
             if (element.scrollHeight - element.scrollTop - element.clientHeight < threshold) {
                 this.$wire.dispatch('load-more');
             }
         }
     }
 }
-</script>
+</script
