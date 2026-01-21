@@ -15,7 +15,7 @@ new class extends Component {
     public bool $loadingMore = false;
     public bool $hasMore = true;
     public int $page = 1;
-    public int $perPage = 5;
+    public int $perPage = 200;
     public int $totalPages = 1;
     
     // Cache
