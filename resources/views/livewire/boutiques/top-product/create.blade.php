@@ -26,7 +26,6 @@ new class extends Component {
         $this->loadProducts();
     }
     
-    #[On('load-more')]
     public function loadMore()
     {
         if (!$this->hasMore || $this->loading) {
@@ -341,10 +340,16 @@ new class extends Component {
 
     <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100">
         <div 
-            x-data="infiniteScroll()" 
-            x-init="init()"
+            x-data="{ isLoading: @entangle('loading').live, hasMore: @entangle('hasMore').live }"
+            x-init="
+                $el.addEventListener('scroll', () => {
+                    const threshold = 200;
+                    if ($el.scrollHeight - $el.scrollTop - $el.clientHeight < threshold && hasMore && !isLoading) {
+                        $wire.loadMore();
+                    }
+                });
+            "
             class="max-h-[600px] overflow-y-auto"
-            @scroll="onScroll"
         >
             <table class="table table-sm">
                 <thead class="sticky top-0 bg-base-200 z-10">
@@ -441,22 +446,3 @@ new class extends Component {
         </div>
     </div>
 </div>
-
-<script>
-function infiniteScroll() {
-    return {
-        init() {
-            // Initialisation
-        },
-        onScroll(event) {
-            const element = event.target;
-            const threshold = 200; // pixels avant la fin
-            
-            // Vérifie si on est proche du bas
-            if (element.scrollHeight - element.scrollTop - element.clientHeight < threshold) {
-                this.$wire.dispatch('load-more');
-            }
-        }
-    }
-}
-</script>
