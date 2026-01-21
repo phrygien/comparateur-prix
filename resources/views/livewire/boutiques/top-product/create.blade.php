@@ -379,18 +379,53 @@ new class extends Component {
 
     <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100 relative">
         
+        <!-- Loading indicator pour infinite scroll -->
+        <div 
+            x-data="{ show: @entangle('loading').live }"
+            x-show="show && {{ count($products) }} > 0"
+            x-transition:enter="transition ease-out duration-200"
+            x-transition:enter-start="opacity-0"
+            x-transition:enter-end="opacity-100"
+            x-transition:leave="transition ease-in duration-150"
+            x-transition:leave-start="opacity-100"
+            x-transition:leave-end="opacity-0"
+            style="display: none;"
+            class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+        >
+            <div class="flex flex-col items-center justify-center bg-base-100 rounded-2xl p-10 shadow-2xl border border-base-content/20 min-w-[300px] max-w-md">
+                <!-- Icône animée -->
+                <div class="relative mb-6">
+                    <svg class="w-16 h-16 text-primary animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                </div>
+                
+                <!-- Texte principal -->
+                <h3 class="text-xl font-bold text-base-content mb-2 text-center">
+                    Chargement des produits
+                </h3>
+                
+                <!-- Barre de progression animée -->
+                <div class="w-full bg-base-300 rounded-full h-2 overflow-hidden">
+                    <div class="bg-primary h-full rounded-full" style="animation: loading 2s ease-in-out infinite;"></div>
+                </div>
+                
+                <p class="text-xs text-base-content/70 mt-4">Chargement de plus de produits en cours...</p>
+            </div>
+        </div>
+        
         <div 
             x-data="{ 
-                loading: false,
-                hasMore: @js($hasMore),
+                loading: @entangle('loading').live,
+                hasMore: @entangle('hasMore').live,
+                productCount: {{ count($products) }},
                 throttleTimer: null
             }"
             x-init="
-                // Observer le changement de loading via Livewire
-                Livewire.hook('commit', ({ component, commit, respond, succeed, fail }) => {
-                    succeed(({ snapshot, effect }) => {
-                        loading = @this.loading;
-                    });
+                console.log('Init - Loading:', loading, 'ProductCount:', productCount);
+                
+                $watch('loading', value => {
+                    console.log('🔄 Loading changed to:', value, 'ProductCount:', productCount);
                 });
                 
                 $el.addEventListener('scroll', function(e) {
@@ -415,27 +450,6 @@ new class extends Component {
             "
             class="max-h-[600px] overflow-y-auto"
         >
-            <!-- Modal de chargement avec Alpine -->
-            <div 
-                x-show="loading && {{ count($products) }} > 0"
-                x-transition:enter="transition ease-out duration-200"
-                x-transition:enter-start="opacity-0 scale-95"
-                x-transition:enter-end="opacity-100 scale-100"
-                x-transition:leave="transition ease-in duration-150"
-                x-transition:leave-start="opacity-100 scale-100"
-                x-transition:leave-end="opacity-0 scale-95"
-                class="fixed inset-0 flex items-center justify-center z-50 bg-base-100/80 backdrop-blur-sm"
-                style="display: none;"
-            >
-                <div class="bg-base-200 rounded-2xl shadow-2xl px-8 py-6 flex flex-col items-center gap-4 border border-base-content/10">
-                    <div class="flex gap-2">
-                        <span class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 0ms"></span>
-                        <span class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 150ms"></span>
-                        <span class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 300ms"></span>
-                    </div>
-                    <p class="text-base font-medium text-base-content">Chargement de plus de produits en cours...</p>
-                </div>
-            </div>
             <table class="table table-sm">
                 <thead class="sticky top-0 bg-base-200 z-10">
                     <tr>
