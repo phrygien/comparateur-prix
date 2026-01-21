@@ -34,6 +34,9 @@ new class extends Component {
     // Cache
     protected $cacheTTL = 3600;
     
+    // Table de résumé des produits sélectionnés
+    public $showSummaryTable = true;
+    
     public function mount($listId = null)
     {
         $this->loading = true;
@@ -67,23 +70,14 @@ new class extends Component {
         
         $query = "
             SELECT 
-                produit.entity_id as id,
                 produit.sku as sku,
                 CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) as title,
-                SUBSTRING_INDEX(product_char.name, ' - ', 1) as vendor,
-                SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) as type,
-                product_char.thumbnail as thumbnail,
-                ROUND(product_decimal.price, 2) as price,
-                ROUND(product_decimal.special_price, 2) as special_price,
-                stock_item.qty as quantity
+                product_char.thumbnail as thumbnail
             FROM catalog_product_entity as produit
             LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
-            LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
-            LEFT JOIN product_int ON product_int.entity_id = produit.entity_id
-            LEFT JOIN eav_attribute_set AS eas ON produit.attribute_set_id = eas.attribute_set_id 
-            LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id 
             WHERE produit.sku IN ($placeholders)
             ORDER BY FIELD(produit.sku, " . implode(',', $skus) . ")
+            LIMIT 100
         ";
         
         try {
@@ -107,38 +101,47 @@ new class extends Component {
     }
     
     // Gestion de la sélection
-    public function toggleSelect($sku)
+    public function toggleSelect($sku, $title = '', $thumbnail = '')
     {
         if (in_array($sku, $this->selectedProducts)) {
+            // Retirer de la sélection
             $this->selectedProducts = array_diff($this->selectedProducts, [$sku]);
+            // Retirer du résumé
+            $this->selectedProductsDetails = array_filter($this->selectedProductsDetails, 
+                fn($product) => $product['sku'] !== $sku
+            );
         } else {
+            // Ajouter à la sélection
             $this->selectedProducts[] = $sku;
+            // Ajouter au résumé immédiatement
+            $this->selectedProductsDetails[] = [
+                'sku' => $sku,
+                'title' => $title,
+                'thumbnail' => $thumbnail
+            ];
         }
-        
-        // Mettre à jour les détails après un délai pour éviter trop de requêtes
-        $this->dispatch('selection-updated');
     }
     
     public function updatedSelectAll($value)
     {
-        if ($value) {
-            // Sélectionner tous les produits visibles
-            $visibleSkus = collect($this->products)->pluck('sku')->toArray();
-            $this->selectedProducts = array_unique(array_merge($this->selectedProducts, $visibleSkus));
-        } else {
-            // Désélectionner tous les produits visibles
-            $visibleSkus = collect($this->products)->pluck('sku')->toArray();
-            $this->selectedProducts = array_diff($this->selectedProducts, $visibleSkus);
-        }
-        
-        $this->dispatch('selection-updated');
+        // Cette logique sera gérée directement dans le template
     }
     
-    // Écouter la mise à jour de la sélection
-    #[On('selection-updated')]
-    public function updateSelectedDetails()
+    // Toggle pour afficher/masquer le résumé
+    public function toggleSummaryTable()
     {
-        $this->loadSelectedProductsDetails();
+        $this->showSummaryTable = !$this->showSummaryTable;
+    }
+    
+    // Supprimer un produit du résumé
+    public function removeFromSummary($sku)
+    {
+        if (in_array($sku, $this->selectedProducts)) {
+            $this->selectedProducts = array_diff($this->selectedProducts, [$sku]);
+            $this->selectedProductsDetails = array_filter($this->selectedProductsDetails, 
+                fn($product) => $product['sku'] !== $sku
+            );
+        }
     }
     
     // Réinitialiser les produits
@@ -249,7 +252,7 @@ new class extends Component {
             
             $this->dispatch('notify', [
                 'type' => 'success',
-                'message' => 'Liste "' . $this->listName . '" sauvegardée avec ' . count($batchData) . ' produit(s).'
+                'message' => 'Liste sauvegardée avec ' . count($batchData) . ' produit(s).'
             ]);
             
             // Émettre un événement pour le parent
@@ -565,22 +568,129 @@ new class extends Component {
         />
     </div>
 
-    <!-- Sélection globale -->
+    <!-- Sélection globale - SIMPLIFIÉE -->
     <div class="mb-4 p-4 bg-base-200 rounded-box">
         <div class="flex items-center justify-between">
-            <label class="flex items-center gap-3 cursor-pointer">
+            <div class="flex items-center gap-3 cursor-pointer">
                 <input 
                     type="checkbox" 
+                    id="selectAllCheckbox"
                     class="checkbox checkbox-primary" 
-                    wire:model.live="selectAll"
+                    {{ $selectAll ? 'checked' : '' }}
+                    wire:click="updatedSelectAll($event.target.checked)"
                 >
-                <span class="font-semibold">Sélectionner tout ({{ count($products) }} produits affichés)</span>
-            </label>
+                <label for="selectAllCheckbox" class="font-semibold">
+                    Sélectionner tout ({{ count($products) }} produits affichés)
+                </label>
+            </div>
             <div class="badge badge-primary badge-lg">
-                {{ count($selectedProducts) }} produits sélectionnés au total
+                {{ count($selectedProducts) }} produits sélectionnés
             </div>
         </div>
     </div>
+
+    <!-- Section de résumé des produits sélectionnés -->
+    @if(count($selectedProducts) > 0)
+        <div class="mb-6 border rounded-box border-base-content/10 bg-base-100 overflow-hidden">
+            <div class="flex items-center justify-between p-4 bg-base-200 border-b border-base-content/5">
+                <div class="flex items-center gap-3">
+                    <h3 class="font-semibold text-lg flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clip-rule="evenodd" />
+                        </svg>
+                        Produits sélectionnés
+                        <span class="badge badge-primary">{{ count($selectedProducts) }}</span>
+                    </h3>
+                </div>
+                <button 
+                    wire:click="toggleSummaryTable"
+                    class="btn btn-sm btn-ghost"
+                    type="button"
+                >
+                    @if($showSummaryTable)
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                        </svg>
+                        Masquer
+                    @else
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd" />
+                        </svg>
+                        Afficher
+                    @endif
+                </button>
+            </div>
+            
+            @if($showSummaryTable)
+                <div class="p-4">
+                    <!-- Liste des produits sélectionnés sous forme de cartes -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                        @foreach($selectedProductsDetails as $index => $product)
+                            <div class="relative group border rounded-lg p-3 bg-base-100 hover:bg-base-200 transition-colors">
+                                <div class="flex items-start gap-3">
+                                    <!-- Image -->
+                                    <div class="flex-shrink-0">
+                                        @if(!empty($product['thumbnail']))
+                                            <div class="avatar">
+                                                <div class="w-12 h-12 rounded border">
+                                                    <img 
+                                                        src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
+                                                        alt="{{ $product['title'] ?? '' }}"
+                                                        class="object-cover"
+                                                    >
+                                                </div>
+                                            </div>
+                                        @else
+                                            <div class="w-12 h-12 bg-base-300 rounded border flex items-center justify-center">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                </svg>
+                                            </div>
+                                        @endif
+                                    </div>
+                                    
+                                    <!-- Info produit -->
+                                    <div class="flex-grow min-w-0">
+                                        <div class="font-mono text-xs text-base-content/60 mb-1">
+                                            {{ $product['sku'] ?? '' }}
+                                        </div>
+                                        <div class="font-medium text-sm truncate" title="{{ $product['title'] ?? '' }}">
+                                            {{ $product['title'] ?? 'Chargement...' }}
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Bouton de suppression -->
+                                    <button 
+                                        wire:click="removeFromSummary('{{ $product['sku'] }}')"
+                                        class="btn btn-xs btn-error btn-square"
+                                        title="Retirer de la sélection"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                                        </svg>
+                                    </button>
+                                </div>
+                                
+                                <!-- Indicateur de position -->
+                                <div class="absolute top-2 right-2">
+                                    <span class="badge badge-sm badge-neutral">{{ $index + 1 }}</span>
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                    
+                    <!-- Message si chargement incomplet -->
+                    @if(count($selectedProductsDetails) < count($selectedProducts))
+                        <div class="mt-4 text-center text-sm text-warning">
+                            <span class="loading loading-spinner loading-xs"></span>
+                            Chargement des détails des produits...
+                            ({{ count($selectedProductsDetails) }}/{{ count($selectedProducts) }})
+                        </div>
+                    @endif
+                </div>
+            @endif
+        </div>
+    @endif
 
     <div class="rounded-box border border-base-content/5 bg-base-100 overflow-hidden">
         <!-- Conteneur principal -->
@@ -604,14 +714,17 @@ new class extends Component {
                 </thead>
                 <tbody>
                     @forelse($products as $index => $product)
+                        @php
+                            $isSelected = in_array($product['sku'], $selectedProducts);
+                        @endphp
                         <tr wire:key="product-{{ $product['id'] ?? $index }}"
-                            class="{{ in_array($product['sku'], $selectedProducts) ? 'bg-primary/5' : '' }}">
+                            class="{{ $isSelected ? 'bg-primary/5' : '' }}">
                             <td>
                                 <input 
                                     type="checkbox" 
                                     class="checkbox checkbox-primary checkbox-xs" 
-                                    wire:model.live="selectedProducts"
-                                    value="{{ $product['sku'] }}"
+                                    {{ $isSelected ? 'checked' : '' }}
+                                    wire:click="toggleSelect('{{ $product['sku'] }}', '{{ addslashes($product['title'] ?? '') }}', '{{ $product['thumbnail'] ?? '' }}')"
                                 >
                             </td>
                             <td>
@@ -758,68 +871,23 @@ new class extends Component {
                     hint="Donnez un nom significatif à votre liste"
                 />
             </div>
-            
-            <!-- Résumé -->
-            {{-- <div class="bg-base-200 p-4 rounded-box">
-                <div class="flex items-center justify-between mb-3">
-                    <span class="font-semibold">Résumé</span>
-                    <span class="badge badge-primary">{{ count($selectedProducts) }} produits</span>
+        
+            <!-- Résumé de la sélection -->
+            <div class="border rounded-box p-4">
+                <h4 class="font-semibold mb-2">Résumé de la sélection</h4>
+                <div class="space-y-2">
+                    <div class="flex justify-between">
+                        <span>Nombre de produits:</span>
+                        <span class="font-semibold">{{ count($selectedProducts) }}</span>
+                    </div>
+                    <div class="flex items-center gap-2 text-sm text-base-content/70">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clip-rule="evenodd" />
+                        </svg>
+                        <span>Les produits sont visibles dans le panneau de résumé</span>
+                    </div>
                 </div>
-                
-                @if(!empty($selectedProductsDetails))
-                    <div class="max-h-64 overflow-y-auto">
-                        <table class="table table-xs table-zebra">
-                            <thead>
-                                <tr>
-                                    <th>Image</th>
-                                    <th>SKU</th>
-                                    <th>Nom</th>
-                                    <th>Marque</th>
-                                    <th>Prix</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach($selectedProductsDetails as $product)
-                                    <tr>
-                                        <td>
-                                            @if(!empty($product['thumbnail']))
-                                                <div class="avatar">
-                                                    <div class="w-8 h-8 rounded">
-                                                        <img 
-                                                            src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
-                                                            alt="{{ $product['title'] ?? '' }}"
-                                                        >
-                                                    </div>
-                                                </div>
-                                            @endif
-                                        </td>
-                                        <td class="font-mono text-xs">{{ $product['sku'] ?? '' }}</td>
-                                        <td class="truncate max-w-[150px]" title="{{ $product['title'] ?? '' }}">
-                                            {{ $product['title'] ?? '' }}
-                                        </td>
-                                        <td>{{ $product['vendor'] ?? '' }}</td>
-                                        <td>
-                                            @if(!empty($product['special_price']))
-                                                <span class="text-error font-semibold">
-                                                    {{ number_format($product['special_price'], 2) }} €
-                                                </span>
-                                            @else
-                                                <span class="font-semibold">
-                                                    {{ number_format($product['price'] ?? 0, 2) }} €
-                                                </span>
-                                            @endif
-                                        </td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-                @else
-                    <div class="text-center py-4 text-base-content/50">
-                        <p>Chargement des détails des produits...</p>
-                    </div>
-                @endif
-            </div> --}}
+            </div>
             
             <!-- Avertissement -->
             <div class="alert alert-info">
