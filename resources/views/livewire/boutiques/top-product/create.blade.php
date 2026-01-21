@@ -374,58 +374,32 @@ new class extends Component {
 
     <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100">
         <div 
-            wire:ignore
             x-data="{ 
-                isLoading: false,
-                hasMore: true,
-                lastScrollTime: 0,
-                init() {
-                    // Synchroniser avec Livewire
-                    Livewire.on('loading-started', () => {
-                        this.isLoading = true;
-                    });
-                    
-                    // Observer les changements
-                    this.$watch('$wire.loading', value => {
-                        this.isLoading = value;
-                        console.log('Loading state changed:', value);
-                    });
-                    
-                    this.$watch('$wire.hasMore', value => {
-                        this.hasMore = value;
-                        console.log('HasMore state changed:', value);
-                    });
-                },
-                handleScroll() {
-                    // Throttle pour éviter trop d'appels
-                    const now = Date.now();
-                    if (now - this.lastScrollTime < 200) {
-                        return;
-                    }
-                    this.lastScrollTime = now;
-                    
-                    const threshold = 300;
-                    const scrollTop = this.$el.scrollTop;
-                    const scrollHeight = this.$el.scrollHeight;
-                    const clientHeight = this.$el.clientHeight;
-                    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-                    
-                    console.log('Scroll:', { 
-                        distanceFromBottom, 
-                        hasMore: this.hasMore, 
-                        isLoading: this.isLoading,
-                        wireHasMore: this.$wire.hasMore,
-                        wireLoading: this.$wire.loading
-                    });
-                    
-                    if (distanceFromBottom < threshold && this.hasMore && !this.isLoading) {
-                        console.log('🔄 Triggering loadMore...');
-                        this.isLoading = true;
-                        this.$wire.loadMore();
-                    }
-                }
+                loading: @js($loading),
+                hasMore: @js($hasMore),
+                throttleTimer: null
             }"
-            @scroll="handleScroll()"
+            x-init="
+                $el.addEventListener('scroll', function(e) {
+                    if (throttleTimer) return;
+                    
+                    throttleTimer = setTimeout(() => {
+                        throttleTimer = null;
+                        
+                        const scrollTop = $el.scrollTop;
+                        const scrollHeight = $el.scrollHeight;
+                        const clientHeight = $el.clientHeight;
+                        const scrollPercentage = (scrollTop / (scrollHeight - clientHeight)) * 100;
+                        
+                        console.log('📊 Scroll %:', scrollPercentage.toFixed(2), 'Loading:', @js($loading), 'HasMore:', @js($hasMore));
+                        
+                        if (scrollPercentage > 80 && @js($hasMore) && !@js($loading)) {
+                            console.log('✅ Calling loadMore()');
+                            $wire.loadMore();
+                        }
+                    }, 150);
+                });
+            "
             class="max-h-[600px] overflow-y-auto"
         >
             <table class="table table-sm">
