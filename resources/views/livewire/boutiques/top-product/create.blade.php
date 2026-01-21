@@ -220,7 +220,7 @@ new class extends Component {
             // Créer la liste principale
             $list = Comparaison::create([
                 'libelle' => $this->listName,
-                'status' => 'active',
+                'status' => 1,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
