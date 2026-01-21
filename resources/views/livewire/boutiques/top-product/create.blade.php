@@ -377,7 +377,21 @@ new class extends Component {
         />
     </div>
 
-    <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100">
+    <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100 relative">
+        <!-- Modal de chargement -->
+        @if($loading && count($products) > 0)
+        <div class="absolute inset-0 flex items-center justify-center z-50 bg-base-100/80 backdrop-blur-sm">
+            <div class="bg-base-200 rounded-2xl shadow-2xl px-8 py-6 flex flex-col items-center gap-4 border border-base-content/10">
+                <div class="flex gap-2">
+                    <span class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 0ms"></span>
+                    <span class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 150ms"></span>
+                    <span class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 300ms"></span>
+                </div>
+                <p class="text-base font-medium text-base-content">Chargement de plus de produits en cours...</p>
+            </div>
+        </div>
+        @endif
+        
         <div 
             x-data="{ 
                 loading: @js($loading),
@@ -496,17 +510,8 @@ new class extends Component {
                 </tbody>
             </table>
 
-            @if($loading && count($products) > 0)
-                <div class="flex justify-center py-6 bg-base-100 sticky bottom-0">
-                    <div class="flex items-center gap-3 bg-base-200 px-6 py-3 rounded-full shadow-lg">
-                        <span class="loading loading-spinner loading-md text-primary"></span>
-                        <span class="font-medium">Chargement de plus de produits...</span>
-                    </div>
-                </div>
-            @endif
-
             @if(!$hasMore && count($products) > 0 && !$loading)
-                <div class="text-center py-6 text-base-content/70 bg-base-100 sticky bottom-0">
+                <div class="text-center py-6 text-base-content/70 bg-base-100">
                     <div class="inline-flex items-center gap-2 bg-success/10 text-success px-6 py-3 rounded-full">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                             <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
