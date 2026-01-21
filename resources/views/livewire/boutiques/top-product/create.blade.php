@@ -623,60 +623,146 @@ new class extends Component {
             
             @if($showSummaryTable)
                 <div class="p-4">
-                    <!-- Liste des produits sélectionnés sous forme de cartes -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                        @foreach($selectedProductsDetails as $index => $product)
-                            <div class="relative group border rounded-lg p-3 bg-base-100 hover:bg-base-200 transition-colors">
-                                <div class="flex items-start gap-3">
-                                    <!-- Image -->
-                                    <div class="flex-shrink-0">
-                                        @if(!empty($product['thumbnail']))
-                                            <div class="avatar">
-                                                <div class="w-12 h-12 rounded border">
-                                                    <img 
-                                                        src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
-                                                        alt="{{ $product['title'] ?? '' }}"
-                                                        class="object-cover"
-                                                    >
+                    <!-- Conteneur avec scroll horizontal -->
+                    <div class="relative">
+                        <!-- Bouton gauche -->
+                        <button 
+                            type="button"
+                            class="absolute left-0 top-1/2 transform -translate-y-1/2 z-10 bg-base-200 hover:bg-base-300 rounded-full p-2 shadow-lg"
+                            onclick="scrollSummary('left')"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                        
+                        <!-- Bouton droit -->
+                        <button 
+                            type="button"
+                            class="absolute right-0 top-1/2 transform -translate-y-1/2 z-10 bg-base-200 hover:bg-base-300 rounded-full p-2 shadow-lg"
+                            onclick="scrollSummary('right')"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                        
+                        <!-- Conteneur avec scroll horizontal -->
+                        <div 
+                            id="summaryScrollContainer"
+                            class="flex flex-col gap-4 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-base-300 scrollbar-track-base-100"
+                            style="max-height: 300px;"
+                        >
+                            <!-- Première ligne -->
+                            <div class="flex gap-3 min-w-max">
+                                @foreach($selectedProductsDetails as $index => $product)
+                                    @if($index % 2 == 0) <!-- Produits pairs (0, 2, 4...) -->
+                                        <div class="relative group border rounded-lg p-3 bg-base-100 hover:bg-base-200 transition-colors flex-shrink-0"
+                                            style="width: 280px;">
+                                            <div class="flex items-start gap-3">
+                                                <!-- Image -->
+                                                <div class="flex-shrink-0">
+                                                    @if(!empty($product['thumbnail']))
+                                                        <div class="avatar">
+                                                            <div class="w-12 h-12 rounded border">
+                                                                <img 
+                                                                    src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
+                                                                    alt="{{ $product['title'] ?? '' }}"
+                                                                    class="object-cover"
+                                                                >
+                                                            </div>
+                                                        </div>
+                                                    @else
+                                                        <div class="w-12 h-12 bg-base-300 rounded border flex items-center justify-center">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                            </svg>
+                                                        </div>
+                                                    @endif
+                                                </div>
+                                                
+                                                <!-- Info produit -->
+                                                <div class="flex-grow min-w-0">
+                                                    <div class="font-mono text-xs text-base-content/60 mb-1">
+                                                        {{ $product['sku'] ?? '' }}
+                                                    </div>
+                                                    <div class="font-medium text-sm truncate" title="{{ $product['title'] ?? '' }}">
+                                                        {{ $product['title'] ?? 'Chargement...' }}
+                                                    </div>
+                                                    <div class="flex items-center justify-between mt-2">
+                                                        <span class="badge badge-sm badge-neutral">{{ $index + 1 }}</span>
+                                                        <button 
+                                                            wire:click="removeFromSummary('{{ $product['sku'] }}')"
+                                                            class="btn btn-xs btn-error"
+                                                            title="Retirer de la sélection"
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                                <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                                                            </svg>
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        @else
-                                            <div class="w-12 h-12 bg-base-300 rounded border flex items-center justify-center">
-                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                                </svg>
-                                            </div>
-                                        @endif
-                                    </div>
-                                    
-                                    <!-- Info produit -->
-                                    <div class="flex-grow min-w-0">
-                                        <div class="font-mono text-xs text-base-content/60 mb-1">
-                                            {{ $product['sku'] ?? '' }}
                                         </div>
-                                        <div class="font-medium text-sm truncate" title="{{ $product['title'] ?? '' }}">
-                                            {{ $product['title'] ?? 'Chargement...' }}
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Bouton de suppression -->
-                                    <button 
-                                        wire:click="removeFromSummary('{{ $product['sku'] }}')"
-                                        class="btn btn-xs btn-error btn-square"
-                                        title="Retirer de la sélection"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                            <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
-                                        </svg>
-                                    </button>
-                                </div>
-                                
-                                <!-- Indicateur de position -->
-                                <div class="absolute top-2 right-2">
-                                    <span class="badge badge-sm badge-neutral">{{ $index + 1 }}</span>
-                                </div>
+                                    @endif
+                                @endforeach
                             </div>
-                        @endforeach
+                            
+                            <!-- Deuxième ligne -->
+                            <div class="flex gap-3 min-w-max">
+                                @foreach($selectedProductsDetails as $index => $product)
+                                    @if($index % 2 == 1) <!-- Produits impairs (1, 3, 5...) -->
+                                        <div class="relative group border rounded-lg p-3 bg-base-100 hover:bg-base-200 transition-colors flex-shrink-0"
+                                            style="width: 280px;">
+                                            <div class="flex items-start gap-3">
+                                                <!-- Image -->
+                                                <div class="flex-shrink-0">
+                                                    @if(!empty($product['thumbnail']))
+                                                        <div class="avatar">
+                                                            <div class="w-12 h-12 rounded border">
+                                                                <img 
+                                                                    src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
+                                                                    alt="{{ $product['title'] ?? '' }}"
+                                                                    class="object-cover"
+                                                                >
+                                                            </div>
+                                                        </div>
+                                                    @else
+                                                        <div class="w-12 h-12 bg-base-300 rounded border flex items-center justify-center">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                            </svg>
+                                                        </div>
+                                                    @endif
+                                                </div>
+                                                
+                                                <!-- Info produit -->
+                                                <div class="flex-grow min-w-0">
+                                                    <div class="font-mono text-xs text-base-content/60 mb-1">
+                                                        {{ $product['sku'] ?? '' }}
+                                                    </div>
+                                                    <div class="font-medium text-sm truncate" title="{{ $product['title'] ?? '' }}">
+                                                        {{ $product['title'] ?? 'Chargement...' }}
+                                                    </div>
+                                                    <div class="flex items-center justify-between mt-2">
+                                                        <span class="badge badge-sm badge-neutral">{{ $index + 1 }}</span>
+                                                        <button 
+                                                            wire:click="removeFromSummary('{{ $product['sku'] }}')"
+                                                            class="btn btn-xs btn-error"
+                                                            title="Retirer de la sélection"
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                                <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                                                            </svg>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    @endif
+                                @endforeach
+                            </div>
+                        </div>
                     </div>
                     
                     <!-- Message si chargement incomplet -->
@@ -934,5 +1020,38 @@ new class extends Component {
             console.log('Liste créée avec ID:', event.listId);
         });
     });
+    
+    // Fonction pour faire défiler le résumé
+    function scrollSummary(direction) {
+        const container = document.getElementById('summaryScrollContainer');
+        const scrollAmount = 300; // Montant de défilement en pixels
+        
+        if (direction === 'left') {
+            container.scrollLeft -= scrollAmount;
+        } else {
+            container.scrollLeft += scrollAmount;
+        }
+    }
 </script>
+
+<style>
+    /* Style personnalisé pour la scrollbar */
+    .scrollbar-thin::-webkit-scrollbar {
+        height: 8px;
+    }
+    
+    .scrollbar-thin::-webkit-scrollbar-track {
+        background: #f3f4f6;
+        border-radius: 4px;
+    }
+    
+    .scrollbar-thin::-webkit-scrollbar-thumb {
+        background: #d1d5db;
+        border-radius: 4px;
+    }
+    
+    .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+        background: #9ca3af;
+    }
+</style>
 @endpush
