@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 
 new class extends Component {
-
+    
     public int $id;
     public string $listTitle = '';
     public bool $loading = true;
@@ -16,16 +16,17 @@ new class extends Component {
     public bool $hasMore = true;
     public int $page = 1;
     public int $perPage = 20;
-
+    public int $totalPages = 1;
+    
     // Cache
     protected $cacheTTL = 3600;
-
+    
     public function mount($id): void
     {
         $this->id = $id;
         $this->loadListTitle();
     }
-
+    
     public function loadListTitle(): void
     {
         try {
@@ -36,35 +37,42 @@ new class extends Component {
             $this->listTitle = 'Erreur de chargement';
         }
     }
-
-    // Méthode pour charger plus de produits
-    public function loadMoreProducts(): void
+    
+    // Changer de page
+    public function goToPage($page): void
     {
-        if (!$this->hasMore || $this->loading || $this->loadingMore) {
+        if ($page < 1 || $page > $this->totalPages || $page === $this->page) {
             return;
         }
-
-        Log::info('loadMoreProducts: Chargement page ' . ($this->page + 1));
-        $this->loadingMore = true;
-        $this->page++;
-    }
-
-    // Réinitialiser les produits
-    protected function resetProducts(): void
-    {
-        $this->page = 1;
-        $this->hasMore = true;
-        $this->loadingMore = false;
+        
         $this->loading = true;
+        $this->page = (int)$page;
     }
-
+    
+    // Page précédente
+    public function previousPage(): void
+    {
+        if ($this->page > 1) {
+            $this->goToPage($this->page - 1);
+        }
+    }
+    
+    // Page suivante
+    public function nextPage(): void
+    {
+        if ($this->page < $this->totalPages) {
+            $this->goToPage($this->page + 1);
+        }
+    }
+    
     // Rafraîchir la liste
     public function refreshProducts(): void
     {
-        $this->resetProducts();
+        $this->page = 1;
+        $this->loading = true;
         $this->loadListTitle();
     }
-
+    
     public function with(): array
     {
         try {
@@ -76,71 +84,60 @@ new class extends Component {
                     ->values()
                     ->toArray();
             });
-
+            
             $totalItems = count($allSkus);
-
+            
             if ($totalItems === 0) {
                 $this->loading = false;
-                $this->hasMore = false;
+                $this->totalPages = 1;
                 return [
                     'products' => [],
                     'totalItems' => 0,
+                    'totalPages' => 1,
                     'allSkus' => [],
                 ];
             }
-
-            $allProducts = [];
-
-            // Charger les produits page par page
-            for ($i = 1; $i <= $this->page; $i++) {
-                $result = $this->fetchProductsFromDatabase($allSkus, $i, $this->perPage);
-
-                if (isset($result['error'])) {
-                    Log::error('Erreur DB: ' . $result['error']);
-                    break;
-                }
-
-                $newProducts = $result['data'] ?? [];
-                $newProducts = array_map(fn($p) => (array) $p, $newProducts);
-
-                $allProducts = array_merge($allProducts, $newProducts);
-
-                // Vérifier si on a chargé tous les produits
-                if (count($newProducts) < $this->perPage) {
-                    $this->hasMore = false;
-                    break;
-                }
+            
+            // Calculer le nombre total de pages
+            $this->totalPages = max(1, ceil($totalItems / $this->perPage));
+            
+            // Charger uniquement la page courante
+            $result = $this->fetchProductsFromDatabase($allSkus, $this->page, $this->perPage);
+            
+            if (isset($result['error'])) {
+                Log::error('Erreur DB: ' . $result['error']);
+                $products = [];
+            } else {
+                $products = $result['data'] ?? [];
+                $products = array_map(fn($p) => (array) $p, $products);
             }
-
-            // Vérifier s'il reste des produits à charger
-            if (count($allProducts) >= $totalItems) {
-                $this->hasMore = false;
-            }
-
+            
             $this->loading = false;
             $this->loadingMore = false;
-
+            
             return [
-                'products' => $allProducts,
+                'products' => $products,
                 'totalItems' => $totalItems,
+                'totalPages' => $this->totalPages,
                 'allSkus' => $allSkus,
             ];
-
+            
         } catch (\Exception $e) {
             Log::error('Erreur with(): ' . $e->getMessage());
             Log::error($e->getTraceAsString());
             $this->loading = false;
             $this->loadingMore = false;
-            $this->hasMore = false;
-
+            $this->totalPages = 1;
+            
             return [
                 'products' => [],
                 'totalItems' => 0,
+                'totalPages' => 1,
                 'allSkus' => [],
             ];
         }
     }
-
+    
     /**
      * Récupère les produits depuis la base de données
      */
@@ -149,7 +146,7 @@ new class extends Component {
         try {
             $offset = ($page - 1) * $perPage;
             $pageSkus = array_slice($allSkus, $offset, $perPage);
-
+            
             if (empty($pageSkus)) {
                 return [
                     "total_item" => count($allSkus),
@@ -160,9 +157,9 @@ new class extends Component {
                     "cached_at" => now()->toDateTimeString(),
                 ];
             }
-
+            
             $placeholders = implode(',', array_fill(0, count($pageSkus), '?'));
-
+            
             $query = "
                 SELECT 
                     produit.sku as sku,
@@ -191,9 +188,9 @@ new class extends Component {
                 AND product_int.status >= 0
                 ORDER BY FIELD(produit.sku, " . implode(',', $pageSkus) . ")
             ";
-
+            
             $result = DB::connection('mysqlMagento')->select($query, $pageSkus);
-
+            
             return [
                 "total_item" => count($allSkus),
                 "per_page" => $perPage,
@@ -206,7 +203,7 @@ new class extends Component {
 
         } catch (\Throwable $e) {
             Log::error('Error fetching list products: ' . $e->getMessage());
-
+            
             return [
                 "total_item" => 0,
                 "per_page" => $perPage,
@@ -217,64 +214,77 @@ new class extends Component {
             ];
         }
     }
-
+    
+    // Générer les boutons de pagination
+    public function getPaginationButtons(): array
+    {
+        $buttons = [];
+        $current = $this->page;
+        $total = $this->totalPages;
+        
+        // Toujours afficher la première page
+        $buttons[] = [
+            'page' => 1,
+            'label' => '1',
+            'active' => $current === 1,
+        ];
+        
+        // Afficher les pages autour de la page courante
+        $start = max(2, $current - 2);
+        $end = min($total - 1, $current + 2);
+        
+        // Ajouter "..." après la première page si nécessaire
+        if ($start > 2) {
+            $buttons[] = [
+                'page' => null,
+                'label' => '...',
+                'disabled' => true,
+            ];
+        }
+        
+        // Pages du milieu
+        for ($i = $start; $i <= $end; $i++) {
+            $buttons[] = [
+                'page' => $i,
+                'label' => (string)$i,
+                'active' => $current === $i,
+            ];
+        }
+        
+        // Ajouter "..." avant la dernière page si nécessaire
+        if ($end < $total - 1) {
+            $buttons[] = [
+                'page' => null,
+                'label' => '...',
+                'disabled' => true,
+            ];
+        }
+        
+        // Toujours afficher la dernière page si elle existe
+        if ($total > 1) {
+            $buttons[] = [
+                'page' => $total,
+                'label' => (string)$total,
+                'active' => $current === $total,
+            ];
+        }
+        
+        return $buttons;
+    }
+    
     protected function getCacheKey($type, ...$params)
     {
         return "list_products_{$type}_" . md5(serialize($params));
     }
 }; ?>
 
-<div x-data="{
-    loading: false,
-    observer: null,
-    
-    init() {
-        // Observer pour le scroll infini
-        this.setupInfiniteScroll();
-    },
-    
-    setupInfiniteScroll() {
-        const options = {
-            root: null,
-            rootMargin: '100px',
-            threshold: 0.1
-        };
-        
-        this.observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting && !this.loading && $wire.hasMore) {
-                    this.loadMore();
-                }
-            });
-        }, options);
-        
-        // Observer le dernier élément de la table
-        this.$watch('$wire.products', () => {
-            this.$nextTick(() => {
-                const lastRow = this.$el.querySelector('tbody tr:last-child');
-                if (lastRow) {
-                    this.observer.disconnect();
-                    this.observer.observe(lastRow);
-                }
-            });
-        });
-    },
-    
-    async loadMore() {
-        if (this.loading || !$wire.hasMore) return;
-        
-        this.loading = true;
-        await $wire.loadMoreProducts(); // Appel de la méthode renommée
-        this.loading = false;
-    }
-}" x-init="init">
-
+<div>
     <!-- En-tête avec information -->
     <div class="mb-6">
         <h2 class="text-2xl font-bold mb-2">{{ $listTitle }}</h2>
         <div class="flex items-center gap-4">
             <div class="badge badge-primary">
-                {{ $totalItems }} produits au total
+                Page {{ $page }} sur {{ $totalPages }} ({{ $totalItems }} produits)
             </div>
             @if($loading)
                 <div class="flex items-center gap-2 text-sm text-base-content/70">
@@ -286,7 +296,7 @@ new class extends Component {
     </div>
 
     <!-- Table des produits -->
-    <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100">
+    <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100 mb-6">
         <table class="table">
             <!-- head -->
             <thead>
@@ -303,7 +313,7 @@ new class extends Component {
                 </tr>
             </thead>
             <tbody>
-                @if($loading && $page === 1)
+                @if($loading)
                     <!-- État de chargement initial -->
                     <tr>
                         <td colspan="9" class="text-center py-12">
@@ -318,10 +328,8 @@ new class extends Component {
                     <tr>
                         <td colspan="9" class="text-center py-12 text-base-content/50">
                             <div class="flex flex-col items-center gap-3">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-base-content/20" fill="none"
-                                    viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                                        d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-base-content/20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
                                 </svg>
                                 <span class="text-lg">Aucun produit dans cette liste</span>
                             </div>
@@ -330,37 +338,48 @@ new class extends Component {
                 @else
                     <!-- Liste des produits -->
                     @foreach($products as $index => $product)
-                        <tr wire:key="product-{{ $product['sku'] }}-{{ $index }}" @if($loop->last) x-ref="lastRow" @endif>
-                            <th>{{ $index + 1 }}</th>
+                        @php
+                            $rowNumber = (($page - 1) * $perPage) + $index + 1;
+                        @endphp
+                        <tr wire:key="product-{{ $product['sku'] }}-{{ $page }}-{{ $index }}">
+                            <th>{{ $rowNumber }}</th>
                             <td>
                                 @if(!empty($product['thumbnail']))
                                     <div class="avatar">
                                         <div class="w-12 h-12 rounded">
-                                            <img src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
-                                                alt="{{ $product['title'] ?? '' }}" class="object-cover" loading="lazy">
+                                            <img 
+                                                src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
+                                                alt="{{ $product['title'] ?? '' }}"
+                                                class="object-cover"
+                                                loading="lazy"
+                                            >
                                         </div>
                                     </div>
                                 @elseif(!empty($product['swatch_image']))
                                     <div class="avatar">
                                         <div class="w-12 h-12 rounded">
-                                            <img src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['swatch_image'] }}"
-                                                alt="{{ $product['title'] ?? '' }}" class="object-cover" loading="lazy">
+                                            <img 
+                                                src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['swatch_image'] }}"
+                                                alt="{{ $product['title'] ?? '' }}"
+                                                class="object-cover"
+                                                loading="lazy"
+                                            >
                                         </div>
                                     </div>
                                 @else
                                     <div class="w-12 h-12 bg-base-300 rounded flex items-center justify-center">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-base-content/40" fill="none"
-                                            viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1"
-                                                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-base-content/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                         </svg>
                                     </div>
                                 @endif
                             </td>
                             <td class="font-mono text-sm">
                                 <div class="tooltip" data-tip="Cliquer pour copier">
-                                    <button onclick="copySku('{{ $product['sku'] }}')"
-                                        class="hover:text-primary transition-colors">
+                                    <button 
+                                        onclick="copySku('{{ $product['sku'] }}')"
+                                        class="hover:text-primary transition-colors"
+                                    >
                                         {{ $product['sku'] ?? '' }}
                                     </button>
                                 </div>
@@ -413,91 +432,93 @@ new class extends Component {
                             </td>
                         </tr>
                     @endforeach
-
-                    <!-- Indicateur de chargement pour le scroll infini -->
-                    @if($loadingMore)
-                        <tr>
-                            <td colspan="9" class="text-center py-4 bg-base-100/80">
-                                <div class="flex flex-col items-center gap-3">
-                                    <span class="loading loading-spinner loading-md text-primary"></span>
-                                    <span class="text-base-content/70 font-medium">
-                                        Chargement de {{ $perPage }} produits supplémentaires...
-                                    </span>
-                                </div>
-                            </td>
-                        </tr>
-                    @endif
-
-                    <!-- Indicateur de fin -->
-                    @if(!$hasMore && count($products) > 0)
-                        <tr>
-                            <td colspan="9" class="text-center py-6 text-base-content/70">
-                                <div class="inline-flex items-center gap-2 bg-success/10 text-success px-6 py-3 rounded-full">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20"
-                                        fill="currentColor">
-                                        <path fill-rule="evenodd"
-                                            d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                                            clip-rule="evenodd" />
-                                    </svg>
-                                    <span class="font-medium">
-                                        Tous les {{ $totalItems }} produits sont chargés
-                                    </span>
-                                </div>
-                            </td>
-                        </tr>
-                    @endif
                 @endif
             </tbody>
         </table>
     </div>
-
-    <!-- Boutons d'action -->
-    <div class="mt-6 flex gap-4 justify-center">
-        <button wire:click="refreshProducts" wire:loading.attr="disabled" wire:target="refreshProducts"
-            class="btn btn-primary">
+    
+    <!-- Pagination -->
+    @if($totalPages > 1)
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
+            <!-- Informations -->
+            <div class="text-sm text-base-content/60">
+                Affichage des produits 
+                <span class="font-medium">{{ min((($page - 1) * $perPage) + 1, $totalItems) }}</span>
+                à 
+                <span class="font-medium">{{ min($page * $perPage, $totalItems) }}</span>
+                sur 
+                <span class="font-medium">{{ $totalItems }}</span> 
+                au total
+            </div>
+            
+            <!-- Boutons de pagination -->
+            <div class="join">
+                <!-- Bouton précédent -->
+                <button 
+                    class="join-item btn"
+                    wire:click="previousPage"
+                    wire:loading.attr="disabled"
+                    @disabled($page <= 1)
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                    </svg>
+                </button>
+                
+                <!-- Boutons de pages -->
+                @foreach($this->getPaginationButtons() as $button)
+                    @if($button['page'] === null)
+                        <!-- Séparateur "..." -->
+                        <button class="join-item btn btn-disabled" disabled>
+                            {{ $button['label'] }}
+                        </button>
+                    @else
+                        <!-- Bouton de page -->
+                        <button 
+                            class="join-item btn {{ $button['active'] ? 'btn-active' : '' }}"
+                            wire:click="goToPage({{ $button['page'] }})"
+                            wire:loading.attr="disabled"
+                        >
+                            {{ $button['label'] }}
+                        </button>
+                    @endif
+                @endforeach
+                
+                <!-- Bouton suivant -->
+                <button 
+                    class="join-item btn"
+                    wire:click="nextPage"
+                    wire:loading.attr="disabled"
+                    @disabled($page >= $totalPages)
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+    @endif
+    
+    <!-- Bouton rafraîchir -->
+    <div class="mt-6 flex justify-center">
+        <button 
+            wire:click="refreshProducts"
+            wire:loading.attr="disabled"
+            wire:target="refreshProducts"
+            class="btn btn-primary"
+        >
             <span wire:loading.remove wire:target="refreshProducts">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                    <path fill-rule="evenodd"
-                        d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z"
-                        clip-rule="evenodd" />
+                    <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd" />
                 </svg>
-                Rafraîchir
+                Rafraîchir la liste
             </span>
             <span wire:loading wire:target="refreshProducts" class="flex items-center gap-2">
                 <span class="loading loading-spinner loading-sm"></span>
                 Chargement...
             </span>
         </button>
-
-        @if($hasMore && !$loadingMore && !$loading)
-            <button wire:click="loadMoreProducts" wire:loading.attr="disabled" wire:target="loadMoreProducts"
-                class="btn btn-outline">
-                <span wire:loading.remove wire:target="loadMoreProducts">
-                    Charger plus
-                </span>
-                <span wire:loading wire:target="loadMoreProducts" class="flex items-center gap-2">
-                    <span class="loading loading-spinner loading-sm"></span>
-                    Chargement...
-                </span>
-            </button>
-        @endif
     </div>
-
-    <!-- Stats en bas -->
-    @if(!$loading && count($products) > 0)
-        <div class="mt-4 text-center text-sm text-base-content/60">
-            Affichage de
-            <span class="font-medium">{{ count($products) }}</span>
-            produit(s) sur
-            <span class="font-medium">{{ $totalItems }}</span>
-            au total
-            @if($hasMore)
-                <span class="ml-2">
-                    ({{ $totalItems - count($products) }} restants)
-                </span>
-            @endif
-        </div>
-    @endif
 </div>
 
 <script>
@@ -516,7 +537,7 @@ new class extends Component {
                 </div>
             `;
             document.body.appendChild(toast);
-
+            
             setTimeout(() => {
                 toast.remove();
             }, 2000);
