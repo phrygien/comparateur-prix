@@ -378,27 +378,21 @@ new class extends Component {
     </div>
 
     <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100 relative">
-        <!-- Modal de chargement -->
-        @if($loading && count($products) > 0)
-        <div class="absolute inset-0 flex items-center justify-center z-50 bg-base-100/80 backdrop-blur-sm">
-            <div class="bg-base-200 rounded-2xl shadow-2xl px-8 py-6 flex flex-col items-center gap-4 border border-base-content/10">
-                <div class="flex gap-2">
-                    <span class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 0ms"></span>
-                    <span class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 150ms"></span>
-                    <span class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 300ms"></span>
-                </div>
-                <p class="text-base font-medium text-base-content">Chargement de plus de produits en cours...</p>
-            </div>
-        </div>
-        @endif
         
         <div 
             x-data="{ 
-                loading: @js($loading),
+                loading: false,
                 hasMore: @js($hasMore),
                 throttleTimer: null
             }"
             x-init="
+                // Observer le changement de loading via Livewire
+                Livewire.hook('commit', ({ component, commit, respond, succeed, fail }) => {
+                    succeed(({ snapshot, effect }) => {
+                        loading = @this.loading;
+                    });
+                });
+                
                 $el.addEventListener('scroll', function(e) {
                     if (throttleTimer) return;
                     
@@ -410,9 +404,9 @@ new class extends Component {
                         const clientHeight = $el.clientHeight;
                         const scrollPercentage = (scrollTop / (scrollHeight - clientHeight)) * 100;
                         
-                        console.log('📊 Scroll %:', scrollPercentage.toFixed(2), 'Loading:', @js($loading), 'HasMore:', @js($hasMore));
+                        console.log('📊 Scroll %:', scrollPercentage.toFixed(2), 'Loading:', loading, 'HasMore:', hasMore);
                         
-                        if (scrollPercentage > 80 && @js($hasMore) && !@js($loading)) {
+                        if (scrollPercentage > 80 && hasMore && !loading) {
                             console.log('✅ Calling loadMore()');
                             $wire.loadMore();
                         }
@@ -421,6 +415,27 @@ new class extends Component {
             "
             class="max-h-[600px] overflow-y-auto"
         >
+            <!-- Modal de chargement avec Alpine -->
+            <div 
+                x-show="loading && {{ count($products) }} > 0"
+                x-transition:enter="transition ease-out duration-200"
+                x-transition:enter-start="opacity-0 scale-95"
+                x-transition:enter-end="opacity-100 scale-100"
+                x-transition:leave="transition ease-in duration-150"
+                x-transition:leave-start="opacity-100 scale-100"
+                x-transition:leave-end="opacity-0 scale-95"
+                class="fixed inset-0 flex items-center justify-center z-50 bg-base-100/80 backdrop-blur-sm"
+                style="display: none;"
+            >
+                <div class="bg-base-200 rounded-2xl shadow-2xl px-8 py-6 flex flex-col items-center gap-4 border border-base-content/10">
+                    <div class="flex gap-2">
+                        <span class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 0ms"></span>
+                        <span class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 150ms"></span>
+                        <span class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 300ms"></span>
+                    </div>
+                    <p class="text-base font-medium text-base-content">Chargement de plus de produits en cours...</p>
+                </div>
+            </div>
             <table class="table table-sm">
                 <thead class="sticky top-0 bg-base-200 z-10">
                     <tr>
