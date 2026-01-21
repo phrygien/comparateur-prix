@@ -2,6 +2,9 @@
 
 use Livewire\Volt\Component;
 use Livewire\Attributes\On;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 
 new class extends Component {
     public $page = 1;
@@ -23,43 +26,47 @@ new class extends Component {
     {
         // Vérification stricte
         if (!$this->hasMore) {
-            Log::info('loadMore: Plus de produits à charger');
             return;
         }
         
         if ($this->loading) {
-            Log::info('loadMore: Déjà en cours de chargement');
             return;
         }
         
         Log::info('loadMore: Chargement page ' . ($this->page + 1));
         
+        $this->loading = true;
         $this->page++;
     }
     
     public function updatedSearch()
     {
         $this->resetProducts();
+        $this->loading = true;
     }
     
     public function updatedFilterName()
     {
         $this->resetProducts();
+        $this->loading = true;
     }
     
     public function updatedFilterMarque()
     {
         $this->resetProducts();
+        $this->loading = true;
     }
     
     public function updatedFilterType()
     {
         $this->resetProducts();
+        $this->loading = true;
     }
     
     public function updatedFilterEAN()
     {
         $this->resetProducts();
+        $this->loading = true;
     }
     
     protected function resetProducts()
@@ -70,7 +77,7 @@ new class extends Component {
     
     public function with(): array
     {
-        $this->loading = true;
+        // Note: Ne pas modifier loading ici
         
         try {
             $allProducts = [];
@@ -105,8 +112,6 @@ new class extends Component {
                 $this->hasMore = false;
             }
             
-            $this->loading = false;
-            
             return [
                 'products' => $allProducts,
                 'totalItems' => $totalItems,
@@ -115,7 +120,6 @@ new class extends Component {
         } catch (\Exception $e) {
             Log::error('Erreur with(): ' . $e->getMessage());
             Log::error($e->getTraceAsString());
-            $this->loading = false;
             $this->hasMore = false;
             
             return [
@@ -123,6 +127,13 @@ new class extends Component {
                 'totalItems' => 0,
             ];
         }
+    }
+    
+    // Hook pour réinitialiser le loading après le rendu
+    #[On('rendered')]
+    public function resetLoadingAfterRender()
+    {
+        $this->loading = false;
     }
     
     /**
@@ -324,7 +335,7 @@ new class extends Component {
     }
 }; ?>
 
-<div class="mx-auto max-w-5xl">
+<div class="mx-auto max-w-5xl" x-data>
     <x-header title="Créer la liste à comparer" separator>
         <x-slot:middle class="!justify-end">
             <div class="flex items-center gap-2">
@@ -377,43 +388,114 @@ new class extends Component {
         />
     </div>
 
-    <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100 relative">
+    <div class="rounded-box border border-base-content/5 bg-base-100 overflow-hidden relative">
+        <!-- Conteneur principal avec infinite scroll -->
         <div 
-            x-data="{ 
-                loading: @entangle('loading').live,
-                hasMore: @entangle('hasMore').live,
-                throttleTimer: null
-            }"
-            x-init="
-                $el.addEventListener('scroll', function(e) {
-                    if (throttleTimer) return;
+            x-data="{
+                showLoading: false,
+                isLoading: @entangle('loading'),
+                hasMore: @entangle('hasMore'),
+                productCount: {{ count($products) }},
+                init() {
+                    // Observer les changements de l'état loading de Livewire
+                    this.$watch('isLoading', (value) => {
+                        console.log('Loading state changed:', value);
+                        this.showLoading = value;
+                    });
                     
-                    throttleTimer = setTimeout(() => {
-                        throttleTimer = null;
+                    // Gestionnaire de scroll
+                    this.$el.addEventListener('scroll', (e) => {
+                        const el = this.$el;
+                        const scrollTop = el.scrollTop;
+                        const scrollHeight = el.scrollHeight;
+                        const clientHeight = el.clientHeight;
                         
-                        const scrollTop = $el.scrollTop;
-                        const scrollHeight = $el.scrollHeight;
-                        const clientHeight = $el.clientHeight;
-                        const scrollPercentage = (scrollTop / (scrollHeight - clientHeight)) * 100;
-                        
-                        if (scrollPercentage > 80 && hasMore && !loading) {
-                            $wire.loadMore();
+                        // Détecter quand on est à 80% du bas
+                        if (scrollTop + clientHeight >= scrollHeight - 100) {
+                            if (this.hasMore && !this.isLoading) {
+                                console.log('Triggering loadMore...');
+                                @this.loadMore();
+                                this.showLoading = true;
+                            }
                         }
-                    }, 150);
-                });
-            "
+                    });
+                }
+            }"
             class="max-h-[600px] overflow-y-auto relative"
+            wire:ignore.self
         >
-            <!-- Overlay semi-transparent pendant le chargement -->
+            <!-- Overlay de chargement avec Alpine.js -->
             <div 
-                x-show="loading"
+                x-show="showLoading && productCount > 0"
+                x-transition:enter="transition ease-out duration-300"
+                x-transition:enter-start="opacity-0"
+                x-transition:enter-end="opacity-100"
+                x-transition:leave="transition ease-in duration-200"
+                x-transition:leave-start="opacity-100"
+                x-transition:leave-end="opacity-0"
+                class="fixed inset-0 z-50 flex items-center justify-center"
+                style="display: none;"
+            >
+                <!-- Overlay avec blur -->
+                <div class="absolute inset-0 bg-black/40 backdrop-blur-md"></div>
+                
+                <!-- Modal de chargement -->
+                <div class="relative z-10 bg-base-100/90 backdrop-blur-xl border-2 border-primary/20 rounded-2xl shadow-2xl p-8 max-w-md mx-4">
+                    <!-- Contenu du loading -->
+                    <div class="text-center">
+                        <!-- Spinner animé -->
+                        <div class="mb-6">
+                            <div class="relative inline-block">
+                                <div class="w-20 h-20 border-4 border-primary/20 rounded-full"></div>
+                                <div class="w-20 h-20 border-4 border-primary border-t-transparent rounded-full animate-spin absolute top-0 left-0"></div>
+                                <!-- Icône au centre -->
+                                <div class="absolute inset-0 flex items-center justify-center">
+                                    <svg class="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Texte de chargement -->
+                        <div class="space-y-2">
+                            <h3 class="text-2xl font-bold text-base-content">
+                                Chargement de plus de produits...
+                            </h3>
+                            <p class="text-base-content/70">
+                                Patientez pendant que nous chargeons les produits suivants
+                            </p>
+                        </div>
+                        
+                        <!-- Animation de points -->
+                        <div class="mt-6 flex justify-center space-x-2">
+                            <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 0ms"></div>
+                            <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 150ms"></div>
+                            <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 300ms"></div>
+                        </div>
+                        
+                        <!-- Compteur -->
+                        <div class="mt-6">
+                            <div class="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full">
+                                <span class="text-sm font-medium">
+                                    {{ count($products) }} produits chargés
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Effet blur sur le tableau pendant le chargement -->
+            <div 
+                x-show="showLoading && productCount > 0"
                 x-transition.opacity
-                class="absolute inset-0 bg-black/30 backdrop-blur-[1px] z-10 pointer-events-none"
+                class="absolute inset-0 bg-base-100/30 backdrop-blur-sm z-40 pointer-events-none"
             ></div>
             
-            <!-- Table -->
+            <!-- Tableau -->
             <table class="table table-sm w-full relative">
-                <thead class="sticky top-0 bg-base-200 z-20">
+                <thead class="sticky top-0 bg-base-200 z-30">
                     <tr>
                         <th>Image</th>
                         <th>SKU</th>
@@ -425,11 +507,11 @@ new class extends Component {
                         <th>Statut</th>
                     </tr>
                 </thead>
-                <tbody class="relative">
+                <tbody>
                     @forelse($products as $index => $product)
                         <tr 
                             wire:key="product-{{ $product['id'] ?? $index }}"
-                            :class="{ 'opacity-50': loading }"
+                            x-bind:class="{ 'opacity-30': showLoading && productCount > 0 }"
                         >
                             <td>
                                 @if(!empty($product['thumbnail']))
@@ -484,24 +566,11 @@ new class extends Component {
                                 </span>
                             </td>
                         </tr>
-                        
-                        <!-- Indicateur de chargement après chaque produit pendant le chargement infini -->
-                        @if($loop->last && $loading && $hasMore)
-                            <tr id="loading-row" class="relative" x-show="loading">
-                                <td colspan="8" class="text-center py-4 bg-base-100/90 backdrop-blur-sm">
-                                    <div class="flex items-center justify-center gap-3 py-4">
-                                        <span class="loading loading-spinner loading-md text-primary"></span>
-                                        <span class="text-base-content/70 font-medium">
-                                            Chargement de plus de produits...
-                                        </span>
-                                    </div>
-                                </td>
-                            </tr>
-                        @endif
                     @empty
                         <tr>
                             <td colspan="8" class="text-center py-12 text-base-content/50">
-                                @if($loading && count($products) === 0)
+                                @if($loading)
+                                    <!-- Loading pour premier chargement -->
                                     <div class="flex flex-col items-center gap-3">
                                         <span class="loading loading-spinner loading-lg text-primary"></span>
                                         <span class="text-lg">Chargement des produits...</span>
@@ -519,43 +588,22 @@ new class extends Component {
                         </tr>
                     @endforelse
                     
-                    <!-- Indicateur de chargement pour le premier chargement -->
-                    @if($loading && count($products) === 0)
-                        <tr>
-                            <td colspan="8" class="text-center py-12">
-                                <div class="flex flex-col items-center gap-3">
-                                    <span class="loading loading-spinner loading-lg text-primary"></span>
-                                    <span class="text-lg">Chargement des produits...</span>
-                                </div>
-                            </td>
-                        </tr>
-                    @endif
+                    <!-- Ligne de chargement dans le tableau -->
+                    <tr x-show="showLoading && productCount > 0">
+                        <td colspan="8" class="text-center py-8 bg-base-100/80">
+                            <div class="flex flex-col items-center gap-3">
+                                <span class="loading loading-spinner loading-md text-primary"></span>
+                                <span class="text-base-content/70 font-medium">
+                                    Ajout de nouveaux produits...
+                                </span>
+                            </div>
+                        </td>
+                    </tr>
                 </tbody>
             </table>
-            
-            <!-- Overlay avec spinner central pour le chargement infini -->
-            <div 
-                x-show="loading && {{ count($products) }} > 0"
-                x-transition:enter="transition ease-out duration-200"
-                x-transition:enter-start="opacity-0"
-                x-transition:enter-end="opacity-100"
-                x-transition:leave="transition ease-in duration-150"
-                x-transition:leave-start="opacity-100"
-                x-transition:leave-end="opacity-0"
-                class="absolute inset-0 flex items-center justify-center z-30 pointer-events-none"
-                style="display: none;"
-            >
-                <!-- Spinner central -->
-                <div class="absolute inset-0 bg-black/20 backdrop-blur-[1px]"></div>
-                <div class="relative z-40 bg-base-100/90 border border-base-content/10 rounded-xl shadow-2xl px-8 py-6 flex flex-col items-center gap-3 backdrop-blur-sm">
-                    <div class="relative">
-                        <span class="loading loading-spinner loading-lg text-primary"></span>
-                    </div>
-                    <p class="font-medium text-base-content">Chargement de plus de produits...</p>
-                </div>
-            </div>
         </div>
         
+        <!-- Message de fin -->
         @if(!$hasMore && count($products) > 0 && !$loading)
             <div class="text-center py-6 text-base-content/70 bg-base-100 border-t border-base-content/5">
                 <div class="inline-flex items-center gap-2 bg-success/10 text-success px-6 py-3 rounded-full">
@@ -568,3 +616,69 @@ new class extends Component {
         @endif
     </div>
 </div>
+
+<style>
+/* Animation pour le spinner */
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.animate-spin {
+    animation: spin 1s linear infinite;
+}
+
+/* Animation pour les points qui rebondissent */
+@keyframes bounce {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-10px);
+    }
+}
+
+.animate-bounce {
+    animation: bounce 0.6s infinite;
+}
+
+/* Transition pour l'opacité */
+.transition-opacity {
+    transition: opacity 0.3s ease-in-out;
+}
+
+/* Style pour le modal de chargement */
+.backdrop-blur-xl {
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+}
+
+/* Effet glassmorphism */
+.glass-effect {
+    background: rgba(255, 255, 255, 0.25);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+}
+</style>
+
+<script>
+// Script pour déboguer et s'assurer qu'Alpine fonctionne
+document.addEventListener('alpine:init', () => {
+    console.log('Alpine.js initialisé');
+});
+
+// Vérifier l'état du loading
+document.addEventListener('livewire:init', () => {
+    Livewire.hook('commit', ({ component, commit, respond, succeed, fail }) => {
+        succeed(({ snapshot, effect }) => {
+            console.log('Livewire commit succeeded, loading state:', component.$wire.loading);
+        });
+    });
+});
+</script>
