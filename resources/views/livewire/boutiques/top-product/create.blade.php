@@ -2,10 +2,13 @@
 
 use Livewire\Volt\Component;
 use Livewire\Attributes\On;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 
 new class extends Component {
     public $page = 1;
-    public $perPage = 20;
+    public $perPage = 60;
     public $hasMore = true;
     public $loading = false;
     
@@ -18,6 +21,12 @@ new class extends Component {
     
     // Cache
     protected $cacheTTL = 3600;
+    
+    public function mount()
+    {
+        // Premier chargement
+        $this->loading = true;
+    }
     
     public function loadMore()
     {
@@ -35,6 +44,7 @@ new class extends Component {
         Log::info('loadMore: Chargement page ' . ($this->page + 1));
         
         $this->page++;
+        $this->loading = true;
     }
     
     public function updatedSearch()
@@ -66,11 +76,12 @@ new class extends Component {
     {
         $this->page = 1;
         $this->hasMore = true;
+        $this->loading = true;
     }
     
     public function with(): array
     {
-        $this->loading = true;
+        // NE PAS modifier loading ici - il sera géré par loadMore()
         
         try {
             $allProducts = [];
@@ -96,6 +107,7 @@ new class extends Component {
                 // Si moins de produits que demandé, on a atteint la fin
                 if (count($newProducts) < $this->perPage) {
                     $this->hasMore = false;
+                    Log::info('Fin des produits: ' . count($newProducts) . ' < ' . $this->perPage);
                     break;
                 }
             }
@@ -103,8 +115,10 @@ new class extends Component {
             // Vérifier si on a atteint la fin
             if (count($allProducts) >= $totalItems) {
                 $this->hasMore = false;
+                Log::info('Fin des produits: total atteint');
             }
             
+            // Désactiver le loading après chargement
             $this->loading = false;
             
             return [
@@ -114,9 +128,8 @@ new class extends Component {
             
         } catch (\Exception $e) {
             Log::error('Erreur with(): ' . $e->getMessage());
-            Log::error($e->getTraceAsString());
-            $this->loading = false;
             $this->hasMore = false;
+            $this->loading = false;
             
             return [
                 'products' => [],
@@ -377,187 +390,176 @@ new class extends Component {
         />
     </div>
 
-    <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100 relative">
-        <div 
-            x-data="{ 
-                loading: @entangle('loading').live,
-                hasMore: @entangle('hasMore').live,
-                throttleTimer: null
-            }"
-            x-init="
-                $el.addEventListener('scroll', function(e) {
-                    if (throttleTimer) return;
-                    
-                    throttleTimer = setTimeout(() => {
-                        throttleTimer = null;
-                        
-                        const scrollTop = $el.scrollTop;
-                        const scrollHeight = $el.scrollHeight;
-                        const clientHeight = $el.clientHeight;
-                        const scrollPercentage = (scrollTop / (scrollHeight - clientHeight)) * 100;
-                        
-                        if (scrollPercentage > 80 && hasMore && !loading) {
-                            $wire.loadMore();
+    <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100"
+         x-data="{
+            observer: null,
+            initObserver() {
+                // Créer l'Intersection Observer
+                this.observer = new IntersectionObserver((entries) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting && !@this.loading && @this.hasMore) {
+                            console.log('🔵 Déclenchement loadMore via IntersectionObserver');
+                            @this.loadMore();
                         }
-                    }, 150);
+                    });
+                }, {
+                    root: null, // observe par rapport au viewport
+                    rootMargin: '100px', // déclenche 100px avant d'atteindre l'élément
+                    threshold: 0.1 // déclenche quand 10% de l'élément est visible
                 });
-            "
-            class="max-h-[600px] overflow-y-auto relative"
-        >
-            <!-- Overlay semi-transparent pendant le chargement -->
-            <div 
-                x-show="loading"
-                x-transition.opacity
-                class="absolute inset-0 bg-black/30 backdrop-blur-[1px] z-10 pointer-events-none"
-            ></div>
+            },
+            observeTarget() {
+                const target = this.$refs.loadingTrigger;
+                if (target && this.observer) {
+                    this.observer.observe(target);
+                    console.log('👀 Observation commencée sur l\'élément');
+                }
+            },
+            disconnectObserver() {
+                if (this.observer) {
+                    this.observer.disconnect();
+                    console.log('👋 Observer déconnecté');
+                }
+            }
+         }"
+         x-init="
+            console.log('Initialisation Infinite Scroll avec IntersectionObserver');
+            initObserver();
+            $nextTick(() => observeTarget());
             
-            <!-- Table -->
-            <table class="table table-sm w-full relative">
-                <thead class="sticky top-0 bg-base-200 z-20">
-                    <tr>
-                        <th>Image</th>
-                        <th>SKU</th>
-                        <th>Nom</th>
-                        <th>Marque</th>
-                        <th>Type</th>
-                        <th>Prix</th>
-                        <th>Stock</th>
-                        <th>Statut</th>
-                    </tr>
-                </thead>
-                <tbody class="relative">
-                    @forelse($products as $index => $product)
-                        <tr 
-                            wire:key="product-{{ $product['id'] ?? $index }}"
-                            :class="{ 'opacity-50': loading }"
-                        >
-                            <td>
-                                @if(!empty($product['thumbnail']))
-                                    <div class="avatar">
-                                        <div class="w-10 h-10 rounded">
-                                            <img 
-                                                src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
-                                                alt="{{ $product['title'] ?? '' }}"
-                                            >
-
-                                        </div>
+            // Réobserver après chaque mise à jour des produits
+            $watch('$wire.products', () => {
+                $nextTick(() => observeTarget());
+            });
+            
+            // Nettoyer l'observer quand le composant est détruit
+            $el.addEventListener('livewire:will-destroy', () => {
+                disconnectObserver();
+            });
+         "
+    >
+        <table class="table table-sm w-full">
+            <thead class="sticky top-0 bg-base-200 z-10">
+                <tr>
+                    <th>Image</th>
+                    <th>SKU</th>
+                    <th>Nom</th>
+                    <th>Marque</th>
+                    <th>Type</th>
+                    <th>Prix</th>
+                    <th>Stock</th>
+                    <th>Statut</th>
+                </tr>
+            </thead>
+            <tbody>
+                @forelse($products as $index => $product)
+                    <tr wire:key="product-{{ $product['id'] ?? $index }}">
+                        <td>
+                            @if(!empty($product['thumbnail']))
+                                <div class="avatar">
+                                    <div class="w-10 h-10 rounded">
+                                        <img 
+                                            src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
+                                            alt="{{ $product['title'] ?? '' }}"
+                                        >
                                     </div>
-                                @else
-                                    <div class="w-10 h-10 bg-base-300 rounded flex items-center justify-center">
-                                        <span class="text-xs">N/A</span>
-                                    </div>
-                                @endif
-                            </td>
-                            <td class="font-mono text-xs">{{ $product['sku'] ?? '' }}</td>
-                            <td>
-                                <div class="max-w-xs truncate" title="{{ $product['title'] ?? '' }}">
-                                    {{ $product['title'] ?? '' }}
                                 </div>
-                            </td>
-                            <td>{{ $product['vendor'] ?? '' }}</td>
-                            <td>
-                                <span class="badge badge-sm">{{ $product['type'] ?? '' }}</span>
-                            </td>
-                            <td>
-                                @if(!empty($product['special_price']))
-                                    <div class="flex flex-col">
-                                        <span class="line-through text-xs text-base-content/50">
-                                            {{ number_format($product['price'] ?? 0, 2) }} €
-                                        </span>
-                                        <span class="text-error font-semibold">
-                                            {{ number_format($product['special_price'], 2) }} €
-                                        </span>
-                                    </div>
-                                @else
-                                    <span class="font-semibold">
+                            @else
+                                <div class="w-10 h-10 bg-base-300 rounded flex items-center justify-center">
+                                    <span class="text-xs">N/A</span>
+                                </div>
+                            @endif
+                        </td>
+                        <td class="font-mono text-xs">{{ $product['sku'] ?? '' }}</td>
+                        <td>
+                            <div class="max-w-xs truncate" title="{{ $product['title'] ?? '' }}">
+                                {{ $product['title'] ?? '' }}
+                            </div>
+                        </td>
+                        <td>{{ $product['vendor'] ?? '' }}</td>
+                        <td>
+                            <span class="badge badge-sm">{{ $product['type'] ?? '' }}</span>
+                        </td>
+                        <td>
+                            @if(!empty($product['special_price']))
+                                <div class="flex flex-col">
+                                    <span class="line-through text-xs text-base-content/50">
                                         {{ number_format($product['price'] ?? 0, 2) }} €
                                     </span>
-                                @endif
-                            </td>
-                            <td>
-                                <span class="{{ ($product['quatity'] ?? 0) > 0 ? 'text-success' : 'text-error' }}">
-                                    {{ $product['quatity'] ?? 0 }}
+                                    <span class="text-error font-semibold">
+                                        {{ number_format($product['special_price'], 2) }} €
+                                    </span>
+                                </div>
+                            @else
+                                <span class="font-semibold">
+                                    {{ number_format($product['price'] ?? 0, 2) }} €
                                 </span>
-                            </td>
-                            <td>
-                                <span class="badge badge-sm {{ ($product['quatity_status'] ?? 0) == 1 ? 'badge-success' : 'badge-error' }}">
-                                    {{ ($product['quatity_status'] ?? 0) == 1 ? 'En stock' : 'Rupture' }}
-                                </span>
-                            </td>
-                        </tr>
-                        
-                        <!-- Indicateur de chargement après chaque produit pendant le chargement infini -->
-                        @if($loop->last && $loading && $hasMore)
-                            <tr id="loading-row" class="relative" x-show="loading">
-                                <td colspan="8" class="text-center py-4 bg-base-100/90 backdrop-blur-sm">
-                                    <div class="flex items-center justify-center gap-3 py-4">
-                                        <span class="loading loading-spinner loading-md text-primary"></span>
-                                        <span class="text-base-content/70 font-medium">
-                                            Chargement de plus de produits...
-                                        </span>
-                                    </div>
-                                </td>
-                            </tr>
-                        @endif
-                    @empty
-                        <tr>
-                            <td colspan="8" class="text-center py-12 text-base-content/50">
-                                @if($loading && count($products) === 0)
-                                    <div class="flex flex-col items-center gap-3">
-                                        <span class="loading loading-spinner loading-lg text-primary"></span>
-                                        <span class="text-lg">Chargement des produits...</span>
-                                    </div>
-                                @else
-                                    <div class="flex flex-col items-center gap-3">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-base-content/20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-                                        </svg>
-                                        <span class="text-lg">Aucun produit trouvé</span>
-                                        <span class="text-sm">Essayez de modifier vos filtres</span>
-                                    </div>
-                                @endif
-                            </td>
-                        </tr>
-                    @endforelse
-                    
-                    <!-- Indicateur de chargement pour le premier chargement -->
-                    @if($loading && count($products) === 0)
-                        <tr>
-                            <td colspan="8" class="text-center py-12">
+                            @endif
+                        </td>
+                        <td>
+                            <span class="{{ ($product['quatity'] ?? 0) > 0 ? 'text-success' : 'text-error' }}">
+                                {{ $product['quatity'] ?? 0 }}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge badge-sm {{ ($product['quatity_status'] ?? 0) == 1 ? 'badge-success' : 'badge-error' }}">
+                                {{ ($product['quatity_status'] ?? 0) == 1 ? 'En stock' : 'Rupture' }}
+                            </span>
+                        </td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="8" class="text-center py-12 text-base-content/50">
+                            @if($loading)
                                 <div class="flex flex-col items-center gap-3">
                                     <span class="loading loading-spinner loading-lg text-primary"></span>
                                     <span class="text-lg">Chargement des produits...</span>
                                 </div>
-                            </td>
-                        </tr>
-                    @endif
-                </tbody>
-            </table>
-            
-            <!-- Overlay avec spinner central pour le chargement infini -->
-            <div 
-                x-show="loading && {{ count($products) }} > 0"
-                x-transition:enter="transition ease-out duration-200"
-                x-transition:enter-start="opacity-0"
-                x-transition:enter-end="opacity-100"
-                x-transition:leave="transition ease-in duration-150"
-                x-transition:leave-start="opacity-100"
-                x-transition:leave-end="opacity-0"
-                class="absolute inset-0 flex items-center justify-center z-30 pointer-events-none"
-                style="display: none;"
-            >
-                <!-- Spinner central -->
-                <div class="absolute inset-0 bg-black/20 backdrop-blur-[1px]"></div>
-                <div class="relative z-40 bg-base-100/90 border border-base-content/10 rounded-xl shadow-2xl px-8 py-6 flex flex-col items-center gap-3 backdrop-blur-sm">
-                    <div class="relative">
-                        <span class="loading loading-spinner loading-lg text-primary"></span>
-                    </div>
-                    <p class="font-medium text-base-content">Chargement de plus de produits...</p>
-                </div>
-            </div>
-        </div>
+                            @else
+                                <div class="flex flex-col items-center gap-3">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-base-content/20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                                    </svg>
+                                    <span class="text-lg">Aucun produit trouvé</span>
+                                    <span class="text-sm">Essayez de modifier vos filtres</span>
+                                </div>
+                            @endif
+                        </td>
+                    </tr>
+                @endforelse
+                
+                <!-- Élément déclencheur pour l'Intersection Observer -->
+                @if($hasMore)
+                    <tr x-ref="loadingTrigger">
+                        <td colspan="8" class="text-center py-8">
+                            <!-- Indicateur de chargement visible seulement pendant le chargement -->
+                            @if($loading)
+                                <div class="flex flex-col items-center justify-center gap-3">
+                                    <!-- Animation de points -->
+                                    <div class="flex items-center space-x-2">
+                                        <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 0ms"></div>
+                                        <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 150ms"></div>
+                                        <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 300ms"></div>
+                                    </div>
+                                    <span class="text-sm text-base-content/70 font-medium">
+                                        Chargement de {{ $perPage }} produits supplémentaires...
+                                    </span>
+                                    <div class="text-xs text-base-content/50">
+                                        {{ count($products) }} produits chargés sur {{ $totalItems }}
+                                    </div>
+                                </div>
+                            @else
+                                <!-- Élément invisible qui sert uniquement de déclencheur -->
+                                <div class="h-4"></div>
+                            @endif
+                        </td>
+                    </tr>
+                @endif
+            </tbody>
+        </table>
         
-        @if(!$hasMore && count($products) > 0 && !$loading)
+        <!-- Message de fin -->
+        @if(!$hasMore && count($products) > 0)
             <div class="text-center py-6 text-base-content/70 bg-base-100 border-t border-base-content/5">
                 <div class="inline-flex items-center gap-2 bg-success/10 text-success px-6 py-3 rounded-full">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -569,3 +571,56 @@ new class extends Component {
         @endif
     </div>
 </div>
+
+<style>
+/* Animation pour les points qui rebondissent */
+@keyframes bounce {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-8px);
+    }
+}
+
+.animate-bounce {
+    animation: bounce 0.6s infinite;
+}
+
+/* Style pour l'élément déclencheur */
+.trigger-element {
+    height: 1px;
+    background: transparent;
+}
+</style>
+
+<script>
+// Script supplémentaire pour déboguer
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🔄 Infinite Scroll Component avec Intersection Observer prêt');
+    
+    // Vérifier que l'API IntersectionObserver est disponible
+    if (!('IntersectionObserver' in window)) {
+        console.warn('⚠️ IntersectionObserver non supporté par ce navigateur');
+        // Fallback: utiliser l'ancienne méthode de scroll
+        const fallbackScroll = () => {
+            const container = document.querySelector('[x-data]');
+            if (container) {
+                container.addEventListener('scroll', function(e) {
+                    const el = this;
+                    const scrollTop = el.scrollTop;
+                    const scrollHeight = el.scrollHeight;
+                    const clientHeight = el.clientHeight;
+                    
+                    if (scrollTop + clientHeight >= scrollHeight - 100) {
+                        console.log('Fallback: Déclenchement loadMore via scroll classique');
+                        // Vous devriez avoir une référence à Livewire ici
+                        // @this.loadMore();
+                    }
+                });
+            }
+        };
+        fallbackScroll();
+    }
+});
+</script>
