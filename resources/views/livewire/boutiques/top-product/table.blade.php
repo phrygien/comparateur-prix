@@ -15,7 +15,7 @@ new class extends Component {
     public bool $loadingMore = false;
     public bool $hasMore = true;
     public int $page = 1;
-    public int $perPage = 5;
+    public int $perPage = 20;
 
     // Cache
     protected $cacheTTL = 3600;
@@ -37,6 +37,7 @@ new class extends Component {
         }
     }
 
+    // CORRECTION : Cette méthode est appelée par le bouton "Afficher plus"
     public function loadMore(): void
     {
         if (!$this->hasMore || $this->loading || $this->loadingMore) {
@@ -469,9 +470,14 @@ new class extends Component {
         </button>
 
         @if($hasMore && !$loadingMore && !$loading)
-            <button @click="loadMore()" :disabled="loading" class="btn btn-outline">
-                <span :class="{'loading loading-spinner loading-sm': loading}"></span>
-                Charger plus
+            <button wire:click="loadMore" wire:loading.attr="disabled" wire:target="loadMore" class="btn btn-outline">
+                <span wire:loading.remove wire:target="loadMore">
+                    Charger plus
+                </span>
+                <span wire:loading wire:target="loadMore" class="flex items-center gap-2">
+                    <span class="loading loading-spinner loading-sm"></span>
+                    Chargement...
+                </span>
             </button>
         @endif
     </div>
