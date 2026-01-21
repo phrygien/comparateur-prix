@@ -135,17 +135,62 @@ new class extends Component {
     
     public function updatedSelectAll($value)
     {
-        if ($value) {
-            $visibleSkus = collect($this->products)->pluck('sku')->toArray();
-            $this->selectedProducts = array_unique(array_merge($this->selectedProducts, $visibleSkus));
-        } else {
-            $visibleSkus = collect($this->products)->pluck('sku')->toArray();
-            $this->selectedProducts = array_diff($this->selectedProducts, $visibleSkus);
+        try {
+            // Récupérer les produits actuellement affichés
+            $currentProducts = $this->getCurrentProducts();
+            
+            if ($value) {
+                // Sélectionner tous les produits visibles
+                $visibleSkus = collect($currentProducts)->pluck('sku')->filter()->toArray();
+                $this->selectedProducts = array_unique(array_merge($this->selectedProducts, $visibleSkus));
+            } else {
+                // Désélectionner tous les produits visibles
+                $visibleSkus = collect($currentProducts)->pluck('sku')->filter()->toArray();
+                $this->selectedProducts = array_diff($this->selectedProducts, $visibleSkus);
+            }
+            
+            $this->loadSelectedProductsDetails();
+            Log::info('Select All changé: ' . ($value ? 'true' : 'false'));
+            Log::info('Total sélectionnés après selectAll: ' . count($this->selectedProducts));
+            
+        } catch (\Exception $e) {
+            Log::error('Erreur updatedSelectAll: ' . $e->getMessage());
+            $this->error('Erreur lors de la sélection');
         }
-        
-        $this->loadSelectedProductsDetails();
-        Log::info('Select All changé: ' . ($value ? 'true' : 'false'));
-        Log::info('Total sélectionnés après selectAll: ' . count($this->selectedProducts));
+    }
+    
+    /**
+     * Récupère les produits actuellement affichés
+     */
+    protected function getCurrentProducts()
+    {
+        try {
+            $allProducts = [];
+            
+            for ($i = 1; $i <= $this->page; $i++) {
+                $result = $this->fetchProductsFromDatabase($this->search, $i, $this->perPage);
+                
+                if (isset($result['error'])) {
+                    Log::error('Erreur DB: ' . $result['error']);
+                    break;
+                }
+                
+                $newProducts = $result['data'] ?? [];
+                $newProducts = array_map(fn($p) => (array) $p, $newProducts);
+                
+                $allProducts = array_merge($allProducts, $newProducts);
+                
+                if (count($newProducts) < $this->perPage) {
+                    break;
+                }
+            }
+            
+            return $allProducts;
+            
+        } catch (\Exception $e) {
+            Log::error('Erreur getCurrentProducts: ' . $e->getMessage());
+            return [];
+        }
     }
     
     // Réinitialiser les produits
