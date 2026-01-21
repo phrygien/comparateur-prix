@@ -4,6 +4,7 @@ namespace App\Livewire\Boutiques;
 
 use Livewire\Volt\Component;
 use Livewire\Attributes\Url;
+use Livewire\Attributes\On;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -70,6 +71,7 @@ new class extends Component {
         $this->hasMore = true;
         $this->allProducts = [];
         $this->loading = false;
+        $this->selectedProducts = [];
         $this->loadMore();
     }
     
@@ -101,6 +103,7 @@ new class extends Component {
     /**
      * Charge plus de produits pour l'infinity scroll
      */
+    #[On('load-more')]
     public function loadMore()
     {
         if ($this->loading || !$this->hasMore) {
@@ -113,8 +116,13 @@ new class extends Component {
             // Récupérer les produits pour la page actuelle
             $productsData = $this->getListProduct($this->page);
             
+            // Convertir les objets en tableaux pour éviter les problèmes de sérialisation
+            $newProducts = array_map(function($product) {
+                return (array) $product;
+            }, $productsData['data']);
+            
             // Ajouter les nouveaux produits à la liste existante
-            $this->allProducts = array_merge($this->allProducts, $productsData['data']);
+            $this->allProducts = array_merge($this->allProducts, $newProducts);
             
             // Mettre à jour les totaux
             $this->totalItems = $productsData['total_item'];
@@ -129,6 +137,7 @@ new class extends Component {
             }
         } catch (\Exception $e) {
             Log::error('Error loading more products: ' . $e->getMessage());
+            $this->hasMore = false;
         } finally {
             $this->loading = false;
         }
@@ -329,7 +338,7 @@ new class extends Component {
     public function toggleProduct($productId)
     {
         if (in_array($productId, $this->selectedProducts)) {
-            $this->selectedProducts = array_diff($this->selectedProducts, [$productId]);
+            $this->selectedProducts = array_values(array_diff($this->selectedProducts, [$productId]));
         } else {
             $this->selectedProducts[] = $productId;
         }
@@ -338,12 +347,26 @@ new class extends Component {
     public function selectAllVisible()
     {
         $visibleIds = collect($this->allProducts)->pluck('id')->toArray();
-        $this->selectedProducts = array_unique(array_merge($this->selectedProducts, $visibleIds));
+        $this->selectedProducts = array_values(array_unique(array_merge($this->selectedProducts, $visibleIds)));
     }
     
     public function deselectAll()
     {
         $this->selectedProducts = [];
+    }
+    
+    public function toggleAllVisible()
+    {
+        $visibleIds = collect($this->allProducts)->pluck('id')->toArray();
+        $allSelected = count(array_intersect($this->selectedProducts, $visibleIds)) === count($visibleIds);
+        
+        if ($allSelected) {
+            // Déselectionner tous les visibles
+            $this->selectedProducts = array_values(array_diff($this->selectedProducts, $visibleIds));
+        } else {
+            // Sélectionner tous les visibles
+            $this->selectedProducts = array_values(array_unique(array_merge($this->selectedProducts, $visibleIds)));
+        }
     }
     
     // Gestion du cache
@@ -419,6 +442,7 @@ new class extends Component {
             return;
         }
         
+        // Sauvegarder les produits sélectionnés
         session()->put('comparison_list', $this->selectedProducts);
         session()->flash('success', count($this->selectedProducts) . ' produits ajoutés à la liste de comparaison');
         
@@ -437,94 +461,37 @@ new class extends Component {
     x-data="{
         observer: null,
         init() {
-            console.log('🚀 Initialisation de l\'infinity scroll');
-            
-            // Configuration de l'observer
+            // Observer pour l'infinity scroll
             this.observer = new IntersectionObserver((entries) => {
                 entries.forEach(entry => {
-                    console.log('📊 Observer triggered:', {
-                        isIntersecting: entry.isIntersecting,
-                        hasMore: @js($hasMore),
-                        loading: @js($loading)
-                    });
-                    
-                    if (entry.isIntersecting && !@this.loading && @this.hasMore) {
-                        console.log('✅ Chargement de plus de produits...');
-                        @this.loadMore();
+                    if (entry.isIntersecting && @js($this->hasMore) && !@js($this->loading)) {
+                        $wire.dispatch('load-more');
                     }
                 });
             }, {
                 root: null,
-                rootMargin: '200px', // Augmenté pour détecter plus tôt
-                threshold: 0
+                rootMargin: '200px',
+                threshold: 0.1
             });
             
-            // Observer l'élément après le rendu
+            // Observer l'élément de déclenchement
             this.$nextTick(() => {
-                const trigger = document.getElementById('loadTrigger');
+                const trigger = this.$refs.loadTrigger;
                 if (trigger) {
-                    console.log('✅ Observer attaché à l\'élément trigger');
                     this.observer.observe(trigger);
-                } else {
-                    console.error('❌ Élément trigger non trouvé');
                 }
-            });
-            
-            // Écouter les événements de cache
-            Livewire.on('cache-cleared', (data) => {
-                this.showNotification(data.message, 'success');
-            });
-            
-            Livewire.on('notify', (data) => {
-                this.showNotification(data.message, data.type);
             });
         },
         destroy() {
             if (this.observer) {
                 this.observer.disconnect();
-                console.log('🛑 Observer déconnecté');
             }
-        },
-        showNotification(message, type = 'info') {
-            // Créer une notification toast
-            const toast = document.createElement('div');
-            toast.className = `alert alert-${type} shadow-lg mb-2 transform transition-all duration-300 translate-x-full`;
-            toast.innerHTML = `
-                <div>
-                    ${type === 'success' ? '✅' : type === 'error' ? '❌' : type === 'warning' ? '⚠️' : 'ℹ️'}
-                    <span>${message}</span>
-                </div>
-                <button class="btn btn-sm btn-ghost" onclick="this.parentElement.remove()">×</button>
-            `;
-            
-            const container = document.getElementById('notification-container');
-            if (!container) {
-                // Créer le conteneur s'il n'existe pas
-                const newContainer = document.createElement('div');
-                newContainer.id = 'notification-container';
-                newContainer.className = 'toast toast-top toast-end z-50';
-                document.body.appendChild(newContainer);
-                newContainer.appendChild(toast);
-            } else {
-                container.appendChild(toast);
-            }
-            
-            // Animation d'entrée
-            setTimeout(() => {
-                toast.classList.remove('translate-x-full');
-                toast.classList.add('translate-x-0');
-            }, 10);
-            
-            // Suppression automatique après 5 secondes
-            setTimeout(() => {
-                toast.classList.add('translate-x-full');
-                setTimeout(() => toast.remove(), 300);
-            }, 5000);
         }
     }"
 >
     <x-header title="Créer la liste à comparer" separator>
         <x-slot:middle class="!justify-end">
+            <!-- Barre de recherche -->
             <div class="form-control w-64">
                 <div class="input-group">
                     <input 
@@ -542,48 +509,56 @@ new class extends Component {
             </div>
         </x-slot:middle>
         <x-slot:actions>
+            <!-- Bouton des filtres -->
             <x-button 
                 class="btn-secondary" 
                 label="Filtres" 
                 wire:click="$toggle('showFilters')"
             />
             
-            <div class="relative">
+            <!-- Menu cache -->
+            <div class="relative" x-data="{ open: false }">
                 <x-button 
                     class="btn-ghost" 
                     label="Cache" 
-                    wire:click="$toggle('showCacheMenu')"
+                    @click="open = !open"
                 />
                 
+                <!-- Dropdown cache -->
                 <div class="absolute right-0 mt-2 w-48 bg-base-100 rounded-md shadow-lg z-50" 
-                     x-show="$wire.showCacheMenu" 
+                     x-show="open" 
                      x-cloak
-                     @click.outside="$wire.showCacheMenu = false">
+                     @click.outside="open = false">
                     <div class="py-1">
                         <button class="w-full text-left px-4 py-2 hover:bg-base-200" 
-                                wire:click="clearCurrentCache(); $wire.showCacheMenu = false">
+                                wire:click="clearCurrentCache"
+                                @click="open = false">
                             Vider cache page
                         </button>
                         <button class="w-full text-left px-4 py-2 hover:bg-base-200" 
-                                wire:click="clearFilterCache(); $wire.showCacheMenu = false">
+                                wire:click="clearFilterCache"
+                                @click="open = false">
                             Vider cache filtres
                         </button>
                         <button class="w-full text-left px-4 py-2 hover:bg-base-200" 
-                                wire:click="clearAllCache(); $wire.showCacheMenu = false">
+                                wire:click="clearAllCache"
+                                @click="open = false">
                             Vider tout le cache
                         </button>
                     </div>
                 </div>
             </div>
             
-            <div class="ml-2 px-3 py-1 bg-primary text-primary-content rounded-lg" 
-                 x-show="$wire.selectedProducts.length > 0"
-                 x-cloak>
-                <span x-text="$wire.selectedProducts.length + ' sélectionnés'"></span>
+            <!-- Compteur de sélection -->
+            @if(count($selectedProducts) > 0)
+            <div class="ml-2 px-3 py-1 bg-primary text-primary-content rounded-lg">
+                <span>{{ count($selectedProducts) }} sélectionnés</span>
             </div>
+            @endif
         </x-slot:actions>
     </x-header>
 
+    <!-- Boutons de gestion des sélections -->
     <div class="flex gap-2 mb-4">
         <button class="btn btn-sm btn-primary" wire:click="selectAllVisible">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -602,6 +577,7 @@ new class extends Component {
         </div>
     </div>
 
+    <!-- Tableau des produits -->
     <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100">
         <table class="table">
             <thead>
@@ -609,8 +585,8 @@ new class extends Component {
                     <th class="w-12">
                         <input type="checkbox" 
                                class="checkbox checkbox-sm" 
-                               @change="$wire.selectAllVisible()"
-                               :checked="$wire.allProducts.length > 0 && $wire.selectedProducts.length === $wire.allProducts.length">
+                               wire:click="toggleAllVisible"
+                               @checked="count($allProducts) > 0 && count(array_intersect($selectedProducts, collect($allProducts)->pluck('id')->toArray())) === count($allProducts)">
                     </th>
                     <th>Image</th>
                     <th>Nom</th>
@@ -623,18 +599,18 @@ new class extends Component {
                 </tr>
             </thead>
             <tbody>
-                @forelse($allProducts as $product)
-                    <tr wire:key="product-{{ $product->id }}">
+                @forelse($allProducts as $index => $product)
+                    <tr wire:key="product-{{ $product['id'] ?? $index }}">
                         <td>
                             <input type="checkbox" 
                                    class="checkbox checkbox-sm" 
                                    wire:model.live="selectedProducts"
-                                   value="{{ $product->id }}">
+                                   value="{{ $product['id'] }}">
                         </td>
                         <td>
-                            @if($product->thumbnail)
-                                <img src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product->thumbnail }}"
-                                     alt="{{ $product->title }}"
+                            @if(!empty($product['thumbnail']))
+                                <img src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
+                                     alt="{{ $product['title'] ?? '' }}"
                                      class="h-12 w-12 object-cover rounded">
                             @else
                                 <div class="h-12 w-12 bg-gray-200 rounded flex items-center justify-center">
@@ -643,44 +619,52 @@ new class extends Component {
                             @endif
                         </td>
                         <td>
-                            <div class="font-medium text-sm">{{ $product->title }}</div>
-                            @if($product->parent_title)
-                                <div class="text-xs text-gray-500">Parent: {{ $product->parent_title }}</div>
+                            <div class="font-medium text-sm">{{ $product['title'] ?? 'N/A' }}</div>
+                            @if(!empty($product['parent_title']))
+                                <div class="text-xs text-gray-500">Parent: {{ $product['parent_title'] }}</div>
                             @endif
                         </td>
                         <td>
-                            <span class="badge badge-outline">{{ $product->vendor }}</span>
+                            <span class="badge badge-outline">{{ $product['vendor'] ?? 'N/A' }}</span>
                         </td>
                         <td>
-                            <span class="badge badge-ghost">{{ $product->type }}</span>
+                            <span class="badge badge-ghost">{{ $product['type'] ?? 'N/A' }}</span>
                         </td>
                         <td>
-                            <code class="text-xs">{{ $product->sku }}</code>
-                            <div class="text-xs text-gray-500">{{ $product->parkode }}</div>
+                            <code class="text-xs">{{ $product['sku'] ?? 'N/A' }}</code>
+                            @if(!empty($product['parkode']))
+                                <div class="text-xs text-gray-500">{{ $product['parkode'] }}</div>
+                            @endif
                         </td>
                         <td>
-                            <div class="font-bold">{{ number_format($product->price, 2) }} €</div>
-                            @if($product->special_price)
+                            <div class="font-bold">{{ number_format($product['price'] ?? 0, 2) }} €</div>
+                            @if(!empty($product['special_price']))
                                 <div class="text-xs line-through text-gray-500">
-                                    {{ number_format($product->special_price, 2) }} €
+                                    {{ number_format($product['special_price'], 2) }} €
                                 </div>
                             @endif
                         </td>
                         <td>
-                            @if($product->quantity_status)
+                            @if(!empty($product['quantity_status']))
                                 <span class="badge badge-success">Dispo</span>
                             @else
                                 <span class="badge badge-error">Rupture</span>
                             @endif
-                            <div class="text-xs text-gray-500">Qty: {{ $product->quantity ?? 0 }}</div>
+                            <div class="text-xs text-gray-500">Qty: {{ $product['quantity'] ?? 0 }}</div>
                         </td>
                         <td>
                             <button class="btn btn-xs btn-outline" 
-                                    wire:click="toggleProduct({{ $product->id }})"
+                                    wire:click="toggleProduct({{ $product['id'] }})"
                                     wire:confirm="Changer la sélection de ce produit ?">
-                                @if(in_array($product->id, $selectedProducts))
+                                @if(in_array($product['id'], $selectedProducts))
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
                                     Retirer
                                 @else
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                                    </svg>
                                     Ajouter
                                 @endif
                             </button>
@@ -688,18 +672,18 @@ new class extends Component {
                     </tr>
                 @empty
                     @if(!$loading)
-                        <tr>
-                            <td colspan="9" class="text-center py-8 text-gray-500">
-                                Aucun produit trouvé. Essayez de modifier vos filtres.
-                            </td>
-                        </tr>
+                    <tr>
+                        <td colspan="9" class="text-center py-8 text-gray-500">
+                            Aucun produit trouvé. Essayez de modifier vos filtres.
+                        </td>
+                    </tr>
                     @endif
                 @endforelse
             </tbody>
         </table>
         
         <!-- Élément de déclenchement pour l'infinity scroll -->
-        <div id="loadTrigger" class="py-8 text-center">
+        <div x-ref="loadTrigger" class="py-8 text-center">
             @if($loading)
                 <div class="flex justify-center items-center">
                     <span class="loading loading-spinner loading-lg"></span>
@@ -708,7 +692,7 @@ new class extends Component {
             @elseif($hasMore)
                 <p class="text-gray-500">Faites défiler pour charger plus de produits</p>
             @elseif(count($allProducts) > 0)
-                <p class="text-gray-500 font-semibold">✅ Tous les produits sont chargés ({{ count($allProducts) }}/{{ $totalItems }})</p>
+                <p class="text-gray-500">Tous les produits sont chargés</p>
             @endif
         </div>
     </div>
@@ -782,100 +766,13 @@ new class extends Component {
                        wire:model.live.debounce.500ms="filterCapacity"
                        placeholder="Filtrer par capacité...">
             </div>
-            
-            <!-- Informations sur les filtres actifs -->
-            <div class="mt-6 p-4 bg-base-200 rounded-lg">
-                <h4 class="font-semibold mb-2">Filtres actifs :</h4>
-                <div class="flex flex-wrap gap-2">
-                    @if($search)
-                        <span class="badge badge-primary">
-                            Recherche: {{ $search }}
-                            <button class="ml-1" wire:click="$set('search', '')">×</button>
-                        </span>
-                    @endif
-                    @if($filterName)
-                        <span class="badge badge-secondary">
-                            Nom: {{ $filterName }}
-                            <button class="ml-1" wire:click="$set('filterName', '')">×</button>
-                        </span>
-                    @endif
-                    @if($filterMarque)
-                        <span class="badge badge-accent">
-                            Marque: {{ $filterMarque }}
-                            <button class="ml-1" wire:click="$set('filterMarque', '')">×</button>
-                        </span>
-                    @endif
-                    @if($filterType)
-                        <span class="badge badge-info">
-                            Type: {{ $filterType }}
-                            <button class="ml-1" wire:click="$set('filterType', '')">×</button>
-                        </span>
-                    @endif
-                    @if($filterEAN)
-                        <span class="badge badge-warning">
-                            EAN: {{ $filterEAN }}
-                            <button class="ml-1" wire:click="$set('filterEAN', '')">×</button>
-                        </span>
-                    @endif
-                    @if($filterCapacity)
-                        <span class="badge badge-success">
-                            Capacité: {{ $filterCapacity }}
-                            <button class="ml-1" wire:click="$set('filterCapacity', '')">×</button>
-                        </span>
-                    @endif
-                    @if($search || $filterName || $filterMarque || $filterType || $filterEAN || $filterCapacity)
-                        <button class="btn btn-xs btn-ghost" wire:click="resetData">
-                            Tout effacer
-                        </button>
-                    @else
-                        <span class="text-sm text-gray-500">Aucun filtre actif</span>
-                    @endif
-                </div>
-            </div>
-            
-            <!-- Statistiques de cache -->
-            <div class="mt-6 p-4 bg-base-200 rounded-lg">
-                <h4 class="font-semibold mb-2">Statistiques :</h4>
-                <div class="space-y-2 text-sm">
-                    <div class="flex justify-between">
-                        <span>Produits chargés :</span>
-                        <span class="font-semibold">{{ count($allProducts) }}</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span>Total produits :</span>
-                        <span class="font-semibold">{{ $totalItems }}</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span>Pages chargées :</span>
-                        <span class="font-semibold">{{ $page }}</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span>Statut :</span>
-                        <span class="font-semibold {{ $loading ? 'text-warning' : ($hasMore ? 'text-info' : 'text-success') }}">
-                            @if($loading)
-                                Chargement...
-                            @elseif($hasMore)
-                                Plus de données disponibles
-                            @else
-                                Tous chargés
-                            @endif
-                        </span>
-                    </div>
-                </div>
-            </div>
         </div>
         
         <div class="mt-8 flex gap-2">
             <button class="btn btn-primary flex-1" wire:click="$refresh">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
                 Appliquer les filtres
             </button>
             <button class="btn btn-ghost" wire:click="resetData">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
                 Réinitialiser
             </button>
         </div>
@@ -885,282 +782,46 @@ new class extends Component {
     <div x-show="$wire.showFilters" 
          x-cloak
          @click="$wire.showFilters = false"
-         class="fixed inset-0 bg-black bg-opacity-50 z-40"
-         x-transition:enter="transition ease-out duration-300"
-         x-transition:enter-start="opacity-0"
-         x-transition:enter-end="opacity-100"
-         x-transition:leave="transition ease-in duration-300"
-         x-transition:leave-start="opacity-100"
-         x-transition:leave-end="opacity-0">
+         class="fixed inset-0 bg-black bg-opacity-50 z-40">
     </div>
-
-    <!-- Bouton flottant pour ouvrir les filtres -->
-    <button class="fixed bottom-6 right-6 btn btn-primary btn-circle shadow-lg z-30"
-            x-show="!$wire.showFilters"
-            @click="$wire.showFilters = true">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-        </svg>
-    </button>
-
-    <!-- Bouton flottant pour remonter en haut -->
-    <button class="fixed bottom-6 left-6 btn btn-circle btn-outline shadow-lg z-30"
-            x-show="window.scrollY > 300"
-            x-transition
-            @click="window.scrollTo({ top: 0, behavior: 'smooth' })">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18" />
-        </svg>
-    </button>
 
     <!-- Actions finales -->
-    <div class="mt-8 p-6 bg-base-100 rounded-box border border-base-content/10">
-        <div class="flex flex-col md:flex-row justify-between items-center gap-4">
-            <!-- Résumé de la sélection -->
-            <div class="flex-1">
-                <h3 class="font-bold text-lg mb-2">Résumé de la sélection</h3>
-                <div class="space-y-2">
-                    <div class="flex items-center gap-2">
-                        <span class="badge badge-primary">
-                            {{ count($selectedProducts) }} produits sélectionnés
-                        </span>
-                        <span class="text-sm text-gray-500">
-                            sur {{ count($allProducts) }} produits chargés
-                        </span>
-                    </div>
-                    
-                    @if(count($selectedProducts) > 0)
-                        <div class="mt-2">
-                            <details class="collapse collapse-arrow border border-base-300">
-                                <summary class="collapse-title text-sm font-medium">
-                                    Voir les produits sélectionnés
-                                </summary>
-                                <div class="collapse-content">
-                                    <div class="max-h-48 overflow-y-auto mt-2">
-                                        <ul class="space-y-1">
-                                            @foreach($allProducts->whereIn('id', $selectedProducts)->take(10) as $product)
-                                                <li class="flex items-center justify-between text-sm py-1 border-b border-base-200">
-                                                    <div class="flex items-center gap-2">
-                                                        @if($product->thumbnail)
-                                                            <img src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product->thumbnail }}"
-                                                                 alt="{{ $product->title }}"
-                                                                 class="h-8 w-8 object-cover rounded">
-                                                        @endif
-                                                        <span class="truncate max-w-xs">{{ $product->title }}</span>
-                                                    </div>
-                                                    <span class="font-semibold">{{ number_format($product->price, 2) }} €</span>
-                                                </li>
-                                            @endforeach
-                                            @if(count($selectedProducts) > 10)
-                                                <li class="text-center text-sm text-gray-500 py-2">
-                                                    ... et {{ count($selectedProducts) - 10 }} autres produits
-                                                </li>
-                                            @endif
-                                        </ul>
-                                    </div>
-                                </div>
-                            </details>
-                        </div>
-                    @endif
-                </div>
-            </div>
-            
-            <!-- Actions -->
-            <div class="flex flex-col sm:flex-row gap-3">
-                <x-button 
-                    class="btn-error btn-outline" 
-                    label="Annuler" 
-                    wire:click="cancel"
-                    wire:confirm="Êtes-vous sûr de vouloir annuler ? Tous les produits sélectionnés seront perdus."
-                />
-                
-                <x-button 
-                    class="btn-primary" 
-                    :label="'Valider (' . count($selectedProducts) . ' produits)'" 
-                    wire:click="save"
-                    :disabled="empty($selectedProducts)"
-                />
-            </div>
+    <div class="mt-6 flex justify-between items-center">
+        <div class="text-sm text-gray-500">
+            {{ count($allProducts) }} produits chargés sur {{ $totalItems }} au total
         </div>
-        
-        <!-- Informations supplémentaires -->
-        <div class="mt-6 pt-6 border-t border-base-300">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                <div class="text-center">
-                    <div class="stat-title">Produits chargés</div>
-                    <div class="stat-value text-primary">{{ count($allProducts) }}</div>
-                    <div class="stat-desc">sur {{ $totalItems }} au total</div>
-                </div>
-                
-                <div class="text-center">
-                    <div class="stat-title">Sélection</div>
-                    <div class="stat-value text-secondary">{{ count($selectedProducts) }}</div>
-                    <div class="stat-desc">{{ count($selectedProducts) > 0 ? round((count($selectedProducts) / count($allProducts)) * 100, 1) : 0 }}% des visibles</div>
-                </div>
-                
-                <div class="text-center">
-                    <div class="stat-title">Pages</div>
-                    <div class="stat-value text-accent">{{ $page }}</div>
-                    <div class="stat-desc">sur {{ $totalPages }} pages totales</div>
-                </div>
-            </div>
+        <div class="flex gap-2">
+            <x-button 
+                class="btn-error" 
+                label="Annuler" 
+                wire:click="cancel"
+                wire:confirm="Êtes-vous sûr de vouloir annuler ? Tous les produits sélectionnés seront perdus."
+            />
+            <x-button 
+                class="btn-primary" 
+                label="Valider la sélection" 
+                wire:click="save"
+                :disabled="count($selectedProducts) === 0"
+            />
         </div>
     </div>
-
-    <!-- Script pour améliorer l'expérience utilisateur -->
-    <script>
-        document.addEventListener('livewire:init', () => {
-            // Forcer le rechargement quand on change de page et qu'on revient
-            window.addEventListener('pageshow', (event) => {
-                if (event.persisted) {
-                    Livewire.dispatch('refresh');
-                }
-            });
-            
-            // Gérer le scroll avec le cache
-            let lastScrollPosition = 0;
-            window.addEventListener('scroll', () => {
-                const currentScroll = window.scrollY;
-                const scrollDifference = Math.abs(currentScroll - lastScrollPosition);
-                
-                // Sauvegarder la position toutes les 500px de défilement
-                if (scrollDifference > 500) {
-                    sessionStorage.setItem('productListScrollPosition', currentScroll);
-                    lastScrollPosition = currentScroll;
-                }
-            });
-            
-            // Restaurer la position au chargement
-            const savedPosition = sessionStorage.getItem('productListScrollPosition');
-            if (savedPosition) {
-                setTimeout(() => {
-                    window.scrollTo(0, parseInt(savedPosition));
-                    sessionStorage.removeItem('productListScrollPosition');
-                }, 100);
-            }
-            
-            // Améliorer la sélection des checkboxes
-            document.addEventListener('click', (e) => {
-                if (e.target.matches('input[type="checkbox"]') && e.target.closest('tr')) {
-                    const checkbox = e.target;
-                    const row = checkbox.closest('tr');
-                    if (checkbox.checked) {
-                        row.classList.add('bg-primary', 'bg-opacity-10');
-                    } else {
-                        row.classList.remove('bg-primary', 'bg-opacity-10');
-                    }
-                }
-            });
-        });
-        
-        // Gestion du scroll pour le bouton retour en haut
-        window.addEventListener('scroll', () => {
-            const scrollTopBtn = document.querySelector('[x-show="window.scrollY > 300"]');
-            if (scrollTopBtn) {
-                scrollTopBtn.style.display = window.scrollY > 300 ? 'block' : 'none';
-            }
-        });
-    </script>
 </div>
 
-<style>
-    /* Styles supplémentaires pour améliorer l'interface */
-    [x-cloak] { display: none !important; }
-    
-    .checkbox:checked {
-        background-color: hsl(var(--p));
-        border-color: hsl(var(--p));
-    }
-    
-    .table tr {
-        transition: background-color 0.2s ease;
-    }
-    
-    .table tr:hover {
-        background-color: hsl(var(--b2) / 0.5);
-    }
-    
-    .table tr.bg-primary {
-        background-color: hsl(var(--p) / 0.1) !important;
-    }
-    
-    .badge {
-        transition: all 0.2s ease;
-    }
-    
-    .badge:hover {
-        transform: scale(1.05);
-    }
-    
-    /* Animation pour le chargement */
-    @keyframes pulse-subtle {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.7; }
-    }
-    
-    .loading {
-        animation: pulse-subtle 1.5s ease-in-out infinite;
-    }
-    
-    /* Amélioration du scroll */
-    ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-    }
-    
-    ::-webkit-scrollbar-track {
-        background: hsl(var(--b2));
-        border-radius: 4px;
-    }
-    
-    ::-webkit-scrollbar-thumb {
-        background: hsl(var(--n));
-        border-radius: 4px;
-    }
-    
-    ::-webkit-scrollbar-thumb:hover {
-        background: hsl(var(--p));
-    }
-    
-    /* Animation pour les notifications */
-    .alert {
-        transition: all 0.3s ease;
-    }
-    
-    /* Styles pour les lignes sélectionnées */
-    input[type="checkbox"]:checked + * {
-        color: hsl(var(--p));
-    }
-    
-    /* Amélioration de la table */
-    .table th {
-        background-color: hsl(var(--b1));
-        font-weight: 600;
-        text-transform: uppercase;
-        font-size: 0.75rem;
-        letter-spacing: 0.05em;
-    }
-    
-    .table td {
-        vertical-align: middle;
-    }
-    
-    /* Responsive table */
-    @media (max-width: 768px) {
-        .table {
-            display: block;
-            overflow-x: auto;
-            white-space: nowrap;
+@script
+<script>
+    // Écouter les événements de cache
+    Livewire.on('cache-cleared', (event) => {
+        // Afficher une notification
+        if (event.message) {
+            alert(event.message);
         }
-        
-        .table th:nth-child(3),
-        .table td:nth-child(3) {
-            min-width: 200px;
+    });
+    
+    // Écouter les notifications
+    Livewire.on('notify', (event) => {
+        if (event.type === 'error') {
+            alert(event.message);
         }
-        
-        .table th:nth-child(6),
-        .table td:nth-child(6) {
-            min-width: 120px;
-        }
-    }
-</style>
+    });
+</script>
+@endscript
