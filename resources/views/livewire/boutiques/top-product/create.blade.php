@@ -203,12 +203,13 @@ new class extends Component {
     {
         if (empty($this->selectedProducts)) {
             $this->warning('Veuillez sélectionner au moins un produit.');
+            return;
         }
         
         $this->listName = 'Liste du ' . date('d/m/Y H:i');
         
         // Charger les détails avant d'ouvrir le modal
-        //dd($this->loadSelectedProductsDetails());
+        $this->loadSelectedProductsDetails()
         
         Log::info('Ouverture modal avec ' . count($this->selectedProducts) . ' produits sélectionnés');
         Log::info('Détails chargés: ' . count($this->selectedProductsDetails));
