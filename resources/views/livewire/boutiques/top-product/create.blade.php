@@ -4,7 +4,6 @@ use Livewire\Volt\Component;
 use Livewire\Attributes\On;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Cache;
 use App\Models\Comparaison;
 use App\Models\DetailProduct;
 use Mary\Traits\Toast;
@@ -31,9 +30,6 @@ new class extends Component {
     // Modal
     public $showModal = false;
     public $listName = '';
-    
-    // Cache
-    protected $cacheTTL = 3600;
 
     // Toast pour notification
     use Toast;
@@ -72,7 +68,6 @@ new class extends Component {
         $skus = array_values($this->selectedProducts);
         
         try {
-            // Version avec placeholders pour éviter les problèmes d'injection SQL
             $placeholders = implode(',', array_fill(0, count($skus), '?'));
             
             $query = "
@@ -101,7 +96,6 @@ new class extends Component {
             
             $this->selectedProductsDetails = array_map(fn($p) => (array) $p, $products);
             
-            // Debug: afficher les premiers résultats
             if (!empty($this->selectedProductsDetails)) {
                 Log::info('Premier produit chargé:', $this->selectedProductsDetails[0]);
             }
@@ -133,10 +127,8 @@ new class extends Component {
             $this->selectedProducts[] = $sku;
         }
         
-        // Mettre à jour les détails immédiatement
         $this->loadSelectedProductsDetails();
         
-        // Déboguer
         Log::info('Toggle select: ' . $sku);
         Log::info('Total sélectionnés: ' . count($this->selectedProducts));
     }
@@ -144,11 +136,9 @@ new class extends Component {
     public function updatedSelectAll($value)
     {
         if ($value) {
-            // Sélectionner tous les produits visibles
             $visibleSkus = collect($this->products)->pluck('sku')->toArray();
             $this->selectedProducts = array_unique(array_merge($this->selectedProducts, $visibleSkus));
         } else {
-            // Désélectionner tous les produits visibles
             $visibleSkus = collect($this->products)->pluck('sku')->toArray();
             $this->selectedProducts = array_diff($this->selectedProducts, $visibleSkus);
         }
@@ -214,10 +204,10 @@ new class extends Component {
         Log::info('Ouverture modal avec ' . count($this->selectedProducts) . ' produits sélectionnés');
         Log::info('Détails chargés: ' . count($this->selectedProductsDetails));
         
-        // Forcer l'ouverture du modal
+        // Forcer l'ouverture du modal via dispatch pour garantir le rafraîchissement
         $this->showModal = true;
+        $this->dispatch('modal-opened');
         
-        // Déboguer la valeur
         Log::info('Valeur showModal: ' . ($this->showModal ? 'true' : 'false'));
     }
     
@@ -226,14 +216,13 @@ new class extends Component {
     {
         Log::info('Annulation de la sélection');
         
-        // Fermer le modal
         $this->showModal = false;
-        
-        // Réinitialiser la sélection
         $this->selectedProducts = [];
         $this->selectedProductsDetails = [];
         $this->listName = '';
         $this->selectAll = false;
+        
+        $this->dispatch('modal-closed');
         
         Log::info('Sélection réinitialisée');
     }
@@ -242,22 +231,14 @@ new class extends Component {
     public function saveList()
     {
         try {
-
-            dd($this->selectedProducts);
             // Validation
             if (empty($this->selectedProducts)) {
-                $this->dispatch('notify', [
-                    'type' => 'error',
-                    'message' => 'Veuillez sélectionner au moins un produit.'
-                ]);
+                $this->error('Veuillez sélectionner au moins un produit.');
                 return;
             }
             
             if (empty($this->listName)) {
-                $this->dispatch('notify', [
-                    'type' => 'error',
-                    'message' => 'Veuillez donner un nom à votre liste.'
-                ]);
+                $this->error('Veuillez donner un nom à votre liste.');
                 return;
             }
             
@@ -286,10 +267,7 @@ new class extends Component {
             // Fermer le modal
             $this->showModal = false;
             
-            $this->dispatch('notify', [
-                'type' => 'success',
-                'message' => 'Liste "' . $this->listName . '" sauvegardée avec ' . count($batchData) . ' produit(s).'
-            ]);
+            $this->success('Liste "' . $this->listName . '" sauvegardée avec ' . count($batchData) . ' produit(s).');
             
             // Réinitialiser la sélection
             $this->selectedProducts = [];
@@ -302,10 +280,7 @@ new class extends Component {
             
         } catch (\Exception $e) {
             Log::error('Erreur sauvegarde liste: ' . $e->getMessage());
-            $this->dispatch('notify', [
-                'type' => 'error',
-                'message' => 'Erreur lors de la sauvegarde: ' . $e->getMessage()
-            ]);
+            $this->error('Erreur lors de la sauvegarde: ' . $e->getMessage());
         }
     }
     
@@ -419,7 +394,7 @@ new class extends Component {
             // Filtre pour prix > 0
             $subQuery .= " AND product_decimal.price > 0 ";
 
-            // Total count (mis en cache séparément)
+            // Total count
             $total = $this->getProductCount($subQuery, $params);
             $nbPage = ceil($total / $perPage);
 
@@ -499,9 +474,7 @@ new class extends Component {
                 "per_page" => $perPage,
                 "total_page" => $nbPage,
                 "current_page" => $page,
-                "data" => $result,
-                "cached_at" => now()->toDateTimeString(),
-                "cache_key" => $this->getCacheKey('products', $page, $perPage)
+                "data" => $result
             ];
 
         } catch (\Throwable $e) {
@@ -520,37 +493,28 @@ new class extends Component {
     
     protected function getProductCount($subQuery, $params)
     {
-        $countCacheKey = $this->getCacheKey('count', md5($subQuery . serialize($params)));
-        
-        return Cache::remember($countCacheKey, $this->cacheTTL, function () use ($subQuery, $params) {
-            $resultTotal = DB::connection('mysqlMagento')->selectOne("
-                SELECT COUNT(*) as nb
-                FROM catalog_product_entity as produit
-                LEFT JOIN catalog_product_relation as parent_child_table ON parent_child_table.child_id = produit.entity_id 
-                LEFT JOIN catalog_product_super_link as cpsl ON cpsl.product_id = produit.entity_id 
-                LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
-                LEFT JOIN product_text ON product_text.entity_id = produit.entity_id 
-                LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
-                LEFT JOIN product_int ON product_int.entity_id = produit.entity_id
-                LEFT JOIN product_media ON product_media.entity_id = produit.entity_id
-                LEFT JOIN product_categorie ON product_categorie.entity_id = produit.entity_id 
-                LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id 
-                LEFT JOIN cataloginventory_stock_status AS stock_status ON stock_item.product_id = stock_status.product_id 
-                LEFT JOIN option_super_attribut AS options ON options.simple_product_id = produit.entity_id 
-                LEFT JOIN eav_attribute_set AS eas ON produit.attribute_set_id = eas.attribute_set_id 
-                LEFT JOIN catalog_product_entity as produit_parent ON parent_child_table.parent_id = produit_parent.entity_id 
-                LEFT JOIN product_char as product_parent_char ON product_parent_char.entity_id = produit_parent.entity_id
-                LEFT JOIN product_text as product_parent_text ON product_parent_text.entity_id = produit_parent.entity_id 
-                WHERE product_int.status >= 0 $subQuery
-            ", $params);
+        $resultTotal = DB::connection('mysqlMagento')->selectOne("
+            SELECT COUNT(*) as nb
+            FROM catalog_product_entity as produit
+            LEFT JOIN catalog_product_relation as parent_child_table ON parent_child_table.child_id = produit.entity_id 
+            LEFT JOIN catalog_product_super_link as cpsl ON cpsl.product_id = produit.entity_id 
+            LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+            LEFT JOIN product_text ON product_text.entity_id = produit.entity_id 
+            LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
+            LEFT JOIN product_int ON product_int.entity_id = produit.entity_id
+            LEFT JOIN product_media ON product_media.entity_id = produit.entity_id
+            LEFT JOIN product_categorie ON product_categorie.entity_id = produit.entity_id 
+            LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id 
+            LEFT JOIN cataloginventory_stock_status AS stock_status ON stock_item.product_id = stock_status.product_id 
+            LEFT JOIN option_super_attribut AS options ON options.simple_product_id = produit.entity_id 
+            LEFT JOIN eav_attribute_set AS eas ON produit.attribute_set_id = eas.attribute_set_id 
+            LEFT JOIN catalog_product_entity as produit_parent ON parent_child_table.parent_id = produit_parent.entity_id 
+            LEFT JOIN product_char as product_parent_char ON product_parent_char.entity_id = produit_parent.entity_id
+            LEFT JOIN product_text as product_parent_text ON product_parent_text.entity_id = produit_parent.entity_id 
+            WHERE product_int.status >= 0 $subQuery
+        ", $params);
 
-            return $resultTotal->nb ?? 0;
-        });
-    }
-    
-    protected function getCacheKey($type, ...$params)
-    {
-        return "products_{$type}_" . md5(serialize($params));
+        return $resultTotal->nb ?? 0;
     }
 }; ?>
 
@@ -754,12 +718,10 @@ new class extends Component {
         <div class="border-t border-base-content/5 bg-base-100">
             @if($hasMore)
                 <div class="flex flex-col items-center justify-center py-6 gap-4">
-                    <!-- Bouton Afficher plus -->
                     <button 
                         wire:click="loadMore"
                         wire:loading.attr="disabled"
                         class="btn btn-primary btn-wide"
-                        :disabled="$wire.loadingMore"
                     >
                         <span wire:loading.remove wire:target="loadMore">
                             Afficher {{ $perPage }} produits supplémentaires
@@ -770,14 +732,12 @@ new class extends Component {
                         </span>
                     </button>
                     
-                    <!-- Information -->
                     <div class="text-sm text-base-content/60">
                         <span class="font-medium">{{ count($products) }}</span> produits affichés sur 
                         <span class="font-medium">{{ $totalItems }}</span> au total
                     </div>
                 </div>
             @elseif(count($products) > 0)
-                <!-- Message de fin -->
                 <div class="text-center py-6 text-base-content/70 bg-base-100">
                     <div class="inline-flex items-center gap-2 bg-success/10 text-success px-6 py-3 rounded-full">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -790,8 +750,8 @@ new class extends Component {
         </div>
     </div>
 
-    <!-- Modal de confirmation -->
-    @if($showModal)
+    <!-- Modal de confirmation avec wire:key pour forcer le refresh -->
+    <div wire:key="modal-{{ $showModal ? 'open' : 'closed' }}">
         <x-modal wire:model="showModal" title="Confirmation de la liste" persistent separator class="backdrop-blur-sm">
             <div class="space-y-4">
                 <!-- Nom de la liste -->
@@ -897,9 +857,9 @@ new class extends Component {
             </div>
             
             <x-slot:actions>
-                <x-button label="Annuler" @click="$wire.cancelSelection()" />
+                <x-button label="Annuler" wire:click="cancelSelection" />
                 <x-button label="Sauvegarder" class="btn-primary" wire:click="saveList" wire:loading.attr="disabled">
-                    <span wire:loading.remove>Sauvegarder</span>
+                    <span wire:loading.remove wire:target="saveList">Sauvegarder</span>
                     <span wire:loading wire:target="saveList" class="flex items-center gap-2">
                         <span class="loading loading-spinner loading-sm"></span>
                         Sauvegarde...
@@ -907,33 +867,26 @@ new class extends Component {
                 </x-button>
             </x-slot:actions>
         </x-modal>
-    @endif
+    </div>
 </div>
 
 @push('scripts')
 <script>
     document.addEventListener('livewire:initialized', () => {
-        Livewire.on('notify', (event) => {
-            const toast = document.createElement('div');
-            toast.className = `toast toast-top toast-end`;
-            toast.innerHTML = `
-                <div class="alert ${event.type === 'success' ? 'alert-success' : 'alert-error'}">
-                    <span>${event.message}</span>
-                </div>
-            `;
-            document.body.appendChild(toast);
-            
-            setTimeout(() => {
-                toast.remove();
-            }, 3000);
+        // Écouter l'événement d'ouverture du modal
+        Livewire.on('modal-opened', () => {
+            console.log('Modal ouvert via événement');
+        });
+        
+        Livewire.on('modal-closed', () => {
+            console.log('Modal fermé via événement');
         });
         
         Livewire.on('list-created', (event) => {
-            // Redirection ou autre action après création
             console.log('Liste créée avec ID:', event.listId);
+            // Redirection ou autre action
         });
         
-        // Débogage
         console.log('Livewire component initialized');
     });
 </script>
