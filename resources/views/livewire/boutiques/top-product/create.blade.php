@@ -424,25 +424,9 @@ new class extends Component {
                 batchLoaded: @entangle('currentBatchLoaded'),
                 scrollLock: false,
                 init() {
-                    console.log('Initialisation - isLoadingMore:', this.isLoadingMore, 'batchLoaded:', this.batchLoaded);
-                    
-                    // Observer les changements
-                    this.$watch('isLoadingMore', (value) => {
-                        console.log('isLoadingMore changé:', value);
-                    });
-                    
-                    this.$watch('batchLoaded', (value) => {
-                        console.log('batchLoaded changé:', value);
-                        if (value) {
-                            console.log('Lot terminé, déverrouillage scroll');
-                            this.scrollLock = false;
-                        }
-                    });
-                    
                     // Détection du scroll
                     this.$el.addEventListener('scroll', (e) => {
                         if (this.scrollLock) {
-                            console.log('Scroll verrouillé - chargement en cours');
                             return;
                         }
                         
@@ -452,20 +436,21 @@ new class extends Component {
                         const clientHeight = el.clientHeight;
                         
                         // Détecter quand on est tout en bas (95%)
-                        const scrollThreshold = 0.95; // 95% du bas
+                        const scrollThreshold = 0.95;
                         const scrollPosition = (scrollTop + clientHeight) / scrollHeight;
                         
                         if (scrollPosition >= scrollThreshold) {
                             if (this.hasMore && !this.isLoadingMore) {
-                                console.log('Déclenchement nouveau lot de 60 produits');
-                                this.scrollLock = true; // Verrouiller le scroll pendant le chargement
+                                this.scrollLock = true;
                                 @this.loadMore();
-                            } else {
-                                console.log('Conditions non remplies:', {
-                                    hasMore: this.hasMore,
-                                    isLoadingMore: this.isLoadingMore
-                                });
                             }
+                        }
+                    });
+                    
+                    // Observer quand le lot est chargé
+                    this.$watch('batchLoaded', (value) => {
+                        if (value) {
+                            this.scrollLock = false;
                         }
                     });
                 }
@@ -587,18 +572,9 @@ new class extends Component {
                                     Chargement de {{ $perPage }} produits...
                                 </p>
                                 <p class="text-sm text-base-content/60">
-                                    Lot {{ $page }} sur {{ ceil($totalItems / $perPage) }}
+                                    Lot {{ $page }} en cours
                                 </p>
                             </div>
-                        </div>
-                        
-                        <!-- Barre de progression -->
-                        <div class="w-48 bg-base-300 rounded-full h-1.5 overflow-hidden">
-                            <div 
-                                class="bg-primary h-full rounded-full"
-                                x-bind:style="{ width: batchLoaded ? '100%' : '70%' }"
-                                x-bind:class="{ 'animate-pulse': !batchLoaded }"
-                            ></div>
                         </div>
                     </div>
                 </div>
@@ -613,78 +589,8 @@ new class extends Component {
                         <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
                     </svg>
                     <span class="font-medium">Tous les produits chargés ({{ $totalItems }} au total)</span>
-                    <span class="text-xs bg-success/20 px-2 py-1 rounded">
-                        {{ $page }} lot{{ $page > 1 ? 's' : '' }} de {{ $perPage }} produits
-                    </span>
                 </div>
-            </div>
-        @endif
-        
-        <!-- Bouton pour charger manuellement (optionnel) -->
-        @if($hasMore && !$loading && !$loadingMore && count($products) > 0)
-            <div class="text-center py-4 bg-base-100 border-t border-base-content/5">
-                <button 
-                    x-data="{ showButton: false }"
-                    x-init="
-                        // Afficher le bouton seulement si on est en bas
-                        this.$el.parentElement.parentElement.addEventListener('scroll', (e) => {
-                            const el = this.$el.parentElement.parentElement;
-                            const scrollTop = el.scrollTop;
-                            const scrollHeight = el.scrollHeight;
-                            const clientHeight = el.clientHeight;
-                            const scrollPosition = (scrollTop + clientHeight) / scrollHeight;
-                            
-                            this.showButton = scrollPosition >= 0.8;
-                        });
-                    "
-                    x-show="showButton"
-                    @click="$wire.loadMore()"
-                    class="btn btn-primary btn-sm"
-                    :disabled="$wire.loadingMore"
-                >
-                    <span x-show="!$wire.loadingMore">Charger {{ $perPage }} produits supplémentaires</span>
-                    <span x-show="$wire.loadingMore" class="loading loading-spinner loading-xs"></span>
-                </button>
             </div>
         @endif
     </div>
 </div>
-
-<style>
-/* Animation pour la barre de progression */
-@keyframes pulse-bar {
-    0%, 100% {
-        opacity: 1;
-        width: 30%;
-    }
-    50% {
-        opacity: 0.7;
-        width: 70%;
-    }
-}
-
-.animate-pulse-bar {
-    animation: pulse-bar 1.5s ease-in-out infinite;
-}
-
-/* Transition pour le sticky loader */
-.sticky-loader {
-    transition: all 0.3s ease;
-    backdrop-filter: blur(8px);
-}
-
-/* Style pour le bouton de chargement manuel */
-.load-more-btn {
-    transition: all 0.2s ease;
-}
-
-.load-more-btn:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(var(--color-primary) / 0.2);
-}
-
-/* Empêcher les déclenchements multiples */
-.scroll-lock {
-    pointer-events: none;
-}
-</style>
