@@ -340,15 +340,25 @@ new class extends Component {
 
     <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100">
         <div 
-            x-data="{ isLoading: @entangle('loading').live, hasMore: @entangle('hasMore').live }"
-            x-init="
-                $el.addEventListener('scroll', () => {
+            x-data="{ 
+                isLoading: @entangle('loading').live, 
+                hasMore: @entangle('hasMore').live,
+                handleScroll() {
                     const threshold = 200;
-                    if ($el.scrollHeight - $el.scrollTop - $el.clientHeight < threshold && hasMore && !isLoading) {
+                    const scrollTop = this.$el.scrollTop;
+                    const scrollHeight = this.$el.scrollHeight;
+                    const clientHeight = this.$el.clientHeight;
+                    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+                    
+                    console.log('Scroll:', { scrollTop, scrollHeight, clientHeight, distanceFromBottom, hasMore: this.hasMore, isLoading: this.isLoading });
+                    
+                    if (distanceFromBottom < threshold && this.hasMore && !this.isLoading) {
+                        console.log('Loading more...');
                         $wire.loadMore();
                     }
-                });
-            "
+                }
+            }"
+            @scroll="handleScroll()"
             class="max-h-[600px] overflow-y-auto"
         >
             <table class="table table-sm">
