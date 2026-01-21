@@ -15,7 +15,7 @@ new class extends Component {
     public bool $loadingMore = false;
     public bool $hasMore = true;
     public int $page = 1;
-    public int $perPage = 5;
+    public int $perPage = 20;
 
     // Cache
     protected $cacheTTL = 3600;
@@ -37,14 +37,14 @@ new class extends Component {
         }
     }
 
-    // CORRECTION : Cette méthode est appelée par le bouton "Afficher plus"
-    public function loadMore(): void
+    // Méthode pour charger plus de produits
+    public function loadMoreProducts(): void
     {
         if (!$this->hasMore || $this->loading || $this->loadingMore) {
             return;
         }
 
-        Log::info('loadMore: Chargement page ' . ($this->page + 1));
+        Log::info('loadMoreProducts: Chargement page ' . ($this->page + 1));
         $this->loadingMore = true;
         $this->page++;
     }
@@ -62,7 +62,7 @@ new class extends Component {
     public function refreshProducts(): void
     {
         $this->resetProducts();
-        $this->loadListTitle(); // Recharger aussi le titre au cas où
+        $this->loadListTitle();
     }
 
     public function with(): array
@@ -264,7 +264,7 @@ new class extends Component {
         if (this.loading || !$wire.hasMore) return;
         
         this.loading = true;
-        await $wire.loadMore();
+        await $wire.loadMoreProducts(); // Appel de la méthode renommée
         this.loading = false;
     }
 }" x-init="init">
@@ -359,7 +359,7 @@ new class extends Component {
                             </td>
                             <td class="font-mono text-sm">
                                 <div class="tooltip" data-tip="Cliquer pour copier">
-                                    <button @click="copySku('{{ $product['sku'] }}')"
+                                    <button onclick="copySku('{{ $product['sku'] }}')"
                                         class="hover:text-primary transition-colors">
                                         {{ $product['sku'] ?? '' }}
                                     </button>
@@ -470,11 +470,12 @@ new class extends Component {
         </button>
 
         @if($hasMore && !$loadingMore && !$loading)
-            <button wire:click="loadMore" wire:loading.attr="disabled" wire:target="loadMore" class="btn btn-outline">
-                <span wire:loading.remove wire:target="loadMore">
+            <button wire:click="loadMoreProducts" wire:loading.attr="disabled" wire:target="loadMoreProducts"
+                class="btn btn-outline">
+                <span wire:loading.remove wire:target="loadMoreProducts">
                     Charger plus
                 </span>
-                <span wire:loading wire:target="loadMore" class="flex items-center gap-2">
+                <span wire:loading wire:target="loadMoreProducts" class="flex items-center gap-2">
                     <span class="loading loading-spinner loading-sm"></span>
                     Chargement...
                 </span>
@@ -499,37 +500,28 @@ new class extends Component {
     @endif
 </div>
 
-@push('scripts')
-    <script>
-        // Fonction pour copier le SKU
-        document.addEventListener('livewire:initialized', () => {
-            // Afficher une notification lors de la copie
-            Livewire.on('copied', (event) => {
-                const toast = document.createElement('div');
-                toast.className = `toast toast-top toast-end`;
-                toast.innerHTML = `
-                    <div class="alert alert-success">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span>SKU ${event.sku} copié !</span>
-                    </div>
-                `;
-                document.body.appendChild(toast);
+<script>
+    // Fonction pour copier le SKU
+    function copySku(sku) {
+        navigator.clipboard.writeText(sku).then(() => {
+            // Créer une notification simple
+            const toast = document.createElement('div');
+            toast.className = `toast toast-top toast-end`;
+            toast.innerHTML = `
+                <div class="alert alert-success">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>SKU ${sku} copié !</span>
+                </div>
+            `;
+            document.body.appendChild(toast);
 
-                setTimeout(() => {
-                    toast.remove();
-                }, 2000);
-            });
+            setTimeout(() => {
+                toast.remove();
+            }, 2000);
+        }).catch(err => {
+            console.error('Erreur copie:', err);
         });
-
-        // Fonction pour émettre l'événement de copie
-        function copySku(sku) {
-            navigator.clipboard.writeText(sku).then(() => {
-                Livewire.dispatch('copied', { sku: sku });
-            }).catch(err => {
-                console.error('Erreur copie:', err);
-            });
-        }
-    </script>
-@endpush
+    }
+</script>
