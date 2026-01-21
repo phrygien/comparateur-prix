@@ -397,7 +397,7 @@ new class extends Component {
     </div>
 
     <div class="rounded-box border border-base-content/5 bg-base-100 overflow-hidden">
-        <!-- Conteneur principal SANS infinite scroll -->
+        <!-- Conteneur principal -->
         <div class="max-h-[600px] overflow-y-auto">
             <!-- Table -->
             <table class="table table-sm w-full">
@@ -532,13 +532,6 @@ new class extends Component {
                         <span class="font-medium">{{ count($products) }}</span> produits affichés sur 
                         <span class="font-medium">{{ $totalItems }}</span> au total
                     </div>
-                    
-                    <!-- Information sur la pagination -->
-                    <div class="flex items-center gap-2 text-xs text-base-content/50">
-                        <span class="badge badge-sm badge-outline">Page {{ $page }}</span>
-                        <span>•</span>
-                        <span>{{ $perPage }} produits par page</span>
-                    </div>
                 </div>
             @elseif(count($products) > 0)
                 <!-- Message de fin -->
@@ -551,65 +544,6 @@ new class extends Component {
                     </div>
                 </div>
             @endif
-            
-            <!-- Résumé en bas -->
-            <div class="border-t border-base-content/5 px-4 py-3 bg-base-200/50">
-                <div class="flex flex-col sm:flex-row justify-between items-center gap-2 text-sm">
-                    <div class="text-base-content/70">
-                        <span class="font-medium">{{ count($products) }}</span> produits affichés
-                        @if($hasMore)
-                            <span class="text-primary">• {{ $totalItems - count($products) }} restants</span>
-                        @endif
-                    </div>
-                    
-                    <div class="flex items-center gap-2">
-                        <span class="text-base-content/70">Produits par page :</span>
-                        <select 
-                            wire:model.live="perPage" 
-                            class="select select-bordered select-xs"
-                            :disabled="$wire.loading || $wire.loadingMore"
-                        >
-                            <option value="10">10</option>
-                            <option value="20">20</option>
-                            <option value="30">30</option>
-                            <option value="50">50</option>
-                            <option value="100">100</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
         </div>
     </div>
 </div>
-
-<style>
-/* Animation pour le bouton */
-.btn-primary {
-    transition: all 0.2s ease;
-}
-
-.btn-primary:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(var(--color-primary) / 0.3);
-}
-
-.btn-primary:active:not(:disabled) {
-    transform: translateY(0);
-}
-
-/* Style pour le select */
-.select-bordered {
-    border: 1px solid rgba(var(--color-base-content) / 0.2);
-}
-
-.select-bordered:focus {
-    border-color: rgba(var(--color-primary) / 0.5);
-    box-shadow: 0 0 0 2px rgba(var(--color-primary) / 0.1);
-}
-
-/* Badge style */
-.badge-outline {
-    background-color: transparent;
-    border: 1px solid currentColor;
-}
-</style>
