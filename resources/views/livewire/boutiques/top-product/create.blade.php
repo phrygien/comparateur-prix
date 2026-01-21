@@ -327,8 +327,13 @@ new class extends Component {
 <div class="mx-auto max-w-5xl">
     <x-header title="Créer la liste à comparer" separator>
         <x-slot:middle class="!justify-end">
-            <div class="text-sm text-base-content/70">
-                {{ count($products) }} / {{ $totalItems }} produits chargés
+            <div class="flex items-center gap-2">
+                @if($loading)
+                    <span class="loading loading-spinner loading-sm text-primary"></span>
+                @endif
+                <div class="text-sm text-base-content/70">
+                    {{ count($products) }} / {{ $totalItems }} produits
+                </div>
             </div>
         </x-slot:middle>
         <x-slot:actions>
@@ -470,11 +475,20 @@ new class extends Component {
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="8" class="text-center py-8 text-base-content/50">
-                                @if($loading)
-                                    Chargement des produits...
+                            <td colspan="8" class="text-center py-12 text-base-content/50">
+                                @if($loading && count($products) === 0)
+                                    <div class="flex flex-col items-center gap-3">
+                                        <span class="loading loading-spinner loading-lg text-primary"></span>
+                                        <span class="text-lg">Chargement des produits...</span>
+                                    </div>
                                 @else
-                                    Aucun produit trouvé
+                                    <div class="flex flex-col items-center gap-3">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-base-content/20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                                        </svg>
+                                        <span class="text-lg">Aucun produit trouvé</span>
+                                        <span class="text-sm">Essayez de modifier vos filtres</span>
+                                    </div>
                                 @endif
                             </td>
                         </tr>
@@ -483,15 +497,22 @@ new class extends Component {
             </table>
 
             @if($loading && count($products) > 0)
-                <div class="flex justify-center py-4 bg-base-100">
-                    <span class="loading loading-spinner loading-md"></span>
-                    <span class="ml-2">Chargement de plus de produits...</span>
+                <div class="flex justify-center py-6 bg-base-100 sticky bottom-0">
+                    <div class="flex items-center gap-3 bg-base-200 px-6 py-3 rounded-full shadow-lg">
+                        <span class="loading loading-spinner loading-md text-primary"></span>
+                        <span class="font-medium">Chargement de plus de produits...</span>
+                    </div>
                 </div>
             @endif
 
-            @if(!$hasMore && count($products) > 0)
-                <div class="text-center py-4 text-base-content/50 bg-base-100">
-                    ✓ Tous les produits ont été chargés ({{ $totalItems }} total)
+            @if(!$hasMore && count($products) > 0 && !$loading)
+                <div class="text-center py-6 text-base-content/70 bg-base-100 sticky bottom-0">
+                    <div class="inline-flex items-center gap-2 bg-success/10 text-success px-6 py-3 rounded-full">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                        </svg>
+                        <span class="font-medium">Tous les produits chargés ({{ $totalItems }} au total)</span>
+                    </div>
                 </div>
             @endif
         </div>
