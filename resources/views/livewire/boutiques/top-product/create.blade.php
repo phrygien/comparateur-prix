@@ -19,6 +19,10 @@ new class extends Component {
     public $filterType = '';
     public $filterEAN = '';
     
+    // Pour stocker les produits
+    public $products = [];
+    public $totalItems = 0;
+    
     // Cache
     protected $cacheTTL = 3600;
     
@@ -77,6 +81,7 @@ new class extends Component {
         $this->page = 1;
         $this->hasMore = true;
         $this->loading = true;
+        $this->products = [];
     }
     
     public function with(): array
@@ -118,18 +123,24 @@ new class extends Component {
                 Log::info('Fin des produits: total atteint');
             }
             
+            // Stocker les produits et le total
+            $this->products = $allProducts;
+            $this->totalItems = $totalItems;
+            
             // Désactiver le loading après chargement
             $this->loading = false;
             
             return [
-                'products' => $allProducts,
-                'totalItems' => $totalItems,
+                'products' => $this->products,
+                'totalItems' => $this->totalItems,
             ];
             
         } catch (\Exception $e) {
             Log::error('Erreur with(): ' . $e->getMessage());
             $this->hasMore = false;
             $this->loading = false;
+            $this->products = [];
+            $this->totalItems = 0;
             
             return [
                 'products' => [],
@@ -389,159 +400,162 @@ new class extends Component {
         />
     </div>
 
-    <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100"
-         x-data="{
-            observer: null,
-            initObserver() {
-                this.observer = new IntersectionObserver((entries) => {
-                    entries.forEach(entry => {
-                        if (entry.isIntersecting && !@this.loading && @this.hasMore) {
-                            @this.loadMore();
-                        }
+    <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100">
+        <!-- Conteneur avec infinite scroll SIMPLE -->
+        <div 
+            x-data="{
+                initObserver() {
+                    const observer = new IntersectionObserver((entries) => {
+                        entries.forEach(entry => {
+                            if (entry.isIntersecting && !@this.loading && @this.hasMore) {
+                                console.log('Chargement déclenché');
+                                @this.loadMore();
+                            }
+                        });
+                    }, {
+                        root: null,
+                        rootMargin: '100px',
+                        threshold: 0.1
                     });
-                }, {
-                    root: null,
-                    rootMargin: '100px',
-                    threshold: 0.1
-                });
-            },
-            observeTarget() {
-                const target = this.$refs.loadingTrigger;
-                if (target && this.observer) {
-                    this.observer.observe(target);
+                    
+                    const target = this.$refs.loadingTrigger;
+                    if (target) {
+                        observer.observe(target);
+                    }
+                    
+                    // Nettoyer
+                    return () => observer.disconnect();
                 }
-            }
-         }"
-         x-init="
-            initObserver();
-            $nextTick(() => observeTarget());
-            $watch('$wire.products', () => {
-                $nextTick(() => observeTarget());
-            });
-         "
-    >
-        <table class="table table-sm w-full">
-            <thead class="sticky top-0 bg-base-200 z-10">
-                <tr>
-                    <th>Image</th>
-                    <th>SKU</th>
-                    <th>Nom</th>
-                    <th>Marque</th>
-                    <th>Type</th>
-                    <th>Prix</th>
-                    <th>Stock</th>
-                    <th>Statut</th>
-                </tr>
-            </thead>
-            <tbody>
-                @forelse($products as $index => $product)
-                    <tr wire:key="product-{{ $product['id'] ?? $index }}">
-                        <td>
-                            @if(!empty($product['thumbnail']))
-                                <div class="avatar">
-                                    <div class="w-10 h-10 rounded">
-                                        <img 
-                                            src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
-                                            alt="{{ $product['title'] ?? '' }}"
-                                        >
+            }"
+            x-init="initObserver()"
+            class="max-h-[600px] overflow-y-auto"
+        >
+            <table class="table table-sm w-full">
+                <thead class="sticky top-0 bg-base-200 z-10">
+                    <tr>
+                        <th>Image</th>
+                        <th>SKU</th>
+                        <th>Nom</th>
+                        <th>Marque</th>
+                        <th>Type</th>
+                        <th>Prix</th>
+                        <th>Stock</th>
+                        <th>Statut</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse($products as $index => $product)
+                        <tr wire:key="product-{{ $product['id'] ?? $index }}">
+                            <td>
+                                @if(!empty($product['thumbnail']))
+                                    <div class="avatar">
+                                        <div class="w-10 h-10 rounded">
+                                            <img 
+                                                src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
+                                                alt="{{ $product['title'] ?? '' }}"
+                                            >
+                                        </div>
                                     </div>
+                                @else
+                                    <div class="w-10 h-10 bg-base-300 rounded flex items-center justify-center">
+                                        <span class="text-xs">N/A</span>
+                                    </div>
+                                @endif
+                            </td>
+                            <td class="font-mono text-xs">{{ $product['sku'] ?? '' }}</td>
+                            <td>
+                                <div class="max-w-xs truncate" title="{{ $product['title'] ?? '' }}">
+                                    {{ $product['title'] ?? '' }}
                                 </div>
-                            @else
-                                <div class="w-10 h-10 bg-base-300 rounded flex items-center justify-center">
-                                    <span class="text-xs">N/A</span>
-                                </div>
-                            @endif
-                        </td>
-                        <td class="font-mono text-xs">{{ $product['sku'] ?? '' }}</td>
-                        <td>
-                            <div class="max-w-xs truncate" title="{{ $product['title'] ?? '' }}">
-                                {{ $product['title'] ?? '' }}
-                            </div>
-                        </td>
-                        <td>{{ $product['vendor'] ?? '' }}</td>
-                        <td>
-                            <span class="badge badge-sm">{{ $product['type'] ?? '' }}</span>
-                        </td>
-                        <td>
-                            @if(!empty($product['special_price']))
-                                <div class="flex flex-col">
-                                    <span class="line-through text-xs text-base-content/50">
+                            </td>
+                            <td>{{ $product['vendor'] ?? '' }}</td>
+                            <td>
+                                <span class="badge badge-sm">{{ $product['type'] ?? '' }}</span>
+                            </td>
+                            <td>
+                                @if(!empty($product['special_price']))
+                                    <div class="flex flex-col">
+                                        <span class="line-through text-xs text-base-content/50">
+                                            {{ number_format($product['price'] ?? 0, 2) }} €
+                                        </span>
+                                        <span class="text-error font-semibold">
+                                            {{ number_format($product['special_price'], 2) }} €
+                                        </span>
+                                    </div>
+                                @else
+                                    <span class="font-semibold">
                                         {{ number_format($product['price'] ?? 0, 2) }} €
                                     </span>
-                                    <span class="text-error font-semibold">
-                                        {{ number_format($product['special_price'], 2) }} €
-                                    </span>
-                                </div>
-                            @else
-                                <span class="font-semibold">
-                                    {{ number_format($product['price'] ?? 0, 2) }} €
+                                @endif
+                            </td>
+                            <td>
+                                <span class="{{ ($product['quatity'] ?? 0) > 0 ? 'text-success' : 'text-error' }}">
+                                    {{ $product['quatity'] ?? 0 }}
                                 </span>
-                            @endif
-                        </td>
-                        <td>
-                            <span class="{{ ($product['quatity'] ?? 0) > 0 ? 'text-success' : 'text-error' }}">
-                                {{ $product['quatity'] ?? 0 }}
-                            </span>
-                        </td>
-                        <td>
-                            <span class="badge badge-sm {{ ($product['quatity_status'] ?? 0) == 1 ? 'badge-success' : 'badge-error' }}">
-                                {{ ($product['quatity_status'] ?? 0) == 1 ? 'En stock' : 'Rupture' }}
-                            </span>
-                        </td>
-                    </tr>
-                @empty
-                    <tr>
-                        <td colspan="8" class="text-center py-12 text-base-content/50">
-                            @if($loading)
-                                <div class="flex flex-col items-center gap-3">
-                                    <span class="loading loading-spinner loading-lg text-primary"></span>
-                                    <span class="text-lg">Chargement des produits...</span>
-                                </div>
-                            @else
-                                <div class="flex flex-col items-center gap-3">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-base-content/20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-                                    </svg>
-                                    <span class="text-lg">Aucun produit trouvé</span>
-                                    <span class="text-sm">Essayez de modifier vos filtres</span>
-                                </div>
-                            @endif
-                        </td>
-                    </tr>
-                @endforelse
-                
-                @if($hasMore)
-                    <tr x-ref="loadingTrigger">
-                        <td colspan="8" class="text-center py-8">
-                            @if($loading)
-                                <div class="flex flex-col items-center justify-center gap-3">
-                                    <div class="flex items-center space-x-2">
-                                        <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 0ms"></div>
-                                        <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 150ms"></div>
-                                        <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 300ms"></div>
+                            </td>
+                            <td>
+                                <span class="badge badge-sm {{ ($product['quatity_status'] ?? 0) == 1 ? 'badge-success' : 'badge-error' }}">
+                                    {{ ($product['quatity_status'] ?? 0) == 1 ? 'En stock' : 'Rupture' }}
+                                </span>
+                            </td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="8" class="text-center py-12 text-base-content/50">
+                                @if($loading)
+                                    <div class="flex flex-col items-center gap-3">
+                                        <span class="loading loading-spinner loading-lg text-primary"></span>
+                                        <span class="text-lg">Chargement des produits...</span>
                                     </div>
-                                    <span class="text-sm text-base-content/70 font-medium">
-                                        Chargement de {{ $perPage }} produits supplémentaires...
-                                    </span>
-                                </div>
-                            @else
-                                <div class="h-4"></div>
-                            @endif
-                        </td>
-                    </tr>
-                @endif
-            </tbody>
-        </table>
-        
-        @if(!$hasMore && count($products) > 0)
-            <div class="text-center py-6 text-base-content/70 bg-base-100 border-t border-base-content/5">
-                <div class="inline-flex items-center gap-2 bg-success/10 text-success px-6 py-3 rounded-full">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-                    </svg>
-                    <span class="font-medium">Tous les produits chargés ({{ $totalItems }} au total)</span>
+                                @else
+                                    <div class="flex flex-col items-center gap-3">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-base-content/20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                                        </svg>
+                                        <span class="text-lg">Aucun produit trouvé</span>
+                                        <span class="text-sm">Essayez de modifier vos filtres</span>
+                                    </div>
+                                @endif
+                            </td>
+                        </tr>
+                    @endforelse
+                    
+                    <!-- Élément déclencheur pour infinite scroll -->
+                    @if($hasMore)
+                        <tr x-ref="loadingTrigger">
+                            <td colspan="8" class="text-center py-8">
+                                @if($loading)
+                                    <div class="flex flex-col items-center justify-center gap-3">
+                                        <div class="flex items-center space-x-2">
+                                            <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 0ms"></div>
+                                            <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 150ms"></div>
+                                            <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 300ms"></div>
+                                        </div>
+                                        <span class="text-sm text-base-content/70 font-medium">
+                                            Chargement de {{ $perPage }} produits supplémentaires...
+                                        </span>
+                                    </div>
+                                @else
+                                    <!-- Élément invisible pour le déclencheur -->
+                                    <div class="h-4"></div>
+                                @endif
+                            </td>
+                        </tr>
+                    @endif
+                </tbody>
+            </table>
+            
+            <!-- Message de fin -->
+            @if(!$hasMore && count($products) > 0)
+                <div class="text-center py-6 text-base-content/70 bg-base-100 border-t border-base-content/5">
+                    <div class="inline-flex items-center gap-2 bg-success/10 text-success px-6 py-3 rounded-full">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                        </svg>
+                        <span class="font-medium">Tous les produits chargés ({{ $totalItems }} au total)</span>
+                    </div>
                 </div>
-            </div>
-        @endif
+            @endif
+        </div>
     </div>
 </div>
