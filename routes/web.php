@@ -18,5 +18,5 @@ Route::middleware(['check.auth', 'boutique.cache'])->group(function () {
     // Modular lst
     Volt::route('/top-product', 'boutiques.top-product')->name('boutiques.top-product');
     Volt::route('/top-product/create', 'boutiques.top-product.create')->name('comparaison.create-list');
-    Volt::route('/top-product/{id}', 'boutiques.top-product.table')->name('comparaison.show');
+    Volt::route('/top-product/{id}', 'boutiques.top-product.table')->name('top-product.show');
 });

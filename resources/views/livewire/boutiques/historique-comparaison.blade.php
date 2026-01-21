@@ -101,7 +101,7 @@ new class extends Component {
                         {{ $this->formatDateFr($comparaison->updated_at) }}
                     </td>
                     <td>
-                        <x-button wire:navigate href="{{ route('comparateur.show', $comparaison->id) }}" label="Détails" class="btn-primary" />
+                        <x-button wire:navigate href="{{ route('top-product.show', $comparaison->id) }}" label="Détails" class="btn-primary" />
                     </td>
                 </tr>
                 @endforeach
