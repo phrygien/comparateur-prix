@@ -336,7 +336,6 @@ new class extends Component {
         return redirect()->to('/previous-page');
     }
 }; ?>
-
 <div class="mx-auto max-w-5xl">
     <x-header title="Créer la liste à comparer" separator>
         <x-slot:middle class="!justify-end">
@@ -394,47 +393,30 @@ new class extends Component {
          x-data="{
             observer: null,
             initObserver() {
-                // Créer l'Intersection Observer
                 this.observer = new IntersectionObserver((entries) => {
                     entries.forEach(entry => {
                         if (entry.isIntersecting && !@this.loading && @this.hasMore) {
-                            console.log('🔵 Déclenchement loadMore via IntersectionObserver');
                             @this.loadMore();
                         }
                     });
                 }, {
-                    root: null, // observe par rapport au viewport
-                    rootMargin: '100px', // déclenche 100px avant d'atteindre l'élément
-                    threshold: 0.1 // déclenche quand 10% de l'élément est visible
+                    root: null,
+                    rootMargin: '100px',
+                    threshold: 0.1
                 });
             },
             observeTarget() {
                 const target = this.$refs.loadingTrigger;
                 if (target && this.observer) {
                     this.observer.observe(target);
-                    console.log('👀 Observation commencée sur l\'élément');
-                }
-            },
-            disconnectObserver() {
-                if (this.observer) {
-                    this.observer.disconnect();
-                    console.log('👋 Observer déconnecté');
                 }
             }
          }"
          x-init="
-            console.log('Initialisation Infinite Scroll avec IntersectionObserver');
             initObserver();
             $nextTick(() => observeTarget());
-            
-            // Réobserver après chaque mise à jour des produits
             $watch('$wire.products', () => {
                 $nextTick(() => observeTarget());
-            });
-            
-            // Nettoyer l'observer quand le composant est détruit
-            $el.addEventListener('livewire:will-destroy', () => {
-                disconnectObserver();
             });
          "
     >
@@ -528,14 +510,11 @@ new class extends Component {
                     </tr>
                 @endforelse
                 
-                <!-- Élément déclencheur pour l'Intersection Observer -->
                 @if($hasMore)
                     <tr x-ref="loadingTrigger">
                         <td colspan="8" class="text-center py-8">
-                            <!-- Indicateur de chargement visible seulement pendant le chargement -->
                             @if($loading)
                                 <div class="flex flex-col items-center justify-center gap-3">
-                                    <!-- Animation de points -->
                                     <div class="flex items-center space-x-2">
                                         <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 0ms"></div>
                                         <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 150ms"></div>
@@ -544,12 +523,8 @@ new class extends Component {
                                     <span class="text-sm text-base-content/70 font-medium">
                                         Chargement de {{ $perPage }} produits supplémentaires...
                                     </span>
-                                    <div class="text-xs text-base-content/50">
-                                        {{ count($products) }} produits chargés sur {{ $totalItems }}
-                                    </div>
                                 </div>
                             @else
-                                <!-- Élément invisible qui sert uniquement de déclencheur -->
                                 <div class="h-4"></div>
                             @endif
                         </td>
@@ -558,7 +533,6 @@ new class extends Component {
             </tbody>
         </table>
         
-        <!-- Message de fin -->
         @if(!$hasMore && count($products) > 0)
             <div class="text-center py-6 text-base-content/70 bg-base-100 border-t border-base-content/5">
                 <div class="inline-flex items-center gap-2 bg-success/10 text-success px-6 py-3 rounded-full">
@@ -571,56 +545,3 @@ new class extends Component {
         @endif
     </div>
 </div>
-
-<style>
-/* Animation pour les points qui rebondissent */
-@keyframes bounce {
-    0%, 100% {
-        transform: translateY(0);
-    }
-    50% {
-        transform: translateY(-8px);
-    }
-}
-
-.animate-bounce {
-    animation: bounce 0.6s infinite;
-}
-
-/* Style pour l'élément déclencheur */
-.trigger-element {
-    height: 1px;
-    background: transparent;
-}
-</style>
-
-<script>
-// Script supplémentaire pour déboguer
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('🔄 Infinite Scroll Component avec Intersection Observer prêt');
-    
-    // Vérifier que l'API IntersectionObserver est disponible
-    if (!('IntersectionObserver' in window)) {
-        console.warn('⚠️ IntersectionObserver non supporté par ce navigateur');
-        // Fallback: utiliser l'ancienne méthode de scroll
-        const fallbackScroll = () => {
-            const container = document.querySelector('[x-data]');
-            if (container) {
-                container.addEventListener('scroll', function(e) {
-                    const el = this;
-                    const scrollTop = el.scrollTop;
-                    const scrollHeight = el.scrollHeight;
-                    const clientHeight = el.clientHeight;
-                    
-                    if (scrollTop + clientHeight >= scrollHeight - 100) {
-                        console.log('Fallback: Déclenchement loadMore via scroll classique');
-                        // Vous devriez avoir une référence à Livewire ici
-                        // @this.loadMore();
-                    }
-                });
-            }
-        };
-        fallbackScroll();
-    }
-});
-</script>
