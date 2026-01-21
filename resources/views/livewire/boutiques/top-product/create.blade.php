@@ -600,17 +600,31 @@ new class extends Component {
             </thead>
             <tbody>
                 @forelse($allProducts as $index => $product)
-                    <tr wire:key="product-{{ $product['id'] ?? $index }}">
+                    @php
+                        $productId = $product['id'] ?? $index;
+                        $productTitle = $product['title'] ?? '';
+                        $productParentTitle = $product['parent_title'] ?? '';
+                        $productVendor = $product['vendor'] ?? 'N/A';
+                        $productType = $product['type'] ?? 'N/A';
+                        $productSku = $product['sku'] ?? 'N/A';
+                        $productParkode = $product['parkode'] ?? '';
+                        $productPrice = $product['price'] ?? 0;
+                        $productSpecialPrice = $product['special_price'] ?? null;
+                        $productQuantity = $product['quantity'] ?? 0;
+                        $productQuantityStatus = $product['quantity_status'] ?? false;
+                        $productThumbnail = $product['thumbnail'] ?? '';
+                    @endphp
+                    <tr wire:key="product-{{ $productId }}">
                         <td>
                             <input type="checkbox" 
                                    class="checkbox checkbox-sm" 
                                    wire:model.live="selectedProducts"
-                                   value="{{ $product['id'] }}">
+                                   value="{{ $productId }}">
                         </td>
                         <td>
-                            @if(!empty($product['thumbnail']))
-                                <img src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
-                                     alt="{{ $product['title'] ?? '' }}"
+                            @if(!empty($productThumbnail))
+                                <img src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $productThumbnail }}"
+                                     alt="{{ $productTitle }}"
                                      class="h-12 w-12 object-cover rounded">
                             @else
                                 <div class="h-12 w-12 bg-gray-200 rounded flex items-center justify-center">
@@ -619,44 +633,44 @@ new class extends Component {
                             @endif
                         </td>
                         <td>
-                            <div class="font-medium text-sm">{{ $product['title'] ?? 'N/A' }}</div>
-                            @if(!empty($product['parent_title']))
-                                <div class="text-xs text-gray-500">Parent: {{ $product['parent_title'] }}</div>
+                            <div class="font-medium text-sm">{{ $productTitle }}</div>
+                            @if(!empty($productParentTitle))
+                                <div class="text-xs text-gray-500">Parent: {{ $productParentTitle }}</div>
                             @endif
                         </td>
                         <td>
-                            <span class="badge badge-outline">{{ $product['vendor'] ?? 'N/A' }}</span>
+                            <span class="badge badge-outline">{{ $productVendor }}</span>
                         </td>
                         <td>
-                            <span class="badge badge-ghost">{{ $product['type'] ?? 'N/A' }}</span>
+                            <span class="badge badge-ghost">{{ $productType }}</span>
                         </td>
                         <td>
-                            <code class="text-xs">{{ $product['sku'] ?? 'N/A' }}</code>
-                            @if(!empty($product['parkode']))
-                                <div class="text-xs text-gray-500">{{ $product['parkode'] }}</div>
+                            <code class="text-xs">{{ $productSku }}</code>
+                            @if(!empty($productParkode))
+                                <div class="text-xs text-gray-500">{{ $productParkode }}</div>
                             @endif
                         </td>
                         <td>
-                            <div class="font-bold">{{ number_format($product['price'] ?? 0, 2) }} €</div>
-                            @if(!empty($product['special_price']))
+                            <div class="font-bold">{{ number_format($productPrice, 2) }} €</div>
+                            @if(!empty($productSpecialPrice))
                                 <div class="text-xs line-through text-gray-500">
-                                    {{ number_format($product['special_price'], 2) }} €
+                                    {{ number_format($productSpecialPrice, 2) }} €
                                 </div>
                             @endif
                         </td>
                         <td>
-                            @if(!empty($product['quantity_status']))
+                            @if($productQuantityStatus)
                                 <span class="badge badge-success">Dispo</span>
                             @else
                                 <span class="badge badge-error">Rupture</span>
                             @endif
-                            <div class="text-xs text-gray-500">Qty: {{ $product['quantity'] ?? 0 }}</div>
+                            <div class="text-xs text-gray-500">Qty: {{ $productQuantity }}</div>
                         </td>
                         <td>
                             <button class="btn btn-xs btn-outline" 
-                                    wire:click="toggleProduct({{ $product['id'] }})"
+                                    wire:click="toggleProduct({{ $productId }})"
                                     wire:confirm="Changer la sélection de ce produit ?">
-                                @if(in_array($product['id'], $selectedProducts))
+                                @if(in_array($productId, $selectedProducts))
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                                     </svg>
