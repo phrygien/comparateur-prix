@@ -344,7 +344,7 @@ new class extends Component {
 
 
 <div class="mx-auto w-full">
-    <x-header title="Créer la liste à comparer" separator>
+    <x-header title="Créer la liste à comparer" separator progress-indicator>
         <x-slot:middle class="!justify-end">
             <div class="flex items-center gap-2">
                 @if($loading || $loadingMore)
