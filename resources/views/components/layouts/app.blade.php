@@ -55,7 +55,7 @@
 
                 <x-menu-item title="Boutiques" icon="o-building-storefront" link="/boutique" />
                 @if(auth()->user()->email == 'admin@admin.com')
-                <x-menu-item title="Creer liste produits" icon="o-clipboard-document-list" link="/top-product" />
+                    <x-menu-item title="Créer une liste personnalisée" icon="o-clipboard-document-list" link="/top-product" />
                 @endif
 
                 <x-menu-item title="Parcourir les concurrents" icon="o-magnifying-glass" link="/scraped_products" />
