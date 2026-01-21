@@ -66,32 +66,33 @@ new class extends Component {
         Log::info('Chargement détails pour SKUs: ' . implode(', ', $this->selectedProducts));
         
         $skus = array_values($this->selectedProducts);
-        $skusString = implode("','", array_map(fn($sku) => addslashes($sku), $skus));
-        
-        $query = "
-            SELECT 
-                produit.entity_id as id,
-                produit.sku as sku,
-                CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) as title,
-                SUBSTRING_INDEX(product_char.name, ' - ', 1) as vendor,
-                SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) as type,
-                product_char.thumbnail as thumbnail,
-                ROUND(product_decimal.price, 2) as price,
-                ROUND(product_decimal.special_price, 2) as special_price,
-                stock_item.qty as quantity
-            FROM catalog_product_entity as produit
-            LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
-            LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
-            LEFT JOIN product_int ON product_int.entity_id = produit.entity_id
-            LEFT JOIN eav_attribute_set AS eas ON produit.attribute_set_id = eas.attribute_set_id 
-            LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id 
-            WHERE produit.sku IN ('" . $skusString . "')
-            ORDER BY FIELD(produit.sku, '" . implode("','", $skus) . "')
-        ";
         
         try {
+            // Version avec placeholders pour éviter les problèmes d'injection SQL
+            $placeholders = implode(',', array_fill(0, count($skus), '?'));
+            
+            $query = "
+                SELECT 
+                    produit.entity_id as id,
+                    produit.sku as sku,
+                    CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) as title,
+                    SUBSTRING_INDEX(product_char.name, ' - ', 1) as vendor,
+                    SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) as type,
+                    product_char.thumbnail as thumbnail,
+                    ROUND(product_decimal.price, 2) as price,
+                    ROUND(product_decimal.special_price, 2) as special_price,
+                    stock_item.qty as quantity
+                FROM catalog_product_entity as produit
+                LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+                LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
+                LEFT JOIN product_int ON product_int.entity_id = produit.entity_id
+                LEFT JOIN eav_attribute_set AS eas ON produit.attribute_set_id = eas.attribute_set_id 
+                LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id 
+                WHERE produit.sku IN ($placeholders)
+            ";
+            
             Log::info('Exécution requête SQL pour détails produits');
-            $products = DB::connection('mysqlMagento')->select($query);
+            $products = DB::connection('mysqlMagento')->select($query, $skus);
             Log::info('Résultats trouvés: ' . count($products) . ' produits');
             
             $this->selectedProductsDetails = array_map(fn($p) => (array) $p, $products);
@@ -130,6 +131,10 @@ new class extends Component {
         
         // Mettre à jour les détails immédiatement
         $this->loadSelectedProductsDetails();
+        
+        // Déboguer
+        Log::info('Toggle select: ' . $sku);
+        Log::info('Total sélectionnés: ' . count($this->selectedProducts));
     }
     
     public function updatedSelectAll($value)
@@ -145,6 +150,8 @@ new class extends Component {
         }
         
         $this->loadSelectedProductsDetails();
+        Log::info('Select All changé: ' . ($value ? 'true' : 'false'));
+        Log::info('Total sélectionnés après selectAll: ' . count($this->selectedProducts));
     }
     
     // Réinitialiser les produits
@@ -190,6 +197,10 @@ new class extends Component {
     // Ouvrir le modal de confirmation
     public function openModal()
     {
+        Log::info('Tentative ouverture modal');
+        Log::info('Produits sélectionnés: ' . count($this->selectedProducts));
+        Log::info('Liste produits: ' . implode(', ', $this->selectedProducts));
+        
         if (empty($this->selectedProducts)) {
             $this->dispatch('notify', [
                 'type' => 'error',
@@ -206,7 +217,28 @@ new class extends Component {
         Log::info('Ouverture modal avec ' . count($this->selectedProducts) . ' produits sélectionnés');
         Log::info('Détails chargés: ' . count($this->selectedProductsDetails));
         
+        // Forcer l'ouverture du modal
         $this->showModal = true;
+        
+        // Déboguer la valeur
+        Log::info('Valeur showModal: ' . ($this->showModal ? 'true' : 'false'));
+    }
+    
+    // Annuler la sélection (fermer le modal et réinitialiser)
+    public function cancelSelection()
+    {
+        Log::info('Annulation de la sélection');
+        
+        // Fermer le modal
+        $this->showModal = false;
+        
+        // Réinitialiser la sélection
+        $this->selectedProducts = [];
+        $this->selectedProductsDetails = [];
+        $this->listName = '';
+        $this->selectAll = false;
+        
+        Log::info('Sélection réinitialisée');
     }
     
     // Sauvegarder la liste
@@ -264,6 +296,7 @@ new class extends Component {
             $this->selectedProducts = [];
             $this->selectedProductsDetails = [];
             $this->listName = '';
+            $this->selectAll = false;
             
             // Émettre un événement pour le parent
             $this->dispatch('list-created', ['listId' => $list->id]);
@@ -758,122 +791,124 @@ new class extends Component {
         </div>
     </div>
 
-<!-- Modal de confirmation -->
-<x-modal wire:model="showModal" title="Confirmation de la liste" persistent separator>
-    <div class="space-y-4">
-        <!-- Nom de la liste -->
-        <div>
-            <x-input 
-                label="Nom de la liste" 
-                wire:model="listName" 
-                placeholder="Entrez un nom pour votre liste"
-                required
-                hint="Donnez un nom significatif à votre liste"
-            />
-        </div>
-        
-        <!-- Résumé -->
-        <div class="bg-base-200 p-4 rounded-box">
-            <div class="flex items-center justify-between mb-3">
-                <span class="font-semibold">Résumé de la sélection</span>
-                <span class="badge badge-primary">{{ count($selectedProducts) }} produits</span>
+    <!-- Modal de confirmation -->
+    @if($showModal)
+        <x-modal wire:model="showModal" title="Confirmation de la liste" persistent separator class="backdrop-blur-sm">
+            <div class="space-y-4">
+                <!-- Nom de la liste -->
+                <div>
+                    <x-input 
+                        label="Nom de la liste" 
+                        wire:model="listName" 
+                        placeholder="Entrez un nom pour votre liste"
+                        required
+                        hint="Donnez un nom significatif à votre liste"
+                    />
+                </div>
+                
+                <!-- Résumé -->
+                <div class="bg-base-200 p-4 rounded-box">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="font-semibold">Résumé de la sélection</span>
+                        <span class="badge badge-primary">{{ count($selectedProducts) }} produits</span>
+                    </div>
+                    
+                    @if(!empty($selectedProductsDetails) && count($selectedProductsDetails) > 0)
+                        <div class="max-h-64 overflow-y-auto">
+                            <table class="table table-xs">
+                                <thead>
+                                    <tr class="bg-base-300">
+                                        <th class="w-12">#</th>
+                                        <th>Image</th>
+                                        <th>SKU</th>
+                                        <th>Nom</th>
+                                        <th>Marque</th>
+                                        <th>Prix</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($selectedProductsDetails as $index => $product)
+                                        <tr>
+                                            <td class="font-bold">{{ $index + 1 }}</td>
+                                            <td>
+                                                @if(!empty($product['thumbnail']))
+                                                    <div class="avatar">
+                                                        <div class="w-8 h-8 rounded">
+                                                            <img 
+                                                                src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
+                                                                alt="{{ $product['title'] ?? '' }}"
+                                                                class="object-cover"
+                                                            >
+                                                        </div>
+                                                    </div>
+                                                @else
+                                                    <div class="w-8 h-8 bg-base-300 rounded flex items-center justify-center">
+                                                        <span class="text-xs">N/A</span>
+                                                    </div>
+                                                @endif
+                                            </td>
+                                            <td class="font-mono text-xs">{{ $product['sku'] ?? 'N/A' }}</td>
+                                            <td class="truncate max-w-[150px]" title="{{ $product['title'] ?? '' }}">
+                                                {{ $product['title'] ?? 'N/A' }}
+                                            </td>
+                                            <td>{{ $product['vendor'] ?? 'N/A' }}</td>
+                                            <td class="font-medium">
+                                                @if(!empty($product['special_price']) && $product['special_price'] > 0)
+                                                    <div class="flex flex-col">
+                                                        <span class="line-through text-xs text-base-content/50">
+                                                            {{ number_format($product['price'] ?? 0, 2) }} €
+                                                        </span>
+                                                        <span class="text-error">
+                                                            {{ number_format($product['special_price'], 2) }} €
+                                                        </span>
+                                                    </div>
+                                                @else
+                                                    <span class="font-semibold">
+                                                        {{ number_format($product['price'] ?? 0, 2) }} €
+                                                    </span>
+                                                @endif
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @elseif(count($selectedProducts) > 0)
+                        <div class="text-center py-8">
+                            <div class="flex flex-col items-center gap-3">
+                                <span class="loading loading-spinner loading-md text-primary"></span>
+                                <p class="text-base-content/70">Chargement des détails des produits sélectionnés...</p>
+                                <p class="text-sm">{{ count($selectedProducts) }} produits à afficher</p>
+                            </div>
+                        </div>
+                    @else
+                        <div class="text-center py-4 text-base-content/50">
+                            <p>Aucun produit sélectionné</p>
+                        </div>
+                    @endif
+                </div>
+                
+                <!-- Avertissement -->
+                <div class="alert alert-info">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <span>La liste sera sauvegardée dans la base de données et vous pourrez y accéder ultérieurement.</span>
+                </div>
             </div>
             
-            @if(!empty($selectedProductsDetails) && count($selectedProductsDetails) > 0)
-                <div class="max-h-64 overflow-y-auto">
-                    <table class="table table-xs">
-                        <thead>
-                            <tr class="bg-base-300">
-                                <th class="w-12">#</th>
-                                <th>Image</th>
-                                <th>SKU</th>
-                                <th>Nom</th>
-                                <th>Marque</th>
-                                <th>Prix</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach($selectedProductsDetails as $index => $product)
-                                <tr>
-                                    <td class="font-bold">{{ $index + 1 }}</td>
-                                    <td>
-                                        @if(!empty($product['thumbnail']))
-                                            <div class="avatar">
-                                                <div class="w-8 h-8 rounded">
-                                                    <img 
-                                                        src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
-                                                        alt="{{ $product['title'] ?? '' }}"
-                                                        class="object-cover"
-                                                    >
-                                                </div>
-                                            </div>
-                                        @else
-                                            <div class="w-8 h-8 bg-base-300 rounded flex items-center justify-center">
-                                                <span class="text-xs">N/A</span>
-                                            </div>
-                                        @endif
-                                    </td>
-                                    <td class="font-mono text-xs">{{ $product['sku'] ?? 'N/A' }}</td>
-                                    <td class="truncate max-w-[150px]" title="{{ $product['title'] ?? '' }}">
-                                        {{ $product['title'] ?? 'N/A' }}
-                                    </td>
-                                    <td>{{ $product['vendor'] ?? 'N/A' }}</td>
-                                    <td class="font-medium">
-                                        @if(!empty($product['special_price']) && $product['special_price'] > 0)
-                                            <div class="flex flex-col">
-                                                <span class="line-through text-xs text-base-content/50">
-                                                    {{ number_format($product['price'] ?? 0, 2) }} €
-                                                </span>
-                                                <span class="text-error">
-                                                    {{ number_format($product['special_price'], 2) }} €
-                                                </span>
-                                            </div>
-                                        @else
-                                            <span class="font-semibold">
-                                                {{ number_format($product['price'] ?? 0, 2) }} €
-                                            </span>
-                                        @endif
-                                    </td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            @elseif(count($selectedProducts) > 0)
-                <div class="text-center py-8">
-                    <div class="flex flex-col items-center gap-3">
-                        <span class="loading loading-spinner loading-md text-primary"></span>
-                        <p class="text-base-content/70">Chargement des détails des produits sélectionnés...</p>
-                        <p class="text-sm">{{ count($selectedProducts) }} produits à afficher</p>
-                    </div>
-                </div>
-            @else
-                <div class="text-center py-4 text-base-content/50">
-                    <p>Aucun produit sélectionné</p>
-                </div>
-            @endif
-        </div>
-        
-        <!-- Avertissement -->
-        <div class="alert alert-info">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-            </svg>
-            <span>La liste sera sauvegardée dans la base de données et vous pourrez y accéder ultérieurement.</span>
-        </div>
-    </div>
-    
-    <x-slot:actions>
-        <x-button label="Annuler" @click="$wire.showModal = false" />
-        <x-button label="Sauvegarder" class="btn-primary" wire:click="saveList" wire:loading.attr="disabled">
-            <span wire:loading.remove>Sauvegarder</span>
-            <span wire:loading wire:target="saveList" class="flex items-center gap-2">
-                <span class="loading loading-spinner loading-sm"></span>
-                Sauvegarde...
-            </span>
-        </x-button>
-    </x-slot:actions>
-</x-modal>
+            <x-slot:actions>
+                <x-button label="Annuler" @click="$wire.cancelSelection()" />
+                <x-button label="Sauvegarder" class="btn-primary" wire:click="saveList" wire:loading.attr="disabled">
+                    <span wire:loading.remove>Sauvegarder</span>
+                    <span wire:loading wire:target="saveList" class="flex items-center gap-2">
+                        <span class="loading loading-spinner loading-sm"></span>
+                        Sauvegarde...
+                    </span>
+                </x-button>
+            </x-slot:actions>
+        </x-modal>
+    @endif
 </div>
 
 @push('scripts')
@@ -898,6 +933,9 @@ new class extends Component {
             // Redirection ou autre action après création
             console.log('Liste créée avec ID:', event.listId);
         });
+        
+        // Débogage
+        console.log('Livewire component initialized');
     });
 </script>
 @endpush
