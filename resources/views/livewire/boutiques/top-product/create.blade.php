@@ -435,7 +435,10 @@ new class extends Component {
                                 @if(!empty($product['thumbnail']))
                                     <div class="avatar">
                                         <div class="w-10 h-10 rounded">
-                                            <img src="{{ $product['thumbnail'] }}" alt="{{ $product['title'] ?? '' }}" />
+                                                                                        <img 
+                                                    src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
+                                                    alt="{{ $product['title'] ?? '' }}"
+                                                >
                                         </div>
                                     </div>
                                 @else

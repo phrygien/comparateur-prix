@@ -436,9 +436,9 @@ new class extends Component {
                                     <div class="avatar">
                                         <div class="w-10 h-10 rounded">
                                             <img 
-    src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
-    alt="{{ $product['title'] ?? '' }}"
->
+                                                src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
+                                                alt="{{ $product['title'] ?? '' }}"
+                                            >
 
                                         </div>
                                     </div>
