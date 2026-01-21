@@ -4,12 +4,10 @@ use Livewire\Volt\Component;
 use Livewire\Attributes\On;
 
 new class extends Component {
-    public $products = [];
     public $page = 1;
     public $perPage = 20;
     public $hasMore = true;
     public $loading = false;
-    public $totalItems = 0;
     
     // Filtres
     public $search = '';
@@ -20,11 +18,6 @@ new class extends Component {
     
     // Cache
     protected $cacheTTL = 3600;
-    
-    public function mount()
-    {
-        $this->loadProducts();
-    }
     
     public function loadMore()
     {
@@ -42,7 +35,6 @@ new class extends Component {
         Log::info('loadMore: Chargement page ' . ($this->page + 1));
         
         $this->page++;
-        $this->loadProducts();
     }
     
     public function updatedSearch()
@@ -73,58 +65,63 @@ new class extends Component {
     protected function resetProducts()
     {
         $this->page = 1;
-        $this->products = [];
         $this->hasMore = true;
-        $this->loadProducts();
     }
     
-    protected function loadProducts()
+    public function with(): array
     {
+        $this->loading = true;
+        
         try {
-            $this->loading = true;
+            $allProducts = [];
+            $totalItems = 0;
             
-            // Forcer le rendu pour afficher le loading
-            $this->dispatch('loading-started');
+            // Charger toutes les pages jusqu'à la page actuelle
+            for ($i = 1; $i <= $this->page; $i++) {
+                $result = $this->fetchProductsFromDatabase($this->search, $i, $this->perPage);
+                
+                if (isset($result['error'])) {
+                    Log::error('Erreur DB: ' . $result['error']);
+                    break;
+                }
+                
+                $totalItems = $result['total_item'] ?? 0;
+                $newProducts = $result['data'] ?? [];
+                
+                // Convertir les objets en tableaux
+                $newProducts = array_map(fn($p) => (array) $p, $newProducts);
+                
+                $allProducts = array_merge($allProducts, $newProducts);
+                
+                // Si moins de produits que demandé, on a atteint la fin
+                if (count($newProducts) < $this->perPage) {
+                    $this->hasMore = false;
+                    break;
+                }
+            }
             
-            $result = $this->fetchProductsFromDatabase($this->search, $this->page, $this->perPage);
-            
-            // Vérifier si on a une erreur
-            if (isset($result['error'])) {
-                Log::error('Erreur DB: ' . $result['error']);
+            // Vérifier si on a atteint la fin
+            if (count($allProducts) >= $totalItems) {
                 $this->hasMore = false;
-                return;
             }
             
-            // Mettre à jour le total
-            $this->totalItems = $result['total_item'] ?? 0;
+            $this->loading = false;
             
-            // Vérifier s'il y a encore des produits
-            $newProducts = $result['data'] ?? [];
-            
-            if (count($newProducts) < $this->perPage) {
-                $this->hasMore = false;
-            }
-            
-            // Convertir les objets stdClass en tableaux pour Livewire
-            $newProducts = array_map(function($product) {
-                return (array) $product;
-            }, $newProducts);
-            
-            // Si c'est la première page, on remplace, sinon on ajoute
-            if ($this->page === 1) {
-                $this->products = $newProducts;
-            } else {
-                $this->products = array_merge($this->products, $newProducts);
-            }
-            
-            Log::info("Produits chargés: " . count($newProducts) . " (Total: " . count($this->products) . ")");
+            return [
+                'products' => $allProducts,
+                'totalItems' => $totalItems,
+            ];
             
         } catch (\Exception $e) {
-            Log::error('Erreur loadProducts: ' . $e->getMessage());
+            Log::error('Erreur with(): ' . $e->getMessage());
             Log::error($e->getTraceAsString());
-            $this->hasMore = false;
-        } finally {
             $this->loading = false;
+            $this->hasMore = false;
+            
+            return [
+                'products' => [],
+                'totalItems' => 0,
+            ];
         }
     }
     
