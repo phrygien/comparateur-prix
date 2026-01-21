@@ -2,16 +2,12 @@
 
 use Livewire\Volt\Component;
 use Livewire\Attributes\On;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Cache;
 
 new class extends Component {
     public $page = 1;
-    public $perPage = 60;
+    public $perPage = 20;
     public $hasMore = true;
     public $loading = false;
-    public $loadingMore = false; // Nouvelle variable pour le chargement infini
     
     // Filtres
     public $search = '';
@@ -27,60 +23,54 @@ new class extends Component {
     {
         // Vérification stricte
         if (!$this->hasMore) {
+            Log::info('loadMore: Plus de produits à charger');
             return;
         }
         
-        if ($this->loading || $this->loadingMore) {
+        if ($this->loading) {
+            Log::info('loadMore: Déjà en cours de chargement');
             return;
         }
         
-        // Activer le loading pour le chargement infini
-        $this->loadingMore = true;
+        Log::info('loadMore: Chargement page ' . ($this->page + 1));
+        
         $this->page++;
-        
-        Log::info('loadMore: Chargement page ' . $this->page);
     }
     
     public function updatedSearch()
     {
         $this->resetProducts();
-        $this->loading = true;
     }
     
     public function updatedFilterName()
     {
         $this->resetProducts();
-        $this->loading = true;
     }
     
     public function updatedFilterMarque()
     {
         $this->resetProducts();
-        $this->loading = true;
     }
     
     public function updatedFilterType()
     {
         $this->resetProducts();
-        $this->loading = true;
     }
     
     public function updatedFilterEAN()
     {
         $this->resetProducts();
-        $this->loading = true;
     }
     
     protected function resetProducts()
     {
         $this->page = 1;
         $this->hasMore = true;
-        $this->loadingMore = false;
     }
     
     public function with(): array
     {
-        // NE PAS modifier loading ici - il sera géré par les événements
+        $this->loading = true;
         
         try {
             $allProducts = [];
@@ -115,6 +105,8 @@ new class extends Component {
                 $this->hasMore = false;
             }
             
+            $this->loading = false;
+            
             return [
                 'products' => $allProducts,
                 'totalItems' => $totalItems,
@@ -122,6 +114,8 @@ new class extends Component {
             
         } catch (\Exception $e) {
             Log::error('Erreur with(): ' . $e->getMessage());
+            Log::error($e->getTraceAsString());
+            $this->loading = false;
             $this->hasMore = false;
             
             return [
@@ -129,14 +123,6 @@ new class extends Component {
                 'totalItems' => 0,
             ];
         }
-    }
-    
-    // Hook après le rendu pour réinitialiser le loading
-    #[On('rendered')]
-    public function afterRender()
-    {
-        $this->loading = false;
-        $this->loadingMore = false;
     }
     
     /**
@@ -342,7 +328,7 @@ new class extends Component {
     <x-header title="Créer la liste à comparer" separator>
         <x-slot:middle class="!justify-end">
             <div class="flex items-center gap-2">
-                @if($loading || $loadingMore)
+                @if($loading)
                     <span class="loading loading-spinner loading-sm text-primary"></span>
                 @endif
                 <div class="text-sm text-base-content/70">
@@ -391,21 +377,10 @@ new class extends Component {
         />
     </div>
 
-    <div class="rounded-box border border-base-content/5 bg-base-100 overflow-hidden relative">
-        <!-- Overlay de chargement principal (plein écran) -->
-        @if($loading && count($products) === 0)
-            <div class="absolute inset-0 z-50 flex items-center justify-center bg-base-100/95 backdrop-blur-md">
-                <div class="text-center">
-                    <span class="loading loading-spinner loading-lg text-primary mb-4"></span>
-                    <p class="text-lg font-medium text-base-content">Chargement des produits...</p>
-                </div>
-            </div>
-        @endif
-        
-        <!-- Conteneur principal -->
+    <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100 relative">
         <div 
             x-data="{ 
-                loadingMore: @entangle('loadingMore').live,
+                loading: @entangle('loading').live,
                 hasMore: @entangle('hasMore').live,
                 throttleTimer: null
             }"
@@ -421,57 +396,24 @@ new class extends Component {
                         const clientHeight = $el.clientHeight;
                         const scrollPercentage = (scrollTop / (scrollHeight - clientHeight)) * 100;
                         
-                        if (scrollPercentage > 80 && hasMore && !loadingMore && !@this.loading) {
+                        if (scrollPercentage > 80 && hasMore && !loading) {
                             $wire.loadMore();
                         }
                     }, 150);
                 });
             "
             class="max-h-[600px] overflow-y-auto relative"
-            wire:ignore.self
         >
-            <!-- Overlay blur au centre de la page pendant le chargement infini -->
+            <!-- Overlay semi-transparent pendant le chargement -->
             <div 
-                x-show="loadingMore && {{ count($products) }} > 0"
-                x-transition.opacity.duration.300ms
-                class="absolute inset-0 z-40 pointer-events-none"
-            >
-                <!-- Effet blur sur tout le contenu -->
-                <div class="absolute inset-0 bg-base-100/70 backdrop-blur-sm"></div>
-                
-                <!-- Message central avec effet glassmorphism -->
-                <div class="absolute inset-0 flex items-center justify-center z-50">
-                    <div class="bg-base-100/80 backdrop-blur-xl border border-base-content/10 rounded-2xl shadow-2xl px-10 py-8 flex flex-col items-center gap-4 min-w-[320px] transform transition-all duration-300">
-                        <!-- Spinner animé -->
-                        <div class="relative">
-                            <div class="w-16 h-16 border-4 border-primary/20 rounded-full"></div>
-                            <div class="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin absolute top-0 left-0"></div>
-                        </div>
-                        
-                        <!-- Texte principal -->
-                        <div class="text-center">
-                            <h3 class="text-xl font-bold text-base-content mb-2">
-                                Chargement de plus de produits...
-                            </h3>
-                            <p class="text-base-content/70 text-sm">
-                                Veuillez patienter pendant le chargement
-                            </p>
-                        </div>
-                        
-                        <!-- Barre de progression animée -->
-                        <div class="w-48 bg-base-300 rounded-full h-2 overflow-hidden mt-2">
-                            <div 
-                                class="bg-primary h-full rounded-full animate-progress"
-                                style="animation: progress 2s ease-in-out infinite;"
-                            ></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+                x-show="loading"
+                x-transition.opacity
+                class="absolute inset-0 bg-black/30 backdrop-blur-[1px] z-10 pointer-events-none"
+            ></div>
             
             <!-- Table -->
             <table class="table table-sm w-full relative">
-                <thead class="sticky top-0 bg-base-200 z-30">
+                <thead class="sticky top-0 bg-base-200 z-20">
                     <tr>
                         <th>Image</th>
                         <th>SKU</th>
@@ -487,7 +429,7 @@ new class extends Component {
                     @forelse($products as $index => $product)
                         <tr 
                             wire:key="product-{{ $product['id'] ?? $index }}"
-                            :class="{ 'opacity-40 blur-[1px]': loadingMore }"
+                            :class="{ 'opacity-50': loading }"
                         >
                             <td>
                                 @if(!empty($product['thumbnail']))
@@ -497,6 +439,7 @@ new class extends Component {
                                                 src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
                                                 alt="{{ $product['title'] ?? '' }}"
                                             >
+
                                         </div>
                                     </div>
                                 @else
@@ -542,10 +485,29 @@ new class extends Component {
                                 </span>
                             </td>
                         </tr>
+                        
+                        <!-- Indicateur de chargement après chaque produit pendant le chargement infini -->
+                        @if($loop->last && $loading && $hasMore)
+                            <tr id="loading-row" class="relative" x-show="loading">
+                                <td colspan="8" class="text-center py-4 bg-base-100/90 backdrop-blur-sm">
+                                    <div class="flex items-center justify-center gap-3 py-4">
+                                        <span class="loading loading-spinner loading-md text-primary"></span>
+                                        <span class="text-base-content/70 font-medium">
+                                            Chargement de plus de produits...
+                                        </span>
+                                    </div>
+                                </td>
+                            </tr>
+                        @endif
                     @empty
-                        @if(!$loading)
-                            <tr>
-                                <td colspan="8" class="text-center py-12 text-base-content/50">
+                        <tr>
+                            <td colspan="8" class="text-center py-12 text-base-content/50">
+                                @if($loading && count($products) === 0)
+                                    <div class="flex flex-col items-center gap-3">
+                                        <span class="loading loading-spinner loading-lg text-primary"></span>
+                                        <span class="text-lg">Chargement des produits...</span>
+                                    </div>
+                                @else
                                     <div class="flex flex-col items-center gap-3">
                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-base-content/20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
@@ -553,32 +515,49 @@ new class extends Component {
                                         <span class="text-lg">Aucun produit trouvé</span>
                                         <span class="text-sm">Essayez de modifier vos filtres</span>
                                     </div>
-                                </td>
-                            </tr>
-                        @endif
+                                @endif
+                            </td>
+                        </tr>
                     @endforelse
+                    
+                    <!-- Indicateur de chargement pour le premier chargement -->
+                    @if($loading && count($products) === 0)
+                        <tr>
+                            <td colspan="8" class="text-center py-12">
+                                <div class="flex flex-col items-center gap-3">
+                                    <span class="loading loading-spinner loading-lg text-primary"></span>
+                                    <span class="text-lg">Chargement des produits...</span>
+                                </div>
+                            </td>
+                        </tr>
+                    @endif
                 </tbody>
             </table>
             
-            <!-- Message flottant en bas pendant le chargement -->
-            @if($loadingMore && count($products) > 0)
-                <div class="sticky bottom-0 left-0 right-0 z-50">
-                    <div class="bg-primary/10 backdrop-blur-md border-t border-primary/20 py-3">
-                        <div class="container mx-auto px-4">
-                            <div class="flex items-center justify-center gap-3">
-                                <span class="loading loading-spinner loading-sm text-primary"></span>
-                                <span class="text-sm font-medium text-primary">
-                                    Chargement de plus de produits en cours...
-                                </span>
-                            </div>
-                        </div>
+            <!-- Overlay avec spinner central pour le chargement infini -->
+            <div 
+                x-show="loading && {{ count($products) }} > 0"
+                x-transition:enter="transition ease-out duration-200"
+                x-transition:enter-start="opacity-0"
+                x-transition:enter-end="opacity-100"
+                x-transition:leave="transition ease-in duration-150"
+                x-transition:leave-start="opacity-100"
+                x-transition:leave-end="opacity-0"
+                class="absolute inset-0 flex items-center justify-center z-30 pointer-events-none"
+                style="display: none;"
+            >
+                <!-- Spinner central -->
+                <div class="absolute inset-0 bg-black/20 backdrop-blur-[1px]"></div>
+                <div class="relative z-40 bg-base-100/90 border border-base-content/10 rounded-xl shadow-2xl px-8 py-6 flex flex-col items-center gap-3 backdrop-blur-sm">
+                    <div class="relative">
+                        <span class="loading loading-spinner loading-lg text-primary"></span>
                     </div>
+                    <p class="font-medium text-base-content">Chargement de plus de produits...</p>
                 </div>
-            @endif
+            </div>
         </div>
         
-        <!-- Message de fin -->
-        @if(!$hasMore && count($products) > 0 && !$loading && !$loadingMore)
+        @if(!$hasMore && count($products) > 0 && !$loading)
             <div class="text-center py-6 text-base-content/70 bg-base-100 border-t border-base-content/5">
                 <div class="inline-flex items-center gap-2 bg-success/10 text-success px-6 py-3 rounded-full">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -590,52 +569,3 @@ new class extends Component {
         @endif
     </div>
 </div>
-
-<style>
-/* Animation pour la barre de progression */
-@keyframes progress {
-    0% {
-        width: 0%;
-        transform: translateX(-100%);
-    }
-    50% {
-        width: 100%;
-        transform: translateX(0%);
-    }
-    100% {
-        width: 0%;
-        transform: translateX(100%);
-    }
-}
-
-.animate-progress {
-    animation: progress 2s ease-in-out infinite;
-}
-
-/* Effet de transition pour le blur */
-.table tr {
-    transition: all 0.3s ease;
-}
-
-/* Effet glassmorphism pour le message de chargement */
-.glass-effect {
-    background: rgba(255, 255, 255, 0.7);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-}
-
-/* Animation pour le spinner */
-@keyframes spin-slow {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
-}
-
-.animate-spin-slow {
-    animation: spin-slow 1.5s linear infinite;
-}
-</style>
