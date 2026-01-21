@@ -9,7 +9,7 @@ new class extends Component {
 <div class="mx-auto max-w-5xl">
 
     <!-- Header section !-->
-    <x-header title="Historique des comparaisons" subtitle="Toutes les comparaisons déjà effectuées" no-separator>
+    <x-header title="Historique des créations de listes" subtitle="Toutes les listes déjà créées" no-separator>
         <x-slot:middle class="!justify-end">
 
         </x-slot:middle>
@@ -18,7 +18,7 @@ new class extends Component {
         </x-slot:actions>
     </x-header>
 
-    <x-card subtitle="Historique de comparaison">
+    <x-card>
         <livewire:boutiques.historique-comparaison />
     </x-card>
 </div>
