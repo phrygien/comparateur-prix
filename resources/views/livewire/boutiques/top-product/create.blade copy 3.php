@@ -5,15 +5,13 @@ use Livewire\Attributes\On;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
-use App\Models\Comparaison;
-use App\Models\DetailProduct;
 
 new class extends Component {
     public $page = 1;
     public $perPage = 20;
     public $hasMore = true;
     public $loading = false;
-    public $loadingMore = false;
+    public $loadingMore = false; // Pour le chargement manuel
     
     // Filtres
     public $search = '';
@@ -22,135 +20,32 @@ new class extends Component {
     public $filterType = '';
     public $filterEAN = '';
     
-    // Sélection des produits
-    public $selectedProducts = [];
-    public $selectAll = false;
-    public $selectedProductsDetails = [];
-    
-    // Modal
-    public $showModal = false;
-    public $listName = '';
-    
     // Cache
     protected $cacheTTL = 3600;
     
-    public function mount($listId = null)
+    public function mount()
     {
-        $this->loading = true;
-        // Charger les produits déjà sélectionnés si on édite une liste existante
-        if ($listId) {
-            $this->loadSelectedProducts($listId);
-        }
-    }
-    
-    // Charger les produits déjà dans la liste
-    protected function loadSelectedProducts($listId)
-    {
-        $existingProducts = DetailProduct::where('list_product_id', $listId)
-            ->pluck('EAN')
-            ->toArray();
-        
-        $this->selectedProducts = $existingProducts;
-        $this->loadSelectedProductsDetails();
-    }
-    
-    // Charger les détails des produits sélectionnés
-    protected function loadSelectedProductsDetails()
-    {
-        if (empty($this->selectedProducts)) {
-            $this->selectedProductsDetails = [];
-            return;
-        }
-        
-        $skus = array_values($this->selectedProducts);
-        $placeholders = implode(',', array_fill(0, count($skus), '?'));
-        
-        $query = "
-            SELECT 
-                produit.entity_id as id,
-                produit.sku as sku,
-                CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) as title,
-                SUBSTRING_INDEX(product_char.name, ' - ', 1) as vendor,
-                SUBSTRING_INDEX(eas.attribute_set_name, '_', -1) as type,
-                product_char.thumbnail as thumbnail,
-                ROUND(product_decimal.price, 2) as price,
-                ROUND(product_decimal.special_price, 2) as special_price,
-                stock_item.qty as quantity
-            FROM catalog_product_entity as produit
-            LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
-            LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
-            LEFT JOIN product_int ON product_int.entity_id = produit.entity_id
-            LEFT JOIN eav_attribute_set AS eas ON produit.attribute_set_id = eas.attribute_set_id 
-            LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id 
-            WHERE produit.sku IN ($placeholders)
-            ORDER BY FIELD(produit.sku, " . implode(',', $skus) . ")
-        ";
-        
-        try {
-            $products = DB::connection('mysqlMagento')->select($query, $skus);
-            $this->selectedProductsDetails = array_map(fn($p) => (array) $p, $products);
-        } catch (\Exception $e) {
-            Log::error('Erreur chargement détails produits: ' . $e->getMessage());
-            $this->selectedProductsDetails = [];
-        }
+        $this->loading = true; // Premier chargement
     }
     
     public function loadMore()
     {
-        if (!$this->hasMore || $this->loading || $this->loadingMore) {
+        // Vérification stricte
+        if (!$this->hasMore) {
+            return;
+        }
+        
+        if ($this->loading || $this->loadingMore) {
             return;
         }
         
         Log::info('loadMore: Chargement page ' . ($this->page + 1));
+        
+        // Activer le loading pour le chargement manuel
         $this->loadingMore = true;
         $this->page++;
     }
     
-    // Gestion de la sélection
-    public function toggleSelect($sku)
-    {
-        if (in_array($sku, $this->selectedProducts)) {
-            $this->selectedProducts = array_diff($this->selectedProducts, [$sku]);
-        } else {
-            $this->selectedProducts[] = $sku;
-        }
-        
-        // Mettre à jour les détails après un délai pour éviter trop de requêtes
-        $this->dispatch('selection-updated');
-    }
-    
-    public function updatedSelectAll($value)
-    {
-        if ($value) {
-            // Sélectionner tous les produits visibles
-            $visibleSkus = collect($this->products)->pluck('sku')->toArray();
-            $this->selectedProducts = array_unique(array_merge($this->selectedProducts, $visibleSkus));
-        } else {
-            // Désélectionner tous les produits visibles
-            $visibleSkus = collect($this->products)->pluck('sku')->toArray();
-            $this->selectedProducts = array_diff($this->selectedProducts, $visibleSkus);
-        }
-        
-        $this->dispatch('selection-updated');
-    }
-    
-    // Écouter la mise à jour de la sélection
-    #[On('selection-updated')]
-    public function updateSelectedDetails()
-    {
-        $this->loadSelectedProductsDetails();
-    }
-    
-    // Réinitialiser les produits
-    protected function resetProducts()
-    {
-        $this->page = 1;
-        $this->hasMore = true;
-        $this->loadingMore = false;
-        $this->selectAll = false;
-    }
-    
-    // Mise à jour des filtres
     public function updatedSearch()
     {
         $this->resetProducts();
@@ -181,100 +76,22 @@ new class extends Component {
         $this->loading = true;
     }
     
-    // Ouvrir le modal de confirmation
-    public function openModal()
+    protected function resetProducts()
     {
-        if (empty($this->selectedProducts)) {
-            $this->dispatch('notify', [
-                'type' => 'error',
-                'message' => 'Veuillez sélectionner au moins un produit.'
-            ]);
-            return;
-        }
-        
-        $this->listName = 'Liste du ' . date('d/m/Y H:i');
-        $this->showModal = true;
-    }
-    
-    // Sauvegarder la liste
-    public function saveList()
-    {
-        try {
-            // Validation
-            if (empty($this->selectedProducts)) {
-                $this->dispatch('notify', [
-                    'type' => 'error',
-                    'message' => 'Veuillez sélectionner au moins un produit.'
-                ]);
-                return;
-            }
-            
-            if (empty($this->listName)) {
-                $this->dispatch('notify', [
-                    'type' => 'error',
-                    'message' => 'Veuillez donner un nom à votre liste.'
-                ]);
-                return;
-            }
-            
-            // Créer la liste principale
-            $list = Comparaison::create([
-                'libelle' => $this->listName,
-                'status' => 'active',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-            
-            // Sauvegarder les produits sélectionnés
-            $batchData = [];
-            foreach ($this->selectedProducts as $ean) {
-                $batchData[] = [
-                    'list_product_id' => $list->id,
-                    'EAN' => $ean,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
-            }
-            
-            // Insertion par lots pour plus de performance
-            DetailProduct::insert($batchData);
-            
-            // Fermer le modal
-            $this->showModal = false;
-            
-            // Réinitialiser la sélection
-            $this->selectedProducts = [];
-            $this->selectedProductsDetails = [];
-            $this->listName = '';
-            
-            $this->dispatch('notify', [
-                'type' => 'success',
-                'message' => 'Liste "' . $this->listName . '" sauvegardée avec ' . count($batchData) . ' produit(s).'
-            ]);
-            
-            // Émettre un événement pour le parent
-            $this->dispatch('list-created', ['listId' => $list->id]);
-            
-        } catch (\Exception $e) {
-            Log::error('Erreur sauvegarde liste: ' . $e->getMessage());
-            $this->dispatch('notify', [
-                'type' => 'error',
-                'message' => 'Erreur lors de la sauvegarde: ' . $e->getMessage()
-            ]);
-        }
-    }
-    
-    public function cancel()
-    {
-        return redirect()->to('/previous-page');
+        $this->page = 1;
+        $this->hasMore = true;
+        $this->loadingMore = false;
     }
     
     public function with(): array
     {
+        // NE PAS modifier loading ici - il sera géré par loadMore()
+        
         try {
             $allProducts = [];
             $totalItems = 0;
             
+            // Charger toutes les pages jusqu'à la page actuelle
             for ($i = 1; $i <= $this->page; $i++) {
                 $result = $this->fetchProductsFromDatabase($this->search, $i, $this->perPage);
                 
@@ -285,20 +102,25 @@ new class extends Component {
                 
                 $totalItems = $result['total_item'] ?? 0;
                 $newProducts = $result['data'] ?? [];
+                
+                // Convertir les objets en tableaux
                 $newProducts = array_map(fn($p) => (array) $p, $newProducts);
                 
                 $allProducts = array_merge($allProducts, $newProducts);
                 
+                // Si moins de produits que demandé, on a atteint la fin
                 if (count($newProducts) < $this->perPage) {
                     $this->hasMore = false;
                     break;
                 }
             }
             
+            // Vérifier si on a atteint la fin
             if (count($allProducts) >= $totalItems) {
                 $this->hasMore = false;
             }
             
+            // Désactiver les loadings après le chargement
             $this->loading = false;
             $this->loadingMore = false;
             
@@ -507,27 +329,36 @@ new class extends Component {
     {
         return "products_{$type}_" . md5(serialize($params));
     }
+    
+    public function save()
+    {
+        // Logique de sauvegarde
+        $this->dispatch('saved');
+    }
+    
+    public function cancel()
+    {
+        return redirect()->to('/previous-page');
+    }
 }; ?>
+
 
 <div class="mx-auto w-full">
     <x-header title="Créer la liste à comparer" separator progress-indicator>
         <x-slot:middle class="!justify-end">
-            <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2">
                 @if($loading || $loadingMore)
                     <span class="loading loading-spinner loading-sm text-primary"></span>
                 @endif
                 <div class="text-sm text-base-content/70">
-                    <span class="font-semibold text-primary">{{ count($selectedProducts) }}</span> produits sélectionnés
-                </div>
-                <div class="text-sm text-base-content/70">
-                    {{ count($products) }} / {{ $totalItems }} produits affichés
+                    {{ count($products) }} / {{ $totalItems }} produits
                 </div>
             </div>
         </x-slot:middle>
         <x-slot:actions>
             <x-button class="btn-error" label="Annuler" wire:click="cancel"
                 wire:confirm="Êtes-vous sûr de vouloir annuler ?" />
-            <x-button class="btn-primary" label="Valider" wire:click="openModal" />
+            <x-button class="btn-primary" label="Valider" wire:click="save" />
         </x-slot:actions>
     </x-header>
 
@@ -565,23 +396,6 @@ new class extends Component {
         />
     </div>
 
-    <!-- Sélection globale -->
-    <div class="mb-4 p-4 bg-base-200 rounded-box">
-        <div class="flex items-center justify-between">
-            <label class="flex items-center gap-3 cursor-pointer">
-                <input 
-                    type="checkbox" 
-                    class="checkbox checkbox-primary" 
-                    wire:model.live="selectAll"
-                >
-                <span class="font-semibold">Sélectionner tout ({{ count($products) }} produits affichés)</span>
-            </label>
-            <div class="badge badge-primary badge-lg">
-                {{ count($selectedProducts) }} produits sélectionnés au total
-            </div>
-        </div>
-    </div>
-
     <div class="rounded-box border border-base-content/5 bg-base-100 overflow-hidden">
         <!-- Conteneur principal -->
         <div class="max-h-[600px] overflow-y-auto">
@@ -589,9 +403,6 @@ new class extends Component {
             <table class="table table-sm w-full">
                 <thead class="sticky top-0 bg-base-200 z-10">
                     <tr>
-                        <th class="w-12">
-                            <span class="sr-only">Sélectionner</span>
-                        </th>
                         <th>Image</th>
                         <th>SKU</th>
                         <th>Nom</th>
@@ -604,16 +415,7 @@ new class extends Component {
                 </thead>
                 <tbody>
                     @forelse($products as $index => $product)
-                        <tr wire:key="product-{{ $product['id'] ?? $index }}"
-                            class="{{ in_array($product['sku'], $selectedProducts) ? 'bg-primary/5' : '' }}">
-                            <td>
-                                <input 
-                                    type="checkbox" 
-                                    class="checkbox checkbox-primary checkbox-xs" 
-                                    wire:model.live="selectedProducts"
-                                    value="{{ $product['sku'] }}"
-                                >
-                            </td>
+                        <tr wire:key="product-{{ $product['id'] ?? $index }}">
                             <td>
                                 @if(!empty($product['thumbnail']))
                                     <div class="avatar">
@@ -669,7 +471,7 @@ new class extends Component {
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="9" class="text-center py-12 text-base-content/50">
+                            <td colspan="8" class="text-center py-12 text-base-content/50">
                                 @if($loading)
                                     <div class="flex flex-col items-center gap-3">
                                         <span class="loading loading-spinner loading-lg text-primary"></span>
@@ -691,7 +493,7 @@ new class extends Component {
                     <!-- Ligne de chargement pendant le chargement manuel -->
                     @if($loadingMore)
                         <tr>
-                            <td colspan="9" class="text-center py-8 bg-base-100/80">
+                            <td colspan="8" class="text-center py-8 bg-base-100/80">
                                 <div class="flex flex-col items-center gap-3">
                                     <span class="loading loading-spinner loading-md text-primary"></span>
                                     <span class="text-base-content/70 font-medium">
@@ -745,125 +547,3 @@ new class extends Component {
         </div>
     </div>
 </div>
-
-<!-- Modal de confirmation -->
-<x-modal wire:model="showModal" title="Confirmation de la liste" persistent separator>
-    <div class="space-y-4">
-        <!-- Nom de la liste -->
-        <div>
-            <x-input 
-                label="Nom de la liste" 
-                wire:model="listName" 
-                placeholder="Entrez un nom pour votre liste"
-                required
-                hint="Donnez un nom significatif à votre liste"
-            />
-        </div>
-        
-        <!-- Résumé -->
-        <div class="bg-base-200 p-4 rounded-box">
-            <div class="flex items-center justify-between mb-3">
-                <span class="font-semibold">Résumé</span>
-                <span class="badge badge-primary">{{ count($selectedProducts) }} produits</span>
-            </div>
-            
-            @if(!empty($selectedProductsDetails))
-                <div class="max-h-64 overflow-y-auto">
-                    <table class="table table-xs table-zebra">
-                        <thead>
-                            <tr>
-                                <th>Image</th>
-                                <th>SKU</th>
-                                <th>Nom</th>
-                                <th>Marque</th>
-                                <th>Prix</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach($selectedProductsDetails as $product)
-                                <tr>
-                                    <td>
-                                        @if(!empty($product['thumbnail']))
-                                            <div class="avatar">
-                                                <div class="w-8 h-8 rounded">
-                                                    <img 
-                                                        src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
-                                                        alt="{{ $product['title'] ?? '' }}"
-                                                    >
-                                                </div>
-                                            </div>
-                                        @endif
-                                    </td>
-                                    <td class="font-mono text-xs">{{ $product['sku'] ?? '' }}</td>
-                                    <td class="truncate max-w-[150px]" title="{{ $product['title'] ?? '' }}">
-                                        {{ $product['title'] ?? '' }}
-                                    </td>
-                                    <td>{{ $product['vendor'] ?? '' }}</td>
-                                    <td>
-                                        @if(!empty($product['special_price']))
-                                            <span class="text-error font-semibold">
-                                                {{ number_format($product['special_price'], 2) }} €
-                                            </span>
-                                        @else
-                                            <span class="font-semibold">
-                                                {{ number_format($product['price'] ?? 0, 2) }} €
-                                            </span>
-                                        @endif
-                                    </td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            @else
-                <div class="text-center py-4 text-base-content/50">
-                    <p>Chargement des détails des produits...</p>
-                </div>
-            @endif
-        </div>
-        
-        <!-- Avertissement -->
-        <div class="alert alert-info">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-            </svg>
-            <span>La liste sera sauvegardée dans la base de données et vous pourrez y accéder ultérieurement.</span>
-        </div>
-    </div>
-    
-    <x-slot:actions>
-        <x-button label="Annuler" @click="$wire.showModal = false" />
-        <x-button label="Sauvegarder" class="btn-primary" wire:click="saveList" wire:loading.attr="disabled">
-            <span wire:loading.remove>Sauvegarder</span>
-            <span wire:loading wire:target="saveList" class="flex items-center gap-2">
-                <span class="loading loading-spinner loading-sm"></span>
-                Sauvegarde...
-            </span>
-        </x-button>
-    </x-slot:actions>
-</x-modal>
-
-<!-- Script pour gérer les notifications -->
-<script>
-    document.addEventListener('livewire:initialized', () => {
-        Livewire.on('notify', (event) => {
-            const toast = document.createElement('div');
-            toast.className = `toast toast-top toast-end`;
-            toast.innerHTML = `
-                <div class="alert ${event.type === 'success' ? 'alert-success' : 'alert-error'}">
-                    <span>${event.message}</span>
-                </div>
-            `;
-            document.body.appendChild(toast);
-            
-            setTimeout(() => {
-                toast.remove();
-            }, 3000);
-        });
-        
-        Livewire.on('list-created', (event) => {
-            // Redirection ou autre action après création
-            console.log('Liste créée avec ID:', event.listId);
-        });
-    });
-</script>
