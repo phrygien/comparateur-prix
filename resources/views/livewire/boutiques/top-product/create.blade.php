@@ -245,6 +245,8 @@ new class extends Component {
     public function saveList()
     {
         try {
+
+            dd($this->selectedProducts);
             // Validation
             if (empty($this->selectedProducts)) {
                 $this->dispatch('notify', [
