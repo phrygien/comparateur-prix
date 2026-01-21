@@ -8,9 +8,10 @@ use Illuminate\Support\Facades\Cache;
 
 new class extends Component {
     public $page = 1;
-    public $perPage = 60;
+    public $perPage = 20;
     public $hasMore = true;
     public $loading = false;
+    public $loadingMore = false; // Pour le chargement manuel
     
     // Filtres
     public $search = '';
@@ -24,27 +25,24 @@ new class extends Component {
     
     public function mount()
     {
-        // Activer le loading pour le premier chargement
-        $this->loading = true;
+        $this->loading = true; // Premier chargement
     }
     
     public function loadMore()
     {
         // Vérification stricte
         if (!$this->hasMore) {
-            Log::info('loadMore: Plus de produits à charger');
             return;
         }
         
-        if ($this->loading) {
-            Log::info('loadMore: Déjà en cours de chargement');
+        if ($this->loading || $this->loadingMore) {
             return;
         }
         
         Log::info('loadMore: Chargement page ' . ($this->page + 1));
         
-        // Activer le loading et incrémenter la page
-        $this->loading = true;
+        // Activer le loading pour le chargement manuel
+        $this->loadingMore = true;
         $this->page++;
     }
     
@@ -82,11 +80,12 @@ new class extends Component {
     {
         $this->page = 1;
         $this->hasMore = true;
+        $this->loadingMore = false;
     }
     
     public function with(): array
     {
-        Log::info('with() appelé - page: ' . $this->page . ', loading: ' . ($this->loading ? 'true' : 'false'));
+        // NE PAS modifier loading ici - il sera géré par loadMore()
         
         try {
             $allProducts = [];
@@ -109,12 +108,9 @@ new class extends Component {
                 
                 $allProducts = array_merge($allProducts, $newProducts);
                 
-                Log::info('Page ' . $i . ' - ' . count($newProducts) . ' produits chargés');
-                
                 // Si moins de produits que demandé, on a atteint la fin
                 if (count($newProducts) < $this->perPage) {
                     $this->hasMore = false;
-                    Log::info('Fin des produits: ' . count($newProducts) . ' < ' . $this->perPage);
                     break;
                 }
             }
@@ -122,12 +118,11 @@ new class extends Component {
             // Vérifier si on a atteint la fin
             if (count($allProducts) >= $totalItems) {
                 $this->hasMore = false;
-                Log::info('Fin des produits: total atteint - ' . count($allProducts) . '/' . $totalItems);
             }
             
-            // Désactiver le loading après chargement
+            // Désactiver les loadings après le chargement
             $this->loading = false;
-            Log::info('Chargement terminé - Total produits: ' . count($allProducts));
+            $this->loadingMore = false;
             
             return [
                 'products' => $allProducts,
@@ -136,8 +131,10 @@ new class extends Component {
             
         } catch (\Exception $e) {
             Log::error('Erreur with(): ' . $e->getMessage());
-            $this->hasMore = false;
+            Log::error($e->getTraceAsString());
             $this->loading = false;
+            $this->loadingMore = false;
+            $this->hasMore = false;
             
             return [
                 'products' => [],
@@ -345,11 +342,12 @@ new class extends Component {
     }
 }; ?>
 
+
 <div class="mx-auto max-w-5xl">
     <x-header title="Créer la liste à comparer" separator>
         <x-slot:middle class="!justify-end">
             <div class="flex items-center gap-2">
-                @if($loading)
+                @if($loading || $loadingMore)
                     <span class="loading loading-spinner loading-sm text-primary"></span>
                 @endif
                 <div class="text-sm text-base-content/70">
@@ -399,55 +397,9 @@ new class extends Component {
     </div>
 
     <div class="rounded-box border border-base-content/5 bg-base-100 overflow-hidden">
-        <!-- Conteneur principal -->
-        <div 
-            x-data="{
-                observer: null,
-                isLoading: @entangle('loading'),
-                hasMore: @entangle('hasMore'),
-                init() {
-                    console.log('Initialisation Infinite Scroll');
-                    
-                    // Créer l'Intersection Observer
-                    this.observer = new IntersectionObserver((entries) => {
-                        entries.forEach(entry => {
-                            console.log('Intersection Observer triggered:', {
-                                isIntersecting: entry.isIntersecting,
-                                isLoading: this.isLoading,
-                                hasMore: this.hasMore
-                            });
-                            
-                            if (entry.isIntersecting && !this.isLoading && this.hasMore) {
-                                console.log('✅ Déclenchement loadMore()');
-                                @this.loadMore();
-                            }
-                        });
-                    }, {
-                        root: null,
-                        rootMargin: '100px',
-                        threshold: 0.1
-                    });
-                    
-                    // Observer l'élément déclencheur
-                    this.$nextTick(() => {
-                        const target = this.$refs.loadingTrigger;
-                        if (target) {
-                            this.observer.observe(target);
-                            console.log('👀 Observation commencée');
-                        }
-                    });
-                },
-                destroy() {
-                    // Nettoyer l'observer
-                    if (this.observer) {
-                        this.observer.disconnect();
-                    }
-                }
-            }"
-            class="max-h-[600px] overflow-y-auto relative"
-            wire:ignore.self
-        >
-            <!-- Tableau -->
+        <!-- Conteneur principal SANS infinite scroll -->
+        <div class="max-h-[600px] overflow-y-auto">
+            <!-- Table -->
             <table class="table table-sm w-full">
                 <thead class="sticky top-0 bg-base-200 z-10">
                     <tr>
@@ -538,29 +490,16 @@ new class extends Component {
                         </tr>
                     @endforelse
                     
-                    <!-- Élément déclencheur pour infinite scroll -->
-                    @if($hasMore)
-                        <tr x-ref="loadingTrigger">
-                            <td colspan="8" class="text-center py-8">
-                                @if($loading)
-                                    <div class="flex flex-col items-center justify-center gap-3">
-                                        <!-- Animation de points -->
-                                        <div class="flex items-center space-x-2">
-                                            <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 0ms"></div>
-                                            <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 150ms"></div>
-                                            <div class="w-3 h-3 bg-primary rounded-full animate-bounce" style="animation-delay: 300ms"></div>
-                                        </div>
-                                        <span class="text-sm text-base-content/70 font-medium">
-                                            Chargement de {{ $perPage }} produits supplémentaires...
-                                        </span>
-                                        <div class="text-xs text-base-content/50">
-                                            {{ count($products) }} produits chargés
-                                        </div>
-                                    </div>
-                                @else
-                                    <!-- Élément invisible qui sert de déclencheur -->
-                                    <div class="h-1"></div>
-                                @endif
+                    <!-- Ligne de chargement pendant le chargement manuel -->
+                    @if($loadingMore)
+                        <tr>
+                            <td colspan="8" class="text-center py-8 bg-base-100/80">
+                                <div class="flex flex-col items-center gap-3">
+                                    <span class="loading loading-spinner loading-md text-primary"></span>
+                                    <span class="text-base-content/70 font-medium">
+                                        Chargement de {{ $perPage }} produits supplémentaires...
+                                    </span>
+                                </div>
                             </td>
                         </tr>
                     @endif
@@ -568,55 +507,109 @@ new class extends Component {
             </table>
         </div>
         
-        <!-- Message de fin -->
-        @if(!$hasMore && count($products) > 0)
-            <div class="text-center py-6 text-base-content/70 bg-base-100 border-t border-base-content/5">
-                <div class="inline-flex items-center gap-2 bg-success/10 text-success px-6 py-3 rounded-full">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-                    </svg>
-                    <span class="font-medium">Tous les produits chargés ({{ $totalItems }} au total)</span>
+        <!-- Section avec le bouton "Afficher plus" -->
+        <div class="border-t border-base-content/5 bg-base-100">
+            @if($hasMore)
+                <div class="flex flex-col items-center justify-center py-6 gap-4">
+                    <!-- Bouton Afficher plus -->
+                    <button 
+                        wire:click="loadMore"
+                        wire:loading.attr="disabled"
+                        class="btn btn-primary btn-wide"
+                        :disabled="$wire.loadingMore"
+                    >
+                        <span wire:loading.remove wire:target="loadMore">
+                            Afficher {{ $perPage }} produits supplémentaires
+                        </span>
+                        <span wire:loading wire:target="loadMore" class="flex items-center gap-2">
+                            <span class="loading loading-spinner loading-sm"></span>
+                            Chargement...
+                        </span>
+                    </button>
+                    
+                    <!-- Information -->
+                    <div class="text-sm text-base-content/60">
+                        <span class="font-medium">{{ count($products) }}</span> produits affichés sur 
+                        <span class="font-medium">{{ $totalItems }}</span> au total
+                    </div>
+                    
+                    <!-- Information sur la pagination -->
+                    <div class="flex items-center gap-2 text-xs text-base-content/50">
+                        <span class="badge badge-sm badge-outline">Page {{ $page }}</span>
+                        <span>•</span>
+                        <span>{{ $perPage }} produits par page</span>
+                    </div>
+                </div>
+            @elseif(count($products) > 0)
+                <!-- Message de fin -->
+                <div class="text-center py-6 text-base-content/70 bg-base-100">
+                    <div class="inline-flex items-center gap-2 bg-success/10 text-success px-6 py-3 rounded-full">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                        </svg>
+                        <span class="font-medium">Tous les produits chargés ({{ $totalItems }} au total)</span>
+                    </div>
+                </div>
+            @endif
+            
+            <!-- Résumé en bas -->
+            <div class="border-t border-base-content/5 px-4 py-3 bg-base-200/50">
+                <div class="flex flex-col sm:flex-row justify-between items-center gap-2 text-sm">
+                    <div class="text-base-content/70">
+                        <span class="font-medium">{{ count($products) }}</span> produits affichés
+                        @if($hasMore)
+                            <span class="text-primary">• {{ $totalItems - count($products) }} restants</span>
+                        @endif
+                    </div>
+                    
+                    <div class="flex items-center gap-2">
+                        <span class="text-base-content/70">Produits par page :</span>
+                        <select 
+                            wire:model.live="perPage" 
+                            class="select select-bordered select-xs"
+                            :disabled="$wire.loading || $wire.loadingMore"
+                        >
+                            <option value="10">10</option>
+                            <option value="20">20</option>
+                            <option value="30">30</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                    </div>
                 </div>
             </div>
-        @endif
+        </div>
     </div>
 </div>
 
-<script>
-// Script de débogage pour vérifier le fonctionnement
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('DOM chargé - Infinite Scroll Component');
-    
-    // Observer les événements Livewire
-    Livewire.hook('message.processed', (message, component) => {
-        console.log('Livewire message processed', {
-            loading: component.$wire.loading,
-            hasMore: component.$wire.hasMore,
-            page: component.$wire.page,
-            productsCount: component.$wire.products?.length || 0
-        });
-    });
-    
-    // Vérifier que l'IntersectionObserver est disponible
-    if (!('IntersectionObserver' in window)) {
-        console.warn('⚠️ IntersectionObserver non supporté - fallback au scroll classique');
-        
-        // Fallback: méthode de scroll classique
-        const container = document.querySelector('[x-data]');
-        if (container) {
-            container.addEventListener('scroll', function(e) {
-                const el = this;
-                const scrollTop = el.scrollTop;
-                const scrollHeight = el.scrollHeight;
-                const clientHeight = el.clientHeight;
-                
-                // Détecter quand on est à 100px du bas
-                if (scrollTop + clientHeight >= scrollHeight - 100) {
-                    console.log('Fallback: Scroll détecté - bas atteint');
-                    // Ne pas déclencher directement, laisser Alpine le faire
-                }
-            });
-        }
-    }
-});
-</script>
+<style>
+/* Animation pour le bouton */
+.btn-primary {
+    transition: all 0.2s ease;
+}
+
+.btn-primary:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(var(--color-primary) / 0.3);
+}
+
+.btn-primary:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+/* Style pour le select */
+.select-bordered {
+    border: 1px solid rgba(var(--color-base-content) / 0.2);
+}
+
+.select-bordered:focus {
+    border-color: rgba(var(--color-primary) / 0.5);
+    box-shadow: 0 0 0 2px rgba(var(--color-primary) / 0.1);
+}
+
+/* Badge style */
+.badge-outline {
+    background-color: transparent;
+    border: 1px solid currentColor;
+}
+</style>
