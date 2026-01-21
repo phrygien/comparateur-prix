@@ -34,6 +34,9 @@ new class extends Component {
     // Cache
     protected $cacheTTL = 3600;
     
+    // Table de résumé des produits sélectionnés
+    public $showSummaryTable = true; // Nouveau: contrôle l'affichage du résumé
+    
     public function mount($listId = null)
     {
         $this->loading = true;
@@ -139,6 +142,12 @@ new class extends Component {
     public function updateSelectedDetails()
     {
         $this->loadSelectedProductsDetails();
+    }
+    
+    // Nouveau: Toggle pour afficher/masquer le résumé
+    public function toggleSummaryTable()
+    {
+        $this->showSummaryTable = !$this->showSummaryTable;
     }
     
     // Réinitialiser les produits
@@ -582,6 +591,158 @@ new class extends Component {
         </div>
     </div>
 
+    <!-- Nouveau: Section de résumé des produits sélectionnés avec bouton afficher/masquer -->
+    @if(count($selectedProducts) > 0)
+        <div class="mb-6 border rounded-box border-base-content/10 bg-base-100 overflow-hidden">
+            <div class="flex items-center justify-between p-4 bg-base-200 border-b border-base-content/5">
+                <div class="flex items-center gap-3">
+                    <h3 class="font-semibold text-lg flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd" />
+                        </svg>
+                        Résumé des produits sélectionnés
+                        <span class="badge badge-primary">{{ count($selectedProducts) }}</span>
+                    </h3>
+                </div>
+                <button 
+                    wire:click="toggleSummaryTable"
+                    class="btn btn-sm btn-ghost"
+                    type="button"
+                >
+                    @if($showSummaryTable)
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                        </svg>
+                        Masquer
+                    @else
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd" />
+                        </svg>
+                        Afficher
+                    @endif
+                </button>
+            </div>
+            
+            @if($showSummaryTable)
+                <div class="overflow-x-auto">
+                    <table class="table table-sm table-zebra">
+                        <thead>
+                            <tr class="bg-base-200">
+                                <th class="w-12">#</th>
+                                <th>Image</th>
+                                <th>SKU</th>
+                                <th>Nom</th>
+                                <th>Marque</th>
+                                <th>Type</th>
+                                <th>Prix</th>
+                                <th>Stock</th>
+                                <th class="w-20">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @forelse($selectedProductsDetails as $index => $product)
+                                <tr wire:key="selected-{{ $product['id'] ?? $index }}">
+                                    <td class="font-semibold">{{ $index + 1 }}</td>
+                                    <td>
+                                        @if(!empty($product['thumbnail']))
+                                            <div class="avatar">
+                                                <div class="w-8 h-8 rounded">
+                                                    <img 
+                                                        src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
+                                                        alt="{{ $product['title'] ?? '' }}"
+                                                        class="object-cover"
+                                                    >
+                                                </div>
+                                            </div>
+                                        @else
+                                            <div class="w-8 h-8 bg-base-300 rounded flex items-center justify-center">
+                                                <span class="text-xs">N/A</span>
+                                            </div>
+                                        @endif
+                                    </td>
+                                    <td class="font-mono text-xs">{{ $product['sku'] ?? '' }}</td>
+                                    <td>
+                                        <div class="max-w-xs truncate" title="{{ $product['title'] ?? '' }}">
+                                            {{ $product['title'] ?? '' }}
+                                        </div>
+                                    </td>
+                                    <td>{{ $product['vendor'] ?? '' }}</td>
+                                    <td>
+                                        <span class="badge badge-sm">{{ $product['type'] ?? '' }}</span>
+                                    </td>
+                                    <td>
+                                        @if(!empty($product['special_price']))
+                                            <div class="flex flex-col">
+                                                <span class="line-through text-xs text-base-content/50">
+                                                    {{ number_format($product['price'] ?? 0, 2) }} €
+                                                </span>
+                                                <span class="text-error font-semibold">
+                                                    {{ number_format($product['special_price'], 2) }} €
+                                                </span>
+                                            </div>
+                                        @else
+                                            <span class="font-semibold">
+                                                {{ number_format($product['price'] ?? 0, 2) }} €
+                                            </span>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        <span class="{{ ($product['quantity'] ?? 0) > 0 ? 'text-success' : 'text-error' }}">
+                                            {{ $product['quantity'] ?? 0 }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <button 
+                                            wire:click="toggleSelect('{{ $product['sku'] }}')"
+                                            class="btn btn-xs btn-error"
+                                            title="Retirer de la sélection"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                                            </svg>
+                                        </button>
+                                    </td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="9" class="text-center py-8 text-base-content/50">
+                                        <div class="flex flex-col items-center gap-2">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                                            </svg>
+                                            <span>Chargement des détails...</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                        <tfoot class="bg-base-200">
+                            <tr>
+                                <td colspan="5" class="font-semibold text-right">Total:</td>
+                                <td class="font-semibold">{{ count($selectedProductsDetails) }} produits</td>
+                                <td class="font-semibold">
+                                    @php
+                                        $totalPrice = collect($selectedProductsDetails)->sum(function($product) {
+                                            return $product['special_price'] ?? $product['price'] ?? 0;
+                                        });
+                                    @endphp
+                                    {{ number_format($totalPrice, 2) }} €
+                                </td>
+                                <td class="font-semibold">
+                                    @php
+                                        $totalStock = collect($selectedProductsDetails)->sum('quantity');
+                                    @endphp
+                                    {{ $totalStock }}
+                                </td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            @endif
+        </div>
+    @endif
+
     <div class="rounded-box border border-base-content/5 bg-base-100 overflow-hidden">
         <!-- Conteneur principal -->
         <div class="max-h-[600px] overflow-y-auto">
@@ -758,68 +919,37 @@ new class extends Component {
                     hint="Donnez un nom significatif à votre liste"
                 />
             </div>
-            
-            <!-- Résumé -->
-            {{-- <div class="bg-base-200 p-4 rounded-box">
-                <div class="flex items-center justify-between mb-3">
-                    <span class="font-semibold">Résumé</span>
-                    <span class="badge badge-primary">{{ count($selectedProducts) }} produits</span>
+        
+            <!-- Résumé de la sélection -->
+            <div class="border rounded-box p-4">
+                <h4 class="font-semibold mb-2">Résumé de la sélection</h4>
+                <div class="space-y-2">
+                    <div class="flex justify-between">
+                        <span>Nombre de produits:</span>
+                        <span class="font-semibold">{{ count($selectedProducts) }}</span>
+                    </div>
+                    @if(count($selectedProductsDetails) > 0)
+                        <div class="flex justify-between">
+                            <span>Valeur totale:</span>
+                            @php
+                                $totalPrice = collect($selectedProductsDetails)->sum(function($product) {
+                                    return $product['special_price'] ?? $product['price'] ?? 0;
+                                });
+                            @endphp
+                            <span class="font-semibold">{{ number_format($totalPrice, 2) }} €</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Stock total:</span>
+                            @php
+                                $totalStock = collect($selectedProductsDetails)->sum('quantity');
+                            @endphp
+                            <span class="font-semibold {{ $totalStock > 0 ? 'text-success' : 'text-error' }}">
+                                {{ $totalStock }}
+                            </span>
+                        </div>
+                    @endif
                 </div>
-                
-                @if(!empty($selectedProductsDetails))
-                    <div class="max-h-64 overflow-y-auto">
-                        <table class="table table-xs table-zebra">
-                            <thead>
-                                <tr>
-                                    <th>Image</th>
-                                    <th>SKU</th>
-                                    <th>Nom</th>
-                                    <th>Marque</th>
-                                    <th>Prix</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach($selectedProductsDetails as $product)
-                                    <tr>
-                                        <td>
-                                            @if(!empty($product['thumbnail']))
-                                                <div class="avatar">
-                                                    <div class="w-8 h-8 rounded">
-                                                        <img 
-                                                            src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
-                                                            alt="{{ $product['title'] ?? '' }}"
-                                                        >
-                                                    </div>
-                                                </div>
-                                            @endif
-                                        </td>
-                                        <td class="font-mono text-xs">{{ $product['sku'] ?? '' }}</td>
-                                        <td class="truncate max-w-[150px]" title="{{ $product['title'] ?? '' }}">
-                                            {{ $product['title'] ?? '' }}
-                                        </td>
-                                        <td>{{ $product['vendor'] ?? '' }}</td>
-                                        <td>
-                                            @if(!empty($product['special_price']))
-                                                <span class="text-error font-semibold">
-                                                    {{ number_format($product['special_price'], 2) }} €
-                                                </span>
-                                            @else
-                                                <span class="font-semibold">
-                                                    {{ number_format($product['price'] ?? 0, 2) }} €
-                                                </span>
-                                            @endif
-                                        </td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-                @else
-                    <div class="text-center py-4 text-base-content/50">
-                        <p>Chargement des détails des produits...</p>
-                    </div>
-                @endif
-            </div> --}}
+            </div>
             
             <!-- Avertissement -->
             <div class="alert alert-info">
