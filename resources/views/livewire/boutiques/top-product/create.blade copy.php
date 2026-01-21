@@ -2,16 +2,12 @@
 
 use Livewire\Volt\Component;
 use Livewire\Attributes\On;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Cache;
 
 new class extends Component {
     public $page = 1;
     public $perPage = 20;
     public $hasMore = true;
     public $loading = false;
-    public $isLoadingMore = false; // Nouvelle propriété pour le chargement infini
     
     // Filtres
     public $search = '';
@@ -25,19 +21,20 @@ new class extends Component {
     
     public function loadMore()
     {
+        // Vérification stricte
         if (!$this->hasMore) {
+            Log::info('loadMore: Plus de produits à charger');
             return;
         }
         
-        if ($this->isLoadingMore) {
+        if ($this->loading) {
+            Log::info('loadMore: Déjà en cours de chargement');
             return;
         }
         
-        // Activer le loading spécifique pour infinite scroll
-        $this->isLoadingMore = true;
+        Log::info('loadMore: Chargement page ' . ($this->page + 1));
+        
         $this->page++;
-        
-        Log::info('loadMore: Chargement page ' . $this->page);
     }
     
     public function updatedSearch()
@@ -69,16 +66,11 @@ new class extends Component {
     {
         $this->page = 1;
         $this->hasMore = true;
-        $this->loading = false;
-        $this->isLoadingMore = false;
     }
     
     public function with(): array
     {
-        // Pour le premier chargement ou les filtres
-        if ($this->page === 1 && !$this->isLoadingMore) {
-            $this->loading = true;
-        }
+        $this->loading = true;
         
         try {
             $allProducts = [];
@@ -89,6 +81,7 @@ new class extends Component {
                 $result = $this->fetchProductsFromDatabase($this->search, $i, $this->perPage);
                 
                 if (isset($result['error'])) {
+                    Log::error('Erreur DB: ' . $result['error']);
                     break;
                 }
                 
@@ -112,9 +105,7 @@ new class extends Component {
                 $this->hasMore = false;
             }
             
-            // Désactiver les états de loading après le chargement réussi
             $this->loading = false;
-            $this->isLoadingMore = false;
             
             return [
                 'products' => $allProducts,
@@ -123,9 +114,9 @@ new class extends Component {
             
         } catch (\Exception $e) {
             Log::error('Erreur with(): ' . $e->getMessage());
-            $this->hasMore = false;
+            Log::error($e->getTraceAsString());
             $this->loading = false;
-            $this->isLoadingMore = false;
+            $this->hasMore = false;
             
             return [
                 'products' => [],
@@ -187,7 +178,7 @@ new class extends Component {
             // Filtre pour prix > 0
             $subQuery .= " AND product_decimal.price > 0 ";
 
-            // Total count
+            // Total count (mis en cache séparément)
             $total = $this->getProductCount($subQuery, $params);
             $nbPage = ceil($total / $perPage);
 
@@ -268,6 +259,8 @@ new class extends Component {
                 "total_page" => $nbPage,
                 "current_page" => $page,
                 "data" => $result,
+                "cached_at" => now()->toDateTimeString(),
+                "cache_key" => $this->getCacheKey('products', $page, $perPage)
             ];
 
         } catch (\Throwable $e) {
@@ -384,57 +377,42 @@ new class extends Component {
         />
     </div>
 
-    <div class="rounded-box border border-base-content/5 bg-base-100 overflow-hidden">
-        <!-- Conteneur principal avec infinite scroll -->
+    <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100 relative">
         <div 
-            x-data="{
-                isLoadingMore: @entangle('isLoadingMore'),
-                hasMore: @entangle('hasMore'),
-                loading: @entangle('loading'),
-                throttleTimer: null,
-                init() {
-                    // Gestionnaire de scroll
-                    this.$el.addEventListener('scroll', (e) => {
-                        if (this.throttleTimer) return;
-                        
-                        this.throttleTimer = setTimeout(() => {
-                            this.throttleTimer = null;
-                            
-                            const el = this.$el;
-                            const scrollTop = el.scrollTop;
-                            const scrollHeight = el.scrollHeight;
-                            const clientHeight = el.clientHeight;
-                            
-                            // Détecter quand on est à 80% du bas
-                            if (scrollTop + clientHeight >= scrollHeight - 100) {
-                                if (this.hasMore && !this.isLoadingMore && !this.loading) {
-                                    console.log('Déclenchement loadMore');
-                                    @this.loadMore();
-                                }
-                            }
-                        }, 200);
-                    });
-                }
+            x-data="{ 
+                loading: @entangle('loading').live,
+                hasMore: @entangle('hasMore').live,
+                throttleTimer: null
             }"
+            x-init="
+                $el.addEventListener('scroll', function(e) {
+                    if (throttleTimer) return;
+                    
+                    throttleTimer = setTimeout(() => {
+                        throttleTimer = null;
+                        
+                        const scrollTop = $el.scrollTop;
+                        const scrollHeight = $el.scrollHeight;
+                        const clientHeight = $el.clientHeight;
+                        const scrollPercentage = (scrollTop / (scrollHeight - clientHeight)) * 100;
+                        
+                        if (scrollPercentage > 80 && hasMore && !loading) {
+                            $wire.loadMore();
+                        }
+                    }, 150);
+                });
+            "
             class="max-h-[600px] overflow-y-auto relative"
-            wire:ignore
         >
-            <!-- Overlay gris pendant le chargement infini -->
+            <!-- Overlay semi-transparent pendant le chargement -->
             <div 
-                x-show="isLoadingMore"
+                x-show="loading"
                 x-transition.opacity
-                class="absolute inset-0 bg-base-300/30 z-10 pointer-events-none"
+                class="absolute inset-0 bg-black/30 backdrop-blur-[1px] z-10 pointer-events-none"
             ></div>
             
-            <!-- Overlay pour le premier chargement ou filtres -->
-            <div 
-                x-show="loading && {{ count($products) }} === 0"
-                x-transition.opacity
-                class="absolute inset-0 bg-base-100/80 z-10 pointer-events-none"
-            ></div>
-            
-            <!-- Tableau -->
-            <table class="table table-sm w-full">
+            <!-- Table -->
+            <table class="table table-sm w-full relative">
                 <thead class="sticky top-0 bg-base-200 z-20">
                     <tr>
                         <th>Image</th>
@@ -447,11 +425,11 @@ new class extends Component {
                         <th>Statut</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody class="relative">
                     @forelse($products as $index => $product)
                         <tr 
                             wire:key="product-{{ $product['id'] ?? $index }}"
-                            class="@if($isLoadingMore) opacity-60 @endif"
+                            :class="{ 'opacity-50': loading }"
                         >
                             <td>
                                 @if(!empty($product['thumbnail']))
@@ -503,10 +481,24 @@ new class extends Component {
                                 </span>
                             </td>
                         </tr>
+                        
+                        <!-- Indicateur de chargement après chaque produit pendant le chargement infini -->
+                        @if($loop->last && $loading && $hasMore)
+                            <tr id="loading-row" class="relative" x-show="loading">
+                                <td colspan="8" class="text-center py-4 bg-base-100/90 backdrop-blur-sm">
+                                    <div class="flex items-center justify-center gap-3 py-4">
+                                        <span class="loading loading-spinner loading-md text-primary"></span>
+                                        <span class="text-base-content/70 font-medium">
+                                            Chargement de plus de produits...
+                                        </span>
+                                    </div>
+                                </td>
+                            </tr>
+                        @endif
                     @empty
                         <tr>
                             <td colspan="8" class="text-center py-12 text-base-content/50">
-                                @if($loading)
+                                @if($loading && count($products) === 0)
                                     <div class="flex flex-col items-center gap-3">
                                         <span class="loading loading-spinner loading-lg text-primary"></span>
                                         <span class="text-lg">Chargement des produits...</span>
@@ -524,15 +516,13 @@ new class extends Component {
                         </tr>
                     @endforelse
                     
-                    <!-- Ligne de chargement pour infinite scroll -->
-                    @if($isLoadingMore && count($products) > 0)
+                    <!-- Indicateur de chargement pour le premier chargement -->
+                    @if($loading && count($products) === 0)
                         <tr>
-                            <td colspan="8" class="text-center py-4 bg-base-100">
-                                <div class="flex items-center justify-center gap-3">
-                                    <span class="loading loading-spinner loading-md text-primary"></span>
-                                    <span class="text-base-content/70">
-                                        Chargement de plus de produits...
-                                    </span>
+                            <td colspan="8" class="text-center py-12">
+                                <div class="flex flex-col items-center gap-3">
+                                    <span class="loading loading-spinner loading-lg text-primary"></span>
+                                    <span class="text-lg">Chargement des produits...</span>
                                 </div>
                             </td>
                         </tr>
@@ -540,23 +530,31 @@ new class extends Component {
                 </tbody>
             </table>
             
-            <!-- Spinner central pendant le chargement infini -->
+            <!-- Overlay avec spinner central pour le chargement infini -->
             <div 
-                x-show="isLoadingMore && {{ count($products) }} > 0"
-                x-transition.opacity
+                x-show="loading && {{ count($products) }} > 0"
+                x-transition:enter="transition ease-out duration-200"
+                x-transition:enter-start="opacity-0"
+                x-transition:enter-end="opacity-100"
+                x-transition:leave="transition ease-in duration-150"
+                x-transition:leave-start="opacity-100"
+                x-transition:leave-end="opacity-0"
                 class="absolute inset-0 flex items-center justify-center z-30 pointer-events-none"
                 style="display: none;"
             >
-                <div class="bg-base-100 border border-base-content/10 rounded-xl shadow-xl px-8 py-6 flex flex-col items-center gap-3">
-                    <span class="loading loading-spinner loading-lg text-primary"></span>
+                <!-- Spinner central -->
+                <div class="absolute inset-0 bg-black/20 backdrop-blur-[1px]"></div>
+                <div class="relative z-40 bg-base-100/90 border border-base-content/10 rounded-xl shadow-2xl px-8 py-6 flex flex-col items-center gap-3 backdrop-blur-sm">
+                    <div class="relative">
+                        <span class="loading loading-spinner loading-lg text-primary"></span>
+                    </div>
                     <p class="font-medium text-base-content">Chargement de plus de produits...</p>
                 </div>
             </div>
         </div>
         
-        <!-- Message de fin -->
-        @if(!$hasMore && count($products) > 0 && !$loading && !$isLoadingMore)
-            <div class="text-center py-4 text-base-content/70 bg-base-100 border-t border-base-content/5">
+        @if(!$hasMore && count($products) > 0 && !$loading)
+            <div class="text-center py-6 text-base-content/70 bg-base-100 border-t border-base-content/5">
                 <div class="inline-flex items-center gap-2 bg-success/10 text-success px-6 py-3 rounded-full">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                         <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
