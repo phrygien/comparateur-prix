@@ -744,106 +744,106 @@ new class extends Component {
             @endif
         </div>
     </div>
-</div>
 
-<!-- Modal de confirmation -->
-<x-modal wire:model="showModal" title="Confirmation de la liste" persistent separator>
-    <div class="space-y-4">
-        <!-- Nom de la liste -->
-        <div>
-            <x-input 
-                label="Nom de la liste" 
-                wire:model="listName" 
-                placeholder="Entrez un nom pour votre liste"
-                required
-                hint="Donnez un nom significatif à votre liste"
-            />
-        </div>
-        
-        <!-- Résumé -->
-        <div class="bg-base-200 p-4 rounded-box">
-            <div class="flex items-center justify-between mb-3">
-                <span class="font-semibold">Résumé</span>
-                <span class="badge badge-primary">{{ count($selectedProducts) }} produits</span>
+    <!-- Modal de confirmation -->
+    <x-modal wire:model="showModal" title="Confirmation de la liste" persistent separator>
+        <div class="space-y-4">
+            <!-- Nom de la liste -->
+            <div>
+                <x-input 
+                    label="Nom de la liste" 
+                    wire:model="listName" 
+                    placeholder="Entrez un nom pour votre liste"
+                    required
+                    hint="Donnez un nom significatif à votre liste"
+                />
             </div>
             
-            @if(!empty($selectedProductsDetails))
-                <div class="max-h-64 overflow-y-auto">
-                    <table class="table table-xs table-zebra">
-                        <thead>
-                            <tr>
-                                <th>Image</th>
-                                <th>SKU</th>
-                                <th>Nom</th>
-                                <th>Marque</th>
-                                <th>Prix</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach($selectedProductsDetails as $product)
+            <!-- Résumé -->
+            <div class="bg-base-200 p-4 rounded-box">
+                <div class="flex items-center justify-between mb-3">
+                    <span class="font-semibold">Résumé</span>
+                    <span class="badge badge-primary">{{ count($selectedProducts) }} produits</span>
+                </div>
+                
+                @if(!empty($selectedProductsDetails))
+                    <div class="max-h-64 overflow-y-auto">
+                        <table class="table table-xs table-zebra">
+                            <thead>
                                 <tr>
-                                    <td>
-                                        @if(!empty($product['thumbnail']))
-                                            <div class="avatar">
-                                                <div class="w-8 h-8 rounded">
-                                                    <img 
-                                                        src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
-                                                        alt="{{ $product['title'] ?? '' }}"
-                                                    >
-                                                </div>
-                                            </div>
-                                        @endif
-                                    </td>
-                                    <td class="font-mono text-xs">{{ $product['sku'] ?? '' }}</td>
-                                    <td class="truncate max-w-[150px]" title="{{ $product['title'] ?? '' }}">
-                                        {{ $product['title'] ?? '' }}
-                                    </td>
-                                    <td>{{ $product['vendor'] ?? '' }}</td>
-                                    <td>
-                                        @if(!empty($product['special_price']))
-                                            <span class="text-error font-semibold">
-                                                {{ number_format($product['special_price'], 2) }} €
-                                            </span>
-                                        @else
-                                            <span class="font-semibold">
-                                                {{ number_format($product['price'] ?? 0, 2) }} €
-                                            </span>
-                                        @endif
-                                    </td>
+                                    <th>Image</th>
+                                    <th>SKU</th>
+                                    <th>Nom</th>
+                                    <th>Marque</th>
+                                    <th>Prix</th>
                                 </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            @else
-                <div class="text-center py-4 text-base-content/50">
-                    <p>Chargement des détails des produits...</p>
-                </div>
-            @endif
+                            </thead>
+                            <tbody>
+                                @foreach($selectedProductsDetails as $product)
+                                    <tr>
+                                        <td>
+                                            @if(!empty($product['thumbnail']))
+                                                <div class="avatar">
+                                                    <div class="w-8 h-8 rounded">
+                                                        <img 
+                                                            src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
+                                                            alt="{{ $product['title'] ?? '' }}"
+                                                        >
+                                                    </div>
+                                                </div>
+                                            @endif
+                                        </td>
+                                        <td class="font-mono text-xs">{{ $product['sku'] ?? '' }}</td>
+                                        <td class="truncate max-w-[150px]" title="{{ $product['title'] ?? '' }}">
+                                            {{ $product['title'] ?? '' }}
+                                        </td>
+                                        <td>{{ $product['vendor'] ?? '' }}</td>
+                                        <td>
+                                            @if(!empty($product['special_price']))
+                                                <span class="text-error font-semibold">
+                                                    {{ number_format($product['special_price'], 2) }} €
+                                                </span>
+                                            @else
+                                                <span class="font-semibold">
+                                                    {{ number_format($product['price'] ?? 0, 2) }} €
+                                                </span>
+                                            @endif
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @else
+                    <div class="text-center py-4 text-base-content/50">
+                        <p>Chargement des détails des produits...</p>
+                    </div>
+                @endif
+            </div>
+            
+            <!-- Avertissement -->
+            <div class="alert alert-info">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span>La liste sera sauvegardée dans la base de données et vous pourrez y accéder ultérieurement.</span>
+            </div>
         </div>
         
-        <!-- Avertissement -->
-        <div class="alert alert-info">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-            </svg>
-            <span>La liste sera sauvegardée dans la base de données et vous pourrez y accéder ultérieurement.</span>
-        </div>
-    </div>
-    
-    <x-slot:actions>
-        <x-button label="Annuler" @click="$wire.showModal = false" />
-        <x-button label="Sauvegarder" class="btn-primary" wire:click="saveList" wire:loading.attr="disabled">
-            <span wire:loading.remove>Sauvegarder</span>
-            <span wire:loading wire:target="saveList" class="flex items-center gap-2">
-                <span class="loading loading-spinner loading-sm"></span>
-                Sauvegarde...
-            </span>
-        </x-button>
-    </x-slot:actions>
-</x-modal>
+        <x-slot:actions>
+            <x-button label="Annuler" @click="$wire.showModal = false" />
+            <x-button label="Sauvegarder" class="btn-primary" wire:click="saveList" wire:loading.attr="disabled">
+                <span wire:loading.remove>Sauvegarder</span>
+                <span wire:loading wire:target="saveList" class="flex items-center gap-2">
+                    <span class="loading loading-spinner loading-sm"></span>
+                    Sauvegarde...
+                </span>
+            </x-button>
+        </x-slot:actions>
+    </x-modal>
+</div>
 
-<!-- Script pour gérer les notifications -->
+@push('scripts')
 <script>
     document.addEventListener('livewire:initialized', () => {
         Livewire.on('notify', (event) => {
@@ -867,3 +867,4 @@ new class extends Component {
         });
     });
 </script>
+@endpush
