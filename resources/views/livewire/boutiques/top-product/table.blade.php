@@ -500,7 +500,7 @@ new class extends Component {
     @endif
     
     <!-- Bouton rafraîchir -->
-    <div class="mt-6 flex justify-center">
+    <!-- <div class="mt-6 flex justify-center">
         <button 
             wire:click="refreshProducts"
             wire:loading.attr="disabled"
@@ -518,7 +518,7 @@ new class extends Component {
                 Chargement...
             </span>
         </button>
-    </div>
+    </div> -->
 </div>
 
 <script>
