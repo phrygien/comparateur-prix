@@ -581,7 +581,8 @@ new class extends Component {
 </div>
 
 <!-- Styles inline pour l'animation de la barre de progression -->
-<style>
+@push('style')
+    <style>
     @keyframes loading {
         0% {
             width: 0%;
@@ -597,3 +598,4 @@ new class extends Component {
         }
     }
 </style>
+@endpush
