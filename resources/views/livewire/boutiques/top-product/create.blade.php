@@ -23,7 +23,7 @@ new class extends Component {
     
     public function mount()
     {
-        $this->loadProducts();
+        dd($this->loadProducts());
     }
     
     public function loadMore()
