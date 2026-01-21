@@ -565,27 +565,3 @@ new class extends Component {
         @endif
     </div>
 </div>
-
-<style>
-/* Animation pour le spinner */
-@keyframes pulse {
-    0%, 100% {
-        opacity: 1;
-    }
-    50% {
-        opacity: 0.5;
-    }
-}
-
-/* Désactiver les interactions pendant le chargement */
-.table[data-loading="true"] {
-    pointer-events: none;
-    user-select: none;
-}
-
-/* Styliser les lignes pendant le chargement */
-tr.loading-opacity {
-    opacity: 0.6;
-    transition: opacity 0.2s ease-in-out;
-}
-</style>
