@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use App\Models\Comparaison;
 use App\Models\DetailProduct;
+use Mary\Traits\Toast;
 
 new class extends Component {
     public $page = 1;
@@ -33,6 +34,9 @@ new class extends Component {
     
     // Cache
     protected $cacheTTL = 3600;
+
+    // Toast pour notification
+    use Toast;
     
     public function mount($listId = null)
     {
@@ -197,24 +201,14 @@ new class extends Component {
     // Ouvrir le modal de confirmation
     public function openModal()
     {
-        Log::info('Tentative ouverture modal');
-        Log::info('Produits sélectionnés: ' . count($this->selectedProducts));
-        Log::info('Liste produits: ' . implode(', ', $this->selectedProducts));
-        
         if (empty($this->selectedProducts)) {
-            $this->dispatch('notify', [
-                'type' => 'error',
-                'message' => 'Veuillez sélectionner au moins un produit.'
-            ]);
-            return;
+            $this->warning('Veuillez sélectionner au moins un produit.');
         }
         
-
-        dd($this->selectedProducts);
         $this->listName = 'Liste du ' . date('d/m/Y H:i');
         
         // Charger les détails avant d'ouvrir le modal
-        $this->loadSelectedProductsDetails();
+        dd($this->loadSelectedProductsDetails());
         
         Log::info('Ouverture modal avec ' . count($this->selectedProducts) . ' produits sélectionnés');
         Log::info('Détails chargés: ' . count($this->selectedProductsDetails));
