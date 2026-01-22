@@ -86,7 +86,7 @@ new class extends Component {
             FROM catalog_product_entity as produit
             LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
             WHERE produit.sku IN ($placeholders)
-            ORDER BY FIELD(produit.sku, " . implode(',', $skusToLoad) . ")
+            ORDER BY FIELD(produit.sku, " . implode(',', array_map(fn($sku) => "'" . addslashes($sku) . "'", $skusToLoad)) . ")
             LIMIT 100
         ";
         
@@ -165,6 +165,8 @@ new class extends Component {
         $this->tempSelectedProducts = [];
         
         $this->addingMultiple = false;
+        $this->loadingAction = false;
+        
         $this->dispatch('selection-updated');
         
         if ($addedCount > 0) {
@@ -209,21 +211,50 @@ new class extends Component {
         }
     }
     
-    // Gestion de la sélection individuelle définitive
-    public function toggleSelect($sku, $title = '', $thumbnail = '')
+    // Récupérer les détails d'un seul produit
+    protected function getSingleProductDetails($sku)
     {
+        try {
+            $query = "
+                SELECT 
+                    produit.sku as sku,
+                    CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) as title,
+                    product_char.thumbnail as thumbnail
+                FROM catalog_product_entity as produit
+                LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+                WHERE produit.sku = ?
+                LIMIT 1
+            ";
+            
+            $result = DB::connection('mysqlMagento')->select($query, [$sku]);
+            
+            if (!empty($result)) {
+                return (array) $result[0];
+            }
+        } catch (\Exception $e) {
+            Log::error('Erreur récupération détails produit unique: ' . $e->getMessage());
+        }
+        
+        return ['sku' => $sku, 'title' => '', 'thumbnail' => ''];
+    }
+    
+    // Gestion de la sélection individuelle définitive
+    public function toggleSelect($sku, $title = null, $thumbnail = null)
+    {
+        Log::info('toggleSelect appelé pour SKU: ' . $sku . ' avec title: ' . ($title ?? 'null'));
+        
         if (in_array($sku, $this->selectedProducts)) {
             // Désélection - suppression du produit
             $this->loadingAction = true;
             $this->removingProduct = $sku;
             
             $this->selectedProducts = array_diff($this->selectedProducts, [$sku]);
-            $this->selectedProductsDetails = array_filter($this->selectedProductsDetails, 
-                fn($product) => $product['sku'] !== $sku
-            );
             
-            // Réinitialiser les indicateurs
-            $this->dispatch('selection-updated');
+            // Filtrer les détails
+            $this->selectedProductsDetails = array_values(array_filter($this->selectedProductsDetails, 
+                fn($product) => ($product['sku'] ?? '') !== $sku
+            ));
+            
         } else {
             // Sélection - ajout du produit
             $this->loadingAction = true;
@@ -233,20 +264,26 @@ new class extends Component {
             
             // Ajouter aux détails seulement si pas déjà présent
             $existing = array_filter($this->selectedProductsDetails, 
-                fn($p) => $p['sku'] === $sku
+                fn($p) => ($p['sku'] ?? '') === $sku
             );
             
             if (empty($existing)) {
+                // Si les détails ne sont pas fournis, on les récupère
+                if ($title === null || $thumbnail === null) {
+                    $productDetails = $this->getSingleProductDetails($sku);
+                    $title = $productDetails['title'] ?? '';
+                    $thumbnail = $productDetails['thumbnail'] ?? '';
+                }
+                
                 $this->selectedProductsDetails[] = [
                     'sku' => $sku,
                     'title' => $title,
                     'thumbnail' => $thumbnail
                 ];
             }
-            
-            // Réinitialiser les indicateurs
-            $this->dispatch('selection-updated');
         }
+        
+        $this->dispatch('selection-updated');
     }
     
     // Vider la sélection temporaire
@@ -262,6 +299,10 @@ new class extends Component {
     #[On('selection-updated')]
     public function resetLoading()
     {
+        Log::info('resetLoading appelé');
+        Log::info('selectedProducts count: ' . count($this->selectedProducts));
+        Log::info('selectedProductsDetails count: ' . count($this->selectedProductsDetails));
+        
         $this->loadingAction = false;
         $this->loadingProduct = null;
         $this->removingProduct = null;
@@ -649,7 +690,6 @@ new class extends Component {
     }
 }; ?>
 
-
 <div class="mx-auto w-full">
     <!-- Loading indicator Livewire -->
     <div wire:loading.class.remove="hidden" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-base-100/80 backdrop-blur-sm">
@@ -822,8 +862,83 @@ new class extends Component {
             
             @if($showSummaryTable)
                 <div class="p-4">
-                    <!-- Le reste du résumé reste inchangé -->
-                    <!-- ... [votre code existant pour afficher les produits sélectionnés] ... -->
+                    <!-- Barre de défilement -->
+                    <div class="relative">
+                        <!-- Bouton gauche -->
+                        <button 
+                            onclick="scrollSummary('left')"
+                            class="absolute left-0 top-1/2 transform -translate-y-1/2 -translate-x-2 z-10 btn btn-circle btn-sm btn-ghost bg-base-100/80 backdrop-blur-sm"
+                            aria-label="Défiler vers la gauche"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                        
+                        <!-- Conteneur de défilement -->
+                        <div id="summaryScrollContainer" class="flex overflow-x-auto gap-4 py-4 px-8 scrollbar-thin">
+                            @forelse($selectedProductsDetails as $product)
+                                <div class="flex-shrink-0 w-48 bg-base-100 rounded-box border border-base-content/10 overflow-hidden hover:shadow-lg transition-shadow duration-200">
+                                    <!-- Image -->
+                                    <div class="aspect-square bg-base-300">
+                                        @if(!empty($product['thumbnail']))
+                                            <img 
+                                                src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['thumbnail'] }}"
+                                                alt="{{ $product['title'] ?? '' }}"
+                                                class="w-full h-full object-cover"
+                                            >
+                                        @else
+                                            <div class="w-full h-full flex items-center justify-center">
+                                                <span class="text-base-content/50">Pas d'image</span>
+                                            </div>
+                                        @endif
+                                    </div>
+                                    
+                                    <!-- Informations -->
+                                    <div class="p-3">
+                                        <div class="font-medium text-sm truncate mb-1" title="{{ $product['title'] ?? '' }}">
+                                            {{ $product['title'] ?? '' }}
+                                        </div>
+                                        <div class="text-xs text-base-content/70 font-mono mb-3">
+                                            {{ $product['sku'] ?? '' }}
+                                        </div>
+                                        
+                                        <!-- Bouton de suppression -->
+                                        <button 
+                                            wire:click="removeFromSummary('{{ $product['sku'] ?? '' }}')"
+                                            class="btn btn-xs btn-error btn-block"
+                                            wire:loading.attr="disabled"
+                                            wire:target="removeFromSummary"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                                            </svg>
+                                            Retirer
+                                        </button>
+                                    </div>
+                                </div>
+                            @empty
+                                <div class="w-full text-center py-12 text-base-content/50">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-3 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                                    </svg>
+                                    <p>Aucun produit dans votre liste</p>
+                                    <p class="text-sm mt-1">Sélectionnez des produits dans le tableau ci-dessous</p>
+                                </div>
+                            @endforelse
+                        </div>
+                        
+                        <!-- Bouton droit -->
+                        <button 
+                            onclick="scrollSummary('right')"
+                            class="absolute right-0 top-1/2 transform -translate-y-1/2 translate-x-2 z-10 btn btn-circle btn-sm btn-ghost bg-base-100/80 backdrop-blur-sm"
+                            aria-label="Défiler vers la droite"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
                 </div>
             @endif
         </div>
@@ -967,7 +1082,7 @@ new class extends Component {
                             <td>
                                 @if($isSelected)
                                     <button 
-                                        wire:click="toggleSelect('{{ $product['sku'] }}', '{{ addslashes($product['title'] ?? '') }}', '{{ $product['thumbnail'] ?? '' }}')"
+                                        wire:click="toggleSelect('{{ $product['sku'] }}')"
                                         class="btn btn-xs btn-error"
                                         wire:loading.attr="disabled"
                                         wire:target="toggleSelect"
