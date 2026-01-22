@@ -777,65 +777,65 @@ new class extends Component {
             </div>
         </div>
     @endif
+    
+    <script>
+        // Fonction pour copier le SKU
+        function copySku(sku) {
+            navigator.clipboard.writeText(sku).then(() => {
+                const toast = document.createElement('div');
+                toast.className = `toast toast-top toast-end`;
+                toast.innerHTML = `
+                    <div class="alert alert-success">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span>SKU ${sku} copié !</span>
+                    </div>
+                `;
+                document.body.appendChild(toast);
+                
+                setTimeout(() => {
+                    toast.remove();
+                }, 2000);
+            }).catch(err => {
+                console.error('Erreur copie:', err);
+            });
+        }
+    </script>
+
+    <style>
+        /* Animation pour l'expansion des lignes */
+        .collapse {
+            transition: all 0.3s ease-in-out;
+        }
+        
+        /* Animation de rotation pour la flèche */
+        svg {
+            transition: transform 0.2s ease-in-out;
+        }
+        
+        /* Style pour les lignes expandées */
+        tr.bg-blue-50 {
+            background-color: rgba(219, 234, 254, 0.5);
+        }
+        
+        /* Hover effect sur les lignes de produits similaires */
+        .hover:hover {
+            background-color: rgba(229, 231, 235, 0.5);
+        }
+        
+        /* Style pour le loading spinner */
+        .loading-spinner {
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
 </div>
-
-<script>
-    // Fonction pour copier le SKU
-    function copySku(sku) {
-        navigator.clipboard.writeText(sku).then(() => {
-            const toast = document.createElement('div');
-            toast.className = `toast toast-top toast-end`;
-            toast.innerHTML = `
-                <div class="alert alert-success">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span>SKU ${sku} copié !</span>
-                </div>
-            `;
-            document.body.appendChild(toast);
-            
-            setTimeout(() => {
-                toast.remove();
-            }, 2000);
-        }).catch(err => {
-            console.error('Erreur copie:', err);
-        });
-    }
-</script>
-
-<style>
-    /* Animation pour l'expansion des lignes */
-    .collapse {
-        transition: all 0.3s ease-in-out;
-    }
-    
-    /* Animation de rotation pour la flèche */
-    svg {
-        transition: transform 0.2s ease-in-out;
-    }
-    
-    /* Style pour les lignes expandées */
-    tr.bg-blue-50 {
-        background-color: rgba(219, 234, 254, 0.5);
-    }
-    
-    /* Hover effect sur les lignes de produits similaires */
-    .hover:hover {
-        background-color: rgba(229, 231, 235, 0.5);
-    }
-    
-    /* Style pour le loading spinner */
-    .loading-spinner {
-        animation: spin 1s linear infinite;
-    }
-    
-    @keyframes spin {
-        from {
-            transform: rotate(0deg);
-        }
-        to {
-            transform: rotate(360deg);
-        }
-    }
-</style>
