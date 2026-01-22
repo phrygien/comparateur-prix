@@ -1120,8 +1120,8 @@ new class extends Component {
                                 </div>
                             </td>
                             <td>
-                                <div class="max-w-xs" title="{{ $product['title'] ?? '' }}">
-                                    {{ $product['title'] ?? 'N/A' }}
+                                <div class="max-w-xs" title="{{ utf8_encode($product['title'] ?? '' ) }}">
+                                   {{ utf8_encode($product['title'] ?? '' ) }}
                                 </div>
                             </td>
                             <td>{{ $product['vendor'] ?? 'N/A' }}</td>
