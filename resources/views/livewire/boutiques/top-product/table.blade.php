@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 
 new class extends Component {
-    
+
     public int $id;
     public string $listTitle = '';
     public bool $loading = true;
@@ -17,16 +17,16 @@ new class extends Component {
     public int $page = 1;
     public int $perPage = 200;
     public int $totalPages = 1;
-    
+
     // Cache
     protected $cacheTTL = 3600;
-    
+
     public function mount($id): void
     {
         $this->id = $id;
         $this->loadListTitle();
     }
-    
+
     public function loadListTitle(): void
     {
         try {
@@ -37,18 +37,18 @@ new class extends Component {
             $this->listTitle = 'Erreur de chargement';
         }
     }
-    
+
     // Changer de page
     public function goToPage($page): void
     {
         if ($page < 1 || $page > $this->totalPages || $page === $this->page) {
             return;
         }
-        
+
         $this->loading = true;
-        $this->page = (int)$page;
+        $this->page = (int) $page;
     }
-    
+
     // Page précédente
     public function previousPage(): void
     {
@@ -56,7 +56,7 @@ new class extends Component {
             $this->goToPage($this->page - 1);
         }
     }
-    
+
     // Page suivante
     public function nextPage(): void
     {
@@ -64,7 +64,7 @@ new class extends Component {
             $this->goToPage($this->page + 1);
         }
     }
-    
+
     // Rafraîchir la liste
     public function refreshProducts(): void
     {
@@ -72,7 +72,7 @@ new class extends Component {
         $this->loading = true;
         $this->loadListTitle();
     }
-    
+
     public function with(): array
     {
         try {
@@ -84,9 +84,9 @@ new class extends Component {
                     ->values()
                     ->toArray();
             });
-            
+
             $totalItems = count($allSkus);
-            
+
             if ($totalItems === 0) {
                 $this->loading = false;
                 $this->totalPages = 1;
@@ -97,13 +97,13 @@ new class extends Component {
                     'allSkus' => [],
                 ];
             }
-            
+
             // Calculer le nombre total de pages
             $this->totalPages = max(1, ceil($totalItems / $this->perPage));
-            
+
             // Charger uniquement la page courante
             $result = $this->fetchProductsFromDatabase($allSkus, $this->page, $this->perPage);
-            
+
             if (isset($result['error'])) {
                 Log::error('Erreur DB: ' . $result['error']);
                 $products = [];
@@ -111,24 +111,24 @@ new class extends Component {
                 $products = $result['data'] ?? [];
                 $products = array_map(fn($p) => (array) $p, $products);
             }
-            
+
             $this->loading = false;
             $this->loadingMore = false;
-            
+
             return [
                 'products' => $products,
                 'totalItems' => $totalItems,
                 'totalPages' => $this->totalPages,
                 'allSkus' => $allSkus,
             ];
-            
+
         } catch (\Exception $e) {
             Log::error('Erreur with(): ' . $e->getMessage());
             Log::error($e->getTraceAsString());
             $this->loading = false;
             $this->loadingMore = false;
             $this->totalPages = 1;
-            
+
             return [
                 'products' => [],
                 'totalItems' => 0,
@@ -137,7 +137,7 @@ new class extends Component {
             ];
         }
     }
-    
+
     /**
      * Récupère les produits depuis la base de données
      */
@@ -146,7 +146,7 @@ new class extends Component {
         try {
             $offset = ($page - 1) * $perPage;
             $pageSkus = array_slice($allSkus, $offset, $perPage);
-            
+
             if (empty($pageSkus)) {
                 return [
                     "total_item" => count($allSkus),
@@ -157,9 +157,9 @@ new class extends Component {
                     "cached_at" => now()->toDateTimeString(),
                 ];
             }
-            
+
             $placeholders = implode(',', array_fill(0, count($pageSkus), '?'));
-            
+
             $query = "
                 SELECT 
                     produit.sku as sku,
@@ -188,9 +188,9 @@ new class extends Component {
                 AND product_int.status >= 0
                 ORDER BY FIELD(produit.sku, " . implode(',', $pageSkus) . ")
             ";
-            
+
             $result = DB::connection('mysqlMagento')->select($query, $pageSkus);
-            
+
             return [
                 "total_item" => count($allSkus),
                 "per_page" => $perPage,
@@ -203,7 +203,7 @@ new class extends Component {
 
         } catch (\Throwable $e) {
             Log::error('Error fetching list products: ' . $e->getMessage());
-            
+
             return [
                 "total_item" => 0,
                 "per_page" => $perPage,
@@ -214,25 +214,25 @@ new class extends Component {
             ];
         }
     }
-    
+
     // Générer les boutons de pagination
     public function getPaginationButtons(): array
     {
         $buttons = [];
         $current = $this->page;
         $total = $this->totalPages;
-        
+
         // Toujours afficher la première page
         $buttons[] = [
             'page' => 1,
             'label' => '1',
             'active' => $current === 1,
         ];
-        
+
         // Afficher les pages autour de la page courante
         $start = max(2, $current - 2);
         $end = min($total - 1, $current + 2);
-        
+
         // Ajouter "..." après la première page si nécessaire
         if ($start > 2) {
             $buttons[] = [
@@ -241,16 +241,16 @@ new class extends Component {
                 'disabled' => true,
             ];
         }
-        
+
         // Pages du milieu
         for ($i = $start; $i <= $end; $i++) {
             $buttons[] = [
                 'page' => $i,
-                'label' => (string)$i,
+                'label' => (string) $i,
                 'active' => $current === $i,
             ];
         }
-        
+
         // Ajouter "..." avant la dernière page si nécessaire
         if ($end < $total - 1) {
             $buttons[] = [
@@ -259,19 +259,19 @@ new class extends Component {
                 'disabled' => true,
             ];
         }
-        
+
         // Toujours afficher la dernière page si elle existe
         if ($total > 1) {
             $buttons[] = [
                 'page' => $total,
-                'label' => (string)$total,
+                'label' => (string) $total,
                 'active' => $current === $total,
             ];
         }
-        
+
         return $buttons;
     }
-    
+
     protected function getCacheKey($type, ...$params)
     {
         return "list_products_{$type}_" . md5(serialize($params));
@@ -280,7 +280,7 @@ new class extends Component {
 
 <div>
     <!-- En-tête avec information -->
-    <div class="mb-6">
+    {{-- <div class="mb-6">
         <h2 class="text-2xl font-bold mb-2">{{ $listTitle }}</h2>
         <div class="flex items-center gap-4">
             <div class="badge badge-primary">
@@ -293,7 +293,16 @@ new class extends Component {
                 </div>
             @endif
         </div>
-    </div>
+    </div> --}}
+
+    <x-header title="{{ $listTitle }}" subtitle=" Page {{ $page }} sur {{ $totalPages }} ({{ $totalItems }} produits)" separator>
+        <x-slot:middle class="!justify-end">
+            <x-input icon="o-bolt" placeholder="Search..." />
+        </x-slot:middle>
+        <x-slot:actions>
+            <x-button label="Exécuter la recherche de prix concurrent" class="btn-primary" />
+        </x-slot:actions>
+    </x-header>
 
     <!-- Table des produits -->
     <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100 mb-6">
@@ -339,7 +348,7 @@ new class extends Component {
                     <!-- Liste des produits -->
                     @foreach($products as $index => $product)
                         @php
-                            $rowNumber = (($page - 1) * $perPage) + $index + 1;
+        $rowNumber = (($page - 1) * $perPage) + $index + 1;
                         @endphp
                         <tr wire:key="product-{{ $product['sku'] }}-{{ $page }}-{{ $index }}">
                             <th>{{ $rowNumber }}</th>
@@ -416,10 +425,10 @@ new class extends Component {
                             </td>
                             <td>
                                 @php
-                                    $statusClass = ($product['status'] ?? 0) == 1 ? 'badge-success' : 'badge-error';
-                                    $statusText = ($product['status'] ?? 0) == 1 ? 'Actif' : 'Inactif';
-                                    $stockStatusClass = ($product['quatity_status'] ?? 0) == 1 ? 'badge-success' : 'badge-error';
-                                    $stockStatusText = ($product['quatity_status'] ?? 0) == 1 ? 'En stock' : 'Rupture';
+        $statusClass = ($product['status'] ?? 0) == 1 ? 'badge-success' : 'badge-error';
+        $statusText = ($product['status'] ?? 0) == 1 ? 'Actif' : 'Inactif';
+        $stockStatusClass = ($product['quatity_status'] ?? 0) == 1 ? 'badge-success' : 'badge-error';
+        $stockStatusText = ($product['quatity_status'] ?? 0) == 1 ? 'En stock' : 'Rupture';
                                 @endphp
                                 <div class="flex flex-col gap-1">
                                     <span class="badge badge-sm {{ $statusClass }}">
