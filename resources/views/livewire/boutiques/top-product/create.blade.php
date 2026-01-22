@@ -142,42 +142,30 @@ new class extends Component {
     }
     
     // Sélectionner/désélectionner tous les produits
-    public function toggleSelectAll()
-    {
-        // Basculer l'état de sélection
-        $this->selectAll = !$this->selectAll;
+// Sélectionner/désélectionner tous les produits
+public function toggleSelectAll()
+{
+    // Basculer l'état de sélection
+    $this->selectAll = !$this->selectAll;
+    
+    if ($this->selectAll) {
+        // Sélectionner tous les produits affichés
+        $this->loadingAction = true;
         
-        if ($this->selectAll) {
-            // Sélectionner tous les produits affichés
-            $this->loadingAction = true;
-            
-            // Récupérer tous les SKU des produits affichés
-            $allSkus = [];
-            foreach ($this->products as $product) {
-                if (!empty($product['sku'])) {
-                    $allSkus[] = $product['sku'];
-                    $this->selectedProducts[] = $product['sku'];
-                }
-            }
-            
-            // Éliminer les doublons
-            $this->selectedProducts = array_unique($this->selectedProducts);
-            
-            // Charger les détails des produits sélectionnés
-            $this->loadSelectedProductsDetails();
-            
-            $this->dispatch('selection-updated');
-        } else {
-            // Désélectionner tous les produits
-            $this->loadingAction = true;
-            
-            // Vider la sélection
-            $this->selectedProducts = [];
-            $this->selectedProductsDetails = [];
-            
-            $this->dispatch('selection-updated');
-        }
+        // Déléguer la sélection à Alpine.js
+        $this->dispatch('need-to-select-all');
+        
+    } else {
+        // Désélectionner tous les produits
+        $this->loadingAction = true;
+        
+        // Vider la sélection
+        $this->selectedProducts = [];
+        $this->selectedProductsDetails = [];
+        
+        $this->dispatch('selection-updated');
     }
+}
     
     #[On('selection-updated')]
     public function resetLoading()
@@ -660,8 +648,8 @@ new class extends Component {
         />
     </div>
 
-    <!-- Sélection globale -->
-    <div class="mb-4 p-4 bg-base-200 rounded-box">
+    <!-- Sélection globale avec Alpine.js -->
+    <div class="mb-4 p-4 bg-base-200 rounded-box" x-data="selectAllHandler">
         <div class="flex items-center justify-between">
             <div class="flex items-center gap-3 cursor-pointer">
                 <input 
@@ -672,6 +660,7 @@ new class extends Component {
                     wire:click="toggleSelectAll"
                     wire:loading.attr="disabled"
                     wire:target="toggleSelectAll"
+                    x-ref="selectAllCheckbox"
                 >
                 <label for="selectAllCheckbox" class="font-semibold">
                     @if($loadingAction && !$loadingProduct && !$removingProduct)
@@ -945,6 +934,10 @@ new class extends Component {
                                             {{ in_array($product['sku'], $selectedProducts) ? 'checked' : '' }}
                                             wire:click="toggleSelect('{{ $product['sku'] }}', '{{ addslashes($product['title'] ?? '') }}', '{{ $product['thumbnail'] ?? '' }}')"
                                             {{ $loadingAction ? 'disabled' : '' }}
+                                            x-ref="productCheckbox-{{ $product['sku'] }}"
+                                            data-sku="{{ $product['sku'] }}"
+                                            data-title="{{ addslashes($product['title'] ?? '') }}"
+                                            data-thumbnail="{{ $product['thumbnail'] ?? '' }}"
                                         >
                                     @endif
                                 </div>
@@ -1135,6 +1128,53 @@ new class extends Component {
 
 @push('scripts')
 <script>
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('selectAllHandler', () => ({
+            init() {
+                // Écouter les événements Livewire
+                Livewire.on('need-to-select-all', () => {
+                    this.selectAllProducts();
+                });
+                
+                // Écouter aussi les changements de sélection pour mettre à jour le checkbox "Sélectionner tout"
+                Livewire.on('selection-updated', () => {
+                    this.updateSelectAllCheckbox();
+                });
+            },
+            
+            selectAllProducts() {
+                // Récupérer tous les checkboxes de produits
+                const checkboxes = document.querySelectorAll('[x-ref^="productCheckbox-"]');
+                
+                // Pour chaque produit non sélectionné, l'ajouter
+                checkboxes.forEach(checkbox => {
+                    const sku = checkbox.dataset.sku;
+                    const title = checkbox.dataset.title;
+                    const thumbnail = checkbox.dataset.thumbnail;
+                    
+                    // Si le produit n'est pas déjà sélectionné, le sélectionner
+                    if (!checkbox.checked) {
+                        // Appeler la méthode Livewire pour sélectionner le produit
+                        @this.toggleSelect(sku, title, thumbnail);
+                    }
+                });
+            },
+            
+            updateSelectAllCheckbox() {
+                // Vérifier si tous les produits sont sélectionnés
+                const checkboxes = document.querySelectorAll('[x-ref^="productCheckbox-"]');
+                const allSelected = checkboxes.length > 0 && 
+                    Array.from(checkboxes).every(checkbox => checkbox.checked);
+                
+                // Mettre à jour le checkbox "Sélectionner tout"
+                const selectAllCheckbox = this.$refs.selectAllCheckbox;
+                if (selectAllCheckbox) {
+                    selectAllCheckbox.checked = allSelected;
+                }
+            }
+        }));
+    });
+
     document.addEventListener('livewire:initialized', () => {
         Livewire.on('notify', (event) => {
             const toast = document.createElement('div');
