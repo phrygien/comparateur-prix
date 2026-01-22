@@ -2242,7 +2242,7 @@ new class extends Component {
                                 <div class="avatar">
                                     <div class="w-12 h-12 rounded border border-gray-200 bg-gray-50">
                                         @if($imageUrl)
-                                            <img src="{{ $imageUrl }}" 
+                                            <img src="https://www.cosma-parfumeries.com/media/catalog/product/{{ $product['swatch_image'] }}" 
                                                  alt="{{ $product['title'] }}"
                                                  class="w-full h-full object-contain p-0.5"
                                                  loading="lazy"
