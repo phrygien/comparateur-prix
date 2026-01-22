@@ -832,7 +832,8 @@ new class extends Component {
                             <td class="font-mono text-xs">{{ $product['sku'] ?? '' }}</td>
                             <td>
                                 <div class="max-w-xs truncate" title="{{ $product['title'] ?? '' }}">
-                                    {{ $product['title'] ?? '' }}
+                                    {{-- {{ $product['title'] ?? '' }} --}}
+                                    {{ utf8_encode({{ $product['title'] ?? '' }}) }}
                                 </div>
                             </td>
                             <td>{{ $product['vendor'] ?? '' }}</td>
