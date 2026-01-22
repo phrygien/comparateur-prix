@@ -860,7 +860,7 @@ new class extends Component {
                 WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
                 AND (" . implode(' OR ', $conditions) . ")
                 ORDER BY lp.prix_ht ASC
-                LIMIT 30
+                LIMIT 100
             ";
             
             return DB::connection('mysql')->select($query, $params);
@@ -920,7 +920,7 @@ new class extends Component {
                     AGAINST (? IN BOOLEAN MODE)
                 AND (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
                 ORDER BY lp.prix_ht ASC
-                LIMIT 50
+                LIMIT 100
             ";
             
             return DB::connection('mysql')->select($query, [$searchQuery]);
@@ -955,7 +955,7 @@ new class extends Component {
                 WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
                 AND (" . implode(' OR ', $vendorConditions) . ")
                 ORDER BY lp.prix_ht ASC
-                LIMIT 30
+                LIMIT 100
             ";
             
             return DB::connection('mysql')->select($query, $params);
