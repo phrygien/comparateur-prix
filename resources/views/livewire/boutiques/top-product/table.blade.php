@@ -2204,8 +2204,6 @@ new class extends Component {
                         <th>Concurrents auto</th>
                         <th>Recherche manuelle</th>
                         <th>Type</th>
-                        <th>Stock</th>
-                        <th>Statut</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -2489,7 +2487,7 @@ new class extends Component {
                             </td>
                             
                             <!-- Stock -->
-                            <td>
+                            {{-- <td>
                                 @if(isset($product['quatity']))
                                     @php
                                         $stockPercentage = min(100, max(0, ($product['quatity'] / 50) * 100));
@@ -2510,9 +2508,9 @@ new class extends Component {
                                     <span class="text-xs opacity-70">N/A</span>
                                 @endif
                             </td>
-                            
+                             --}}
                             <!-- Statut -->
-                            <td>
+                            {{-- <td>
                                 @if(isset($product['status']))
                                     @if($product['status'] == 1)
                                         <span class="badge badge-success badge-sm">Actif</span>
@@ -2522,7 +2520,7 @@ new class extends Component {
                                 @else
                                     <span class="badge badge-neutral badge-sm">N/A</span>
                                 @endif
-                            </td>
+                            </td> --}}
                             
                             <!-- Actions -->
                             <td>
