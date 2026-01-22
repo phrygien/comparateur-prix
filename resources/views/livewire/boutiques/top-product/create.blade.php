@@ -833,7 +833,7 @@ new class extends Component {
                             <td>
                                 <div class="max-w-xs truncate" title="{{ $product['title'] ?? '' }}">
                                     {{-- {{ $product['title'] ?? '' }} --}}
-                                    {{ utf8_encode({{ $product['title'] ?? '' }}) }}
+                                    {{ utf8_encode($product['title'] ?? '' ) }}
                                 </div>
                             </td>
                             <td>{{ $product['vendor'] ?? '' }}</td>
