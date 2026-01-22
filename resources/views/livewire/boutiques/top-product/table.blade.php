@@ -1612,7 +1612,7 @@ new class extends Component {
 @endpush
 
 
-@push()
+@push('style')
 <style>
     /* Style pour les images cliquables */
     img[onclick] {
