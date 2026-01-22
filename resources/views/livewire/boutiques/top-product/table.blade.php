@@ -989,7 +989,6 @@ new class extends Component {
         return "list_products_{$type}_" . md5(serialize($params));
     }
 }; ?>
-
 <div>
     <!-- En-tête avec information -->    
     <x-header title="{{ $listTitle }}" subtitle="Page {{ $page }} sur {{ $totalPages }} ({{ $totalItems }} produits)" separator>
@@ -1363,12 +1362,12 @@ new class extends Component {
                                                         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                                                             @php
                                                                 $prices = array_map(fn($c) => $this->cleanPrice($c->prix_ht ?? 0), $productData['competitors']);
-                                                                $minPrice = min($prices);
-                                                                $maxPrice = max($prices);
-                                                                $avgPrice = array_sum($prices) / count($prices);
-                                                                $cheaperCount = count(array_filter($productData['competitors'], fn($c) => $this->cleanPrice($c->prix_ht ?? 0) < $productData['our_price']));
-                                                                $expensiveCount = count(array_filter($productData['competitors'], fn($c) => $this->cleanPrice($c->prix_ht ?? 0) > $productData['our_price']));
-                                                                $samePriceCount = count(array_filter($productData['competitors'], fn($c) => $this->cleanPrice($c->prix_ht ?? 0) == $productData['our_price']));
+                                                                $minPrice = !empty($prices) ? min($prices) : 0;
+                                                                $maxPrice = !empty($prices) ? max($prices) : 0;
+                                                                $avgPrice = !empty($prices) ? array_sum($prices) / count($prices) : 0;
+                                                                $cheaperCount = !empty($productData['competitors']) ? count(array_filter($productData['competitors'], fn($c) => $this->cleanPrice($c->prix_ht ?? 0) < $productData['our_price'])) : 0;
+                                                                $expensiveCount = !empty($productData['competitors']) ? count(array_filter($productData['competitors'], fn($c) => $this->cleanPrice($c->prix_ht ?? 0) > $productData['our_price'])) : 0;
+                                                                $samePriceCount = !empty($productData['competitors']) ? count(array_filter($productData['competitors'], fn($c) => $this->cleanPrice($c->prix_ht ?? 0) == $productData['our_price'])) : 0;
                                                             @endphp
                                                             <div class="text-center">
                                                                 <div class="text-2xl font-bold text-green-600">{{ $this->formatPrice($minPrice) }}</div>
@@ -1608,29 +1607,60 @@ new class extends Component {
         `;
         document.body.appendChild(modal);
     }
-</script>    
+    
+    // Fonction pour basculer l'affichage d'une image
+    function toggleImage(imgElement) {
+        const currentSrc = imgElement.src;
+        const placeholder = 'https://placehold.co/100x100/cccccc/999999?text=No+Image';
+        
+        if (currentSrc.includes('placehold.co') || currentSrc === placeholder) {
+            // Si c'est un placeholder, ne rien faire
+            return;
+        }
+        
+        // Sinon, ouvrir en grand
+        const productName = imgElement.alt || 'Image produit';
+        showImage(currentSrc, productName);
+    }
+    
+    // Ajouter des événements de clic aux images
+    document.addEventListener('DOMContentLoaded', function() {
+        // Ajouter un événement de clic à toutes les images des concurrents
+        document.querySelectorAll('.avatar img').forEach(img => {
+            img.style.cursor = 'pointer';
+            img.addEventListener('click', function() {
+                toggleImage(this);
+            });
+        });
+    });
+</script>
+    
 @endpush
 
-
 @push('style')
+
 <style>
     /* Style pour les images cliquables */
-    img[onclick] {
+    .avatar img {
         cursor: pointer;
         transition: transform 0.2s ease;
     }
     
-    img[onclick]:hover {
+    .avatar img:hover {
         transform: scale(1.05);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
     }
     
     /* Style pour le modal */
     .modal {
         background-color: rgba(0, 0, 0, 0.5);
+        z-index: 9999;
     }
     
     .modal-box {
         background-color: white;
+        max-width: 90vw;
+        max-height: 90vh;
     }
     
     /* Style pour les lignes de concurrents */
@@ -1638,30 +1668,35 @@ new class extends Component {
         transition: all 0.3s ease;
     }
     
-    /* Style pour les images des concurrents */
-    .avatar img {
-        border: 1px solid #e5e7eb;
-    }
-    
     /* Style pour les badges de statut */
     .badge-success {
         background-color: #10b981 !important;
         color: white !important;
+        border-color: #10b981;
     }
     
     .badge-warning {
         background-color: #f59e0b !important;
         color: white !important;
+        border-color: #f59e0b;
     }
     
     .badge-error {
         background-color: #ef4444 !important;
         color: white !important;
+        border-color: #ef4444;
     }
     
     .badge-info {
         background-color: #3b82f6 !important;
         color: white !important;
+        border-color: #3b82f6;
+    }
+    
+    .badge-primary {
+        background-color: #3b82f6 !important;
+        color: white !important;
+        border-color: #3b82f6;
     }
     
     /* Style pour le tableau des concurrents */
@@ -1669,6 +1704,37 @@ new class extends Component {
     .table-xs td {
         padding: 0.5rem;
         font-size: 0.75rem;
+        vertical-align: middle;
+    }
+    
+    .table-xs th.bg-base-300 {
+        background-color: #f3f4f6;
+        font-weight: 600;
+    }
+    
+    /* Style pour les avatars */
+    .avatar {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    /* Style pour les barres de progression de similarité */
+    .w-16.bg-gray-300 {
+        background-color: #e5e7eb;
+    }
+    
+    /* Style pour les statistiques */
+    .stats {
+        background: white;
+    }
+    
+    .stat {
+        border-right: 1px solid #e5e7eb;
+    }
+    
+    .stat:last-child {
+        border-right: none;
     }
     
     /* Responsive design */
@@ -1678,9 +1744,67 @@ new class extends Component {
         }
         
         .avatar img {
-            width: 12px;
-            height: 12px;
+            width: 40px;
+            height: 40px;
         }
+        
+        .stats.stats-horizontal {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+        }
+        
+        .stat {
+            border-right: none;
+            border-bottom: 1px solid #e5e7eb;
+        }
+    }
+    
+    /* Animation pour le chargement */
+    .loading {
+        animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+    
+    /* Style pour les tooltips */
+    .tooltip {
+        position: relative;
+    }
+    
+    .tooltip:hover::before {
+        content: attr(data-tip);
+        position: absolute;
+        bottom: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #333;
+        color: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        white-space: nowrap;
+        z-index: 10;
+    }
+    
+    /* Style pour les alertes */
+    .alert {
+        border-radius: 0.5rem;
+        padding: 1rem;
+    }
+    
+    .alert-info {
+        background-color: #dbeafe;
+        border-color: #93c5fd;
+        color: #1e40af;
+    }
+    
+    .alert-warning {
+        background-color: #fef3c7;
+        border-color: #fbbf24;
+        color: #92400e;
     }
 </style>    
 @endpush
