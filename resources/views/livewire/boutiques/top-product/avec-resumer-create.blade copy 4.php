@@ -37,14 +37,6 @@ new class extends Component {
     // Table de résumé des produits sélectionnés
     public $showSummaryTable = true;
     
-
-
-    // Ajoutez ces propriétés à la classe
-    public $loadingProduct = null;
-    public $removingProduct = null;
-    public $loadingAction = false;
-
-
     public function mount($listId = null)
     {
         $this->loading = true;
@@ -109,36 +101,26 @@ new class extends Component {
     }
     
     // Gestion de la sélection
-public function toggleSelect($sku, $title = '', $thumbnail = '')
-{
-    if (in_array($sku, $this->selectedProducts)) {
-        // Désélection - suppression du produit
-        $this->loadingAction = true;
-        $this->removingProduct = $sku;
-        
-        $this->selectedProducts = array_diff($this->selectedProducts, [$sku]);
-        $this->selectedProductsDetails = array_filter($this->selectedProductsDetails, 
-            fn($product) => $product['sku'] !== $sku
-        );
-        
-        // Réinitialiser les indicateurs après un court délai
-        $this->dispatch('selection-updated');
-    } else {
-        // Sélection - ajout du produit
-        $this->loadingAction = true;
-        $this->loadingProduct = $sku;
-        
-        $this->selectedProducts[] = $sku;
-        $this->selectedProductsDetails[] = [
-            'sku' => $sku,
-            'title' => $title,
-            'thumbnail' => $thumbnail
-        ];
-        
-        // Réinitialiser les indicateurs après un court délai
-        $this->dispatch('selection-updated');
+    public function toggleSelect($sku, $title = '', $thumbnail = '')
+    {
+        if (in_array($sku, $this->selectedProducts)) {
+            // Retirer de la sélection
+            $this->selectedProducts = array_diff($this->selectedProducts, [$sku]);
+            // Retirer du résumé
+            $this->selectedProductsDetails = array_filter($this->selectedProductsDetails, 
+                fn($product) => $product['sku'] !== $sku
+            );
+        } else {
+            // Ajouter à la sélection
+            $this->selectedProducts[] = $sku;
+            // Ajouter au résumé immédiatement
+            $this->selectedProductsDetails[] = [
+                'sku' => $sku,
+                'title' => $title,
+                'thumbnail' => $thumbnail
+            ];
+        }
     }
-}
     
     public function updatedSelectAll($value)
     {
@@ -152,11 +134,16 @@ public function toggleSelect($sku, $title = '', $thumbnail = '')
     }
     
     // Supprimer un produit du résumé
-public function removeFromSummary($sku)
-{
-    // Appeler la même méthode que pour le toggle du checkbox
-    $this->toggleSelect($sku);
-}
+    public function removeFromSummary($sku)
+    {
+        if (in_array($sku, $this->selectedProducts)) {
+            $this->selectedProducts = array_diff($this->selectedProducts, [$sku]);
+            $this->selectedProductsDetails = array_filter($this->selectedProductsDetails, 
+                fn($product) => $product['sku'] !== $sku
+            );
+        }
+    }
+    
     // Réinitialiser les produits
     protected function resetProducts()
     {
@@ -523,14 +510,6 @@ public function removeFromSummary($sku)
     {
         return "products_{$type}_" . md5(serialize($params));
     }
-#[On('selection-updated')]
-public function resetLoading()
-{
-    $this->loadingAction = false;
-    $this->loadingProduct = null;
-    $this->removingProduct = null;
-}
-
 }; ?>
 
 <div class="mx-auto w-full">
@@ -765,25 +744,18 @@ public function resetLoading()
                                                     <div class="font-medium text-sm truncate" title="{{ $product['title'] ?? '' }}">
                                                         {{ $product['title'] ?? 'Chargement...' }}
                                                     </div>
-<div class="flex items-center justify-between mt-2">
-    <span class="badge badge-sm badge-neutral">{{ $index + 1 }}</span>
-    <button 
-        wire:click="removeFromSummary('{{ $product['sku'] }}')"
-        class="btn btn-xs btn-error relative min-w-[60px]"
-        title="Retirer de la sélection"
-        wire:loading.attr="disabled"
-        wire:target="removeFromSummary"
-    >
-        @if($removingProduct === $product['sku'])
-            <span class="loading loading-spinner loading-xs absolute"></span>
-            <span class="opacity-0">Suppr.</span>
-        @else
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
-            </svg>
-        @endif
-    </button>
-</div>
+                                                    <div class="flex items-center justify-between mt-2">
+                                                        <span class="badge badge-sm badge-neutral">{{ $index + 1 }}</span>
+                                                        <button 
+                                                            wire:click="removeFromSummary('{{ $product['sku'] }}')"
+                                                            class="btn btn-xs btn-error"
+                                                            title="Retirer de la sélection"
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                                <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                                                            </svg>
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -833,38 +805,14 @@ public function resetLoading()
                         @endphp
                         <tr wire:key="product-{{ $product['id'] ?? $index }}"
                             class="{{ $isSelected ? 'bg-primary/5' : '' }}">
-<td>
-    <div class="relative">
-        @if($loadingProduct === $product['sku'])
-            <div class="absolute inset-0 flex items-center justify-center z-10">
-                <span class="loading loading-spinner loading-xs text-success"></span>
-            </div>
-            <input 
-                type="checkbox" 
-                class="checkbox checkbox-primary checkbox-xs opacity-30" 
-                checked
-                disabled
-            >
-        @elseif($removingProduct === $product['sku'])
-            <div class="absolute inset-0 flex items-center justify-center z-10">
-                <span class="loading loading-spinner loading-xs text-error"></span>
-            </div>
-            <input 
-                type="checkbox" 
-                class="checkbox checkbox-primary checkbox-xs opacity-30" 
-                checked
-                disabled
-            >
-        @else
-            <input 
-                type="checkbox" 
-                class="checkbox checkbox-primary checkbox-xs" 
-                {{ in_array($product['sku'], $selectedProducts) ? 'checked' : '' }}
-                wire:click="toggleSelect('{{ $product['sku'] }}', '{{ addslashes($product['title'] ?? '') }}', '{{ $product['thumbnail'] ?? '' }}')"
-            >
-        @endif
-    </div>
-</td>
+                            <td>
+                                <input 
+                                    type="checkbox" 
+                                    class="checkbox checkbox-primary checkbox-xs" 
+                                    {{ $isSelected ? 'checked' : '' }}
+                                    wire:click="toggleSelect('{{ $product['sku'] }}', '{{ addslashes($product['title'] ?? '') }}', '{{ $product['thumbnail'] ?? '' }}')"
+                                >
+                            </td>
                             <td>
                                 @if(!empty($product['thumbnail']))
                                     <div class="avatar">
@@ -1047,27 +995,6 @@ public function resetLoading()
             </x-button>
         </x-slot:actions>
     </x-modal>
-
-
-<!-- Loading indicator Livewire -->
-<div wire:loading.class.remove="hidden" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-base-100/80 backdrop-blur-sm">
-    <div class="flex flex-col items-center justify-center bg-base-100 rounded-2xl p-8 shadow-2xl border border-base-300 min-w-[200px]">
-        @if($loadingProduct)
-            <div class="loading loading-spinner loading-lg text-success mb-4"></div>
-            <p class="text-lg font-semibold text-base-content">Ajout du produit</p>
-            <p class="text-sm text-base-content/70 mt-1">Veuillez patienter...</p>
-        @elseif($removingProduct)
-            <div class="loading loading-spinner loading-lg text-error mb-4"></div>
-            <p class="text-lg font-semibold text-base-content">Suppression du produit</p>
-            <p class="text-sm text-base-content/70 mt-1">Veuillez patienter...</p>
-        @else
-            <div class="loading loading-spinner loading-lg text-primary mb-4"></div>
-            <p class="text-lg font-semibold text-base-content">Chargement</p>
-            <p class="text-sm text-base-content/70 mt-1">Veuillez patienter...</p>
-        @endif
-    </div>
-</div>
-
 </div>
 
 @push('scripts')
