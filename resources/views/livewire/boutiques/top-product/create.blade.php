@@ -1054,4 +1054,65 @@ new class extends Component {
         background: #9ca3af;
     }
 </style>
+
+
+
+
+
+<script>
+document.addEventListener('livewire:initialized', () => {
+    // Gérer les clics sur les checkboxes
+    document.addEventListener('click', function(e) {
+        if (e.target.type === 'checkbox' && e.target.hasAttribute('wire:click')) {
+            const checkbox = e.target;
+            const sku = checkbox.value || checkbox.dataset.sku;
+            const wasChecked = checkbox.checked;
+            
+            // Afficher l'indicateur de chargement
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'loading-overlay';
+            loadingDiv.innerHTML = `
+                <div class="loading-message">
+                    <span class="loading loading-spinner loading-sm"></span>
+                    <span>${wasChecked ? 'Suppression du produit...' : 'Ajout du produit...'}</span>
+                </div>
+            `;
+            
+            // Positionner l'indicateur près du checkbox
+            const rect = checkbox.getBoundingClientRect();
+            loadingDiv.style.position = 'fixed';
+            loadingDiv.style.top = rect.top + 'px';
+            loadingDiv.style.left = rect.left + 'px';
+            loadingDiv.style.zIndex = '9999';
+            
+            document.body.appendChild(loadingDiv);
+            
+            // Supprimer après 1 seconde (ou après l'événement Livewire)
+            setTimeout(() => {
+                loadingDiv.remove();
+            }, 1000);
+        }
+    });
+});
+</script>
+
+<style>
+.loading-overlay {
+    background: rgba(255, 255, 255, 0.9);
+    padding: 4px 8px;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+}
+
+.loading-message {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+</style>
+
 @endpush
