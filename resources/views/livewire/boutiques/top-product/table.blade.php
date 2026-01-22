@@ -445,7 +445,7 @@ new class extends Component {
                 $params[] = '%' . $firstProductWord . '%';
             }
             
-            $query .= " ORDER BY lp.prix_ht ASC LIMIT 20";
+            $query .= " ORDER BY lp.prix_ht ASC LIMIT 100";
             
             $competitors = DB::connection('mysql')->select($query, $params);
             
