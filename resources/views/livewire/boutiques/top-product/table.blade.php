@@ -1562,6 +1562,7 @@ new class extends Component {
     @endif
 </div>
 
+@push('script')
 <script>
     // Fonction pour copier le SKU
     function copySku(sku) {
@@ -1607,8 +1608,11 @@ new class extends Component {
         `;
         document.body.appendChild(modal);
     }
-</script>
+</script>    
+@endpush
 
+
+@push()
 <style>
     /* Style pour les images cliquables */
     img[onclick] {
@@ -1678,4 +1682,5 @@ new class extends Component {
             height: 12px;
         }
     }
-</style>
+</style>    
+@endpush
