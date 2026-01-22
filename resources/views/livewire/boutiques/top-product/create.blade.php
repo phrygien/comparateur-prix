@@ -106,7 +106,7 @@ new class extends Component {
         $this->page++;
     }
     
-    // Gestion de la sélection
+    // Gestion de la sélection individuelle
     public function toggleSelect($sku, $title = '', $thumbnail = '')
     {
         if (in_array($sku, $this->selectedProducts)) {
@@ -122,7 +122,7 @@ new class extends Component {
             // Si on désélectionne un produit, désactiver "selectAll"
             $this->selectAll = false;
             
-            // Réinitialiser les indicateurs après un court délai
+            // Réinitialiser les indicateurs
             $this->dispatch('selection-updated');
         } else {
             // Sélection - ajout du produit
@@ -130,53 +130,71 @@ new class extends Component {
             $this->loadingProduct = $sku;
             
             $this->selectedProducts[] = $sku;
-            $this->selectedProductsDetails[] = [
-                'sku' => $sku,
-                'title' => $title,
-                'thumbnail' => $thumbnail
-            ];
             
-            // Réinitialiser les indicateurs après un court délai
+            // Ajouter aux détails seulement si pas déjà présent
+            $existing = array_filter($this->selectedProductsDetails, 
+                fn($p) => $p['sku'] === $sku
+            );
+            
+            if (empty($existing)) {
+                $this->selectedProductsDetails[] = [
+                    'sku' => $sku,
+                    'title' => $title,
+                    'thumbnail' => $thumbnail
+                ];
+            }
+            
+            // Réinitialiser les indicateurs
             $this->dispatch('selection-updated');
         }
     }
     
     // Sélectionner/désélectionner tous les produits
-    public function toggleSelectAll()
+    public function toggleSelectAll($value = null)
     {
-        // Basculer l'état de sélection
-        $this->selectAll = !$this->selectAll;
-        
-        if ($this->selectAll) {
-            // Sélectionner tous les produits affichés
-            $this->loadingAction = true;
-            
-            // Récupérer tous les SKU des produits affichés
-            $allSkus = [];
-            foreach ($this->products as $product) {
-                if (!empty($product['sku'])) {
-                    $allSkus[] = $product['sku'];
-                    $this->selectedProducts[] = $product['sku'];
-                }
-            }
-            
-            // Éliminer les doublons
-            $this->selectedProducts = array_unique($this->selectedProducts);
-            
-            // Charger les détails des produits sélectionnés
-            $this->loadSelectedProductsDetails();
-            
-            $this->dispatch('selection-updated');
-        } else {
+        if ($value === false) {
             // Désélectionner tous les produits
             $this->loadingAction = true;
-            
-            // Vider la sélection
             $this->selectedProducts = [];
             $this->selectedProductsDetails = [];
-            
+            $this->selectAll = false;
             $this->dispatch('selection-updated');
+        } else {
+            // La sélection se fera côté client via JavaScript
+            $this->loadingAction = true;
+            $this->selectAll = true;
         }
+    }
+    
+    // Sélectionner plusieurs produits à la fois
+    public function selectMultipleProducts($skusData)
+    {
+        $this->loadingAction = true;
+        
+        foreach ($skusData as $productData) {
+            $sku = $productData['sku'] ?? null;
+            $title = $productData['title'] ?? '';
+            $thumbnail = $productData['thumbnail'] ?? '';
+            
+            if ($sku && !in_array($sku, $this->selectedProducts)) {
+                $this->selectedProducts[] = $sku;
+                
+                // Ajouter aux détails seulement si pas déjà présent
+                $existing = array_filter($this->selectedProductsDetails, 
+                    fn($p) => $p['sku'] === $sku
+                );
+                
+                if (empty($existing)) {
+                    $this->selectedProductsDetails[] = [
+                        'sku' => $sku,
+                        'title' => $title,
+                        'thumbnail' => $thumbnail
+                    ];
+                }
+            }
+        }
+        
+        $this->dispatch('selection-updated');
     }
     
     #[On('selection-updated')]
@@ -568,6 +586,7 @@ new class extends Component {
     }
 }; ?>
 
+
 <div class="mx-auto w-full">
     <!-- Loading indicator Livewire -->
     <div wire:loading.class.remove="hidden" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-base-100/80 backdrop-blur-sm">
@@ -583,7 +602,11 @@ new class extends Component {
             @elseif($loadingAction && $selectAll)
                 <div class="loading loading-spinner loading-lg text-primary mb-4"></div>
                 <p class="text-lg font-semibold text-base-content">
-                    {{ $selectAll ? 'Sélection de tous les produits' : 'Désélection de tous les produits' }}
+                    @if($selectAll)
+                        Sélection de tous les produits...
+                    @else
+                        Désélection de tous les produits...
+                    @endif
                 </p>
                 <p class="text-sm text-base-content/70 mt-1">Veuillez patienter...</p>
             @else
@@ -608,7 +631,13 @@ new class extends Component {
                     <span class="text-sm text-base-content/70">Suppression du produit...</span>
                 @elseif($loadingAction && $selectAll)
                     <span class="loading loading-spinner loading-sm text-primary"></span>
-                    <span class="text-sm text-base-content/70">Sélection de tous les produits...</span>
+                    <span class="text-sm text-base-content/70">
+                        @if($selectAll)
+                            Sélection de tous les produits...
+                        @else
+                            Désélection de tous les produits...
+                        @endif
+                    </span>
                 @endif
                 
                 <div class="text-sm text-base-content/70">
@@ -669,9 +698,9 @@ new class extends Component {
                     id="selectAllCheckbox"
                     class="checkbox checkbox-primary" 
                     {{ $selectAll ? 'checked' : '' }}
-                    wire:click="toggleSelectAll"
+                    onclick="handleSelectAll()"
                     wire:loading.attr="disabled"
-                    wire:target="toggleSelectAll"
+                    {{ $loadingAction ? 'disabled' : '' }}
                 >
                 <label for="selectAllCheckbox" class="font-semibold">
                     @if($loadingAction && !$loadingProduct && !$removingProduct)
@@ -942,9 +971,10 @@ new class extends Component {
                                         <input 
                                             type="checkbox" 
                                             class="checkbox checkbox-primary checkbox-xs" 
-                                            {{ in_array($product['sku'], $selectedProducts) ? 'checked' : '' }}
+                                            {{ $isSelected ? 'checked' : '' }}
                                             wire:click="toggleSelect('{{ $product['sku'] }}', '{{ addslashes($product['title'] ?? '') }}', '{{ $product['thumbnail'] ?? '' }}')"
                                             {{ $loadingAction ? 'disabled' : '' }}
+                                            data-sku="{{ $product['sku'] }}"
                                         >
                                     @endif
                                 </div>
@@ -1135,41 +1165,110 @@ new class extends Component {
 
 @push('scripts')
 <script>
-    document.addEventListener('livewire:initialized', () => {
-        Livewire.on('notify', (event) => {
-            const toast = document.createElement('div');
-            toast.className = `toast toast-top toast-end`;
-            toast.innerHTML = `
-                <div class="alert ${event.type === 'success' ? 'alert-success' : 'alert-error'}">
-                    <span>${event.message}</span>
-                </div>
-            `;
-            document.body.appendChild(toast);
-            
-            setTimeout(() => {
-                toast.remove();
-            }, 3000);
-        });
+// Fonction pour gérer la sélection/désélection de tous les produits
+function handleSelectAll() {
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    const isChecked = selectAllCheckbox.checked;
+    
+    if (isChecked) {
+        // Sélectionner tous les produits affichés
+        selectAllDisplayedProducts();
+    } else {
+        // Désélectionner tous les produits
+        @this.call('toggleSelectAll', false);
+    }
+}
+
+// Fonction pour sélectionner tous les produits affichés
+function selectAllDisplayedProducts() {
+    // Récupérer les données des produits depuis PHP
+    const products = @json($products);
+    
+    if (products.length === 0) {
+        return;
+    }
+    
+    // Filtrer pour ne garder que les produits non sélectionnés
+    const selectedProducts = @json($selectedProducts);
+    const productsToSelect = products.filter(product => 
+        !selectedProducts.includes(product.sku) && product.sku
+    );
+    
+    if (productsToSelect.length > 0) {
+        // Préparer les données
+        const productsData = productsToSelect.map(product => ({
+            sku: product.sku,
+            title: product.title || '',
+            thumbnail: product.thumbnail || ''
+        }));
         
-        Livewire.on('list-created', (event) => {
-            // Redirection ou autre action après création
-            console.log('Liste créée avec ID:', event.listId);
-        });
+        // Appeler Livewire pour sélectionner tous les produits en une fois
+        @this.call('selectMultipleProducts', productsData);
+    } else {
+        // Tous les produits sont déjà sélectionnés, juste mettre à jour le checkbox
+        @this.set('selectAll', true);
+    }
+}
+
+// Mettre à jour l'état du checkbox "Sélectionner tout" quand la sélection change
+Livewire.on('selection-updated', () => {
+    setTimeout(() => {
+        const products = @json($products);
+        const selectedProducts = @json($selectedProducts);
+        
+        if (products.length === 0) {
+            return;
+        }
+        
+        // Vérifier si tous les produits affichés sont sélectionnés
+        const allDisplayedProductsSelected = 
+            products.every(product => selectedProducts.includes(product.sku));
+        
+        // Mettre à jour le checkbox
+        const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+        if (selectAllCheckbox) {
+            selectAllCheckbox.checked = allDisplayedProductsSelected;
+            @this.set('selectAll', allDisplayedProductsSelected);
+        }
+    }, 100);
+});
+
+// Fonction pour faire défiler le résumé
+function scrollSummary(direction) {
+    const container = document.getElementById('summaryScrollContainer');
+    if (!container) return;
+    
+    const scrollAmount = 300;
+    
+    if (direction === 'left') {
+        container.scrollLeft -= scrollAmount;
+    } else {
+        container.scrollLeft += scrollAmount;
+    }
+}
+
+// Initialisation
+document.addEventListener('livewire:initialized', () => {
+    Livewire.on('notify', (event) => {
+        const toast = document.createElement('div');
+        toast.className = `toast toast-top toast-end`;
+        toast.innerHTML = `
+            <div class="alert ${event.type === 'success' ? 'alert-success' : 'alert-error'}">
+                <span>${event.message}</span>
+            </div>
+        `;
+        document.body.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.remove();
+        }, 3000);
     });
     
-    // Fonction pour faire défiler le résumé
-    function scrollSummary(direction) {
-        const container = document.getElementById('summaryScrollContainer');
-        const scrollAmount = 300; // Montant de défilement en pixels
-        
-        if (direction === 'left') {
-            container.scrollLeft -= scrollAmount;
-        } else {
-            container.scrollLeft += scrollAmount;
-        }
-    }
+    Livewire.on('list-created', (event) => {
+        console.log('Liste créée avec ID:', event.listId);
+    });
+});
 </script>
-
 
 <style>
     /* Style personnalisé pour la scrollbar */
