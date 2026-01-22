@@ -18,6 +18,11 @@ new class extends Component {
     public int $perPage = 200;
     public int $totalPages = 1;
 
+    // Produits similaires
+    public array $similarProducts = [];
+    public array $expandedRows = [];
+    public array $loadingSimilar = [];
+
     // Cache
     protected $cacheTTL = 3600;
 
@@ -38,7 +43,6 @@ new class extends Component {
         }
     }
 
-    // Changer de page
     public function goToPage($page): void
     {
         if ($page < 1 || $page > $this->totalPages || $page === $this->page) {
@@ -49,7 +53,6 @@ new class extends Component {
         $this->page = (int) $page;
     }
 
-    // Page précédente
     public function previousPage(): void
     {
         if ($this->page > 1) {
@@ -57,7 +60,6 @@ new class extends Component {
         }
     }
 
-    // Page suivante
     public function nextPage(): void
     {
         if ($this->page < $this->totalPages) {
@@ -65,7 +67,6 @@ new class extends Component {
         }
     }
 
-    // Rafraîchir la liste
     public function refreshProducts(): void
     {
         $this->page = 1;
@@ -73,10 +74,237 @@ new class extends Component {
         $this->loadListTitle();
     }
 
+    /**
+     * Bascule l'affichage des produits similaires pour une ligne
+     */
+    public function toggleSimilarProducts($sku): void
+    {
+        if (isset($this->expandedRows[$sku])) {
+            unset($this->expandedRows[$sku]);
+            return;
+        }
+
+        // Charger les produits similaires si pas déjà chargés
+        if (!isset($this->similarProducts[$sku])) {
+            $this->loadingSimilar[$sku] = true;
+            $this->findSimilarProducts($sku);
+            $this->loadingSimilar[$sku] = false;
+        }
+
+        $this->expandedRows[$sku] = true;
+    }
+
+    /**
+     * Trouve les produits similaires pour un SKU donné
+     */
+    protected function findSimilarProducts($sku): void
+    {
+        try {
+            // Récupérer le produit source
+            $sourceProduct = $this->getProductBySku($sku);
+            
+            if (!$sourceProduct) {
+                $this->similarProducts[$sku] = [];
+                return;
+            }
+
+            // Extraire les informations du produit source
+            $vendor = $this->extractVendor($sourceProduct['title']);
+            $productName = $this->cleanProductName($sourceProduct['title']);
+            $volumes = $this->extractVolumes($sourceProduct['title']);
+
+            // Construire la requête de recherche
+            $vendorConditions = [];
+            $vendorParams = [];
+
+            if (!empty($vendor)) {
+                $vendorVariations = $this->getVendorVariations($vendor);
+                foreach ($vendorVariations as $variation) {
+                    $vendorConditions[] = "lp.vendor LIKE ?";
+                    $vendorParams[] = '%' . $variation . '%';
+                }
+            }
+
+            // Requête SQL pour trouver les produits similaires
+            $sql = "SELECT 
+                    lp.*, 
+                    ws.name as site_name, 
+                    lp.url as product_url, 
+                    lp.image_url as image
+                FROM last_price_scraped_product lp
+                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+                WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')";
+
+            $params = [];
+
+            // Appliquer le filtre vendor
+            if (!empty($vendorConditions)) {
+                $sql .= " AND (" . implode(' OR ', $vendorConditions) . ")";
+                $params = array_merge($params, $vendorParams);
+            }
+
+            // Filtrer par nom de produit (recherche flexible)
+            if (!empty($productName)) {
+                $sql .= " AND lp.name LIKE ?";
+                $params[] = '%' . $productName . '%';
+            }
+
+            $sql .= " ORDER BY lp.prix_ht DESC LIMIT 50";
+
+            $results = DB::connection('mysql')->select($sql, $params);
+
+            // Traiter les résultats
+            $processedResults = [];
+            foreach ($results as $product) {
+                if (isset($product->prix_ht)) {
+                    $product->prix_ht = $this->cleanPrice($product->prix_ht);
+                }
+                $product->product_url = $product->product_url ?? $product->url ?? null;
+                $product->image = $product->image ?? $product->image_url ?? null;
+                
+                $processedResults[] = $product;
+            }
+
+            $this->similarProducts[$sku] = $processedResults;
+
+        } catch (\Throwable $e) {
+            Log::error('Error finding similar products:', [
+                'sku' => $sku,
+                'message' => $e->getMessage()
+            ]);
+            $this->similarProducts[$sku] = [];
+        }
+    }
+
+    /**
+     * Récupère un produit par son SKU
+     */
+    protected function getProductBySku($sku)
+    {
+        try {
+            $query = "
+                SELECT 
+                    produit.sku as sku,
+                    CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) as title,
+                    product_char.thumbnail as thumbnail,
+                    SUBSTRING_INDEX(product_char.name, ' - ', 1) as vendor,
+                    ROUND(product_decimal.price, 2) as price
+                FROM catalog_product_entity as produit
+                LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+                LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
+                WHERE produit.sku = ?
+                LIMIT 1
+            ";
+
+            $result = DB::connection('mysqlMagento')->select($query, [$sku]);
+
+            return !empty($result) ? (array) $result[0] : null;
+
+        } catch (\Throwable $e) {
+            Log::error('Error fetching product by SKU:', [
+                'sku' => $sku,
+                'message' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Extrait le vendor du titre du produit
+     */
+    protected function extractVendor($title): string
+    {
+        if (empty($title)) {
+            return '';
+        }
+
+        // Extraire la première partie avant le tiret
+        $parts = preg_split('/\s*-\s*/', $title, 2);
+        return trim($parts[0] ?? '');
+    }
+
+    /**
+     * Nettoie le nom du produit
+     */
+    protected function cleanProductName($title): string
+    {
+        if (empty($title)) {
+            return '';
+        }
+
+        // Supprimer le vendor
+        $parts = preg_split('/\s*-\s*/', $title, 3);
+        
+        // Prendre la deuxième partie (nom du produit)
+        $name = $parts[1] ?? '';
+
+        // Supprimer les volumes et types
+        $name = preg_replace('/\d+\s*ml/i', '', $name);
+        $name = preg_replace('/(eau de parfum|eau de toilette|edp|edt|parfum)/i', '', $name);
+
+        return trim($name);
+    }
+
+    /**
+     * Extrait les volumes du titre
+     */
+    protected function extractVolumes($title): array
+    {
+        if (empty($title)) {
+            return [];
+        }
+
+        $volumes = [];
+        if (preg_match_all('/(\d+)\s*ml/i', $title, $matches)) {
+            $volumes = $matches[1];
+        }
+
+        return $volumes;
+    }
+
+    /**
+     * Récupère les variations d'un vendor
+     */
+    protected function getVendorVariations($vendor): array
+    {
+        $variations = [trim($vendor)];
+
+        // Variations de casse
+        $variations[] = mb_strtoupper($vendor);
+        $variations[] = mb_strtolower($vendor);
+        $variations[] = mb_convert_case($vendor, MB_CASE_TITLE);
+
+        return array_unique(array_filter($variations));
+    }
+
+    /**
+     * Nettoie un prix
+     */
+    protected function cleanPrice($price)
+    {
+        if ($price === null || $price === '') {
+            return null;
+        }
+
+        if (is_numeric($price)) {
+            return (float) $price;
+        }
+
+        if (is_string($price)) {
+            $cleanPrice = preg_replace('/[^\d,.-]/', '', $price);
+            $cleanPrice = str_replace(',', '.', $cleanPrice);
+
+            if (is_numeric($cleanPrice)) {
+                return (float) $cleanPrice;
+            }
+        }
+
+        return null;
+    }
+
     public function with(): array
     {
         try {
-            // Récupérer tous les EAN de la liste
             $allSkus = Cache::remember("list_skus_{$this->id}", 300, function () {
                 return DetailProduct::where('list_product_id', $this->id)
                     ->pluck('EAN')
@@ -98,10 +326,8 @@ new class extends Component {
                 ];
             }
 
-            // Calculer le nombre total de pages
             $this->totalPages = max(1, ceil($totalItems / $this->perPage));
 
-            // Charger uniquement la page courante
             $result = $this->fetchProductsFromDatabase($allSkus, $this->page, $this->perPage);
 
             if (isset($result['error'])) {
@@ -138,9 +364,6 @@ new class extends Component {
         }
     }
 
-    /**
-     * Récupère les produits depuis la base de données
-     */
     protected function fetchProductsFromDatabase(array $allSkus, int $page = 1, int $perPage = null)
     {
         try {
@@ -172,21 +395,18 @@ new class extends Component {
                     stock_item.qty as quatity,
                     stock_status.stock_status as quatity_status,
                     product_char.reference as reference,
-                    product_char.reference_us as reference_us,
                     product_int.status as status,
-                    CAST(product_text.description AS CHAR CHARACTER SET utf8mb4) as description,
                     product_char.swatch_image as swatch_image
                 FROM catalog_product_entity as produit
                 LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
                 LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
                 LEFT JOIN product_int ON product_int.entity_id = produit.entity_id
-                LEFT JOIN product_text ON product_text.entity_id = produit.entity_id
                 LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id 
                 LEFT JOIN cataloginventory_stock_status AS stock_status ON stock_item.product_id = stock_status.product_id 
                 LEFT JOIN eav_attribute_set AS eas ON produit.attribute_set_id = eas.attribute_set_id 
                 WHERE produit.sku IN ($placeholders)
                 AND product_int.status >= 0
-                ORDER BY FIELD(produit.sku, " . implode(',', $pageSkus) . ")
+                ORDER BY FIELD(produit.sku, " . implode(',', array_map(fn($s) => "'$s'", $pageSkus)) . ")
             ";
 
             $result = DB::connection('mysqlMagento')->select($query, $pageSkus);
@@ -198,7 +418,6 @@ new class extends Component {
                 "current_page" => $page,
                 "data" => $result,
                 "cached_at" => now()->toDateTimeString(),
-                "cache_key" => $this->getCacheKey('list_products', $this->id, $page, $perPage)
             ];
 
         } catch (\Throwable $e) {
@@ -215,25 +434,21 @@ new class extends Component {
         }
     }
 
-    // Générer les boutons de pagination
     public function getPaginationButtons(): array
     {
         $buttons = [];
         $current = $this->page;
         $total = $this->totalPages;
 
-        // Toujours afficher la première page
         $buttons[] = [
             'page' => 1,
             'label' => '1',
             'active' => $current === 1,
         ];
 
-        // Afficher les pages autour de la page courante
         $start = max(2, $current - 2);
         $end = min($total - 1, $current + 2);
 
-        // Ajouter "..." après la première page si nécessaire
         if ($start > 2) {
             $buttons[] = [
                 'page' => null,
@@ -242,7 +457,6 @@ new class extends Component {
             ];
         }
 
-        // Pages du milieu
         for ($i = $start; $i <= $end; $i++) {
             $buttons[] = [
                 'page' => $i,
@@ -251,7 +465,6 @@ new class extends Component {
             ];
         }
 
-        // Ajouter "..." avant la dernière page si nécessaire
         if ($end < $total - 1) {
             $buttons[] = [
                 'page' => null,
@@ -260,7 +473,6 @@ new class extends Component {
             ];
         }
 
-        // Toujours afficher la dernière page si elle existe
         if ($total > 1) {
             $buttons[] = [
                 'page' => $total,
@@ -279,7 +491,7 @@ new class extends Component {
 }; ?>
 
 <div>
-    <x-header title="{{ $listTitle }}" subtitle=" Page {{ $page }} sur {{ $totalPages }} ({{ $totalItems }} produits)" separator>
+    <x-header title="{{ $listTitle }}" subtitle="Page {{ $page }} sur {{ $totalPages }} ({{ $totalItems }} produits)" separator>
         <x-slot:middle class="!justify-end">
             <x-input icon="o-bolt" placeholder="Search..." />
         </x-slot:middle>
@@ -291,9 +503,9 @@ new class extends Component {
     <!-- Table des produits -->
     <div class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100 mb-6">
         <table class="table">
-            <!-- head -->
             <thead>
                 <tr>
+                    <th></th>
                     <th>#</th>
                     <th>Image</th>
                     <th>EAN/SKU</th>
@@ -301,11 +513,11 @@ new class extends Component {
                     <th>Marque</th>
                     <th>Type</th>
                     <th>Prix</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
                 @if($loading)
-                    <!-- État de chargement initial -->
                     <tr>
                         <td colspan="9" class="text-center py-12">
                             <div class="flex flex-col items-center gap-3">
@@ -315,7 +527,6 @@ new class extends Component {
                         </td>
                     </tr>
                 @elseif(count($products) === 0 && !$loading)
-                    <!-- Aucun produit -->
                     <tr>
                         <td colspan="9" class="text-center py-12 text-base-content/50">
                             <div class="flex flex-col items-center gap-3">
@@ -327,12 +538,36 @@ new class extends Component {
                         </td>
                     </tr>
                 @else
-                    <!-- Liste des produits -->
                     @foreach($products as $index => $product)
                         @php
-        $rowNumber = (($page - 1) * $perPage) + $index + 1;
+                            $rowNumber = (($page - 1) * $perPage) + $index + 1;
+                            $isExpanded = isset($expandedRows[$product['sku']]);
+                            $hasSimilar = isset($similarProducts[$product['sku']]) && count($similarProducts[$product['sku']]) > 0;
+                            $isLoading = isset($loadingSimilar[$product['sku']]) && $loadingSimilar[$product['sku']];
                         @endphp
-                        <tr wire:key="product-{{ $product['sku'] }}-{{ $page }}-{{ $index }}">
+                        
+                        <!-- Ligne principale du produit -->
+                        <tr wire:key="product-{{ $product['sku'] }}-{{ $page }}-{{ $index }}" 
+                            class="{{ $isExpanded ? 'bg-blue-50' : '' }}">
+                            <td>
+                                <button 
+                                    wire:click="toggleSimilarProducts('{{ $product['sku'] }}')"
+                                    class="btn btn-ghost btn-xs"
+                                    wire:loading.attr="disabled"
+                                >
+                                    @if($isLoading)
+                                        <span class="loading loading-spinner loading-xs"></span>
+                                    @else
+                                        <svg xmlns="http://www.w3.org/2000/svg" 
+                                             class="h-4 w-4 transition-transform {{ $isExpanded ? 'rotate-90' : '' }}" 
+                                             fill="none" 
+                                             viewBox="0 0 24 24" 
+                                             stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                        </svg>
+                                    @endif
+                                </button>
+                            </td>
                             <th>{{ $rowNumber }}</th>
                             <td>
                                 @if(!empty($product['thumbnail']))
@@ -400,7 +635,88 @@ new class extends Component {
                                     </span>
                                 @endif
                             </td>
+                            <td>
+                                @if($hasSimilar)
+                                    <span class="badge badge-info badge-sm">
+                                        {{ count($similarProducts[$product['sku']]) }} similaire(s)
+                                    </span>
+                                @endif
+                            </td>
                         </tr>
+
+                        <!-- Ligne des produits similaires (collapsible) -->
+                        @if($isExpanded && $hasSimilar)
+                            <tr wire:key="similar-{{ $product['sku'] }}-{{ $page }}-{{ $index }}" class="bg-base-200">
+                                <td colspan="9" class="p-0">
+                                    <div class="collapse collapse-open">
+                                        <div class="collapse-content">
+                                            <div class="overflow-x-auto">
+                                                <table class="table table-compact w-full">
+                                                    <thead>
+                                                        <tr class="bg-base-300">
+                                                            <th>Image</th>
+                                                            <th>Site</th>
+                                                            <th>Nom</th>
+                                                            <th>Variation</th>
+                                                            <th>Prix HT</th>
+                                                            <th>Date MAJ</th>
+                                                            <th>Action</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        @foreach($similarProducts[$product['sku']] as $similar)
+                                                            <tr class="hover">
+                                                                <td>
+                                                                    @if(!empty($similar->image))
+                                                                        <div class="avatar">
+                                                                            <div class="w-10 h-10 rounded">
+                                                                                <img src="{{ $similar->image }}" alt="{{ $similar->name ?? '' }}" loading="lazy">
+                                                                            </div>
+                                                                        </div>
+                                                                    @else
+                                                                        <div class="w-10 h-10 bg-base-300 rounded"></div>
+                                                                    @endif
+                                                                </td>
+                                                                <td>
+                                                                    <span class="badge badge-ghost badge-sm">{{ $similar->site_name ?? 'N/A' }}</span>
+                                                                </td>
+                                                                <td>
+                                                                    <div class="text-sm max-w-xs truncate" title="{{ $similar->name ?? '' }}">
+                                                                        {{ $similar->name ?? 'N/A' }}
+                                                                    </div>
+                                                                </td>
+                                                                <td>
+                                                                    <span class="text-xs">{{ $similar->variation ?? 'Standard' }}</span>
+                                                                </td>
+                                                                <td>
+                                                                    <span class="font-semibold text-success">
+                                                                        {{ number_format($similar->prix_ht ?? 0, 2) }} €
+                                                                    </span>
+                                                                </td>
+                                                                <td>
+                                                                    <span class="text-xs opacity-60">
+                                                                        {{ isset($similar->updated_at) ? \Carbon\Carbon::parse($similar->updated_at)->format('d/m/Y') : 'N/A' }}
+                                                                    </span>
+                                                                </td>
+                                                                <td>
+                                                                    @if(!empty($similar->product_url))
+                                                                        <a href="{{ $similar->product_url }}" target="_blank" class="btn btn-ghost btn-xs">
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                                                            </svg>
+                                                                        </a>
+                                                                    @endif
+                                                                </td>
+                                                            </tr>
+                                                        @endforeach
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        @endif
                     @endforeach
                 @endif
             </tbody>
@@ -410,7 +726,6 @@ new class extends Component {
     <!-- Pagination -->
     @if($totalPages > 1)
         <div class="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
-            <!-- Informations -->
             <div class="text-sm text-base-content/60">
                 Affichage des produits 
                 <span class="font-medium">{{ min((($page - 1) * $perPage) + 1, $totalItems) }}</span>
@@ -421,9 +736,7 @@ new class extends Component {
                 au total
             </div>
             
-            <!-- Boutons de pagination -->
             <div class="join">
-                <!-- Bouton précédent -->
                 <button 
                     class="join-item btn"
                     wire:click="previousPage"
@@ -435,15 +748,12 @@ new class extends Component {
                     </svg>
                 </button>
                 
-                <!-- Boutons de pages -->
                 @foreach($this->getPaginationButtons() as $button)
                     @if($button['page'] === null)
-                        <!-- Séparateur "..." -->
                         <button class="join-item btn btn-disabled" disabled>
                             {{ $button['label'] }}
                         </button>
                     @else
-                        <!-- Bouton de page -->
                         <button 
                             class="join-item btn {{ $button['active'] ? 'btn-active' : '' }}"
                             wire:click="goToPage({{ $button['page'] }})"
@@ -454,7 +764,6 @@ new class extends Component {
                     @endif
                 @endforeach
                 
-                <!-- Bouton suivant -->
                 <button 
                     class="join-item btn"
                     wire:click="nextPage"
@@ -474,7 +783,6 @@ new class extends Component {
     // Fonction pour copier le SKU
     function copySku(sku) {
         navigator.clipboard.writeText(sku).then(() => {
-            // Créer une notification simple
             const toast = document.createElement('div');
             toast.className = `toast toast-top toast-end`;
             toast.innerHTML = `
@@ -495,3 +803,39 @@ new class extends Component {
         });
     }
 </script>
+
+<style>
+    /* Animation pour l'expansion des lignes */
+    .collapse {
+        transition: all 0.3s ease-in-out;
+    }
+    
+    /* Animation de rotation pour la flèche */
+    svg {
+        transition: transform 0.2s ease-in-out;
+    }
+    
+    /* Style pour les lignes expandées */
+    tr.bg-blue-50 {
+        background-color: rgba(219, 234, 254, 0.5);
+    }
+    
+    /* Hover effect sur les lignes de produits similaires */
+    .hover:hover {
+        background-color: rgba(229, 231, 235, 0.5);
+    }
+    
+    /* Style pour le loading spinner */
+    .loading-spinner {
+        animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+        from {
+            transform: rotate(0deg);
+        }
+        to {
+            transform: rotate(360deg);
+        }
+    }
+</style>
