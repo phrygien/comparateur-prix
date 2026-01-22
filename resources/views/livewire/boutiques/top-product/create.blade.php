@@ -37,14 +37,11 @@ new class extends Component {
     // Table de résumé des produits sélectionnés
     public $showSummaryTable = true;
     
-
-
-    // Ajoutez ces propriétés à la classe
+    // Chargement pour sélection/désélection
     public $loadingProduct = null;
     public $removingProduct = null;
     public $loadingAction = false;
-
-
+    
     public function mount($listId = null)
     {
         $this->loading = true;
@@ -73,8 +70,9 @@ new class extends Component {
             return;
         }
         
-        $skus = array_values($this->selectedProducts);
-        $placeholders = implode(',', array_fill(0, count($skus), '?'));
+        // Prendre seulement les premiers 100 produits pour éviter les problèmes de performance
+        $skusToLoad = array_slice($this->selectedProducts, 0, 100);
+        $placeholders = implode(',', array_fill(0, count($skusToLoad), '?'));
         
         $query = "
             SELECT 
@@ -84,12 +82,12 @@ new class extends Component {
             FROM catalog_product_entity as produit
             LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
             WHERE produit.sku IN ($placeholders)
-            ORDER BY FIELD(produit.sku, " . implode(',', $skus) . ")
+            ORDER BY FIELD(produit.sku, " . implode(',', $skusToLoad) . ")
             LIMIT 100
         ";
         
         try {
-            $products = DB::connection('mysqlMagento')->select($query, $skus);
+            $products = DB::connection('mysqlMagento')->select($query, $skusToLoad);
             $this->selectedProductsDetails = array_map(fn($p) => (array) $p, $products);
         } catch (\Exception $e) {
             Log::error('Erreur chargement détails produits: ' . $e->getMessage());
@@ -109,40 +107,84 @@ new class extends Component {
     }
     
     // Gestion de la sélection
-public function toggleSelect($sku, $title = '', $thumbnail = '')
-{
-    if (in_array($sku, $this->selectedProducts)) {
-        // Désélection - suppression du produit
-        $this->loadingAction = true;
-        $this->removingProduct = $sku;
-        
-        $this->selectedProducts = array_diff($this->selectedProducts, [$sku]);
-        $this->selectedProductsDetails = array_filter($this->selectedProductsDetails, 
-            fn($product) => $product['sku'] !== $sku
-        );
-        
-        // Réinitialiser les indicateurs après un court délai
-        $this->dispatch('selection-updated');
-    } else {
-        // Sélection - ajout du produit
-        $this->loadingAction = true;
-        $this->loadingProduct = $sku;
-        
-        $this->selectedProducts[] = $sku;
-        $this->selectedProductsDetails[] = [
-            'sku' => $sku,
-            'title' => $title,
-            'thumbnail' => $thumbnail
-        ];
-        
-        // Réinitialiser les indicateurs après un court délai
-        $this->dispatch('selection-updated');
-    }
-}
-    
-    public function updatedSelectAll($value)
+    public function toggleSelect($sku, $title = '', $thumbnail = '')
     {
-        // Cette logique sera gérée directement dans le template
+        if (in_array($sku, $this->selectedProducts)) {
+            // Désélection - suppression du produit
+            $this->loadingAction = true;
+            $this->removingProduct = $sku;
+            
+            $this->selectedProducts = array_diff($this->selectedProducts, [$sku]);
+            $this->selectedProductsDetails = array_filter($this->selectedProductsDetails, 
+                fn($product) => $product['sku'] !== $sku
+            );
+            
+            // Si on désélectionne un produit, désactiver "selectAll"
+            $this->selectAll = false;
+            
+            // Réinitialiser les indicateurs après un court délai
+            $this->dispatch('selection-updated');
+        } else {
+            // Sélection - ajout du produit
+            $this->loadingAction = true;
+            $this->loadingProduct = $sku;
+            
+            $this->selectedProducts[] = $sku;
+            $this->selectedProductsDetails[] = [
+                'sku' => $sku,
+                'title' => $title,
+                'thumbnail' => $thumbnail
+            ];
+            
+            // Réinitialiser les indicateurs après un court délai
+            $this->dispatch('selection-updated');
+        }
+    }
+    
+    // Sélectionner/désélectionner tous les produits
+    public function toggleSelectAll()
+    {
+        // Basculer l'état de sélection
+        $this->selectAll = !$this->selectAll;
+        
+        if ($this->selectAll) {
+            // Sélectionner tous les produits affichés
+            $this->loadingAction = true;
+            
+            // Récupérer tous les SKU des produits affichés
+            $allSkus = [];
+            foreach ($this->products as $product) {
+                if (!empty($product['sku'])) {
+                    $allSkus[] = $product['sku'];
+                    $this->selectedProducts[] = $product['sku'];
+                }
+            }
+            
+            // Éliminer les doublons
+            $this->selectedProducts = array_unique($this->selectedProducts);
+            
+            // Charger les détails des produits sélectionnés
+            $this->loadSelectedProductsDetails();
+            
+            $this->dispatch('selection-updated');
+        } else {
+            // Désélectionner tous les produits
+            $this->loadingAction = true;
+            
+            // Vider la sélection
+            $this->selectedProducts = [];
+            $this->selectedProductsDetails = [];
+            
+            $this->dispatch('selection-updated');
+        }
+    }
+    
+    #[On('selection-updated')]
+    public function resetLoading()
+    {
+        $this->loadingAction = false;
+        $this->loadingProduct = null;
+        $this->removingProduct = null;
     }
     
     // Toggle pour afficher/masquer le résumé
@@ -152,11 +194,12 @@ public function toggleSelect($sku, $title = '', $thumbnail = '')
     }
     
     // Supprimer un produit du résumé
-public function removeFromSummary($sku)
-{
-    // Appeler la même méthode que pour le toggle du checkbox
-    $this->toggleSelect($sku);
-}
+    public function removeFromSummary($sku)
+    {
+        // Appeler la même méthode que pour le toggle du checkbox
+        $this->toggleSelect($sku);
+    }
+    
     // Réinitialiser les produits
     protected function resetProducts()
     {
@@ -523,23 +566,51 @@ public function removeFromSummary($sku)
     {
         return "products_{$type}_" . md5(serialize($params));
     }
-#[On('selection-updated')]
-public function resetLoading()
-{
-    $this->loadingAction = false;
-    $this->loadingProduct = null;
-    $this->removingProduct = null;
-}
-
 }; ?>
 
 <div class="mx-auto w-full">
+    <!-- Loading indicator Livewire -->
+    <div wire:loading.class.remove="hidden" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-base-100/80 backdrop-blur-sm">
+        <div class="flex flex-col items-center justify-center bg-base-100 rounded-2xl p-8 shadow-2xl border border-base-300 min-w-[200px]">
+            @if($loadingProduct)
+                <div class="loading loading-spinner loading-lg text-success mb-4"></div>
+                <p class="text-lg font-semibold text-base-content">Ajout du produit</p>
+                <p class="text-sm text-base-content/70 mt-1">Veuillez patienter...</p>
+            @elseif($removingProduct)
+                <div class="loading loading-spinner loading-lg text-error mb-4"></div>
+                <p class="text-lg font-semibold text-base-content">Suppression du produit</p>
+                <p class="text-sm text-base-content/70 mt-1">Veuillez patienter...</p>
+            @elseif($loadingAction && $selectAll)
+                <div class="loading loading-spinner loading-lg text-primary mb-4"></div>
+                <p class="text-lg font-semibold text-base-content">
+                    {{ $selectAll ? 'Sélection de tous les produits' : 'Désélection de tous les produits' }}
+                </p>
+                <p class="text-sm text-base-content/70 mt-1">Veuillez patienter...</p>
+            @else
+                <div class="loading loading-spinner loading-lg text-primary mb-4"></div>
+                <p class="text-lg font-semibold text-base-content">Chargement</p>
+                <p class="text-sm text-base-content/70 mt-1">Veuillez patienter...</p>
+            @endif
+        </div>
+    </div>
+
     <x-header title="Créer la liste à comparer" separator progress-indicator>
         <x-slot:middle class="!justify-end">
             <div class="flex items-center gap-4">
                 @if($loading || $loadingMore)
                     <span class="loading loading-spinner loading-sm text-primary"></span>
+                    <span class="text-sm text-base-content/70">Chargement des produits...</span>
+                @elseif($loadingAction && $loadingProduct)
+                    <span class="loading loading-spinner loading-sm text-success"></span>
+                    <span class="text-sm text-base-content/70">Ajout du produit...</span>
+                @elseif($loadingAction && $removingProduct)
+                    <span class="loading loading-spinner loading-sm text-error"></span>
+                    <span class="text-sm text-base-content/70">Suppression du produit...</span>
+                @elseif($loadingAction && $selectAll)
+                    <span class="loading loading-spinner loading-sm text-primary"></span>
+                    <span class="text-sm text-base-content/70">Sélection de tous les produits...</span>
                 @endif
+                
                 <div class="text-sm text-base-content/70">
                     <span class="font-semibold text-primary">{{ count($selectedProducts) }}</span> produits sélectionnés
                 </div>
@@ -589,7 +660,7 @@ public function resetLoading()
         />
     </div>
 
-    <!-- Sélection globale - SIMPLIFIÉE -->
+    <!-- Sélection globale -->
     <div class="mb-4 p-4 bg-base-200 rounded-box">
         <div class="flex items-center justify-between">
             <div class="flex items-center gap-3 cursor-pointer">
@@ -598,9 +669,14 @@ public function resetLoading()
                     id="selectAllCheckbox"
                     class="checkbox checkbox-primary" 
                     {{ $selectAll ? 'checked' : '' }}
-                    wire:click="updatedSelectAll($event.target.checked)"
+                    wire:click="toggleSelectAll"
+                    wire:loading.attr="disabled"
+                    wire:target="toggleSelectAll"
                 >
                 <label for="selectAllCheckbox" class="font-semibold">
+                    @if($loadingAction && !$loadingProduct && !$removingProduct)
+                        <span class="loading loading-spinner loading-xs mr-2"></span>
+                    @endif
                     Sélectionner tout ({{ count($products) }} produits affichés)
                 </label>
             </div>
@@ -714,12 +790,19 @@ public function resetLoading()
                                                         <span class="badge badge-sm badge-neutral">{{ $index + 1 }}</span>
                                                         <button 
                                                             wire:click="removeFromSummary('{{ $product['sku'] }}')"
-                                                            class="btn btn-xs btn-error"
+                                                            class="btn btn-xs btn-error relative min-w-[60px]"
                                                             title="Retirer de la sélection"
+                                                            wire:loading.attr="disabled"
+                                                            wire:target="removeFromSummary"
                                                         >
-                                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                                                <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
-                                                            </svg>
+                                                            @if($removingProduct === $product['sku'])
+                                                                <span class="loading loading-spinner loading-xs absolute"></span>
+                                                                <span class="opacity-0">Suppr.</span>
+                                                            @else
+                                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                                    <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                                                                </svg>
+                                                            @endif
                                                         </button>
                                                     </div>
                                                 </div>
@@ -765,25 +848,25 @@ public function resetLoading()
                                                     <div class="font-medium text-sm truncate" title="{{ $product['title'] ?? '' }}">
                                                         {{ $product['title'] ?? 'Chargement...' }}
                                                     </div>
-<div class="flex items-center justify-between mt-2">
-    <span class="badge badge-sm badge-neutral">{{ $index + 1 }}</span>
-    <button 
-        wire:click="removeFromSummary('{{ $product['sku'] }}')"
-        class="btn btn-xs btn-error relative min-w-[60px]"
-        title="Retirer de la sélection"
-        wire:loading.attr="disabled"
-        wire:target="removeFromSummary"
-    >
-        @if($removingProduct === $product['sku'])
-            <span class="loading loading-spinner loading-xs absolute"></span>
-            <span class="opacity-0">Suppr.</span>
-        @else
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
-            </svg>
-        @endif
-    </button>
-</div>
+                                                    <div class="flex items-center justify-between mt-2">
+                                                        <span class="badge badge-sm badge-neutral">{{ $index + 1 }}</span>
+                                                        <button 
+                                                            wire:click="removeFromSummary('{{ $product['sku'] }}')"
+                                                            class="btn btn-xs btn-error relative min-w-[60px]"
+                                                            title="Retirer de la sélection"
+                                                            wire:loading.attr="disabled"
+                                                            wire:target="removeFromSummary"
+                                                        >
+                                                            @if($removingProduct === $product['sku'])
+                                                                <span class="loading loading-spinner loading-xs absolute"></span>
+                                                                <span class="opacity-0">Suppr.</span>
+                                                            @else
+                                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                                    <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                                                                </svg>
+                                                            @endif
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -833,38 +916,39 @@ public function resetLoading()
                         @endphp
                         <tr wire:key="product-{{ $product['id'] ?? $index }}"
                             class="{{ $isSelected ? 'bg-primary/5' : '' }}">
-<td>
-    <div class="relative">
-        @if($loadingProduct === $product['sku'])
-            <div class="absolute inset-0 flex items-center justify-center z-10">
-                <span class="loading loading-spinner loading-xs text-success"></span>
-            </div>
-            <input 
-                type="checkbox" 
-                class="checkbox checkbox-primary checkbox-xs opacity-30" 
-                checked
-                disabled
-            >
-        @elseif($removingProduct === $product['sku'])
-            <div class="absolute inset-0 flex items-center justify-center z-10">
-                <span class="loading loading-spinner loading-xs text-error"></span>
-            </div>
-            <input 
-                type="checkbox" 
-                class="checkbox checkbox-primary checkbox-xs opacity-30" 
-                checked
-                disabled
-            >
-        @else
-            <input 
-                type="checkbox" 
-                class="checkbox checkbox-primary checkbox-xs" 
-                {{ in_array($product['sku'], $selectedProducts) ? 'checked' : '' }}
-                wire:click="toggleSelect('{{ $product['sku'] }}', '{{ addslashes($product['title'] ?? '') }}', '{{ $product['thumbnail'] ?? '' }}')"
-            >
-        @endif
-    </div>
-</td>
+                            <td>
+                                <div class="relative">
+                                    @if($loadingProduct === $product['sku'])
+                                        <div class="absolute inset-0 flex items-center justify-center z-10">
+                                            <span class="loading loading-spinner loading-xs text-success"></span>
+                                        </div>
+                                        <input 
+                                            type="checkbox" 
+                                            class="checkbox checkbox-primary checkbox-xs opacity-30" 
+                                            checked
+                                            disabled
+                                        >
+                                    @elseif($removingProduct === $product['sku'])
+                                        <div class="absolute inset-0 flex items-center justify-center z-10">
+                                            <span class="loading loading-spinner loading-xs text-error"></span>
+                                        </div>
+                                        <input 
+                                            type="checkbox" 
+                                            class="checkbox checkbox-primary checkbox-xs opacity-30" 
+                                            checked
+                                            disabled
+                                        >
+                                    @else
+                                        <input 
+                                            type="checkbox" 
+                                            class="checkbox checkbox-primary checkbox-xs" 
+                                            {{ in_array($product['sku'], $selectedProducts) ? 'checked' : '' }}
+                                            wire:click="toggleSelect('{{ $product['sku'] }}', '{{ addslashes($product['title'] ?? '') }}', '{{ $product['thumbnail'] ?? '' }}')"
+                                            {{ $loadingAction ? 'disabled' : '' }}
+                                        >
+                                    @endif
+                                </div>
+                            </td>
                             <td>
                                 @if(!empty($product['thumbnail']))
                                     <div class="avatar">
@@ -1047,27 +1131,6 @@ public function resetLoading()
             </x-button>
         </x-slot:actions>
     </x-modal>
-
-
-<!-- Loading indicator Livewire -->
-<div wire:loading.class.remove="hidden" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-base-100/80 backdrop-blur-sm">
-    <div class="flex flex-col items-center justify-center bg-base-100 rounded-2xl p-8 shadow-2xl border border-base-300 min-w-[200px]">
-        @if($loadingProduct)
-            <div class="loading loading-spinner loading-lg text-success mb-4"></div>
-            <p class="text-lg font-semibold text-base-content">Ajout du produit</p>
-            <p class="text-sm text-base-content/70 mt-1">Veuillez patienter...</p>
-        @elseif($removingProduct)
-            <div class="loading loading-spinner loading-lg text-error mb-4"></div>
-            <p class="text-lg font-semibold text-base-content">Suppression du produit</p>
-            <p class="text-sm text-base-content/70 mt-1">Veuillez patienter...</p>
-        @else
-            <div class="loading loading-spinner loading-lg text-primary mb-4"></div>
-            <p class="text-lg font-semibold text-base-content">Chargement</p>
-            <p class="text-sm text-base-content/70 mt-1">Veuillez patienter...</p>
-        @endif
-    </div>
-</div>
-
 </div>
 
 @push('scripts')
