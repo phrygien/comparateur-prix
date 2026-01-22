@@ -2070,7 +2070,7 @@ new class extends Component {
             
             <div class="flex space-x-3">
                 <button wire:click="refreshProducts"
-                    class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
+                    class="btn btn-sm btn-outline"
                     wire:loading.attr="disabled">
                     <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -2081,7 +2081,7 @@ new class extends Component {
                 </button>
                 
                 <button wire:click="searchAllCompetitorsOnPage"
-                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-200"
+                    class="btn btn-sm btn-success"
                     wire:loading.attr="disabled">
                     <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -2105,18 +2105,30 @@ new class extends Component {
         @endif
 
         <!-- Statistiques de la page -->
-        <div class="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-                <div class="text-sm text-gray-600 mb-1">Total produits</div>
-                <div class="text-2xl font-bold text-gray-900">{{ $totalItems ?? 0 }}</div>
+        <div class="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="stats shadow">
+                <div class="stat">
+                    <div class="stat-title">Total produits</div>
+                    <div class="stat-value">{{ $totalItems ?? 0 }}</div>
+                </div>
             </div>
-            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-                <div class="text-sm text-gray-600 mb-1">Page actuelle</div>
-                <div class="text-2xl font-bold text-blue-600">{{ $page }} / {{ $totalPages }}</div>
+            <div class="stats shadow">
+                <div class="stat">
+                    <div class="stat-title">Page actuelle</div>
+                    <div class="stat-value text-primary">{{ $page }} / {{ $totalPages }}</div>
+                </div>
             </div>
-            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-                <div class="text-sm text-gray-600 mb-1">Produits par page</div>
-                <div class="text-2xl font-bold text-purple-600">{{ $perPage }}</div>
+            <div class="stats shadow">
+                <div class="stat">
+                    <div class="stat-title">Produits par page</div>
+                    <div class="stat-value text-secondary">{{ $perPage }}</div>
+                </div>
+            </div>
+            <div class="stats shadow">
+                <div class="stat">
+                    <div class="stat-title">Produits chargés</div>
+                    <div class="stat-value text-info">{{ count($products) }}</div>
+                </div>
             </div>
         </div>
 
@@ -2125,12 +2137,12 @@ new class extends Component {
             <div class="mb-6 flex items-center justify-between">
                 <div class="flex-1 flex justify-between sm:hidden">
                     <button wire:click="previousPage"
-                        class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                        class="btn btn-sm"
                         :disabled="$page <= 1">
                         Précédent
                     </button>
                     <button wire:click="nextPage"
-                        class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                        class="btn btn-sm ml-2"
                         :disabled="$page >= $totalPages">
                         Suivant
                     </button>
@@ -2148,405 +2160,378 @@ new class extends Component {
                         </p>
                     </div>
                     <div>
-                        <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                        <div class="join">
                             <button wire:click="previousPage"
-                                class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                                class="join-item btn btn-sm"
                                 :disabled="$page <= 1">
-                                <span class="sr-only">Précédent</span>
-                                <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd"
-                                        d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
-                                        clip-rule="evenodd"></path>
-                                </svg>
+                                «
                             </button>
                             
                             @foreach($this->getPaginationButtons() as $button)
                                 @if($button['page'] === null)
-                                    <span
-                                        class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
+                                    <button class="join-item btn btn-sm btn-disabled">
                                         {{ $button['label'] }}
-                                    </span>
+                                    </button>
                                 @else
                                     <button wire:click="goToPage({{ $button['page'] }})"
-                                        class="relative inline-flex items-center px-4 py-2 border text-sm font-medium {{ $button['active'] ? 'z-10 bg-blue-50 border-blue-500 text-blue-600' : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50' }}">
+                                        class="join-item btn btn-sm {{ $button['active'] ? 'btn-active' : '' }}">
                                         {{ $button['label'] }}
                                     </button>
                                 @endif
                             @endforeach
                             
                             <button wire:click="nextPage"
-                                class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                                class="join-item btn btn-sm"
                                 :disabled="$page >= $totalPages">
-                                <span class="sr-only">Suivant</span>
-                                <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd"
-                                        d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                                        clip-rule="evenodd"></path>
-                                </svg>
+                                »
                             </button>
-                        </nav>
+                        </div>
                     </div>
                 </div>
             </div>
         @endif
 
         <!-- Tableau des produits -->
-        <div class="bg-white shadow-sm border border-gray-300 overflow-hidden" wire:loading.class="opacity-50">
-            <div class="overflow-x-auto">
-                <table class="min-w-full border-collapse border border-gray-300">
-                    <thead class="bg-gray-100">
-                        <tr>
+        <div class="overflow-x-auto" wire:loading.class="opacity-50">
+            <table class="table table-xs">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>SKU</th>
+                        <th>Image</th>
+                        <th>Produit</th>
+                        <th>Prix</th>
+                        <th>Concurrents auto</th>
+                        <th>Recherche manuelle</th>
+                        <th>Type</th>
+                        <th>Stock</th>
+                        <th>Statut</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse($products as $index => $product)
+                        @php
+                            $hasCompetitors = isset($competitorResults[$product['sku']]);
+                            $hasManualSearch = isset($manualSearchResults[$product['sku']]);
+                            $isSearchingAuto = isset($searchingProducts[$product['sku']]);
+                            $isSearchingManual = isset($manualSearchLoading[$product['sku']]);
+                            $rowNumber = ($page - 1) * $perPage + $index + 1;
+                        @endphp
+                        <tr class="hover">
+                            <!-- Numéro de ligne -->
+                            <th>{{ $rowNumber }}</th>
+                            
                             <!-- SKU -->
-                            <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
-                                <div class="flex flex-col">
-                                    <span>SKU</span>
-                                </div>
-                            </th>
+                            <td>
+                                <div class="font-mono text-xs font-bold">{{ $product['sku'] }}</div>
+                            </td>
                             
                             <!-- Image -->
-                            <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
-                                <div class="flex flex-col">
-                                    <span>Image</span>
+                            <td>
+                                <div class="avatar">
+                                    <div class="w-12 h-12 rounded">
+                                        @if(!empty($product['thumbnail']))
+                                            <img src="{{ $product['thumbnail'] }}" 
+                                                 alt="{{ $product['title'] }}"
+                                                 onerror="this.onerror=null; this.src='https://placehold.co/48x48/cccccc/999999?text=No+Image'">
+                                        @elseif(!empty($product['swatch_image']))
+                                            <img src="{{ $product['swatch_image'] }}" 
+                                                 alt="{{ $product['title'] }}"
+                                                 onerror="this.onerror=null; this.src='https://placehold.co/48x48/cccccc/999999?text=No+Image'">
+                                        @else
+                                            <div class="w-12 h-12 bg-base-200 rounded flex items-center justify-center">
+                                                <span class="text-xs">No Image</span>
+                                            </div>
+                                        @endif
+                                    </div>
                                 </div>
-                            </th>
+                            </td>
                             
-                            <!-- Nom du produit -->
-                            <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
-                                <div class="flex flex-col">
-                                    <span>Nom du produit</span>
-                                </div>
-                            </th>
+                            <!-- Produit -->
+                            <td>
+                                <div class="font-medium">{{ Str::limit($product['title'], 50) }}</div>
+                                @if(!empty($product['vendor']))
+                                    <div class="text-xs opacity-70">
+                                        {{ $product['vendor'] }}
+                                    </div>
+                                @endif
+                            </td>
                             
                             <!-- Prix -->
-                            <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
-                                <div class="flex flex-col">
-                                    <span>Prix</span>
+                            <td>
+                                <div class="font-bold text-success">
+                                    {{ $this->formatPrice($product['price']) }}
                                 </div>
-                            </th>
+                                @if(!empty($product['special_price']) && $product['special_price'] < $product['price'])
+                                    <div class="text-xs text-error line-through">
+                                        {{ $this->formatPrice($product['special_price']) }}
+                                    </div>
+                                @endif
+                            </td>
                             
                             <!-- Concurrents automatiques -->
-                            <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
-                                <div class="flex flex-col">
-                                    <span>Concurrents auto</span>
-                                    <span class="text-xs font-normal text-gray-500">(recherche automatique)</span>
+                            <td>
+                                <div class="space-y-1">
+                                    <button wire:click="toggleCompetitors('{{ $product['sku'] }}')"
+                                        class="btn btn-xs btn-info btn-outline w-full"
+                                        wire:loading.attr="disabled"
+                                        wire:target="toggleCompetitors('{{ $product['sku'] }}')">
+                                        @if($isSearchingAuto)
+                                            <span class="loading loading-spinner loading-xs"></span>
+                                            Recherche...
+                                        @else
+                                            @if($hasCompetitors)
+                                                {{ $competitorResults[$product['sku']]['count'] ?? 0 }} résultat(s)
+                                            @else
+                                                Rechercher
+                                            @endif
+                                        @endif
+                                    </button>
+                                    
+                                    @if($hasCompetitors && isset($expandedProducts[$product['sku']]))
+                                        <div class="mt-1 max-h-40 overflow-y-auto">
+                                            @if(isset($competitorResults[$product['sku']]['competitors']) && count($competitorResults[$product['sku']]['competitors']) > 0)
+                                                @foreach(array_slice($competitorResults[$product['sku']]['competitors'], 0, 3) as $competitor)
+                                                    <div class="border border-base-300 rounded p-1 mb-1 bg-base-100">
+                                                        <div class="flex justify-between items-center">
+                                                            <div class="flex-1 truncate">
+                                                                <div class="text-xs font-medium truncate">
+                                                                    {{ $competitor->vendor ?? 'N/A' }}
+                                                                </div>
+                                                                <div class="text-[10px] opacity-70 truncate">
+                                                                    {{ $competitor->variation ?? 'Standard' }}
+                                                                </div>
+                                                            </div>
+                                                            <div class="text-right">
+                                                                <div class="font-bold text-success text-xs">
+                                                                    {{ $this->formatPrice($competitor->clean_price ?? $competitor->prix_ht) }}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                @endforeach
+                                                @if(count($competitorResults[$product['sku']]['competitors']) > 3)
+                                                    <div class="text-center text-xs opacity-70">
+                                                        +{{ count($competitorResults[$product['sku']]['competitors']) - 3 }} plus
+                                                    </div>
+                                                @endif
+                                            @else
+                                                <div class="text-center text-xs opacity-70 py-1">
+                                                    Aucun concurrent
+                                                </div>
+                                            @endif
+                                        </div>
+                                    @endif
                                 </div>
-                            </th>
+                            </td>
                             
                             <!-- NOUVELLE COLONNE : Recherche manuelle -->
-                            <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
-                                <div class="flex flex-col space-y-2">
-                                    <span>Recherche manuelle</span>
-                                    <div class="text-xs font-normal text-gray-500">
-                                        Tapez un nom et cliquez sur "Rechercher"
+                            <td>
+                                <div class="space-y-1">
+                                    <!-- Input de recherche -->
+                                    <div class="relative">
+                                        <input 
+                                            type="text" 
+                                            wire:model.live.debounce.800ms="manualSearchQueries.{{ $product['sku'] }}"
+                                            wire:key="manual-search-{{ $product['sku'] }}"
+                                            placeholder="Recherche..."
+                                            class="input input-xs input-bordered w-full"
+                                        >
+                                        @if(isset($manualSearchQueries[$product['sku']]) && !empty($manualSearchQueries[$product['sku']]))
+                                            <button 
+                                                type="button"
+                                                wire:click="clearManualSearch('{{ $product['sku'] }}')"
+                                                class="absolute right-1 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                            >
+                                                ×
+                                            </button>
+                                        @endif
                                     </div>
-                                </div>
-                            </th>
-                            
-                            <!-- Type -->
-                            <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
-                                <div class="flex flex-col">
-                                    <span>Type</span>
-                                </div>
-                            </th>
-                            
-                            <!-- Stock -->
-                            <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
-                                <div class="flex flex-col">
-                                    <span>Stock</span>
-                                </div>
-                            </th>
-                            
-                            <!-- Actions -->
-                            <th class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
-                                <div class="flex flex-col">
-                                    <span>Actions</span>
-                                </div>
-                            </th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                        @forelse($products as $product)
-                            @php
-                                $hasCompetitors = isset($competitorResults[$product['sku']]);
-                                $hasManualSearch = isset($manualSearchResults[$product['sku']]);
-                                $isSearchingAuto = isset($searchingProducts[$product['sku']]);
-                                $isSearchingManual = isset($manualSearchLoading[$product['sku']]);
-                            @endphp
-                            <tr class="hover:bg-gray-50 transition-colors duration-150">
-                                <!-- SKU -->
-                                <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
-                                    <div class="text-sm font-mono font-medium text-gray-900">{{ $product['sku'] }}</div>
-                                </td>
-                                
-                                <!-- Image -->
-                                <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
-                                    @if(!empty($product['thumbnail']))
-                                        <img src="{{ $product['thumbnail'] }}" alt="{{ $product['title'] }}"
-                                            class="h-16 w-16 object-cover rounded border border-gray-300"
-                                            loading="lazy"
-                                            onerror="this.onerror=null; this.src='https://placehold.co/64x64/cccccc/999999?text=No+Image'">
-                                    @elseif(!empty($product['swatch_image']))
-                                        <img src="{{ $product['swatch_image'] }}" alt="{{ $product['title'] }}"
-                                            class="h-16 w-16 object-cover rounded border border-gray-300"
-                                            loading="lazy"
-                                            onerror="this.onerror=null; this.src='https://placehold.co/64x64/cccccc/999999?text=No+Image'">
-                                    @else
-                                        <div class="h-16 w-16 bg-gray-100 rounded border border-gray-300 flex items-center justify-center">
-                                            <span class="text-xs text-gray-500">Pas d'image</span>
-                                        </div>
-                                    @endif
-                                </td>
-                                
-                                <!-- Nom du produit -->
-                                <td class="border border-gray-300 px-4 py-3">
-                                    <div class="text-sm font-medium text-gray-900 mb-1">{{ $product['title'] }}</div>
-                                    @if(!empty($product['vendor']))
-                                        <div class="text-xs text-gray-600">
-                                            Marque: <span class="font-semibold">{{ $product['vendor'] }}</span>
-                                        </div>
-                                    @endif
-                                </td>
-                                
-                                <!-- Prix -->
-                                <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
-                                    <div class="text-sm font-bold text-green-600">
-                                        {{ $this->formatPrice($product['price']) }}
-                                    </div>
-                                    @if(!empty($product['special_price']) && $product['special_price'] < $product['price'])
-                                        <div class="text-xs text-red-600 line-through">
-                                            {{ $this->formatPrice($product['special_price']) }}
-                                        </div>
-                                    @endif
-                                </td>
-                                
-                                <!-- Concurrents automatiques -->
-                                <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
-                                    <div class="space-y-2">
-                                        <button wire:click="toggleCompetitors('{{ $product['sku'] }}')"
-                                            class="w-full px-3 py-1.5 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 transition-colors flex items-center justify-center"
+                                    
+                                    <!-- Bouton de recherche -->
+                                    @if(isset($manualSearchQueries[$product['sku']]) && !empty($manualSearchQueries[$product['sku']]))
+                                        <button 
+                                            wire:click="manualSearchForProduct('{{ $product['sku'] }}', '{{ addslashes($product['title'] ?? '') }}', {{ $product['price'] ?? 0 }})"
+                                            class="btn btn-xs btn-warning w-full"
                                             wire:loading.attr="disabled"
-                                            wire:target="toggleCompetitors('{{ $product['sku'] }}')">
-                                            @if($isSearchingAuto)
-                                                <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600 mr-1"></div>
-                                                Recherche...
+                                            wire:target="manualSearchForProduct('{{ $product['sku'] }}')"
+                                        >
+                                            @if($isSearchingManual)
+                                                <span class="loading loading-spinner loading-xs"></span>
                                             @else
-                                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                                                </svg>
-                                                {{ $hasCompetitors ? ($competitorResults[$product['sku']]['count'] ?? 0) . ' résultat(s)' : 'Rechercher' }}
+                                                Rechercher
                                             @endif
                                         </button>
                                         
-                                        @if($hasCompetitors && isset($expandedProducts[$product['sku']]))
-                                            <div class="mt-2 max-h-60 overflow-y-auto border border-gray-200 rounded p-2 bg-gray-50">
-                                                @if(isset($competitorResults[$product['sku']]['competitors']) && count($competitorResults[$product['sku']]['competitors']) > 0)
-                                                    @foreach($competitorResults[$product['sku']]['competitors'] as $competitor)
-                                                        <div class="border-b border-gray-200 pb-2 mb-2 last:border-0 last:pb-0 last:mb-0">
-                                                            <div class="flex justify-between items-start">
-                                                                <div class="flex-1">
-                                                                    <div class="font-medium text-xs">{{ $competitor->vendor ?? 'N/A' }} - {{ $competitor->name ?? 'N/A' }}</div>
-                                                                    <div class="text-xs text-gray-600">{{ $competitor->variation ?? 'Standard' }}</div>
+                                        <!-- Résultats de recherche -->
+                                        @if(isset($manualSearchResults[$product['sku']]))
+                                            <div class="mt-1">
+                                                <button 
+                                                    type="button"
+                                                    wire:click="toggleManualSearchResults('{{ $product['sku'] }}')"
+                                                    class="btn btn-xs btn-link w-full"
+                                                >
+                                                    <span>
+                                                        {{ $manualSearchResults[$product['sku']]['count'] ?? 0 }} résultat(s)
+                                                    </span>
+                                                    <svg 
+                                                        class="w-3 h-3 transition-transform duration-200" 
+                                                        style="transform: {{ isset($manualSearchExpanded[$product['sku']]) && $manualSearchExpanded[$product['sku']] ? 'rotate(180deg)' : 'rotate(0deg)' }}"
+                                                        fill="none" 
+                                                        stroke="currentColor" 
+                                                        viewBox="0 0 24 24"
+                                                    >
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                                    </svg>
+                                                </button>
+                                                
+                                                @if(isset($manualSearchExpanded[$product['sku']]) && $manualSearchExpanded[$product['sku']])
+                                                    <div class="mt-1 max-h-40 overflow-y-auto">
+                                                        @if(isset($manualSearchResults[$product['sku']]['competitors']) && count($manualSearchResults[$product['sku']]['competitors']) > 0)
+                                                            @foreach(array_slice($manualSearchResults[$product['sku']]['competitors'], 0, 3) as $competitor)
+                                                                <div class="border border-base-300 rounded p-1 mb-1 bg-base-100">
+                                                                    <div class="flex justify-between items-center">
+                                                                        <div class="flex-1 truncate">
+                                                                            <div class="text-xs font-medium truncate">
+                                                                                {{ $competitor->vendor ?? 'N/A' }}
+                                                                            </div>
+                                                                            <div class="text-[10px] opacity-70 truncate">
+                                                                                {{ $competitor->variation ?? 'Standard' }}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div class="text-right">
+                                                                            <div class="font-bold text-success text-xs">
+                                                                                {{ $this->formatPrice($competitor->clean_price ?? $competitor->prix_ht) }}
+                                                                            </div>
+                                                                            @if(isset($competitor->similarity_score))
+                                                                                <div class="text-[10px] {{ $competitor->similarity_score >= 0.8 ? 'text-success' : ($competitor->similarity_score >= 0.6 ? 'text-warning' : 'text-error') }}">
+                                                                                    {{ number_format($competitor->similarity_score * 100, 0) }}%
+                                                                                </div>
+                                                                            @endif
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
-                                                                <div class="text-right">
-                                                                    <div class="font-bold text-green-600 text-xs">{{ $this->formatPrice($competitor->clean_price ?? $competitor->prix_ht) }}</div>
-                                                                    @if(isset($competitor->price_status))
-                                                                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium {{ $this->getPriceStatusClass($competitor->price_status) }}">
-                                                                            {{ $this->getPriceStatusLabel($competitor->price_status) }}
-                                                                        </span>
-                                                                    @endif
+                                                            @endforeach
+                                                            @if(count($manualSearchResults[$product['sku']]['competitors']) > 3)
+                                                                <div class="text-center text-xs opacity-70">
+                                                                    +{{ count($manualSearchResults[$product['sku']]['competitors']) - 3 }} plus
                                                                 </div>
+                                                            @endif
+                                                        @else
+                                                            <div class="text-center text-xs opacity-70 py-1">
+                                                                Aucun résultat
                                                             </div>
-                                                            <div class="mt-1 flex justify-between items-center text-[10px] text-gray-500">
-                                                                <span>{{ $competitor->site_name ?? 'N/A' }}</span>
-                                                                @if(isset($competitor->price_difference))
-                                                                    <span class="{{ $competitor->price_difference > 0 ? 'text-green-600' : 'text-red-600' }}">
-                                                                        {{ $this->formatPriceDifference($competitor->price_difference) }}
-                                                                    </span>
-                                                                @endif
-                                                            </div>
-                                                        </div>
-                                                    @endforeach
-                                                @else
-                                                    <div class="text-center text-gray-500 text-sm py-2">
-                                                        Aucun concurrent trouvé
+                                                        @endif
                                                     </div>
                                                 @endif
                                             </div>
                                         @endif
-                                    </div>
-                                </td>
-                                
-                                <!-- NOUVELLE COLONNE : Recherche manuelle -->
-                                <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
-                                    <div class="space-y-2">
-                                        <!-- Input de recherche -->
-                                        <div class="relative">
-                                            <input 
-                                                type="text" 
-                                                wire:model.live.debounce.800ms="manualSearchQueries.{{ $product['sku'] }}"
-                                                wire:key="manual-search-{{ $product['sku'] }}"
-                                                placeholder="Rechercher..."
-                                                class="w-full px-3 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                            >
-                                            @if(isset($manualSearchQueries[$product['sku']]) && !empty($manualSearchQueries[$product['sku']]))
-                                                <button 
-                                                    type="button"
-                                                    wire:click="clearManualSearch('{{ $product['sku'] }}')"
-                                                    class="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                                                >
-                                                    ×
-                                                </button>
-                                            @endif
-                                        </div>
-                                        
-                                        <!-- Bouton de recherche -->
-                                        @if(isset($manualSearchQueries[$product['sku']]) && !empty($manualSearchQueries[$product['sku']]))
-                                            <button 
-                                                wire:click="manualSearchForProduct('{{ $product['sku'] }}', '{{ addslashes($product['title'] ?? '') }}', {{ $product['price'] ?? 0 }})"
-                                                class="w-full px-3 py-1 text-xs bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors flex items-center justify-center"
-                                                wire:loading.attr="disabled"
-                                                wire:target="manualSearchForProduct('{{ $product['sku'] }}')"
-                                            >
-                                                <span wire:loading.remove wire:target="manualSearchForProduct('{{ $product['sku'] }}')">
-                                                    Rechercher
-                                                </span>
-                                                <span wire:loading wire:target="manualSearchForProduct('{{ $product['sku'] }}')">
-                                                    <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-white mr-1"></div>
-                                                    Recherche...
-                                                </span>
-                                            </button>
-                                            
-                                            <!-- Résultats de recherche -->
-                                            @if(isset($manualSearchResults[$product['sku']]))
-                                                <div class="mt-2">
-                                                    <button 
-                                                        type="button"
-                                                        wire:click="toggleManualSearchResults('{{ $product['sku'] }}')"
-                                                        class="w-full text-xs text-purple-600 hover:text-purple-800 flex items-center justify-between"
-                                                    >
-                                                        <span>
-                                                            {{ $manualSearchResults[$product['sku']]['count'] ?? 0 }} résultat(s)
-                                                        </span>
-                                                        <svg 
-                                                            class="w-4 h-4 transition-transform duration-200" 
-                                                            style="transform: {{ isset($manualSearchExpanded[$product['sku']]) && $manualSearchExpanded[$product['sku']] ? 'rotate(180deg)' : 'rotate(0deg)' }}"
-                                                            fill="none" 
-                                                            stroke="currentColor" 
-                                                            viewBox="0 0 24 24"
-                                                        >
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                                                        </svg>
-                                                    </button>
-                                                    
-                                                    @if(isset($manualSearchExpanded[$product['sku']]) && $manualSearchExpanded[$product['sku']])
-                                                        <div class="mt-2 max-h-60 overflow-y-auto">
-                                                            @if(isset($manualSearchResults[$product['sku']]['competitors']) && count($manualSearchResults[$product['sku']]['competitors']) > 0)
-                                                                @foreach($manualSearchResults[$product['sku']]['competitors'] as $competitor)
-                                                                    <div class="border border-gray-200 rounded p-2 mb-2 bg-gray-50">
-                                                                        <div class="flex justify-between items-start">
-                                                                            <div class="flex-1">
-                                                                                <div class="font-medium text-sm">{{ $competitor->vendor ?? 'N/A' }} - {{ $competitor->name ?? 'N/A' }}</div>
-                                                                                <div class="text-xs text-gray-600">{{ $competitor->variation ?? 'Standard' }}</div>
-                                                                            </div>
-                                                                            <div class="text-right">
-                                                                                <div class="font-bold text-green-600">{{ $this->formatPrice($competitor->clean_price ?? $competitor->prix_ht) }}</div>
-                                                                                @if(isset($competitor->similarity_score))
-                                                                                    <div class="text-xs {{ $competitor->similarity_score >= 0.8 ? 'text-green-600' : ($competitor->similarity_score >= 0.6 ? 'text-yellow-600' : 'text-gray-600') }}">
-                                                                                        Score: {{ number_format($competitor->similarity_score * 100, 0) }}%
-                                                                                    </div>
-                                                                                @endif
-                                                                            </div>
-                                                                        </div>
-                                                                        <div class="mt-1 flex justify-between items-center text-xs text-gray-500">
-                                                                            <span>{{ $competitor->site_name ?? 'N/A' }}</span>
-                                                                            @if(isset($competitor->price_difference))
-                                                                                <span class="{{ $competitor->price_difference > 0 ? 'text-green-600' : 'text-red-600' }}">
-                                                                                    {{ $this->formatPriceDifference($competitor->price_difference) }}
-                                                                                </span>
-                                                                            @endif
-                                                                        </div>
-                                                                    </div>
-                                                                @endforeach
-                                                            @else
-                                                                <div class="text-center text-gray-500 text-sm py-2">
-                                                                    Aucun résultat trouvé
-                                                                </div>
-                                                            @endif
-                                                        </div>
-                                                    @endif
-                                                </div>
-                                            @endif
-                                        @endif
-                                    </div>
-                                </td>
-                                
-                                <!-- Type -->
-                                <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
-                                    @if(!empty($product['type']))
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-300">
-                                            {{ $product['type'] }}
-                                        </span>
-                                    @else
-                                        <span class="text-xs text-gray-500">N/A</span>
                                     @endif
-                                </td>
-                                
-                                <!-- Stock -->
-                                <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
-                                    @if(isset($product['quatity']))
-                                        <div class="flex items-center">
-                                            <div class="w-16 bg-gray-200 rounded-full h-2 mr-2">
-                                                @php
-                                                    $stockPercentage = min(100, max(0, ($product['quatity'] / 50) * 100));
-                                                    $stockColor = $stockPercentage > 50 ? 'bg-green-500' : ($stockPercentage > 20 ? 'bg-yellow-500' : 'bg-red-500');
-                                                @endphp
-                                                <div class="h-2 rounded-full {{ $stockColor }}"
-                                                    style="width: {{ $stockPercentage }}%">
-                                                </div>
+                                </div>
+                            </td>
+                            
+                            <!-- Type -->
+                            <td>
+                                @if(!empty($product['type']))
+                                    <span class="badge badge-outline badge-sm">
+                                        {{ $product['type'] }}
+                                    </span>
+                                @else
+                                    <span class="text-xs opacity-70">N/A</span>
+                                @endif
+                            </td>
+                            
+                            <!-- Stock -->
+                            <td>
+                                @if(isset($product['quatity']))
+                                    @php
+                                        $stockPercentage = min(100, max(0, ($product['quatity'] / 50) * 100));
+                                        $stockColor = $stockPercentage > 50 ? 'text-success' : ($stockPercentage > 20 ? 'text-warning' : 'text-error');
+                                        $stockBg = $stockPercentage > 50 ? 'bg-success' : ($stockPercentage > 20 ? 'bg-warning' : 'bg-error');
+                                    @endphp
+                                    <div class="flex items-center space-x-2">
+                                        <div class="w-16 bg-base-300 rounded-full h-2">
+                                            <div class="h-2 rounded-full {{ $stockBg }}"
+                                                style="width: {{ $stockPercentage }}%">
                                             </div>
-                                            <span class="text-sm font-medium {{ $stockPercentage > 50 ? 'text-green-600' : ($stockPercentage > 20 ? 'text-yellow-600' : 'text-red-600') }}">
-                                                {{ $product['quatity'] }}
-                                            </span>
                                         </div>
-                                    @else
-                                        <span class="text-xs text-gray-500">N/A</span>
-                                    @endif
-                                </td>
-                                
-                                <!-- Actions -->
-                                <td class="border border-gray-300 px-4 py-3 whitespace-nowrap text-sm font-medium">
-                                    <div class="flex space-x-2">
-                                        <!-- Bouton pour voir plus de détails -->
-                                        <button wire:click="$dispatch('openModal', { component: 'plateformes.detail', arguments: { id: '{{ $product['sku'] }}' }})"
-                                            class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200">
-                                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                            </svg>
-                                            Détails
-                                        </button>
+                                        <span class="text-xs font-medium {{ $stockColor }}">
+                                            {{ $product['quatity'] }}
+                                        </span>
                                     </div>
-                                </td>
-                            </tr>
-                        @empty
-                            <tr>
-                                <td colspan="9" class="border border-gray-300 px-6 py-12 text-center">
-                                    <svg class="mx-auto h-16 w-16 text-gray-400" fill="none" viewBox="0 0 24 24"
-                                        stroke="currentColor" aria-hidden="true">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                                            d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    <h3 class="mt-4 text-lg font-medium text-gray-900">Aucun produit trouvé</h3>
-                                    <p class="mt-2 text-sm text-gray-500">
-                                        Aucun produit ne correspond à votre recherche ou la liste est vide.
-                                    </p>
-                                </td>
-                            </tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
+                                @else
+                                    <span class="text-xs opacity-70">N/A</span>
+                                @endif
+                            </td>
+                            
+                            <!-- Statut -->
+                            <td>
+                                @if(isset($product['status']))
+                                    @if($product['status'] == 1)
+                                        <span class="badge badge-success badge-sm">Actif</span>
+                                    @else
+                                        <span class="badge badge-error badge-sm">Inactif</span>
+                                    @endif
+                                @else
+                                    <span class="badge badge-neutral badge-sm">N/A</span>
+                                @endif
+                            </td>
+                            
+                            <!-- Actions -->
+                            <td>
+                                <div class="flex space-x-1">
+                                    <button wire:click="$dispatch('openModal', { component: 'plateformes.detail', arguments: { id: '{{ $product['sku'] }}' }})"
+                                        class="btn btn-xs btn-outline"
+                                        title="Détails">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                        </svg>
+                                    </button>
+                                    
+                                    @if($hasCompetitors)
+                                        <div class="tooltip" data-tip="{{ $competitorResults[$product['sku']]['count'] ?? 0 }} concurrent(s)">
+                                            <div class="badge badge-info">
+                                                {{ $competitorResults[$product['sku']]['count'] ?? 0 }}
+                                            </div>
+                                        </div>
+                                    @endif
+                                </div>
+                            </td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="11" class="text-center py-8">
+                                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24"
+                                    stroke="currentColor" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                        d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <h3 class="mt-4 text-lg font-medium text-gray-900">Aucun produit trouvé</h3>
+                                <p class="mt-2 text-sm text-gray-500">
+                                    Aucun produit ne correspond à votre recherche ou la liste est vide.
+                                </p>
+                            </td>
+                        </tr>
+                    @endforelse
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <th>#</th>
+                        <th>SKU</th>
+                        <th>Image</th>
+                        <th>Produit</th>
+                        <th>Prix</th>
+                        <th>Concurrents auto</th>
+                        <th>Recherche manuelle</th>
+                        <th>Type</th>
+                        <th>Stock</th>
+                        <th>Statut</th>
+                        <th>Actions</th>
+                    </tr>
+                </tfoot>
+            </table>
         </div>
 
         <!-- Pagination en bas -->
@@ -2554,54 +2539,43 @@ new class extends Component {
             <div class="mt-6 flex items-center justify-between">
                 <div class="flex-1 flex justify-between sm:hidden">
                     <button wire:click="previousPage"
-                        class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                        class="btn btn-sm"
                         :disabled="$page <= 1">
                         Précédent
                     </button>
                     <button wire:click="nextPage"
-                        class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                        class="btn btn-sm ml-2"
                         :disabled="$page >= $totalPages">
                         Suivant
                     </button>
                 </div>
                 <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-center">
-                    <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                    <div class="join">
                         <button wire:click="previousPage"
-                            class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                            class="join-item btn btn-sm"
                             :disabled="$page <= 1">
-                            <span class="sr-only">Précédent</span>
-                            <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd"
-                                    d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
-                                    clip-rule="evenodd"></path>
-                            </svg>
+                            «
                         </button>
                         
                         @foreach($this->getPaginationButtons() as $button)
                             @if($button['page'] === null)
-                                <span
-                                    class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
+                                <button class="join-item btn btn-sm btn-disabled">
                                     {{ $button['label'] }}
-                                </span>
+                                </button>
                             @else
                                 <button wire:click="goToPage({{ $button['page'] }})"
-                                    class="relative inline-flex items-center px-4 py-2 border text-sm font-medium {{ $button['active'] ? 'z-10 bg-blue-50 border-blue-500 text-blue-600' : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50' }}">
+                                    class="join-item btn btn-sm {{ $button['active'] ? 'btn-active' : '' }}">
                                     {{ $button['label'] }}
                                 </button>
                             @endif
                         @endforeach
                         
                         <button wire:click="nextPage"
-                            class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                            class="join-item btn btn-sm"
                             :disabled="$page >= $totalPages">
-                            <span class="sr-only">Suivant</span>
-                            <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd"
-                                    d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                                    clip-rule="evenodd"></path>
-                            </svg>
+                            »
                         </button>
-                    </nav>
+                    </div>
                 </div>
             </div>
         @endif
@@ -2609,44 +2583,6 @@ new class extends Component {
 
     @push('styles')
     <style>
-        /* Style pour le tableau */
-        table {
-            border-collapse: collapse;
-            border-spacing: 0;
-        }
-
-        th,
-        td {
-            border: 1px solid #d1d5db;
-        }
-
-        th {
-            background-color: #f3f4f6;
-            font-weight: 600;
-            color: #374151;
-            border-bottom: 2px solid #9ca3af;
-        }
-
-        /* Alternance des lignes */
-        tbody tr:nth-child(even) {
-            background-color: #f9fafb;
-        }
-
-        tbody tr:hover {
-            background-color: #f0f9ff;
-        }
-
-        /* Style pour les inputs */
-        input[type="text"] {
-            transition: all 0.2s ease;
-            border: 1px solid #d1d5db;
-        }
-
-        input[type="text"]:focus {
-            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-            border-color: #3b82f6;
-        }
-
         /* Animation de spin */
         @keyframes spin {
             from {
@@ -2663,21 +2599,42 @@ new class extends Component {
 
         /* Scrollbar pour les résultats */
         .overflow-y-auto::-webkit-scrollbar {
-            width: 6px;
+            width: 4px;
         }
 
         .overflow-y-auto::-webkit-scrollbar-track {
             background: #f1f5f9;
-            border-radius: 3px;
+            border-radius: 2px;
         }
 
         .overflow-y-auto::-webkit-scrollbar-thumb {
             background-color: #cbd5e1;
-            border-radius: 3px;
+            border-radius: 2px;
         }
 
         .overflow-y-auto::-webkit-scrollbar-thumb:hover {
             background-color: #94a3b8;
+        }
+
+        /* Style pour les tooltips */
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+
+        .tooltip:hover::before {
+            content: attr(data-tip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 4px 8px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            font-size: 12px;
+            border-radius: 4px;
+            white-space: nowrap;
+            z-index: 10;
         }
     </style>
     @endpush
