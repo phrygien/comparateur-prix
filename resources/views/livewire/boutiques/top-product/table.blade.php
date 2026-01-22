@@ -45,22 +45,67 @@ new class extends Component {
     }
 
     /**
+     * Nettoyer un prix (assure qu'il est numérique)
+     */
+    protected function cleanPrice($price): float
+    {
+        if ($price === null || $price === '' || $price === false) {
+            return 0.0;
+        }
+
+        if (is_numeric($price)) {
+            return (float) $price;
+        }
+
+        if (is_string($price)) {
+            // Supprimer tous les caractères non numériques sauf les virgules, points et tirets
+            $cleanPrice = preg_replace('/[^\d,.-]/', '', $price);
+            // Remplacer les virgules par des points
+            $cleanPrice = str_replace(',', '.', $cleanPrice);
+            
+            // Si le prix a plusieurs points (ex: 1.234.56), garder seulement le dernier
+            $parts = explode('.', $cleanPrice);
+            if (count($parts) > 2) {
+                $cleanPrice = $parts[0] . '.' . end($parts);
+            }
+
+            if (is_numeric($cleanPrice)) {
+                return (float) $cleanPrice;
+            }
+        }
+
+        return 0.0;
+    }
+
+    /**
+     * Formater un prix pour l'affichage
+     */
+    public function formatPrice($price): string
+    {
+        $cleanPrice = $this->cleanPrice($price);
+        return number_format($cleanPrice, 2, ',', ' ') . ' €';
+    }
+
+    /**
      * Rechercher les concurrents pour un produit spécifique
      */
-    public function searchCompetitorsForProduct(string $sku, string $productName, float $price): void
+    public function searchCompetitorsForProduct(string $sku, string $productName, $price): void
     {
         $this->searchingProducts[$sku] = true;
         
         try {
             Log::info("Recherche concurrents pour: {$productName} (SKU: {$sku})");
 
+            // Nettoyer le prix
+            $cleanPrice = $this->cleanPrice($price);
+            
             // Utiliser l'algorithme de recherche
-            $competitors = $this->findCompetitorsForProduct($productName, $price);
+            $competitors = $this->findCompetitorsForProduct($productName, $cleanPrice);
             
             if (!empty($competitors)) {
                 $this->competitorResults[$sku] = [
                     'product_name' => $productName,
-                    'our_price' => $price,
+                    'our_price' => $cleanPrice,
                     'competitors' => $competitors,
                     'count' => count($competitors)
                 ];
@@ -69,7 +114,7 @@ new class extends Component {
             } else {
                 $this->competitorResults[$sku] = [
                     'product_name' => $productName,
-                    'our_price' => $price,
+                    'our_price' => $cleanPrice,
                     'competitors' => [],
                     'count' => 0
                 ];
@@ -80,7 +125,7 @@ new class extends Component {
             Log::error('Erreur recherche concurrents pour produit ' . $sku . ': ' . $e->getMessage());
             $this->competitorResults[$sku] = [
                 'product_name' => $productName,
-                'our_price' => $price,
+                'our_price' => $this->cleanPrice($price),
                 'competitors' => [],
                 'count' => 0,
                 'error' => $e->getMessage()
@@ -203,7 +248,10 @@ new class extends Component {
             $result = DB::connection('mysqlMagento')->select($query, [$sku]);
             
             if (!empty($result)) {
-                return (array) $result[0];
+                $product = (array) $result[0];
+                // Nettoyer le prix
+                $product['price'] = $this->cleanPrice($product['price']);
+                return $product;
             }
             
             return null;
@@ -370,7 +418,9 @@ new class extends Component {
             $query = "
                 SELECT 
                     lp.*,
-                    ws.name as site_name
+                    ws.name as site_name,
+                    lp.image_url as image_url,
+                    lp.url as product_url
                 FROM last_price_scraped_product lp
                 LEFT JOIN web_site ws ON lp.web_site_id = ws.id
                 WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
@@ -397,12 +447,64 @@ new class extends Component {
             
             $query .= " ORDER BY lp.prix_ht ASC LIMIT 20";
             
-            return DB::connection('mysql')->select($query, $params);
+            $competitors = DB::connection('mysql')->select($query, $params);
+            
+            // Traiter les images
+            foreach ($competitors as $competitor) {
+                $competitor->image = $this->getCompetitorImage($competitor);
+            }
+            
+            return $competitors;
             
         } catch (\Exception $e) {
             Log::error('Erreur searchCompetitorsInDatabase: ' . $e->getMessage());
             return [];
         }
+    }
+
+    /**
+     * Obtenir l'image d'un concurrent
+     */
+    protected function getCompetitorImage($competitor): string
+    {
+        // Priorité 1: image_url direct
+        if (!empty($competitor->image_url)) {
+            // Vérifier si c'est une URL complète ou un chemin relatif
+            if (filter_var($competitor->image_url, FILTER_VALIDATE_URL)) {
+                return $competitor->image_url;
+            }
+            
+            // Si c'est un chemin relatif, essayer de construire une URL complète
+            if (strpos($competitor->image_url, 'http') !== 0) {
+                // Essayer de deviner le domaine à partir de l'URL du produit
+                $productUrl = $competitor->product_url ?? '';
+                if (!empty($productUrl)) {
+                    $parsed = parse_url($productUrl);
+                    if (isset($parsed['scheme']) && isset($parsed['host'])) {
+                        $baseUrl = $parsed['scheme'] . '://' . $parsed['host'];
+                        
+                        // Si l'image commence par /, ajouter au domaine
+                        if (strpos($competitor->image_url, '/') === 0) {
+                            return $baseUrl . $competitor->image_url;
+                        }
+                    }
+                }
+            }
+            
+            return $competitor->image_url;
+        }
+        
+        // Priorité 2: extraire de l'URL du produit
+        if (!empty($competitor->product_url)) {
+            // Essayer d'extraire une image de l'URL
+            $productUrl = $competitor->product_url;
+            // Vous pourriez ajouter ici une logique pour extraire des images spécifiques
+            // Pour l'instant, retourner l'URL du produit comme placeholder
+            return $productUrl;
+        }
+        
+        // Fallback: image par défaut
+        return 'https://placehold.co/100x100/cccccc/999999?text=No+Image';
     }
 
     /**
@@ -517,6 +619,7 @@ new class extends Component {
     protected function addPriceComparisons(array $competitors, float $ourPrice): array
     {
         foreach ($competitors as $competitor) {
+            // Nettoyer le prix du concurrent
             $competitorPrice = $this->cleanPrice($competitor->prix_ht ?? 0);
             
             // Différence de prix
@@ -535,34 +638,12 @@ new class extends Component {
             } else {
                 $competitor->price_status = 'much_higher';
             }
+            
+            // Ajouter le prix nettoyé
+            $competitor->clean_price = $competitorPrice;
         }
         
         return $competitors;
-    }
-
-    /**
-     * Nettoyer un prix
-     */
-    protected function cleanPrice($price)
-    {
-        if ($price === null || $price === '') {
-            return 0;
-        }
-
-        if (is_numeric($price)) {
-            return (float) $price;
-        }
-
-        if (is_string($price)) {
-            $cleanPrice = preg_replace('/[^\d,.-]/', '', $price);
-            $cleanPrice = str_replace(',', '.', $cleanPrice);
-
-            if (is_numeric($cleanPrice)) {
-                return (float) $cleanPrice;
-            }
-        }
-
-        return 0;
     }
 
     /**
@@ -595,6 +676,69 @@ new class extends Component {
         ];
         
         return $classes[$status] ?? 'badge-neutral';
+    }
+
+    /**
+     * Formater une différence de prix
+     */
+    public function formatPriceDifference($difference): string
+    {
+        $cleanDiff = $this->cleanPrice($difference);
+        $sign = $cleanDiff > 0 ? '+' : ($cleanDiff < 0 ? '-' : '');
+        $absDiff = abs($cleanDiff);
+        return $sign . number_format($absDiff, 2, ',', ' ') . ' €';
+    }
+
+    /**
+     * Formater un pourcentage
+     */
+    public function formatPercentage($percentage): string
+    {
+        $cleanPercentage = $this->cleanPrice($percentage);
+        $sign = $cleanPercentage > 0 ? '+' : ($cleanPercentage < 0 ? '-' : '');
+        $absPercentage = abs($cleanPercentage);
+        return $sign . number_format($absPercentage, 1, ',', ' ') . '%';
+    }
+
+    /**
+     * Valider une URL d'image
+     */
+    public function isValidImageUrl($url): bool
+    {
+        if (empty($url)) {
+            return false;
+        }
+        
+        // Vérifier si c'est une URL valide
+        if (!filter_var($url, FILTER_VALIDATE_URL)) {
+            return false;
+        }
+        
+        // Vérifier les extensions d'image courantes
+        $imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
+        $path = parse_url($url, PHP_URL_PATH);
+        $extension = pathinfo($path, PATHINFO_EXTENSION);
+        
+        // Si pas d'extension, on suppose que c'est OK (peut être une URL dynamique)
+        if (empty($extension)) {
+            return true;
+        }
+        
+        return in_array(strtolower($extension), $imageExtensions);
+    }
+
+    /**
+     * Obtenir l'image d'un concurrent pour l'affichage
+     */
+    public function getCompetitorImageUrl($competitor): string
+    {
+        // Si l'image est déjà définie dans l'objet
+        if (isset($competitor->image) && !empty($competitor->image)) {
+            return $competitor->image;
+        }
+        
+        // Sinon, utiliser la méthode de secours
+        return $this->getCompetitorImage($competitor);
     }
 
     // Changer de page
@@ -672,6 +816,12 @@ new class extends Component {
             } else {
                 $products = $result['data'] ?? [];
                 $products = array_map(fn($p) => (array) $p, $products);
+                
+                // Nettoyer les prix des produits
+                foreach ($products as &$product) {
+                    $product['price'] = $this->cleanPrice($product['price'] ?? 0);
+                    $product['special_price'] = $this->cleanPrice($product['special_price'] ?? 0);
+                }
             }
 
             $this->loading = false;
@@ -936,6 +1086,7 @@ new class extends Component {
                                                 alt="{{ $product['title'] ?? '' }}"
                                                 class="object-cover"
                                                 loading="lazy"
+                                                onerror="this.onerror=null; this.src='https://placehold.co/100x100/cccccc/999999?text=No+Image'"
                                             >
                                         </div>
                                     </div>
@@ -947,6 +1098,7 @@ new class extends Component {
                                                 alt="{{ $product['title'] ?? '' }}"
                                                 class="object-cover"
                                                 loading="lazy"
+                                                onerror="this.onerror=null; this.src='https://placehold.co/100x100/cccccc/999999?text=No+Image'"
                                             >
                                         </div>
                                     </div>
@@ -981,15 +1133,15 @@ new class extends Component {
                                 @if(!empty($product['special_price']) && $product['special_price'] > 0)
                                     <div class="flex flex-col">
                                         <span class="line-through text-xs text-base-content/50">
-                                            {{ number_format($product['price'] ?? 0, 2) }} €
+                                            {{ $this->formatPrice($product['price'] ?? 0) }}
                                         </span>
                                         <span class="text-error font-semibold">
-                                            {{ number_format($product['special_price'], 2) }} €
+                                            {{ $this->formatPrice($product['special_price']) }}
                                         </span>
                                     </div>
                                 @else
                                     <span class="font-semibold">
-                                        {{ number_format($product['price'] ?? 0, 2) }} €
+                                        {{ $this->formatPrice($product['price'] ?? 0) }}
                                     </span>
                                 @endif
                             </td>
@@ -1066,7 +1218,7 @@ new class extends Component {
                                                     </h4>
                                                     <div class="flex items-center space-x-2">
                                                         <span class="badge badge-lg">
-                                                            Notre prix: {{ number_format($productData['our_price'], 2) }} €
+                                                            Notre prix: {{ $this->formatPrice($productData['our_price']) }}
                                                         </span>
                                                         <span class="badge badge-primary badge-lg">
                                                             {{ $productData['count'] }} concurrent(s) trouvé(s)
@@ -1075,11 +1227,12 @@ new class extends Component {
                                                 </div>
                                                 
                                                 @if($productData['count'] > 0)
-                                                    <!-- Table des concurrents -->
+                                                    <!-- Table des concurrents avec images -->
                                                     <div class="overflow-x-auto mt-4">
                                                         <table class="table table-xs">
                                                             <thead>
                                                                 <tr>
+                                                                    <th class="bg-base-300">Image</th>
                                                                     <th class="bg-base-300">Site</th>
                                                                     <th class="bg-base-300">Vendor</th>
                                                                     <th class="bg-base-300">Nom</th>
@@ -1090,6 +1243,7 @@ new class extends Component {
                                                                     <th class="bg-base-300">%</th>
                                                                     <th class="bg-base-300">Statut</th>
                                                                     <th class="bg-base-300">Similarité</th>
+                                                                    <th class="bg-base-300">Action</th>
                                                                 </tr>
                                                             </thead>
                                                             <tbody>
@@ -1099,10 +1253,45 @@ new class extends Component {
                                                                         $priceDiffPercent = $competitor->price_difference_percent ?? 0;
                                                                         $priceStatus = $competitor->price_status ?? 'unknown';
                                                                         $similarityScore = $competitor->similarity_score ?? 0;
+                                                                        $competitorPrice = $competitor->clean_price ?? $this->cleanPrice($competitor->prix_ht ?? 0);
+                                                                        $competitorImage = $this->getCompetitorImageUrl($competitor);
+                                                                        $hasValidImage = $this->isValidImageUrl($competitorImage);
                                                                     @endphp
                                                                     <tr>
                                                                         <td>
+                                                                            <div class="avatar">
+                                                                                <div class="w-16 h-16 rounded border border-base-300">
+                                                                                    <img 
+                                                                                        src="{{ $competitorImage }}"
+                                                                                        alt="{{ $competitor->name ?? 'Produit concurrent' }}"
+                                                                                        class="object-cover w-full h-full"
+                                                                                        loading="lazy"
+                                                                                        onerror="this.onerror=null; this.src='https://placehold.co/100x100/cccccc/999999?text=No+Image'"
+                                                                                    >
+                                                                                </div>
+                                                                                @if(!$hasValidImage)
+                                                                                    <div class="mt-1 text-center">
+                                                                                        <span class="badge badge-xs badge-outline">
+                                                                                            Pas d'image
+                                                                                        </span>
+                                                                                    </div>
+                                                                                @endif
+                                                                            </div>
+                                                                        </td>
+                                                                        <td>
                                                                             <div class="font-medium">{{ $competitor->site_name ?? 'Inconnu' }}</div>
+                                                                            @if(!empty($competitor->product_url))
+                                                                                <a href="{{ $competitor->product_url }}" 
+                                                                                   target="_blank" 
+                                                                                   rel="noopener noreferrer"
+                                                                                   class="text-xs text-primary hover:underline"
+                                                                                   title="Voir le produit">
+                                                                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                                                                    </svg>
+                                                                                    Voir
+                                                                                </a>
+                                                                            @endif
                                                                         </td>
                                                                         <td>{{ $competitor->vendor ?? 'N/A' }}</td>
                                                                         <td class="max-w-xs truncate" title="{{ $competitor->name ?? 'N/A' }}">
@@ -1115,16 +1304,16 @@ new class extends Component {
                                                                             </span>
                                                                         </td>
                                                                         <td class="font-semibold">
-                                                                            {{ number_format($competitor->prix_ht ?? 0, 2) }} €
+                                                                            {{ $this->formatPrice($competitorPrice) }}
                                                                         </td>
                                                                         <td>
                                                                             <span class="{{ $priceDiff > 0 ? 'text-green-600' : ($priceDiff < 0 ? 'text-red-600' : 'text-gray-600') }} font-semibold">
-                                                                                {{ $priceDiff > 0 ? '+' : '' }}{{ number_format($priceDiff, 2) }} €
+                                                                                {{ $this->formatPriceDifference($priceDiff) }}
                                                                             </span>
                                                                         </td>
                                                                         <td>
                                                                             <span class="text-sm {{ $priceDiffPercent > 0 ? 'text-green-600' : ($priceDiffPercent < 0 ? 'text-red-600' : 'text-gray-600') }}">
-                                                                                {{ $priceDiffPercent > 0 ? '+' : '' }}{{ number_format($priceDiffPercent, 1) }}%
+                                                                                {{ $this->formatPercentage($priceDiffPercent) }}
                                                                             </span>
                                                                         </td>
                                                                         <td>
@@ -1147,10 +1336,59 @@ new class extends Component {
                                                                                 </span>
                                                                             </div>
                                                                         </td>
+                                                                        <td>
+                                                                            @if(!empty($competitor->product_url))
+                                                                                <a href="{{ $competitor->product_url }}" 
+                                                                                   target="_blank" 
+                                                                                   rel="noopener noreferrer"
+                                                                                   class="btn btn-xs btn-outline btn-primary"
+                                                                                   title="Visiter le site">
+                                                                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                                                                    </svg>
+                                                                                </a>
+                                                                            @else
+                                                                                <span class="text-xs text-gray-400">N/A</span>
+                                                                            @endif
+                                                                        </td>
                                                                     </tr>
                                                                 @endforeach
                                                             </tbody>
                                                         </table>
+                                                    </div>
+                                                    
+                                                    <!-- Statistiques des concurrents -->
+                                                    <div class="mt-4 p-4 bg-base-100 rounded-lg border border-base-300">
+                                                        <h5 class="font-semibold mb-2">Statistiques des concurrents</h5>
+                                                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                                            @php
+                                                                $prices = array_map(fn($c) => $this->cleanPrice($c->prix_ht ?? 0), $productData['competitors']);
+                                                                $minPrice = min($prices);
+                                                                $maxPrice = max($prices);
+                                                                $avgPrice = array_sum($prices) / count($prices);
+                                                                $cheaperCount = count(array_filter($productData['competitors'], fn($c) => $this->cleanPrice($c->prix_ht ?? 0) < $productData['our_price']));
+                                                                $expensiveCount = count(array_filter($productData['competitors'], fn($c) => $this->cleanPrice($c->prix_ht ?? 0) > $productData['our_price']));
+                                                                $samePriceCount = count(array_filter($productData['competitors'], fn($c) => $this->cleanPrice($c->prix_ht ?? 0) == $productData['our_price']));
+                                                            @endphp
+                                                            <div class="text-center">
+                                                                <div class="text-2xl font-bold text-green-600">{{ $this->formatPrice($minPrice) }}</div>
+                                                                <div class="text-xs text-gray-500">Prix minimum</div>
+                                                            </div>
+                                                            <div class="text-center">
+                                                                <div class="text-2xl font-bold text-red-600">{{ $this->formatPrice($maxPrice) }}</div>
+                                                                <div class="text-xs text-gray-500">Prix maximum</div>
+                                                            </div>
+                                                            <div class="text-center">
+                                                                <div class="text-2xl font-bold text-blue-600">{{ $this->formatPrice($avgPrice) }}</div>
+                                                                <div class="text-xs text-gray-500">Prix moyen</div>
+                                                            </div>
+                                                            <div class="text-center">
+                                                                <div class="text-2xl font-bold {{ $cheaperCount > $expensiveCount ? 'text-green-600' : ($cheaperCount < $expensiveCount ? 'text-red-600' : 'text-blue-600') }}">
+                                                                    {{ $cheaperCount }}
+                                                                </div>
+                                                                <div class="text-xs text-gray-500">Moins chers que nous</div>
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 @else
                                                     <div class="alert alert-warning">
@@ -1169,11 +1407,14 @@ new class extends Component {
                                                     </svg>
                                                     <p class="text-gray-500">Cliquez sur "Rechercher" pour trouver les concurrents</p>
                                                     <button 
-                                                        wire:click="searchCompetitorsForProduct('{{ $sku }}', '{{ $product['title'] ?? '' }}', {{ $product['price'] ?? 0 }})"
+                                                        wire:click="searchCompetitorsForProduct('{{ $sku }}', '{{ addslashes($product['title'] ?? '') }}', {{ $product['price'] ?? 0 }})"
                                                         class="btn btn-sm btn-primary mt-2"
                                                         wire:loading.attr="disabled"
                                                     >
                                                         <span wire:loading.remove wire:target="searchCompetitorsForProduct">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                                            </svg>
                                                             Rechercher les concurrents
                                                         </span>
                                                         <span wire:loading wire:target="searchCompetitorsForProduct">
@@ -1284,6 +1525,19 @@ new class extends Component {
                     @php
                         $totalCompetitors = array_sum(array_column($competitorResults, 'count'));
                         $productsWithCompetitors = count(array_filter($competitorResults, fn($r) => $r['count'] > 0));
+                        $totalCheaper = 0;
+                        $totalExpensive = 0;
+                        
+                        foreach($competitorResults as $result) {
+                            foreach($result['competitors'] as $competitor) {
+                                $compPrice = $competitor->clean_price ?? $this->cleanPrice($competitor->prix_ht ?? 0);
+                                if ($compPrice < $result['our_price']) {
+                                    $totalCheaper++;
+                                } elseif ($compPrice > $result['our_price']) {
+                                    $totalExpensive++;
+                                }
+                            }
+                        }
                     @endphp
                     
                     <div class="stat">
@@ -1295,6 +1549,12 @@ new class extends Component {
                         <div class="stat-title">Avec concurrents</div>
                         <div class="stat-value">{{ $productsWithCompetitors }}</div>
                         <div class="stat-desc">sur {{ count($competitorResults) }} produits</div>
+                    </div>
+                    
+                    <div class="stat">
+                        <div class="stat-title">Moins chers</div>
+                        <div class="stat-value text-green-600">{{ $totalCheaper }}</div>
+                        <div class="stat-desc">concurrent(s) moins cher(s)</div>
                     </div>
                 </div>
             </div>
@@ -1326,4 +1586,96 @@ new class extends Component {
             console.error('Erreur copie:', err);
         });
     }
+    
+    // Fonction pour afficher une image en grand
+    function showImage(imageUrl, productName) {
+        const modal = document.createElement('div');
+        modal.className = 'modal modal-open';
+        modal.innerHTML = `
+            <div class="modal-box max-w-4xl">
+                <h3 class="font-bold text-lg mb-4">${productName}</h3>
+                <div class="flex justify-center">
+                    <img src="${imageUrl}" 
+                         alt="${productName}" 
+                         class="max-w-full max-h-[70vh] object-contain"
+                         onerror="this.onerror=null; this.src='https://placehold.co/600x400/cccccc/999999?text=Image+non+disponible'">
+                </div>
+                <div class="modal-action">
+                    <button class="btn" onclick="this.closest('.modal').remove()">Fermer</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
 </script>
+
+<style>
+    /* Style pour les images cliquables */
+    img[onclick] {
+        cursor: pointer;
+        transition: transform 0.2s ease;
+    }
+    
+    img[onclick]:hover {
+        transform: scale(1.05);
+    }
+    
+    /* Style pour le modal */
+    .modal {
+        background-color: rgba(0, 0, 0, 0.5);
+    }
+    
+    .modal-box {
+        background-color: white;
+    }
+    
+    /* Style pour les lignes de concurrents */
+    tr.bg-base-200 {
+        transition: all 0.3s ease;
+    }
+    
+    /* Style pour les images des concurrents */
+    .avatar img {
+        border: 1px solid #e5e7eb;
+    }
+    
+    /* Style pour les badges de statut */
+    .badge-success {
+        background-color: #10b981 !important;
+        color: white !important;
+    }
+    
+    .badge-warning {
+        background-color: #f59e0b !important;
+        color: white !important;
+    }
+    
+    .badge-error {
+        background-color: #ef4444 !important;
+        color: white !important;
+    }
+    
+    .badge-info {
+        background-color: #3b82f6 !important;
+        color: white !important;
+    }
+    
+    /* Style pour le tableau des concurrents */
+    .table-xs th,
+    .table-xs td {
+        padding: 0.5rem;
+        font-size: 0.75rem;
+    }
+    
+    /* Responsive design */
+    @media (max-width: 768px) {
+        .table-xs {
+            font-size: 0.7rem;
+        }
+        
+        .avatar img {
+            width: 12px;
+            height: 12px;
+        }
+    }
+</style>
