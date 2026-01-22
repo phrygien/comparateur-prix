@@ -292,7 +292,7 @@ new class extends Component {
             $filteredCompetitors = $this->filterBySimilarityImproved($competitors, $search, $components);
             
             // 7. Limiter le nombre de résultats et ajouter les comparaisons
-            $limitedCompetitors = array_slice($filteredCompetitors, 0, 20); // Limiter à 20 résultats
+            $limitedCompetitors = array_slice($filteredCompetitors, 0, length: 200); // Limiter à 20 résultats
             
             $competitorsWithComparison = $this->addPriceComparisons($limitedCompetitors, $ourPrice);
             
@@ -806,7 +806,7 @@ new class extends Component {
                 AND (" . implode(' OR ', $vendorConditions) . ")
                 AND (" . implode(' OR ', $keywordConditions) . ")
                 ORDER BY lp.prix_ht ASC
-                LIMIT 50
+                LIMIT 100
             ";
             
             return DB::connection('mysql')->select($query, $params);
