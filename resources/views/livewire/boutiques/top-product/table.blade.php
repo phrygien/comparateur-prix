@@ -777,7 +777,7 @@ new class extends Component {
             </div>
         </div>
     @endif
-    
+    @push('scripts')
     <script>
         // Fonction pour copier le SKU
         function copySku(sku) {
@@ -802,7 +802,9 @@ new class extends Component {
             });
         }
     </script>
+    @endpush
 
+    @push('styles')
     <style>
         /* Animation pour l'expansion des lignes */
         .collapse {
@@ -838,4 +840,5 @@ new class extends Component {
             }
         }
     </style>
+    @endpush
 </div>
