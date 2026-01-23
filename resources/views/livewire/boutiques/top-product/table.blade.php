@@ -2252,11 +2252,8 @@ public function removeSelectedProducts(): void
         return;
     }
     
-    // Demander confirmation
-    $this->dispatch('confirm-delete', [
-        'message' => 'Êtes-vous sûr de vouloir supprimer ' . count($this->selectedProducts) . ' produit(s) ?',
-        'callback' => 'confirmedRemoveSelectedProducts'
-    ]);
+    // Appeler directement la suppression sans confirmation intermédiaire
+    $this->removeMultipleProducts($this->selectedProducts);
 }
 
 /**
@@ -2354,14 +2351,15 @@ public function areAllProductsOnPageSelected(): bool
             <div class="flex space-x-3">
 
     @if(!empty($selectedProducts))
-        <button wire:click="removeSelectedProducts"
-            class="btn btn-sm btn-error"
-            wire:loading.attr="disabled">
-            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-            </svg>
-            Supprimer ({{ count($selectedProducts) }})
-        </button>
+    <button wire:click="removeSelectedProducts"
+        wire:confirm="Êtes-vous sûr de vouloir supprimer {{ count($selectedProducts) }} produit(s) ?"
+        class="btn btn-sm btn-error"
+        wire:loading.attr="disabled">
+        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+        </svg>
+        Supprimer ({{ count($selectedProducts) }})
+    </button>
         
         <button wire:click="deselectAll"
             class="btn btn-sm btn-ghost"
