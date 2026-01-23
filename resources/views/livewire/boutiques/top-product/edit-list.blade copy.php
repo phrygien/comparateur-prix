@@ -27,6 +27,7 @@ new class extends Component {
     // Sélection des produits
     public $selectedProducts = [];
     public $selectAll = false;
+    public $selectedProductsDetails = [];
     
     // Modal
     public $showModal = false;
@@ -44,7 +45,13 @@ new class extends Component {
     
     // Produits déjà dans la liste
     public $existingProducts = [];
+    public $existingProductsDetails = [];
     
+    // Calculs pour le template
+    public $existingCount = 0;
+    public $newCount = 0;
+    public $removedCount = 0;
+
     public function mount($id = null)
     {
         $this->listId = $id;
@@ -75,6 +82,8 @@ new class extends Component {
         $this->existingProducts = DetailProduct::where('list_product_id', $this->listId)
             ->pluck('EAN')
             ->toArray();
+        
+        $this->existingCount = count($this->existingProducts);
         
         // Initialiser les produits sélectionnés avec les produits existants
         $this->selectedProducts = $this->existingProducts;
@@ -111,6 +120,16 @@ new class extends Component {
             // Ajouter à la sélection
             $this->selectedProducts[] = $sku;
         }
+        
+        // Recalculer les compteurs
+        $this->updateCounters();
+    }
+    
+    // Mettre à jour les compteurs
+    protected function updateCounters()
+    {
+        $this->newCount = count(array_diff($this->selectedProducts, $this->existingProducts));
+        $this->removedCount = count(array_diff($this->existingProducts, $this->selectedProducts));
     }
     
     public function updatedSelectAll($value)
@@ -144,6 +163,7 @@ new class extends Component {
         // Sinon, simplement retirer de la sélection temporaire
         if (in_array($sku, $this->selectedProducts)) {
             $this->selectedProducts = array_diff($this->selectedProducts, [$sku]);
+            $this->updateCounters();
         }
     }
     
@@ -160,11 +180,15 @@ new class extends Component {
                 // Retirer des tableaux locaux
                 if (in_array($sku, $this->existingProducts)) {
                     $this->existingProducts = array_diff($this->existingProducts, [$sku]);
+                    $this->existingCount = count($this->existingProducts);
                 }
                 
                 if (in_array($sku, $this->selectedProducts)) {
                     $this->selectedProducts = array_diff($this->selectedProducts, [$sku]);
                 }
+                
+                // Recalculer les compteurs
+                $this->updateCounters();
                 
                 // Mettre à jour le cache
                 Cache::forget("list_skus_{$this->listId}");
@@ -293,6 +317,8 @@ new class extends Component {
             
             // Mettre à jour les données locales
             $this->existingProducts = $this->selectedProducts;
+            $this->existingCount = count($this->existingProducts);
+            $this->updateCounters();
             
             // Message de succès
             $message = 'Liste mise à jour avec succès.';
@@ -314,6 +340,19 @@ new class extends Component {
         }
     }
     
+    // Vérifier si un produit est déjà dans la liste (base de données)
+    public function isInDatabase($sku)
+    {
+        return in_array($sku, $this->existingProducts);
+    }
+    
+    // Vérifier si un produit est temporairement sélectionné (pas encore en base)
+    public function isTemporarilySelected($sku)
+    {
+        $existsInDatabase = in_array($sku, $this->existingProducts);
+        return in_array($sku, $this->selectedProducts) && !$existsInDatabase;
+    }
+    
     public function cancel()
     {
         return redirect()->route('comparison.lists');
@@ -327,10 +366,8 @@ new class extends Component {
             $allProducts = [];
             $totalItems = 0;
             
-            // Calculer les compteurs
-            $existingCount = count($this->existingProducts);
-            $newCount = count(array_diff($this->selectedProducts, $this->existingProducts));
-            $removedCount = count(array_diff($this->existingProducts, $this->selectedProducts));
+            // Calculer les compteurs une fois
+            $this->updateCounters();
             
             // Charger les produits paginés
             for ($i = 1; $i <= $this->page; $i++) {
@@ -360,20 +397,6 @@ new class extends Component {
             // Charger les détails des produits sélectionnés (via with pour optimiser)
             $selectedProductsDetails = $this->loadSelectedProductsDetailsForTemplate($this->selectedProducts);
             
-            // Préparer les états pour le template
-            $productStates = [];
-            foreach ($this->selectedProducts as $sku) {
-                $isInDatabase = in_array($sku, $this->existingProducts);
-                $isTemporarilySelected = in_array($sku, $this->selectedProducts) && !$isInDatabase;
-                $isRemoved = in_array($sku, array_diff($this->existingProducts, $this->selectedProducts));
-                
-                $productStates[$sku] = [
-                    'inDatabase' => $isInDatabase,
-                    'temporarilySelected' => $isTemporarilySelected,
-                    'removed' => $isRemoved,
-                ];
-            }
-            
             $this->loading = false;
             $this->loadingMore = false;
             
@@ -381,11 +404,9 @@ new class extends Component {
                 'products' => $allProducts,
                 'totalItems' => $totalItems,
                 'selectedProductsDetails' => $selectedProductsDetails,
-                'existingCount' => $existingCount,
-                'newCount' => $newCount,
-                'removedCount' => $removedCount,
-                'productStates' => $productStates,
-                'selectedProductsCount' => count($this->selectedProducts),
+                'existingCount' => $this->existingCount,
+                'newCount' => $this->newCount,
+                'removedCount' => $this->removedCount,
             ];
             
         } catch (\Exception $e) {
@@ -402,8 +423,6 @@ new class extends Component {
                 'existingCount' => 0,
                 'newCount' => 0,
                 'removedCount' => 0,
-                'productStates' => [],
-                'selectedProductsCount' => 0,
             ];
         }
     }
@@ -626,6 +645,7 @@ new class extends Component {
         return "products_{$type}_" . md5(serialize($params));
     }
 }; ?>
+
 <div class="mx-auto w-full">
     <x-header 
         title="Mettre à jour la liste : {{ $listName }}" 
@@ -637,7 +657,7 @@ new class extends Component {
                     <span class="loading loading-spinner loading-sm text-primary"></span>
                 @endif
                 <div class="text-sm text-base-content/70">
-                    <span class="font-semibold text-primary">{{ $selectedProductsCount }}</span> 
+                    <span class="font-semibold text-primary">{{ count($selectedProducts) }}</span> 
                     produits 
                     @if($newCount > 0 || $removedCount > 0)
                         ({{ $existingCount - $removedCount }} existants 
@@ -697,7 +717,7 @@ new class extends Component {
     </div>
 
     <!-- Section de résumé des produits sélectionnés -->
-    @if($selectedProductsCount > 0)
+    @if(count($selectedProducts) > 0)
         <div class="mb-6 border rounded-box border-base-content/10 bg-base-100 overflow-hidden">
             <div class="flex items-center justify-between p-4 bg-base-200 border-b border-base-content/5">
                 <div class="flex items-center gap-3">
@@ -706,7 +726,7 @@ new class extends Component {
                             <path fill-rule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clip-rule="evenodd" />
                         </svg>
                         Produits dans la liste
-                        <span class="badge badge-primary">{{ $selectedProductsCount }}</span>
+                        <span class="badge badge-primary">{{ count($selectedProducts) }}</span>
                     </h3>
                     <div class="flex gap-2">
                         <div class="badge badge-sm badge-success">
@@ -780,28 +800,25 @@ new class extends Component {
                                 @foreach($selectedProductsDetails as $index => $product)
                                     @if($index % 2 == 0)
                                         @php
-                                            $sku = $product['sku'] ?? '';
-                                            $state = $productStates[$sku] ?? [
-                                                'inDatabase' => false,
-                                                'temporarilySelected' => false,
-                                                'removed' => false
-                                            ];
+                                            $isInDatabase = $this->isInDatabase($product['sku']);
+                                            $isNew = $this->isTemporarilySelected($product['sku']);
+                                            $isRemoved = in_array($product['sku'], array_diff($existingProducts, $selectedProducts));
                                         @endphp
                                         <div class="relative group border rounded-lg p-3 
-                                            {{ $state['removed'] ? 'bg-error/10 border-error line-through' : 
-                                              ($state['temporarilySelected'] ? 'bg-warning/10 border-warning' : 
+                                            {{ $isRemoved ? 'bg-error/10 border-error line-through' : 
+                                              ($isNew ? 'bg-warning/10 border-warning' : 
                                               'bg-success/10 border-success') }} 
                                             transition-colors flex-shrink-0"
                                             style="width: 300px;">
                                             <!-- Badge d'état -->
                                             <div class="absolute top-2 right-2">
-                                                @if($state['removed'])
+                                                @if($isRemoved)
                                                     <span class="badge badge-sm badge-error" title="À supprimer">
                                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
                                                             <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
                                                         </svg>
                                                     </span>
-                                                @elseif($state['temporarilySelected'])
+                                                @elseif($isNew)
                                                     <span class="badge badge-sm badge-warning" title="Nouveau - À ajouter">
                                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
                                                             <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
@@ -870,28 +887,25 @@ new class extends Component {
                                 @foreach($selectedProductsDetails as $index => $product)
                                     @if($index % 2 == 1)
                                         @php
-                                            $sku = $product['sku'] ?? '';
-                                            $state = $productStates[$sku] ?? [
-                                                'inDatabase' => false,
-                                                'temporarilySelected' => false,
-                                                'removed' => false
-                                            ];
+                                            $isInDatabase = $this->isInDatabase($product['sku']);
+                                            $isNew = $this->isTemporarilySelected($product['sku']);
+                                            $isRemoved = in_array($product['sku'], array_diff($existingProducts, $selectedProducts));
                                         @endphp
                                         <div class="relative group border rounded-lg p-3 
-                                            {{ $state['removed'] ? 'bg-error/10 border-error line-through' : 
-                                              ($state['temporarilySelected'] ? 'bg-warning/10 border-warning' : 
+                                            {{ $isRemoved ? 'bg-error/10 border-error line-through' : 
+                                              ($isNew ? 'bg-warning/10 border-warning' : 
                                               'bg-success/10 border-success') }} 
                                             transition-colors flex-shrink-0"
                                             style="width: 300px;">
                                             <!-- Badge d'état -->
                                             <div class="absolute top-2 right-2">
-                                                @if($state['removed'])
+                                                @if($isRemoved)
                                                     <span class="badge badge-sm badge-error" title="À supprimer">
                                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
                                                             <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
                                                         </svg>
                                                     </span>
-                                                @elseif($state['temporarilySelected'])
+                                                @elseif($isNew)
                                                     <span class="badge badge-sm badge-warning" title="Nouveau - À ajouter">
                                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
                                                             <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
@@ -958,11 +972,11 @@ new class extends Component {
                     </div>
                     
                     <!-- Message si chargement incomplet -->
-                    @if(count($selectedProductsDetails) < $selectedProductsCount)
+                    @if(count($selectedProductsDetails) < count($selectedProducts))
                         <div class="mt-4 text-center text-sm text-warning">
                             <span class="loading loading-spinner loading-xs"></span>
                             Chargement des détails des produits...
-                            ({{ count($selectedProductsDetails) }}/{{ $selectedProductsCount }})
+                            ({{ count($selectedProductsDetails) }}/{{ count($selectedProducts) }})
                         </div>
                     @endif
                 </div>
@@ -1003,10 +1017,8 @@ new class extends Component {
                 <tbody>
                     @forelse($products as $index => $product)
                         @php
-                            $sku = $product['sku'] ?? '';
-                            $isSelected = in_array($sku, $selectedProducts);
-                            $state = $productStates[$sku] ?? ['inDatabase' => false];
-                            $isInDatabase = $state['inDatabase'] ?? false;
+                            $isSelected = in_array($product['sku'], $selectedProducts);
+                            $isInDatabase = $this->isInDatabase($product['sku']);
                         @endphp
                         <tr wire:key="product-{{ $product['id'] ?? $index }}"
                             class="{{ $isSelected ? ($isInDatabase ? 'bg-success/5' : 'bg-warning/5') : '' }}">
@@ -1187,7 +1199,7 @@ new class extends Component {
                     </div>
                     <div class="flex justify-between">
                         <span>Nouvelle configuration:</span>
-                        <span class="font-semibold text-primary">{{ $selectedProductsCount }} produits</span>
+                        <span class="font-semibold text-primary">{{ count($selectedProducts) }} produits</span>
                     </div>
                     
                     <div class="divider my-1"></div>
