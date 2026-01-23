@@ -1843,68 +1843,30 @@ new class extends Component {
         $this->loadListTitle();
     }
 
-    public function with(): array
-    {
-        try {
-            // Récupérer tous les EAN de la liste
-            $allSkus = Cache::remember("list_skus_{$this->id}", 300, function () {
-                return DetailProduct::where('list_product_id', $this->id)
-                    ->pluck('EAN')
-                    ->unique()
-                    ->values()
-                    ->toArray();
-            });
+public function with(): array
+{
+    try {
+        // REMPLACEZ CE BLOC (qui utilise le cache) :
+        // $allSkus = Cache::remember("list_skus_{$this->id}", 300, function () {
+        //     return DetailProduct::where('list_product_id', $this->id)
+        //         ->pluck('EAN')
+        //         ->unique()
+        //         ->values()
+        //         ->toArray();
+        // });
 
-            $totalItems = count($allSkus);
+        // PAR CE BLOC (sans cache) :
+        $allSkus = DetailProduct::where('list_product_id', $this->id)
+            ->pluck('EAN')
+            ->unique()
+            ->values()
+            ->toArray();
 
-            if ($totalItems === 0) {
-                $this->loading = false;
-                $this->totalPages = 1;
-                return [
-                    'products' => [],
-                    'totalItems' => 0,
-                    'totalPages' => 1,
-                    'allSkus' => [],
-                ];
-            }
+        $totalItems = count($allSkus);
 
-            // Calculer le nombre total de pages
-            $this->totalPages = max(1, ceil($totalItems / $this->perPage));
-
-            // Charger uniquement la page courante
-            $result = $this->fetchProductsFromDatabase($allSkus, $this->page, $this->perPage);
-
-            if (isset($result['error'])) {
-                $products = [];
-            } else {
-                $products = $result['data'] ?? [];
-                $products = array_map(fn($p) => (array) $p, $products);
-                
-                // Nettoyer les prix et noms des produits
-                foreach ($products as &$product) {
-                    $product['price'] = $this->cleanPrice($product['price'] ?? 0);
-                    $product['special_price'] = $this->cleanPrice($product['special_price'] ?? 0);
-                    if (isset($product['title'])) {
-                        $product['title'] = $this->normalizeAndCleanText($product['title']);
-                    }
-                }
-            }
-
+        if ($totalItems === 0) {
             $this->loading = false;
-            $this->loadingMore = false;
-
-            return [
-                'products' => $products,
-                'totalItems' => $totalItems,
-                'totalPages' => $this->totalPages,
-                'allSkus' => $allSkus,
-            ];
-
-        } catch (\Exception $e) {
-            $this->loading = false;
-            $this->loadingMore = false;
             $this->totalPages = 1;
-
             return [
                 'products' => [],
                 'totalItems' => 0,
@@ -1912,7 +1874,52 @@ new class extends Component {
                 'allSkus' => [],
             ];
         }
+
+        // Calculer le nombre total de pages
+        $this->totalPages = max(1, ceil($totalItems / $this->perPage));
+
+        // Charger uniquement la page courante
+        $result = $this->fetchProductsFromDatabase($allSkus, $this->page, $this->perPage);
+
+        if (isset($result['error'])) {
+            $products = [];
+        } else {
+            $products = $result['data'] ?? [];
+            $products = array_map(fn($p) => (array) $p, $products);
+            
+            // Nettoyer les prix et noms des produits
+            foreach ($products as &$product) {
+                $product['price'] = $this->cleanPrice($product['price'] ?? 0);
+                $product['special_price'] = $this->cleanPrice($product['special_price'] ?? 0);
+                if (isset($product['title'])) {
+                    $product['title'] = $this->normalizeAndCleanText($product['title']);
+                }
+            }
+        }
+
+        $this->loading = false;
+        $this->loadingMore = false;
+
+        return [
+            'products' => $products,
+            'totalItems' => $totalItems,
+            'totalPages' => $this->totalPages,
+            'allSkus' => $allSkus,
+        ];
+
+    } catch (\Exception $e) {
+        $this->loading = false;
+        $this->loadingMore = false;
+        $this->totalPages = 1;
+
+        return [
+            'products' => [],
+            'totalItems' => 0,
+            'totalPages' => 1,
+            'allSkus' => [],
+        ];
     }
+}
 
     /**
      * Récupère les produits depuis la base de données
