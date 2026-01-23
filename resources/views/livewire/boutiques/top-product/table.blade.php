@@ -2412,7 +2412,7 @@ new class extends Component {
                                                             <th class="text-xs">Produit / Variation</th>
                                                             <th class="text-xs">Prix concurrent</th>
                                                             <th class="text-xs">Différence</th>
-                                                            <th class="text-xs">Statut</th>
+                                                            <th class="text-xs">Statut de nos prix par rapport aux concurrents</th>
                                                             <th class="text-xs">Score</th>
                                                             <th class="text-xs">Actions</th>
                                                         </tr>
@@ -2570,7 +2570,7 @@ new class extends Component {
                                                             <th class="text-xs">Produit / Variation</th>
                                                             <th class="text-xs">Prix concurrent</th>
                                                             <th class="text-xs">Différence</th>
-                                                            <th class="text-xs">Statut</th>
+                                                            <th class="text-xs">Statut de nos prix par rapport aux concurrents</th>
                                                             <th class="text-xs">Score</th>
                                                             <th class="text-xs">Source</th>
                                                             <th class="text-xs">Actions</th>
