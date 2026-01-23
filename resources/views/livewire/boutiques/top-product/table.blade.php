@@ -2348,6 +2348,8 @@ public function areAllProductsOnPageSelected(): bool
                 </button>
             @endif
 
+                <x-button wire:navigate href="{{ route('top-product.edit', $id) }}" label="Ajouter produit dans la list" class="btn-primary" />
+
                 <button wire:click="refreshProducts"
                     class="btn btn-sm btn-outline"
                     wire:loading.attr="disabled">
