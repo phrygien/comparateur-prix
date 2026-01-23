@@ -45,18 +45,13 @@ new class extends Component {
     public $existingProducts = [];
     public $existingProductsDetails = [];
     
-    public function mount($listId = null)
+    public function mount($id = null)
     {
         $this->loading = true;
-        // Uniquement pour la mise à jour de liste
-        if ($listId) {
-            $this->listId = $listId;
+
+            $this->listId = $id;
             $this->loadList();
             $this->loadExistingProductsFromDatabase();
-        } else {
-            // Redirection si pas d'ID de liste
-            return redirect()->route('comparison.lists');
-        }
     }
     
     // Charger les informations de la liste
