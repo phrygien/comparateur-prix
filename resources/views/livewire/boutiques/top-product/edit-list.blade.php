@@ -656,6 +656,12 @@ new class extends Component {
             </div>
         </x-slot:middle>
         <x-slot:actions>
+            <x-button 
+                wire:navigate 
+                href="{{ route('top-product.show', $listId) }}" 
+                label="Retour vers la liste" 
+                class="btn-primary" 
+            />
             <x-button class="btn-error" label="Annuler" wire:click="cancel"
                 wire:confirm="Êtes-vous sûr de vouloir annuler ? Les modifications seront perdues." />
             <x-button class="btn-primary" label="Mettre à jour" wire:click="openModal" />
@@ -1231,7 +1237,7 @@ new class extends Component {
             <x-button label="Annuler" @click="$wire.showModal = false" />
             <x-button label="Mettre à jour" class="btn-primary" 
                 wire:click="updateList" 
-                wire:loading.attr="disabled">
+                spinner="updateList">
                 <span wire:loading.remove>Mettre à jour</span>
                 <span wire:loading wire:target="updateList" class="flex items-center gap-2">
                     <span class="loading loading-spinner loading-sm"></span>
