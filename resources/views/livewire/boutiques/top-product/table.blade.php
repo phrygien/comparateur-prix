@@ -58,21 +58,9 @@ new class extends Component {
         $this->loadAvailableSites();
         
         // Tester OpenAI au montage
-        //dd($this->testOpenAIConnection());
+        $this->testOpenAIConnection();
 
             // Tester OpenAI au montage
-    try {
-        $test = OpenAI::chat()->create([
-            'model' => 'gpt-3.5-turbo',
-            'messages' => [
-                ['role' => 'user', 'content' => 'Test']
-            ],
-            'max_tokens' => 5
-        ]);
-        dd('OpenAI OK', $test); // Affiche la réponse
-    } catch (\Exception $e) {
-        dd('OpenAI ERROR', $e->getMessage()); // Affiche l'erreur
-    }
     }
 
     /**
