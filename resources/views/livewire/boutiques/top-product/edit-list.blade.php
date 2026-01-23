@@ -1,5 +1,6 @@
 <?php
 
+use Mary\Traits\Toast;
 use Livewire\Volt\Component;
 use Livewire\Attributes\On;
 use Illuminate\Support\Facades\Log;
@@ -9,6 +10,8 @@ use App\Models\Comparaison;
 use App\Models\DetailProduct;
 
 new class extends Component {
+    use Toast;
+
     public $page = 1;
     public $perPage = 20;
     public $hasMore = true;
@@ -363,36 +366,24 @@ new class extends Component {
         try {
             // Validation
             if (empty($this->selectedProducts)) {
-                $this->dispatch('notify', [
-                    'type' => 'error',
-                    'message' => 'La liste ne peut pas être vide.'
-                ]);
+                $this->warning('La liste ne peut pas être vide.');
                 return;
             }
             
             if (empty($this->listName)) {
-                $this->dispatch('notify', [
-                    'type' => 'error',
-                    'message' => 'Veuillez donner un nom à votre liste.'
-                ]);
+                $this->warning('Veuillez donner un nom à votre liste.');
                 return;
             }
             
             // Vérifier que la liste existe
             if (!$this->listId) {
-                $this->dispatch('notify', [
-                    'type' => 'error',
-                    'message' => 'Liste non trouvée.'
-                ]);
+                $this->error('Liste non trouvée');
                 return;
             }
             
             $list = Comparaison::find($this->listId);
             if (!$list) {
-                $this->dispatch('notify', [
-                    'type' => 'error',
-                    'message' => 'Liste non trouvée.'
-                ]);
+                $this->error('Liste non trouvée');
                 return;
             }
             
@@ -446,10 +437,7 @@ new class extends Component {
                 $message .= ' ' . count($productsToRemove) . ' produit(s) supprimé(s).';
             }
             
-            $this->dispatch('notify', [
-                'type' => 'success',
-                'message' => $message
-            ]);
+            $this->success($message);
             
             // Émettre un événement pour le parent
             $this->dispatch('list-updated', ['listId' => $this->listId]);
