@@ -2163,25 +2163,43 @@ public array $selectedProducts = [];
  */
 public function toggleProductSelection(string $sku): void
 {
-    if (in_array($sku, $this->selectedProducts)) {
-        $this->selectedProducts = array_diff($this->selectedProducts, [$sku]);
+    $key = array_search($sku, $this->selectedProducts);
+    
+    if ($key !== false) {
+        // Retirer le produit de la sélection
+        unset($this->selectedProducts[$key]);
+        // Réindexer le tableau
+        $this->selectedProducts = array_values($this->selectedProducts);
     } else {
+        // Ajouter le produit à la sélection
         $this->selectedProducts[] = $sku;
     }
 }
 
 /**
- * Sélectionner tous les produits de la page
+ * Sélectionner tous les produits de la page courante
  */
 public function selectAllOnPage(): void
 {
     $currentProducts = $this->getCurrentPageProducts();
-    $this->selectedProducts = [];
+    $currentSkus = [];
     
     foreach ($currentProducts as $product) {
         if (isset($product['sku'])) {
-            $this->selectedProducts[] = $product['sku'];
+            $currentSkus[] = $product['sku'];
         }
+    }
+    
+    // Si tous les produits de la page sont déjà sélectionnés, les désélectionner tous
+    $allSelected = !array_diff($currentSkus, $this->selectedProducts);
+    
+    if ($allSelected) {
+        // Désélectionner tous les produits de la page
+        $this->selectedProducts = array_diff($this->selectedProducts, $currentSkus);
+    } else {
+        // Ajouter les produits de la page qui ne sont pas déjà sélectionnés
+        $newSelections = array_diff($currentSkus, $this->selectedProducts);
+        $this->selectedProducts = array_merge($this->selectedProducts, $newSelections);
     }
 }
 
@@ -2254,6 +2272,45 @@ public function showAlert(string $type, string $message): void
     ]);
 }
 
+/**
+ * Vérifier si un produit est sélectionné
+ */
+public function isProductSelected(string $sku): bool
+{
+    return in_array($sku, $this->selectedProducts);
+}
+
+/**
+ * Vérifier si tous les produits de la page sont sélectionnés
+ */
+public function areAllProductsOnPageSelected(): bool
+{
+    $currentProducts = $this->getCurrentPageProducts();
+    
+    if (empty($currentProducts) || empty($this->selectedProducts)) {
+        return false;
+    }
+    
+    $currentSkus = [];
+    foreach ($currentProducts as $product) {
+        if (isset($product['sku'])) {
+            $currentSkus[] = $product['sku'];
+        }
+    }
+    
+    // Vérifier si tous les SKUs de la page sont dans la sélection
+    return empty(array_diff($currentSkus, $this->selectedProducts));
+}
+
+/**
+ * Obtenir les produits de la page courante
+ */
+protected function getCurrentPageProducts(): array
+{
+    // Utiliser directement les produits de la page actuelle
+    return $this->products ?? [];
+}
+
 }; ?>
 <div>
     <!-- Overlay de chargement -->
@@ -2276,16 +2333,25 @@ public function showAlert(string $type, string $message): void
             
             <div class="flex space-x-3">
 
-                @if(!empty($selectedProducts))
-                    <button wire:click="removeSelectedProducts"
-                        class="btn btn-sm btn-error"
-                        wire:loading.attr="disabled">
-                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                        </svg>
-                        Supprimer ({{ count($selectedProducts) }})
-                    </button>
-                @endif
+    @if(!empty($selectedProducts))
+        <button wire:click="removeSelectedProducts"
+            class="btn btn-sm btn-error"
+            wire:loading.attr="disabled">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+            </svg>
+            Supprimer ({{ count($selectedProducts) }})
+        </button>
+        
+        <button wire:click="deselectAll"
+            class="btn btn-sm btn-ghost"
+            wire:loading.attr="disabled">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+            Désélectionner tout
+        </button>
+    @endif
 
                 <button wire:click="refreshProducts"
                     class="btn btn-sm btn-outline"
@@ -2415,12 +2481,12 @@ public function showAlert(string $type, string $message): void
                 <thead>
                     <tr>
                         <th>
-                            <!-- Case à cocher pour sélectionner tous les produits de la page -->
+                            <!-- Case à cocher pour sélectionner/désélectionner tous les produits de la page -->
                             <label class="cursor-pointer">
                                 <input type="checkbox" 
                                     class="checkbox checkbox-xs" 
                                     wire:click="selectAllOnPage"
-                                    {{ count($selectedProducts) === count($products) && count($products) > 0 ? 'checked' : '' }}>
+                                    {{ $this->areAllProductsOnPageSelected() ? 'checked' : '' }}>
                             </label>
                         </th>
                         <th>#</th>
@@ -2454,12 +2520,13 @@ public function showAlert(string $type, string $message): void
                             }
                         @endphp
                         <tr class="hover">
+                            <!-- Case à cocher pour sélectionner le produit -->
                             <td>
                                 <label class="cursor-pointer">
                                     <input type="checkbox" 
                                         class="checkbox checkbox-xs" 
                                         wire:click="toggleProductSelection('{{ $product['sku'] }}')"
-                                        {{ in_array($product['sku'], $selectedProducts) ? 'checked' : '' }}>
+                                        {{ $this->isProductSelected($product['sku']) ? 'checked' : '' }}>
                                 </label>
                             </td>
                             <!-- Numéro de ligne -->
