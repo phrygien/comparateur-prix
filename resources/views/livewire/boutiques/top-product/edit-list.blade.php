@@ -403,6 +403,16 @@ new class extends Component {
             ->exists();
     }
     
+    // Vérifier si un produit est temporairement sélectionné (pas encore en base)
+    public function isTemporarilySelected($sku)
+    {
+        $existsInDatabase = DetailProduct::where('list_product_id', $this->listId)
+            ->where('EAN', $sku)
+            ->exists();
+        
+        return in_array($sku, $this->selectedProducts) && !$existsInDatabase;
+    }
+    
     public function cancel()
     {
         return redirect()->route('comparison.lists');
@@ -649,14 +659,22 @@ new class extends Component {
 }; ?>
 
 <div class="mx-auto w-full">
-    <x-header title="Créer la liste à comparer" separator progress-indicator>
+    <x-header 
+        title="{{ $listId ? 'Mettre à jour la liste : ' . $listName : 'Créer une nouvelle liste' }}" 
+        separator progress-indicator
+    >
         <x-slot:middle class="!justify-end">
             <div class="flex items-center gap-4">
                 @if($loading || $loadingMore)
                     <span class="loading loading-spinner loading-sm text-primary"></span>
                 @endif
                 <div class="text-sm text-base-content/70">
-                    <span class="font-semibold text-primary">{{ count($selectedProducts) }}</span> produits sélectionnés
+                    @php
+                        $existingCount = $listId ? DetailProduct::where('list_product_id', $listId)->count() : 0;
+                        $newCount = count($selectedProducts) - $existingCount;
+                    @endphp
+                    <span class="font-semibold text-primary">{{ count($selectedProducts) }}</span> 
+                    produits ({{ $existingCount }} existants + {{ $newCount }} nouveaux)
                 </div>
                 <div class="text-sm text-base-content/70">
                     {{ count($products) }} / {{ $totalItems }} produits affichés
@@ -666,7 +684,7 @@ new class extends Component {
         <x-slot:actions>
             <x-button class="btn-error" label="Annuler" wire:click="cancel"
                 wire:confirm="Êtes-vous sûr de vouloir annuler ?" />
-            <x-button class="btn-primary" label="Valider" wire:click="openModal" />
+            <x-button class="btn-primary" label="{{ $listId ? 'Mettre à jour' : 'Créer' }}" wire:click="openModal" />
         </x-slot:actions>
     </x-header>
 
@@ -719,8 +737,15 @@ new class extends Component {
                     Sélectionner tout ({{ count($products) }} produits affichés)
                 </label>
             </div>
-            <div class="badge badge-primary badge-lg">
-                {{ count($selectedProducts) }} produits sélectionnés
+            <div class="flex items-center gap-4">
+                <div class="badge badge-primary badge-lg">
+                    {{ count($selectedProducts) }} produits sélectionnés
+                </div>
+                @if($listId)
+                    <div class="text-sm text-base-content/60">
+                        <span class="font-medium">{{ $existingCount ?? 0 }}</span> produits dans la liste
+                    </div>
+                @endif
             </div>
         </div>
     </div>
@@ -737,6 +762,16 @@ new class extends Component {
                         Produits sélectionnés
                         <span class="badge badge-primary">{{ count($selectedProducts) }}</span>
                     </h3>
+                    @if($listId)
+                        <div class="flex gap-2">
+                            <div class="badge badge-sm badge-success">
+                                {{ $existingCount ?? 0 }} existants
+                            </div>
+                            <div class="badge badge-sm badge-warning">
+                                {{ $newCount ?? 0 }} nouveaux
+                            </div>
+                        </div>
+                    @endif
                 </div>
                 <button 
                     wire:click="toggleSummaryTable"
@@ -793,8 +828,31 @@ new class extends Component {
                             <div class="flex gap-3 min-w-max">
                                 @foreach($selectedProductsDetails as $index => $product)
                                     @if($index % 2 == 0) <!-- Produits pairs (0, 2, 4...) -->
-                                        <div class="relative group border rounded-lg p-3 bg-base-100 hover:bg-base-200 transition-colors flex-shrink-0"
-                                            style="width: 280px;">
+                                        @php
+                                            $isInDatabase = $listId ? $this->isInDatabase($product['sku']) : false;
+                                            $isTemporarilySelected = $listId ? $this->isTemporarilySelected($product['sku']) : true;
+                                        @endphp
+                                        <div class="relative group border rounded-lg p-3 {{ $isInDatabase ? 'bg-success/10 border-success' : ($isTemporarilySelected ? 'bg-warning/10 border-warning' : 'bg-base-100 hover:bg-base-200') }} transition-colors flex-shrink-0"
+                                            style="width: 300px;">
+                                            <!-- Badge d'état -->
+                                            @if($listId)
+                                                <div class="absolute top-2 right-2">
+                                                    @if($isInDatabase)
+                                                        <span class="badge badge-sm badge-success" title="Déjà dans la liste">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                                                            </svg>
+                                                        </span>
+                                                    @elseif($isTemporarilySelected)
+                                                        <span class="badge badge-sm badge-warning" title="À ajouter">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                                                <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
+                                                            </svg>
+                                                        </span>
+                                                    @endif
+                                                </div>
+                                            @endif
+                                            
                                             <div class="flex items-start gap-3">
                                                 <!-- Image -->
                                                 <div class="flex-shrink-0">
@@ -829,12 +887,18 @@ new class extends Component {
                                                         <span class="badge badge-sm badge-neutral">{{ $index + 1 }}</span>
                                                         <button 
                                                             wire:click="removeFromSummary('{{ $product['sku'] }}')"
-                                                            class="btn btn-xs btn-error"
-                                                            title="Retirer de la sélection"
+                                                            class="btn btn-xs {{ $isInDatabase ? 'btn-error' : 'btn-ghost' }}"
+                                                            title="{{ $isInDatabase ? 'Supprimer de la liste' : 'Retirer de la sélection' }}"
                                                         >
-                                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                                                <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
-                                                            </svg>
+                                                            @if($isInDatabase)
+                                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                                    <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                                                                </svg>
+                                                            @else
+                                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                                    <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                                                </svg>
+                                                            @endif
                                                         </button>
                                                     </div>
                                                 </div>
@@ -848,8 +912,31 @@ new class extends Component {
                             <div class="flex gap-3 min-w-max">
                                 @foreach($selectedProductsDetails as $index => $product)
                                     @if($index % 2 == 1) <!-- Produits impairs (1, 3, 5...) -->
-                                        <div class="relative group border rounded-lg p-3 bg-base-100 hover:bg-base-200 transition-colors flex-shrink-0"
-                                            style="width: 280px;">
+                                        @php
+                                            $isInDatabase = $listId ? $this->isInDatabase($product['sku']) : false;
+                                            $isTemporarilySelected = $listId ? $this->isTemporarilySelected($product['sku']) : true;
+                                        @endphp
+                                        <div class="relative group border rounded-lg p-3 {{ $isInDatabase ? 'bg-success/10 border-success' : ($isTemporarilySelected ? 'bg-warning/10 border-warning' : 'bg-base-100 hover:bg-base-200') }} transition-colors flex-shrink-0"
+                                            style="width: 300px;">
+                                            <!-- Badge d'état -->
+                                            @if($listId)
+                                                <div class="absolute top-2 right-2">
+                                                    @if($isInDatabase)
+                                                        <span class="badge badge-sm badge-success" title="Déjà dans la liste">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                                                            </svg>
+                                                        </span>
+                                                    @elseif($isTemporarilySelected)
+                                                        <span class="badge badge-sm badge-warning" title="À ajouter">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                                                <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
+                                                            </svg>
+                                                        </span>
+                                                    @endif
+                                                </div>
+                                            @endif
+                                            
                                             <div class="flex items-start gap-3">
                                                 <!-- Image -->
                                                 <div class="flex-shrink-0">
@@ -884,12 +971,18 @@ new class extends Component {
                                                         <span class="badge badge-sm badge-neutral">{{ $index + 1 }}</span>
                                                         <button 
                                                             wire:click="removeFromSummary('{{ $product['sku'] }}')"
-                                                            class="btn btn-xs btn-error"
-                                                            title="Retirer de la sélection"
+                                                            class="btn btn-xs {{ $isInDatabase ? 'btn-error' : 'btn-ghost' }}"
+                                                            title="{{ $isInDatabase ? 'Supprimer de la liste' : 'Retirer de la sélection' }}"
                                                         >
-                                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                                                <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
-                                                            </svg>
+                                                            @if($isInDatabase)
+                                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                                    <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                                                                </svg>
+                                                            @else
+                                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                                    <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                                                </svg>
+                                                            @endif
                                                         </button>
                                                     </div>
                                                 </div>
@@ -938,16 +1031,26 @@ new class extends Component {
                     @forelse($products as $index => $product)
                         @php
                             $isSelected = in_array($product['sku'], $selectedProducts);
+                            $isInDatabase = $listId ? $this->isInDatabase($product['sku']) : false;
+                            $isTemporarilySelected = $listId ? $this->isTemporarilySelected($product['sku']) : false;
                         @endphp
                         <tr wire:key="product-{{ $product['id'] ?? $index }}"
-                            class="{{ $isSelected ? 'bg-primary/5' : '' }}">
+                            class="{{ $isSelected ? ($isInDatabase ? 'bg-success/5' : ($isTemporarilySelected ? 'bg-warning/5' : 'bg-primary/5')) : '' }}">
                             <td>
-                                <input 
-                                    type="checkbox" 
-                                    class="checkbox checkbox-primary checkbox-xs" 
-                                    {{ $isSelected ? 'checked' : '' }}
-                                    wire:click="toggleSelect('{{ $product['sku'] }}', '{{ addslashes($product['title'] ?? '') }}', '{{ $product['thumbnail'] ?? '' }}')"
-                                >
+                                @if($isInDatabase)
+                                    <div class="tooltip" data-tip="Déjà dans la liste">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-success" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                                        </svg>
+                                    </div>
+                                @else
+                                    <input 
+                                        type="checkbox" 
+                                        class="checkbox checkbox-primary checkbox-xs" 
+                                        {{ $isSelected ? 'checked' : '' }}
+                                        wire:click="toggleSelect('{{ $product['sku'] }}', '{{ addslashes($product['title'] ?? '') }}', '{{ $product['thumbnail'] ?? '' }}')"
+                                    >
+                                @endif
                             </td>
                             <td>
                                 @if(!empty($product['thumbnail']))
@@ -968,8 +1071,7 @@ new class extends Component {
                             <td class="font-mono text-xs">{{ $product['sku'] ?? '' }}</td>
                             <td>
                                 <div class="max-w-xs truncate" title="{{ $product['title'] ?? '' }}">
-                                    {{-- {{ $product['title'] ?? '' }} --}}
-                                    {{ utf8_encode($product['title'] ?? '' ) }}
+                                    {{ $product['title'] ?? '' }}
                                 </div>
                             </td>
                             <td>{{ $product['vendor'] ?? '' }}</td>
@@ -1082,7 +1184,7 @@ new class extends Component {
     </div>
 
     <!-- Modal de confirmation -->
-    <x-modal wire:model="showModal" title="Confirmation de la liste" persistent separator>
+    <x-modal wire:model="showModal" title="{{ $listId ? 'Mettre à jour la liste' : 'Créer une nouvelle liste' }}" persistent separator>
         <div class="space-y-4">
             <!-- Nom de la liste -->
             <div>
@@ -1099,35 +1201,54 @@ new class extends Component {
             <div class="border rounded-box p-4">
                 <h4 class="font-semibold mb-2">Résumé de la sélection</h4>
                 <div class="space-y-2">
-                    <div class="flex justify-between">
-                        <span>Nombre de produits:</span>
-                        <span class="font-semibold">{{ count($selectedProducts) }}</span>
-                    </div>
-                    <div class="flex items-center gap-2 text-sm text-base-content/70">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clip-rule="evenodd" />
-                        </svg>
-                        <span>Les produits sont visibles dans le panneau de résumé</span>
+                    @if($listId)
+                        <div class="flex justify-between">
+                            <span>Produits déjà dans la liste:</span>
+                            <span class="font-semibold text-success">{{ $existingCount ?? 0 }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Nouveaux produits à ajouter:</span>
+                            <span class="font-semibold text-warning">{{ $newCount ?? 0 }}</span>
+                        </div>
+                        <div class="divider my-1"></div>
+                    @endif
+                    <div class="flex justify-between font-semibold">
+                        <span>Total des produits:</span>
+                        <span class="text-primary">{{ count($selectedProducts) }}</span>
                     </div>
                 </div>
             </div>
             
             <!-- Avertissement -->
-            <div class="alert alert-info">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                </svg>
-                <span>La liste sera sauvegardée dans la base de données et vous pourrez y accéder ultérieurement.</span>
-            </div>
+            @if($listId)
+                <div class="alert alert-info">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <div>
+                        <div class="font-semibold">Mise à jour de liste</div>
+                        <div class="text-sm">Seuls les nouveaux produits seront ajoutés. Les produits existants resteront dans la liste.</div>
+                    </div>
+                </div>
+            @else
+                <div class="alert alert-info">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <span>La liste sera sauvegardée dans la base de données et vous pourrez y accéder ultérieurement.</span>
+                </div>
+            @endif
         </div>
         
         <x-slot:actions>
             <x-button label="Annuler" @click="$wire.showModal = false" />
-            <x-button label="Sauvegarder" class="btn-primary" wire:click="saveList" wire:loading.attr="disabled">
-                <span wire:loading.remove>Sauvegarder</span>
-                <span wire:loading wire:target="saveList" class="flex items-center gap-2">
+            <x-button label="{{ $listId ? 'Mettre à jour' : 'Créer' }}" class="btn-primary" 
+                wire:click="{{ $listId ? 'updateList' : 'saveList' }}" 
+                wire:loading.attr="disabled">
+                <span wire:loading.remove>{{ $listId ? 'Mettre à jour' : 'Créer' }}</span>
+                <span wire:loading wire:target="{{ $listId ? 'updateList' : 'saveList' }}" class="flex items-center gap-2">
                     <span class="loading loading-spinner loading-sm"></span>
-                    Sauvegarde...
+                    {{ $listId ? 'Mise à jour...' : 'Création...' }}
                 </span>
             </x-button>
         </x-slot:actions>
@@ -1141,7 +1262,10 @@ new class extends Component {
             const toast = document.createElement('div');
             toast.className = `toast toast-top toast-end`;
             toast.innerHTML = `
-                <div class="alert ${event.type === 'success' ? 'alert-success' : 'alert-error'}">
+                <div class="alert ${event.type === 'success' ? 'alert-success' : 
+                                  event.type === 'error' ? 'alert-error' : 
+                                  event.type === 'info' ? 'alert-info' : 
+                                  'alert-warning'}">
                     <span>${event.message}</span>
                 </div>
             `;
@@ -1152,9 +1276,28 @@ new class extends Component {
             }, 3000);
         });
         
+        Livewire.on('confirm-remove', (event) => {
+            if (confirm(`${event.title}\n\n${event.message}`)) {
+                Livewire.dispatch(event.method, { sku: event.sku });
+            }
+        });
+        
         Livewire.on('list-created', (event) => {
             // Redirection ou autre action après création
             console.log('Liste créée avec ID:', event.listId);
+            // Rediriger vers la page des listes
+            setTimeout(() => {
+                window.location.href = '/comparison/lists';
+            }, 1500);
+        });
+        
+        Livewire.on('list-updated', (event) => {
+            // Redirection ou autre action après mise à jour
+            console.log('Liste mise à jour avec ID:', event.listId);
+            // Rediriger vers la page de détail de la liste
+            setTimeout(() => {
+                window.location.href = `/comparison/lists/${event.listId}`;
+            }, 1500);
         });
     });
     
@@ -1189,6 +1332,36 @@ new class extends Component {
     
     .scrollbar-thin::-webkit-scrollbar-thumb:hover {
         background: #9ca3af;
+    }
+    
+    /* Tooltip styles */
+    .tooltip {
+        position: relative;
+        display: inline-block;
+    }
+    
+    .tooltip::before {
+        content: attr(data-tip);
+        position: absolute;
+        bottom: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #374151;
+        color: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        white-space: nowrap;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.2s, visibility 0.2s;
+        z-index: 10;
+        margin-bottom: 5px;
+    }
+    
+    .tooltip:hover::before {
+        opacity: 1;
+        visibility: visible;
     }
 </style>
 @endpush
