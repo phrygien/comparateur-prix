@@ -2302,14 +2302,6 @@ public function areAllProductsOnPageSelected(): bool
     return empty(array_diff($currentSkus, $this->selectedProducts));
 }
 
-/**
- * Obtenir les produits de la page courante
- */
-protected function getCurrentPageProducts(): array
-{
-    // Utiliser directement les produits de la page actuelle
-    return $this->products ?? [];
-}
 
 }; ?>
 <div>
