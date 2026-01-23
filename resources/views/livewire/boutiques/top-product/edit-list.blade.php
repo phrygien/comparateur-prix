@@ -37,19 +37,34 @@ new class extends Component {
     // Table de résumé des produits sélectionnés
     public $showSummaryTable = true;
     
+    // ID de la liste à mettre à jour
+    public $listId = null;
+    public $list = null;
+    
     public function mount($listId = null)
     {
         $this->loading = true;
-        // Charger les produits déjà sélectionnés si on édite une liste existante
+        // Si on a un ID de liste, on charge les produits déjà sélectionnés
         if ($listId) {
-            $this->loadSelectedProducts($listId);
+            $this->listId = $listId;
+            $this->loadList();
+            $this->loadExistingProducts();
+        }
+    }
+    
+    // Charger les informations de la liste
+    protected function loadList()
+    {
+        $this->list = Comparaison::find($this->listId);
+        if ($this->list) {
+            $this->listName = $this->list->libelle;
         }
     }
     
     // Charger les produits déjà dans la liste
-    protected function loadSelectedProducts($listId)
+    protected function loadExistingProducts()
     {
-        $existingProducts = DetailProduct::where('list_product_id', $listId)
+        $existingProducts = DetailProduct::where('list_product_id', $this->listId)
             ->pluck('EAN')
             ->toArray();
         
@@ -100,9 +115,23 @@ new class extends Component {
         $this->page++;
     }
     
-    // Gestion de la sélection
+    // Gestion de la sélection - Empêche l'ajout de doublons
     public function toggleSelect($sku, $title = '', $thumbnail = '')
     {
+        // Vérifier si le produit existe déjà dans la liste (base de données)
+        $existsInDatabase = DetailProduct::where('list_product_id', $this->listId)
+            ->where('EAN', $sku)
+            ->exists();
+        
+        if ($existsInDatabase) {
+            $this->dispatch('notify', [
+                'type' => 'info',
+                'message' => 'Ce produit est déjà dans la liste et ne peut pas être ajouté à nouveau.'
+            ]);
+            return;
+        }
+        
+        // Vérifier si le produit est déjà sélectionné (interface)
         if (in_array($sku, $this->selectedProducts)) {
             // Retirer de la sélection
             $this->selectedProducts = array_diff($this->selectedProducts, [$sku]);
@@ -136,11 +165,63 @@ new class extends Component {
     // Supprimer un produit du résumé
     public function removeFromSummary($sku)
     {
+        // Vérifier si le produit est dans la base de données
+        $existsInDatabase = DetailProduct::where('list_product_id', $this->listId)
+            ->where('EAN', $sku)
+            ->exists();
+        
+        if ($existsInDatabase) {
+            // Demander confirmation pour supprimer un produit déjà dans la liste
+            $this->dispatch('confirm-remove', [
+                'sku' => $sku,
+                'title' => 'Supprimer le produit de la liste ?',
+                'message' => 'Ce produit est déjà dans la liste. Voulez-vous le supprimer définitivement ?',
+                'method' => 'removeFromDatabase'
+            ]);
+            return;
+        }
+        
+        // Sinon, simplement retirer de la sélection temporaire
         if (in_array($sku, $this->selectedProducts)) {
             $this->selectedProducts = array_diff($this->selectedProducts, [$sku]);
             $this->selectedProductsDetails = array_filter($this->selectedProductsDetails, 
                 fn($product) => $product['sku'] !== $sku
             );
+        }
+    }
+    
+    // Supprimer un produit de la base de données
+    public function removeFromDatabase($sku)
+    {
+        try {
+            // Supprimer de la base de données
+            $deleted = DetailProduct::where('list_product_id', $this->listId)
+                ->where('EAN', $sku)
+                ->delete();
+            
+            if ($deleted) {
+                // Retirer aussi de la sélection locale si présent
+                if (in_array($sku, $this->selectedProducts)) {
+                    $this->selectedProducts = array_diff($this->selectedProducts, [$sku]);
+                    $this->selectedProductsDetails = array_filter($this->selectedProductsDetails, 
+                        fn($product) => $product['sku'] !== $sku
+                    );
+                }
+                
+                $this->dispatch('notify', [
+                    'type' => 'success',
+                    'message' => 'Produit retiré de la liste avec succès.'
+                ]);
+                
+                // Nettoyer le cache
+                Cache::forget("list_skus_{$this->listId}");
+            }
+        } catch (\Exception $e) {
+            Log::error('Erreur suppression produit: ' . $e->getMessage());
+            $this->dispatch('notify', [
+                'type' => 'error',
+                'message' => 'Erreur lors de la suppression: ' . $e->getMessage()
+            ]);
         }
     }
     
@@ -195,12 +276,16 @@ new class extends Component {
             return;
         }
         
-        $this->listName = 'Liste du ' . date('d/m/Y H:i');
+        // Si on met à jour une liste, utiliser le nom existant
+        if (!$this->listId) {
+            $this->listName = 'Liste du ' . date('d/m/Y H:i');
+        }
+        
         $this->showModal = true;
     }
     
-    // Sauvegarder la liste
-    public function saveList()
+    // Mettre à jour la liste existante
+    public function updateList()
     {
         try {
             // Validation
@@ -220,56 +305,107 @@ new class extends Component {
                 return;
             }
             
-            // Créer la liste principale
-            $list = Comparaison::create([
+            // Vérifier que la liste existe
+            if (!$this->listId) {
+                $this->dispatch('notify', [
+                    'type' => 'error',
+                    'message' => 'Liste non trouvée.'
+                ]);
+                return;
+            }
+            
+            $list = Comparaison::find($this->listId);
+            if (!$list) {
+                $this->dispatch('notify', [
+                    'type' => 'error',
+                    'message' => 'Liste non trouvée.'
+                ]);
+                return;
+            }
+            
+            // Mettre à jour le nom de la liste
+            $list->update([
                 'libelle' => $this->listName,
-                'status' => 1,
-                'created_at' => now(),
                 'updated_at' => now(),
             ]);
             
-            // Sauvegarder les produits sélectionnés
-            $batchData = [];
-            foreach ($this->selectedProducts as $ean) {
-                $batchData[] = [
-                    'list_product_id' => $list->id,
-                    'EAN' => $ean,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
-            }
+            // Récupérer les produits déjà dans la liste (base de données)
+            $existingProducts = DetailProduct::where('list_product_id', $this->listId)
+                ->pluck('EAN')
+                ->toArray();
             
-            // Insertion par lots pour plus de performance
-            DetailProduct::insert($batchData);
+            // Filtrer les produits à ajouter (ne pas ajouter les doublons)
+            $productsToAdd = array_diff($this->selectedProducts, $existingProducts);
+            
+            if (!empty($productsToAdd)) {
+                // Sauvegarder les nouveaux produits sélectionnés
+                $batchData = [];
+                foreach ($productsToAdd as $ean) {
+                    $batchData[] = [
+                        'list_product_id' => $this->listId,
+                        'EAN' => $ean,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ];
+                }
+                
+                // Insertion par lots pour plus de performance
+                DetailProduct::insert($batchData);
+                
+                $addedCount = count($batchData);
+            } else {
+                $addedCount = 0;
+            }
             
             // Fermer le modal
             $this->showModal = false;
             
-            // Réinitialiser la sélection
-            $this->selectedProducts = [];
-            $this->selectedProductsDetails = [];
-            $this->listName = '';
+            // Ne pas réinitialiser complètement la sélection
+            // Mais vider seulement les produits temporairement sélectionnés
+            // (ceux qui ne sont pas encore dans la base de données)
+            $this->selectedProducts = $existingProducts;
             
-            $this->dispatch('notify', [
-                'type' => 'success',
-                'message' => 'Liste sauvegardée avec ' . count($batchData) . ' produit(s).'
-            ]);
+            // Recharger les détails des produits
+            $this->loadSelectedProductsDetails();
+            
+            // Message de succès
+            if ($addedCount > 0) {
+                $this->dispatch('notify', [
+                    'type' => 'success',
+                    'message' => 'Liste mise à jour avec ' . $addedCount . ' nouveau(x) produit(s).'
+                ]);
+            } else {
+                $this->dispatch('notify', [
+                    'type' => 'info',
+                    'message' => 'Liste mise à jour (aucun nouveau produit ajouté).'
+                ]);
+            }
             
             // Émettre un événement pour le parent
-            $this->dispatch('list-created', ['listId' => $list->id]);
+            $this->dispatch('list-updated', ['listId' => $this->listId]);
             
         } catch (\Exception $e) {
-            Log::error('Erreur sauvegarde liste: ' . $e->getMessage());
+            Log::error('Erreur mise à jour liste: ' . $e->getMessage());
             $this->dispatch('notify', [
                 'type' => 'error',
-                'message' => 'Erreur lors de la sauvegarde: ' . $e->getMessage()
+                'message' => 'Erreur lors de la mise à jour: ' . $e->getMessage()
             ]);
         }
     }
     
+    // Vérifier si un produit est déjà dans la liste (base de données)
+    public function isInDatabase($sku)
+    {
+        if (!$this->listId) return false;
+        
+        return DetailProduct::where('list_product_id', $this->listId)
+            ->where('EAN', $sku)
+            ->exists();
+    }
+    
     public function cancel()
     {
-        return redirect()->to('/previous-page');
+        return redirect()->route('comparison.lists');
     }
     
     public function with(): array
@@ -510,335 +646,6 @@ new class extends Component {
     {
         return "products_{$type}_" . md5(serialize($params));
     }
-
-/**
- * Ajouter des produits à une liste existante
- */
-public function addProductsToList(): void
-{
-    try {
-        if (empty($this->selectedProducts)) {
-            $this->dispatch('alert', 
-                type: 'warning',
-                message: 'Veuillez sélectionner au moins un produit à ajouter.'
-            );
-            return;
-        }
-        
-        // Vérifier que nous avons bien une liste ID
-        if (!$this->id) {
-            $this->dispatch('alert', 
-                type: 'error',
-                message: 'ID de liste manquant.'
-            );
-            return;
-        }
-        
-        // Vérifier que la liste existe
-        $listExists = Comparaison::where('id', $this->id)->exists();
-        if (!$listExists) {
-            $this->dispatch('alert', 
-                type: 'error',
-                message: 'La liste n\'existe pas.'
-            );
-            return;
-        }
-        
-        // Récupérer les produits déjà dans la liste
-        $existingProducts = DetailProduct::where('list_product_id', $this->id)
-            ->pluck('EAN')
-            ->toArray();
-        
-        // Filtrer les produits à ajouter (ne pas ajouter les doublons)
-        $productsToAdd = array_diff($this->selectedProducts, $existingProducts);
-        
-        if (empty($productsToAdd)) {
-            $this->dispatch('alert', 
-                type: 'info',
-                message: 'Tous les produits sélectionnés sont déjà dans la liste.'
-            );
-            return;
-        }
-        
-        // Préparer les données pour l'insertion
-        $batchData = [];
-        foreach ($productsToAdd as $ean) {
-            $batchData[] = [
-                'list_product_id' => $this->id,
-                'EAN' => $ean,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
-        }
-        
-        // Insérer les produits par lots
-        DetailProduct::insert($batchData);
-        
-        // Nettoyer les caches
-        Cache::forget("list_skus_{$this->id}");
-        
-        // Mettre à jour la liste des produits existants
-        $existingProducts = array_merge($existingProducts, $productsToAdd);
-        
-        $this->dispatch('alert', 
-            type: 'success',
-            message: count($productsToAdd) . ' produit(s) ajouté(s) à la liste avec succès.'
-        );
-        
-        // Réinitialiser la sélection
-        $this->selectedProducts = [];
-        
-        // Recharger les données de la liste
-        $this->reloadData();
-        
-    } catch (\Exception $e) {
-        \Log::error('Erreur ajout produits à la liste: ' . $e->getMessage());
-        
-        $this->dispatch('alert', 
-            type: 'error',
-            message: 'Erreur lors de l\'ajout des produits: ' . $e->getMessage()
-        );
-    }
-}
-
-/**
- * Modal d'ajout de produits
- */
-public bool $showAddProductsModal = false;
-public array $productsToAdd = [];
-public string $searchAddProduct = '';
-public array $searchResults = [];
-
-/**
- * Ouvrir le modal d'ajout de produits
- */
-public function openAddProductsModal(): void
-{
-    $this->showAddProductsModal = true;
-    $this->searchAddProduct = '';
-    $this->searchResults = [];
-    $this->productsToAdd = [];
-}
-
-/**
- * Fermer le modal d'ajout de produits
- */
-public function closeAddProductsModal(): void
-{
-    $this->showAddProductsModal = false;
-    $this->searchAddProduct = '';
-    $this->searchResults = [];
-    $this->productsToAdd = [];
-}
-
-/**
- * Rechercher des produits à ajouter
- */
-public function searchProductsToAdd(): void
-{
-    try {
-        if (empty($this->searchAddProduct)) {
-            $this->searchResults = [];
-            return;
-        }
-        
-        $query = "
-            SELECT 
-                produit.sku as sku,
-                CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) as title,
-                product_char.thumbnail as thumbnail,
-                ROUND(product_decimal.price, 2) as price
-            FROM catalog_product_entity as produit
-            LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
-            LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
-            LEFT JOIN product_int ON product_int.entity_id = produit.entity_id
-            WHERE (product_char.name LIKE ? OR produit.sku LIKE ?)
-            AND product_int.status >= 0
-            ORDER BY product_char.name ASC
-            LIMIT 50
-        ";
-        
-        $searchTerm = '%' . $this->searchAddProduct . '%';
-        $results = DB::connection('mysqlMagento')->select($query, [$searchTerm, $searchTerm]);
-        
-        $this->searchResults = array_map(function($product) {
-            return [
-                'sku' => $product->sku,
-                'title' => $this->normalizeAndCleanText($product->title),
-                'thumbnail' => $product->thumbnail,
-                'price' => $this->cleanPrice($product->price),
-                'selected' => in_array($product->sku, $this->productsToAdd)
-            ];
-        }, $results);
-        
-    } catch (\Exception $e) {
-        $this->searchResults = [];
-        \Log::error('Erreur recherche produits: ' . $e->getMessage());
-    }
-}
-
-/**
- * Basculer la sélection d'un produit dans le modal
- */
-public function toggleProductToAdd(string $sku): void
-{
-    $key = array_search($sku, $this->productsToAdd);
-    
-    if ($key !== false) {
-        unset($this->productsToAdd[$key]);
-        $this->productsToAdd = array_values($this->productsToAdd);
-    } else {
-        $this->productsToAdd[] = $sku;
-    }
-    
-    // Mettre à jour l'état de sélection dans les résultats
-    foreach ($this->searchResults as &$product) {
-        if ($product['sku'] === $sku) {
-            $product['selected'] = !$product['selected'];
-            break;
-        }
-    }
-}
-
-/**
- * Ajouter les produits sélectionnés via le modal
- */
-public function addSelectedProducts(): void
-{
-    try {
-        if (empty($this->productsToAdd)) {
-            $this->dispatch('alert', 
-                type: 'warning',
-                message: 'Veuillez sélectionner au moins un produit à ajouter.'
-            );
-            return;
-        }
-        
-        // Vérifier que la liste existe
-        $listExists = Comparaison::where('id', $this->id)->exists();
-        if (!$listExists) {
-            $this->dispatch('alert', 
-                type: 'error',
-                message: 'La liste n\'existe pas.'
-            );
-            return;
-        }
-        
-        // Récupérer les produits déjà dans la liste
-        $existingProducts = DetailProduct::where('list_product_id', $this->id)
-            ->pluck('EAN')
-            ->toArray();
-        
-        // Filtrer les produits à ajouter (ne pas ajouter les doublons)
-        $productsToAdd = array_diff($this->productsToAdd, $existingProducts);
-        
-        if (empty($productsToAdd)) {
-            $this->dispatch('alert', 
-                type: 'info',
-                message: 'Tous les produits sélectionnés sont déjà dans la liste.'
-            );
-            $this->closeAddProductsModal();
-            return;
-        }
-        
-        // Préparer les données pour l'insertion
-        $batchData = [];
-        foreach ($productsToAdd as $ean) {
-            $batchData[] = [
-                'list_product_id' => $this->id,
-                'EAN' => $ean,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
-        }
-        
-        // Insérer les produits par lots
-        DetailProduct::insert($batchData);
-        
-        // Nettoyer les caches
-        Cache::forget("list_skus_{$this->id}");
-        
-        // Fermer le modal
-        $this->closeAddProductsModal();
-        
-        $this->dispatch('alert', 
-            type: 'success',
-            message: count($productsToAdd) . ' produit(s) ajouté(s) à la liste avec succès.'
-        );
-        
-        // Recharger les données de la liste
-        $this->reloadData();
-        
-    } catch (\Exception $e) {
-        \Log::error('Erreur ajout produits via modal: ' . $e->getMessage());
-        
-        $this->dispatch('alert', 
-            type: 'error',
-            message: 'Erreur lors de l\'ajout des produits: ' . $e->getMessage()
-        );
-    }
-}
-
-/**
- * Ajouter un produit spécifique par SKU
- */
-public function addProductBySku(string $sku): void
-{
-    try {
-        if (empty($sku)) {
-            return;
-        }
-        
-        // Vérifier que la liste existe
-        $listExists = Comparaison::where('id', $this->id)->exists();
-        if (!$listExists) {
-            $this->dispatch('alert', 
-                type: 'error',
-                message: 'La liste n\'existe pas.'
-            );
-            return;
-        }
-        
-        // Vérifier si le produit existe déjà dans la liste
-        $exists = DetailProduct::where('list_product_id', $this->id)
-            ->where('EAN', $sku)
-            ->exists();
-        
-        if ($exists) {
-            $this->dispatch('alert', 
-                type: 'info',
-                message: 'Le produit est déjà dans la liste.'
-            );
-            return;
-        }
-        
-        // Ajouter le produit
-        DetailProduct::create([
-            'list_product_id' => $this->id,
-            'EAN' => $sku,
-        ]);
-        
-        // Nettoyer les caches
-        Cache::forget("list_skus_{$this->id}");
-        
-        $this->dispatch('alert', 
-            type: 'success',
-            message: 'Produit ajouté à la liste avec succès.'
-        );
-        
-        // Recharger les données de la liste
-        $this->reloadData();
-        
-    } catch (\Exception $e) {
-        \Log::error('Erreur ajout produit par SKU: ' . $e->getMessage());
-        
-        $this->dispatch('alert', 
-            type: 'error',
-            message: 'Erreur lors de l\'ajout du produit: ' . $e->getMessage()
-        );
-    }
-}
-    
 }; ?>
 
 <div class="mx-auto w-full">
