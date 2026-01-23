@@ -2729,7 +2729,7 @@ public function areAllProductsOnPageSelected(): bool
                                                             <th class="text-xs">Prix concurrent</th>
                                                             <th class="text-xs">Différence</th>
                                                             <th class="text-xs">Statut de nos prix par rapport aux concurrents</th>
-                                                            <th class="text-xs">Score</th>
+                                                            <th class="text-xs">Niveau de correspondance</th>
                                                             <th class="text-xs">Actions</th>
                                                         </tr>
                                                     </thead>
@@ -2887,7 +2887,7 @@ public function areAllProductsOnPageSelected(): bool
                                                             <th class="text-xs">Prix concurrent</th>
                                                             <th class="text-xs">Différence</th>
                                                             <th class="text-xs">Statut de nos prix par rapport aux concurrents</th>
-                                                            <th class="text-xs">Score</th>
+                                                            <th class="text-xs">Niveau de correspondance</th>
                                                             <th class="text-xs">Source</th>
                                                             <th class="text-xs">Actions</th>
                                                         </tr>
