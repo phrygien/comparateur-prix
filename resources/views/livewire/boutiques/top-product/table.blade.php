@@ -2064,10 +2064,7 @@ public function removeProduct(string $sku): void
             ->exists();
         
         if (!$exists) {
-            $this->dispatch('alert', 
-                type: 'error',
-                message: 'Produit non trouvé dans la liste.'
-            );
+            $this->error('Produit non trouvé dans la liste.');
             return;
         }
         
@@ -2088,18 +2085,12 @@ public function removeProduct(string $sku): void
             unset($this->manualSearchLoading[$sku]);
             
             // Rafraîchir la liste
-            $this->dispatch('alert', 
-                type: 'success',
-                message: 'Produit supprimé avec succès.'
-            );
+            $this->success('Produit supprimé avec succès.');
             
             // Forcer le rechargement des données
             $this->refreshProducts();
         } else {
-            $this->dispatch('alert', 
-                type: 'error',
-                message: 'Erreur lors de la suppression du produit.'
-            );
+            $this->error('Erreur lors de la suppression du produit.');
         }
         
     } catch (\Exception $e) {
