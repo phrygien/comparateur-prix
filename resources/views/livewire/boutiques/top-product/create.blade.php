@@ -13,7 +13,7 @@ new class extends Component {
     use Toast;
 
     public $page = 1;
-    public $perPage = 20;
+    public $perPage = 100;
     public $hasMore = true;
     public $loading = false;
     public $loadingMore = false;
