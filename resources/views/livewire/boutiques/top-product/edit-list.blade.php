@@ -657,11 +657,6 @@ new class extends Component {
                     <span class="loading loading-spinner loading-sm text-primary"></span>
                 @endif
                 <div class="text-sm text-base-content/70">
-                    @php
-                        $existingCount = count($existingProducts);
-                        $newCount = count($this->getNewProducts());
-                        $removedCount = count($this->getRemovedProducts());
-                    @endphp
                     <span class="font-semibold text-primary">{{ count($selectedProducts) }}</span> 
                     produits 
                     @if($newCount > 0 || $removedCount > 0)
@@ -807,7 +802,7 @@ new class extends Component {
                                         @php
                                             $isInDatabase = $this->isInDatabase($product['sku']);
                                             $isNew = $this->isTemporarilySelected($product['sku']);
-                                            $isRemoved = in_array($product['sku'], $this->getRemovedProducts());
+                                            $isRemoved = in_array($product['sku'], array_diff($existingProducts, $selectedProducts));
                                         @endphp
                                         <div class="relative group border rounded-lg p-3 
                                             {{ $isRemoved ? 'bg-error/10 border-error line-through' : 
@@ -894,7 +889,7 @@ new class extends Component {
                                         @php
                                             $isInDatabase = $this->isInDatabase($product['sku']);
                                             $isNew = $this->isTemporarilySelected($product['sku']);
-                                            $isRemoved = in_array($product['sku'], $this->getRemovedProducts());
+                                            $isRemoved = in_array($product['sku'], array_diff($existingProducts, $selectedProducts));
                                         @endphp
                                         <div class="relative group border rounded-lg p-3 
                                             {{ $isRemoved ? 'bg-error/10 border-error line-through' : 
@@ -1200,7 +1195,7 @@ new class extends Component {
                 <div class="space-y-2">
                     <div class="flex justify-between">
                         <span>Produits dans la liste actuelle:</span>
-                        <span class="font-semibold">{{ count($existingProducts) }}</span>
+                        <span class="font-semibold">{{ $existingCount }}</span>
                     </div>
                     <div class="flex justify-between">
                         <span>Nouvelle configuration:</span>
@@ -1262,24 +1257,6 @@ new class extends Component {
 @push('scripts')
 <script>
     document.addEventListener('livewire:initialized', () => {
-        Livewire.on('notify', (event) => {
-            const toast = document.createElement('div');
-            toast.className = `toast toast-top toast-end`;
-            toast.innerHTML = `
-                <div class="alert ${event.type === 'success' ? 'alert-success' : 
-                                  event.type === 'error' ? 'alert-error' : 
-                                  event.type === 'info' ? 'alert-info' : 
-                                  'alert-warning'}">
-                    <span>${event.message}</span>
-                </div>
-            `;
-            document.body.appendChild(toast);
-            
-            setTimeout(() => {
-                toast.remove();
-            }, 3000);
-        });
-        
         Livewire.on('confirm-remove', (event) => {
             if (confirm(`${event.title}\n\n${event.message}`)) {
                 Livewire.dispatch(event.method, { sku: event.sku });
