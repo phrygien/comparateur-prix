@@ -40,10 +40,16 @@ new class extends Component {
     // Sélection multiple
     public array $selectedProducts = [];
 
+    // Filtres par site
+    public array $siteFilters = [];
+    public array $availableSites = [];
+    public array $selectedSitesByProduct = [];
+
     public function mount($id): void
     {
         $this->id = $id;
         $this->loadListTitle();
+        $this->loadAvailableSites();
     }
 
     public function loadListTitle(): void
@@ -54,6 +60,170 @@ new class extends Component {
         } catch (\Exception $e) {
             $this->listTitle = 'Erreur de chargement';
         }
+    }
+
+    /**
+     * Charger la liste des sites disponibles
+     */
+    protected function loadAvailableSites(): void
+    {
+        try {
+            $sites = DB::connection('mysql')
+                ->table('web_site')
+                ->select('id', 'name')
+                ->whereNotNull('name')
+                ->where('name', '!=', '')
+                ->orderBy('name')
+                ->get()
+                ->toArray();
+
+            $this->availableSites = array_map(fn($site) => [
+                'id' => $site->id,
+                'name' => $site->name
+            ], $sites);
+            
+        } catch (\Exception $e) {
+            $this->availableSites = [];
+        }
+    }
+
+    /**
+     * Basculer la sélection d'un site pour un produit spécifique
+     */
+    public function toggleSiteFilter(string $sku, int $siteId, string $siteName): void
+    {
+        if (!isset($this->selectedSitesByProduct[$sku])) {
+            $this->selectedSitesByProduct[$sku] = [];
+        }
+
+        $key = array_search($siteId, $this->selectedSitesByProduct[$sku]);
+        
+        if ($key !== false) {
+            // Retirer le site de la sélection
+            unset($this->selectedSitesByProduct[$sku][$key]);
+            $this->selectedSitesByProduct[$sku] = array_values($this->selectedSitesByProduct[$sku]);
+        } else {
+            // Ajouter le site à la sélection
+            $this->selectedSitesByProduct[$sku][] = $siteId;
+        }
+
+        // Si aucun site n'est sélectionné, supprimer le filtre pour ce produit
+        if (empty($this->selectedSitesByProduct[$sku])) {
+            unset($this->selectedSitesByProduct[$sku]);
+        }
+    }
+
+    /**
+     * Sélectionner tous les sites pour un produit
+     */
+    public function selectAllSites(string $sku): void
+    {
+        $siteIds = array_column($this->availableSites, 'id');
+        $this->selectedSitesByProduct[$sku] = $siteIds;
+    }
+
+    /**
+     * Désélectionner tous les sites pour un produit
+     */
+    public function deselectAllSites(string $sku): void
+    {
+        unset($this->selectedSitesByProduct[$sku]);
+    }
+
+    /**
+     * Vérifier si un site est sélectionné pour un produit
+     */
+    public function isSiteSelected(string $sku, int $siteId): bool
+    {
+        return isset($this->selectedSitesByProduct[$sku]) && 
+               in_array($siteId, $this->selectedSitesByProduct[$sku]);
+    }
+
+    /**
+     * Obtenir les concurrents filtrés par site pour un produit
+     */
+    public function getFilteredCompetitors(string $sku): array
+    {
+        if (!isset($this->competitorResults[$sku]['competitors'])) {
+            return [];
+        }
+
+        $competitors = $this->competitorResults[$sku]['competitors'];
+        
+        // Filtrer par niveau de similarité (≥ 0.6)
+        $goodCompetitors = array_filter($competitors, fn($c) => ($c->similarity_score ?? 0) >= 0.6);
+        
+        // Appliquer le filtre par site si des sites sont sélectionnés
+        if (isset($this->selectedSitesByProduct[$sku]) && !empty($this->selectedSitesByProduct[$sku])) {
+            $selectedSiteIds = $this->selectedSitesByProduct[$sku];
+            $filtered = array_filter($goodCompetitors, function($competitor) use ($selectedSiteIds) {
+                $siteId = $competitor->web_site_id ?? null;
+                return $siteId && in_array($siteId, $selectedSiteIds);
+            });
+            return array_values($filtered);
+        }
+        
+        return array_values($goodCompetitors);
+    }
+
+    /**
+     * Obtenir la liste des sites disponibles pour les concurrents d'un produit
+     */
+    public function getAvailableSitesForProduct(string $sku): array
+    {
+        if (!isset($this->competitorResults[$sku]['competitors'])) {
+            return [];
+        }
+
+        $competitors = $this->competitorResults[$sku]['competitors'];
+        $goodCompetitors = array_filter($competitors, fn($c) => ($c->similarity_score ?? 0) >= 0.6);
+        
+        $sites = [];
+        foreach ($goodCompetitors as $competitor) {
+            $siteId = $competitor->web_site_id ?? null;
+            $siteName = $competitor->site_name ?? 'Inconnu';
+            
+            if ($siteId && !isset($sites[$siteId])) {
+                $sites[$siteId] = [
+                    'id' => $siteId,
+                    'name' => $siteName,
+                    'count' => 0
+                ];
+            }
+            
+            if ($siteId) {
+                $sites[$siteId]['count']++;
+            }
+        }
+        
+        return array_values($sites);
+    }
+
+    /**
+     * Obtenir les statistiques de filtrage pour un produit
+     */
+    public function getFilterStats(string $sku): array
+    {
+        if (!isset($this->competitorResults[$sku])) {
+            return ['total' => 0, 'good' => 0, 'filtered' => 0];
+        }
+
+        $competitors = $this->competitorResults[$sku]['competitors'] ?? [];
+        $total = count($competitors);
+        
+        // Compter les bons résultats (≥ 0.6)
+        $goodCompetitors = array_filter($competitors, fn($c) => ($c->similarity_score ?? 0) >= 0.6);
+        $goodCount = count($goodCompetitors);
+        
+        // Compter les résultats filtrés
+        $filteredCompetitors = $this->getFilteredCompetitors($sku);
+        $filteredCount = count($filteredCompetitors);
+        
+        return [
+            'total' => $total,
+            'good' => $goodCount,
+            'filtered' => $filteredCount
+        ];
     }
 
     /**
@@ -124,8 +294,15 @@ new class extends Component {
                     'our_price' => $cleanPrice,
                     'competitors' => $competitors,
                     'count' => count($competitors),
-                    'good_count' => count($goodResults) // Ajouter un compteur pour les bons résultats
+                    'good_count' => count($goodResults)
                 ];
+                
+                // Initialiser les sites sélectionnés avec tous les sites disponibles
+                $availableSites = $this->getAvailableSitesForProduct($sku);
+                if (!empty($availableSites)) {
+                    $siteIds = array_column($availableSites, 'id');
+                    $this->selectedSitesByProduct[$sku] = $siteIds;
+                }
             } else {
                 $this->competitorResults[$sku] = [
                     'product_name' => $cleanedProductName,
@@ -266,6 +443,8 @@ new class extends Component {
     {
         if (isset($this->expandedProducts[$sku])) {
             unset($this->expandedProducts[$sku]);
+            // Réinitialiser les filtres de site pour ce produit
+            unset($this->selectedSitesByProduct[$sku]);
         } else {
             $this->expandedProducts[$sku] = true;
             
@@ -1823,6 +2002,7 @@ new class extends Component {
         $this->manualSearchQueries = []; // Réinitialiser les recherches manuelles
         $this->manualSearchResults = []; // Réinitialiser les résultats manuels
         $this->manualSearchExpanded = []; // Réinitialiser l'expansion manuelle
+        $this->selectedSitesByProduct = []; // Réinitialiser les filtres de site
     }
 
     // Page précédente
@@ -1852,6 +2032,7 @@ new class extends Component {
         $this->manualSearchResults = [];
         $this->manualSearchExpanded = [];
         $this->selectedProducts = []; // Réinitialiser la sélection
+        $this->selectedSitesByProduct = []; // Réinitialiser les filtres de site
         $this->loadListTitle();
     }
 
@@ -2091,6 +2272,7 @@ new class extends Component {
                 unset($this->manualSearchExpanded[$sku]);
                 unset($this->searchingProducts[$sku]);
                 unset($this->manualSearchLoading[$sku]);
+                unset($this->selectedSitesByProduct[$sku]);
                 
                 // Retirer de la sélection
                 $this->selectedProducts = array_filter(
@@ -2155,6 +2337,7 @@ new class extends Component {
                     unset($this->manualSearchExpanded[$sku]);
                     unset($this->searchingProducts[$sku]);
                     unset($this->manualSearchLoading[$sku]);
+                    unset($this->selectedSitesByProduct[$sku]);
                 }
                 
                 // Vider la sélection
@@ -2308,6 +2491,7 @@ new class extends Component {
     }
 
 }; ?>
+
 <div>
     <!-- Overlay de chargement -->
     <div wire:loading.delay.flex class="hidden fixed inset-0 z-50 items-center justify-center bg-transparent">
@@ -2494,7 +2678,6 @@ new class extends Component {
                         <th>Produit</th>
                         <th>Notre Prix</th>
                         <th>Concurrents auto</th>
-                        {{-- <th>Recherche manuelle</th> --}}
                         <th>Type</th>
                         <th>Actions</th>
                     </tr>
@@ -2523,6 +2706,10 @@ new class extends Component {
                             if ($hasCompetitors && isset($competitorResults[$product['sku']]['good_count'])) {
                                 $goodCompetitorsCount = $competitorResults[$product['sku']]['good_count'];
                             }
+                            
+                            // Obtenir les concurrents filtrés
+                            $filteredCompetitors = $this->getFilteredCompetitors($product['sku']);
+                            $filteredCount = count($filteredCompetitors);
                         @endphp
                         <tr class="hover">
                             <!-- Case à cocher pour sélectionner le produit -->
@@ -2601,11 +2788,11 @@ new class extends Component {
                                             Recherche...
                                         @else
                                             @if($hasCompetitors)
-                                                @if($goodCompetitorsCount > 0)
-                                                    <span class="badge badge-success mr-1">{{ $goodCompetitorsCount }}</span>
-                                                    bon(s) résultat(s)
+                                                @if($filteredCount > 0)
+                                                    <span class="badge badge-success mr-1">{{ $filteredCount }}</span>
+                                                    filtré(s)
                                                 @else
-                                                    Aucun bon résultat
+                                                    Aucun résultat
                                                 @endif
                                             @else
                                                 Rechercher
@@ -2615,7 +2802,7 @@ new class extends Component {
                                     
                                     @if($hasCompetitors && $goodCompetitorsCount > 0)
                                         <div class="text-xs text-center text-gray-500">
-                                            ({{ $competitorResults[$product['sku']]['count'] ?? 0 }} au total)
+                                            ({{ $goodCompetitorsCount }} bon(s) résultat(s) au total)
                                         </div>
                                     @endif
                                 </div>
@@ -2635,15 +2822,6 @@ new class extends Component {
                             <!-- Actions -->
                             <td>
                                 <div class="flex space-x-1">
-                                    {{-- <button wire:click="$dispatch('openModal', { component: 'plateformes.detail', arguments: { id: '{{ $product['sku'] }}' }})"
-                                        class="btn btn-xs btn-outline"
-                                        title="Détails">
-                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                        </svg>
-                                    </button> --}}
-                                    
                                     <!-- Bouton Supprimer -->
                                     <button wire:click="removeProduct('{{ $product['sku'] }}')"
                                         class="btn btn-xs btn-error btn-outline"
@@ -2654,10 +2832,10 @@ new class extends Component {
                                         </svg>
                                     </button>
 
-                                    @if($hasCompetitors && $goodCompetitorsCount > 0)
-                                        <div class="tooltip" data-tip="{{ $goodCompetitorsCount }} résultat(s) avec bon niveau de similarité (≥60%)">
+                                    @if($hasCompetitors && $filteredCount > 0)
+                                        <div class="tooltip" data-tip="{{ $filteredCount }} résultat(s) filtré(s) (sur {{ $goodCompetitorsCount }} bons résultats)">
                                             <div class="badge badge-success">
-                                                {{ $goodCompetitorsCount }}
+                                                {{ $filteredCount }}
                                             </div>
                                         </div>
                                     @endif
@@ -2668,10 +2846,10 @@ new class extends Component {
                         <!-- Tableau des résultats des concurrents automatiques -->
                         @if($hasCompetitors && isset($expandedProducts[$product['sku']]))
                             @php
-                                // Filtrer pour ne montrer que les résultats avec bon niveau (≥ 0.6)
-                                $allCompetitors = $competitorResults[$product['sku']]['competitors'] ?? [];
-                                $goodCompetitors = array_filter($allCompetitors, fn($c) => ($c->similarity_score ?? 0) >= 0.6);
-                                $hasGoodCompetitors = count($goodCompetitors) > 0;
+                                // Obtenir les sites disponibles pour ce produit
+                                $availableSites = $this->getAvailableSitesForProduct($product['sku']);
+                                $hasAvailableSites = count($availableSites) > 0;
+                                $stats = $this->getFilterStats($product['sku']);
                             @endphp
                             <tr class="bg-base-100 border-t-0">
                                 <td colspan="9" class="p-0">
@@ -2681,11 +2859,11 @@ new class extends Component {
                                                 <h4 class="font-bold text-sm">
                                                     <span class="text-info">Résultats des concurrents automatiques</span>
                                                     <span class="badge badge-success ml-2">
-                                                        {{ count($goodCompetitors) }} bon(s) résultat(s)
+                                                        {{ $filteredCount }} résultat(s) filtré(s)
                                                     </span>
-                                                    @if(count($allCompetitors) > count($goodCompetitors))
+                                                    @if($stats['good'] > $filteredCount)
                                                         <span class="badge badge-neutral ml-1">
-                                                            {{ count($allCompetitors) - count($goodCompetitors) }} autre(s)
+                                                            {{ $stats['good'] - $filteredCount }} caché(s)
                                                         </span>
                                                     @endif
                                                 </h4>
@@ -2701,7 +2879,79 @@ new class extends Component {
                                             </button>
                                         </div>
                                         
-                                        @if($hasGoodCompetitors)
+                                        <!-- Filtre par site -->
+                                        @if($hasAvailableSites)
+                                            <div class="mb-4 p-3 bg-base-100 border border-base-300 rounded-lg">
+                                                <div class="flex justify-between items-center mb-2">
+                                                    <div class="text-xs font-semibold text-gray-700">
+                                                        <i class="fas fa-filter mr-1"></i> Filtre par site
+                                                        @if(isset($selectedSitesByProduct[$product['sku']]))
+                                                            <span class="badge badge-xs badge-info ml-2">
+                                                                {{ count($selectedSitesByProduct[$product['sku']]) }} sélectionné(s)
+                                                            </span>
+                                                        @endif
+                                                    </div>
+                                                    <div class="flex space-x-1">
+                                                        <button wire:click="selectAllSites('{{ $product['sku'] }}')"
+                                                                class="btn btn-xs btn-outline btn-success"
+                                                                title="Sélectionner tous les sites">
+                                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                                            </svg>
+                                                            Tout
+                                                        </button>
+                                                        <button wire:click="deselectAllSites('{{ $product['sku'] }}')"
+                                                                class="btn btn-xs btn-outline btn-error"
+                                                                title="Désélectionner tous les sites">
+                                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                                            </svg>
+                                                            Aucun
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div class="flex flex-wrap gap-2 mt-2">
+                                                    @foreach($availableSites as $site)
+                                                        @php
+                                                            $isSelected = $this->isSiteSelected($product['sku'], $site['id']);
+                                                        @endphp
+                                                        <label class="cursor-pointer">
+                                                            <input type="checkbox" 
+                                                                   class="checkbox checkbox-xs hidden"
+                                                                   wire:click="toggleSiteFilter('{{ $product['sku'] }}', {{ $site['id'] }}, '{{ $site['name'] }}')"
+                                                                   {{ $isSelected ? 'checked' : '' }}>
+                                                            <span class="badge badge-outline {{ $isSelected ? 'badge-info' : 'badge-neutral' }} hover:badge-info transition-colors duration-200">
+                                                                {{ $site['name'] }}
+                                                                <span class="badge badge-xs {{ $isSelected ? 'badge-success' : 'badge-neutral' }} ml-1">
+                                                                    {{ $site['count'] }}
+                                                                </span>
+                                                            </span>
+                                                        </label>
+                                                    @endforeach
+                                                </div>
+                                                
+                                                <!-- Statistiques de filtrage -->
+                                                <div class="mt-3 text-xs text-gray-600">
+                                                    <div class="grid grid-cols-3 gap-2">
+                                                        <div class="text-center">
+                                                            <div class="font-semibold">{{ $stats['total'] }}</div>
+                                                            <div class="text-[10px]">Total</div>
+                                                        </div>
+                                                        <div class="text-center">
+                                                            <div class="font-semibold text-warning">{{ $stats['good'] }}</div>
+                                                            <div class="text-[10px]">Bons résultats</div>
+                                                        </div>
+                                                        <div class="text-center">
+                                                            <div class="font-semibold text-success">{{ $stats['filtered'] }}</div>
+                                                            <div class="text-[10px]">Filtrés</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        @endif
+                                        
+                                        @if($filteredCount > 0)
                                             <div class="overflow-x-auto">
                                                 <table class="table table-xs table-zebra">
                                                     <thead>
@@ -2718,7 +2968,7 @@ new class extends Component {
                                                         </tr>
                                                     </thead>
                                                     <tbody>
-                                                        @foreach($goodCompetitors as $competitor)
+                                                        @foreach($filteredCompetitors as $competitor)
                                                             @php
                                                                 $competitorImage = $this->getCompetitorImageUrl($competitor);
                                                                 $priceStatusClass = $this->getPriceStatusClass($competitor->price_status ?? 'same');
@@ -2753,7 +3003,9 @@ new class extends Component {
                                                                 <td class="text-xs">
                                                                     <div class="font-medium">{{ $competitor->vendor ?? 'N/A' }}</div>
                                                                     <div class="text-[10px] opacity-70">
-                                                                        {{ $competitor->site_name ?? ($competitor->web_site_id ?? 'N/A') }}
+                                                                        <span class="badge badge-xs badge-outline">
+                                                                            {{ $competitor->site_name ?? ($competitor->web_site_id ?? 'N/A') }}
+                                                                        </span>
                                                                     </div>
                                                                 </td>
                                                                 
@@ -2854,198 +3106,19 @@ new class extends Component {
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                                     </svg>
                                                 </div>
-                                                <p class="text-sm text-gray-600">Aucun concurrent avec un bon niveau de similarité trouvé.</p>
+                                                <p class="text-sm text-gray-600">
+                                                    @if($hasAvailableSites && isset($selectedSitesByProduct[$product['sku']]))
+                                                        Aucun résultat ne correspond aux sites sélectionnés.
+                                                    @else
+                                                        Aucun concurrent avec un bon niveau de similarité trouvé.
+                                                    @endif
+                                                </p>
                                                 <p class="text-xs text-gray-500 mt-1">Seuil minimum : 60% de similarité</p>
-                                                @if(count($allCompetitors) > 0)
+                                                @if($stats['good'] > 0)
                                                     <p class="text-xs text-gray-500 mt-1">
-                                                        {{ count($allCompetitors) }} résultat(s) trouvé(s) mais aucun n'atteint le seuil minimum.
+                                                        {{ $stats['good'] }} bon(s) résultat(s) trouvé(s) mais aucun n'est visible avec les filtres actuels.
                                                     </p>
                                                 @endif
-                                            </div>
-                                        @endif
-                                    </div>
-                                </td>
-                            </tr>
-                        @endif
-                        
-                        <!-- Tableau des résultats de recherche manuelle -->
-                        @if(isset($manualSearchResults[$product['sku']]) && isset($manualSearchExpanded[$product['sku']]) && $manualSearchExpanded[$product['sku']])
-                            @php
-                                // Filtrer pour ne montrer que les résultats avec bon niveau (≥ 0.6)
-                                $allManualCompetitors = $manualSearchResults[$product['sku']]['competitors'] ?? [];
-                                $goodManualCompetitors = array_filter($allManualCompetitors, fn($c) => ($c->similarity_score ?? 0) >= 0.6);
-                                $hasGoodManualCompetitors = count($goodManualCompetitors) > 0;
-                            @endphp
-                            <tr class="bg-base-100 border-t-0">
-                                <td colspan="9" class="p-0">
-                                    <div class="p-4 bg-warning/5 border border-warning/20 rounded-lg m-2">
-                                        <div class="flex justify-between items-center mb-4">
-                                            <div>
-                                                <h4 class="font-bold text-sm">
-                                                    <span class="text-warning">Résultats de recherche manuelle</span>
-                                                    <span class="badge badge-warning ml-2">
-                                                        {{ count($goodManualCompetitors) }} bon(s) résultat(s)
-                                                    </span>
-                                                    @if(count($allManualCompetitors) > count($goodManualCompetitors))
-                                                        <span class="badge badge-neutral ml-1">
-                                                            {{ count($allManualCompetitors) - count($goodManualCompetitors) }} autre(s)
-                                                        </span>
-                                                    @endif
-                                                </h4>
-                                                <p class="text-xs text-gray-600 mt-1">
-                                                    Recherche: <span class="font-semibold">{{ $manualSearchResults[$product['sku']]['search_query'] ?? '' }}</span>
-                                                    | Notre prix: <span class="font-bold text-success">{{ $this->formatPrice($product['price']) }}</span>
-                                                    | Seuil de similarité: ≥60%
-                                                </p>
-                                            </div>
-                                            <button wire:click="toggleManualSearchResults('{{ $product['sku'] }}')" 
-                                                    class="btn btn-xs btn-ghost">
-                                                × Fermer
-                                            </button>
-                                        </div>
-                                        
-                                        @if($hasGoodManualCompetitors)
-                                            <div class="overflow-x-auto">
-                                                <table class="table table-xs table-zebra">
-                                                    <thead>
-                                                        <tr class="bg-warning/20">
-                                                            <th class="text-xs">Image</th>
-                                                            <th class="text-xs">Concurrent / Site</th>
-                                                            <th class="text-xs">Produit / Variation</th>
-                                                            <th class="text-xs">Prix concurrent</th>
-                                                            <th class="text-xs">Différence</th>
-                                                            <th class="text-xs">Statut de nos prix par rapport aux concurrents</th>
-                                                            <th class="text-xs">Niveau de correspondance</th>
-                                                            <th class="text-xs">Score</th>
-                                                            <th class="text-xs">Source</th>
-                                                            <th class="text-xs">Actions</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        @foreach($goodManualCompetitors as $competitor)
-                                                            @php
-                                                                $competitorImage = $this->getCompetitorImageUrl($competitor);
-                                                                $priceStatusClass = $this->getPriceStatusClass($competitor->price_status ?? 'same');
-                                                                $priceStatusLabel = $this->getPriceStatusLabel($competitor->price_status ?? 'same');
-                                                                $difference = $this->formatPriceDifference($competitor->price_difference ?? 0);
-                                                                $percentage = $this->formatPercentage($competitor->price_difference_percent ?? 0);
-                                                                $similarityScore = $competitor->similarity_score ?? 0;
-                                                                $scorePercentage = round($similarityScore * 100);
-                                                                $scoreClass = $similarityScore >= 0.8 ? 'badge-success' : 
-                                                                              ($similarityScore >= 0.7 ? 'badge-primary' : 
-                                                                              ($similarityScore >= 0.6 ? 'badge-warning' : 'badge-neutral'));
-                                                            @endphp
-                                                            <tr>
-                                                                <!-- Image du concurrent -->
-                                                                <td>
-                                                                    <div class="avatar">
-                                                                        <div class="w-10 h-10 rounded border border-gray-200 bg-gray-50">
-                                                                            <img src="{{ $competitorImage }}" 
-                                                                                 alt="{{ $competitor->name ?? 'Concurrent' }}"
-                                                                                 class="w-full h-full object-contain p-0.5"
-                                                                                 loading="lazy"
-                                                                                 onerror="
-                                                                                     this.onerror=null; 
-                                                                                     this.src='https://placehold.co/40x40/cccccc/999999?text=No+Img';
-                                                                                     this.classList.add('p-2');
-                                                                                 ">
-                                                                        </div>
-                                                                    </div>
-                                                                </td>
-                                                                
-                                                                <!-- Concurrent / Site -->
-                                                                <td class="text-xs">
-                                                                    <div class="font-medium">{{ $competitor->vendor ?? 'N/A' }}</div>
-                                                                    <div class="text-[10px] opacity-70">
-                                                                        {{ $competitor->site_name ?? ($competitor->web_site_id ?? 'N/A') }}
-                                                                    </div>
-                                                                </td>
-                                                                
-                                                                <!-- Produit / Variation -->
-                                                                <td class="text-xs">
-                                                                    <div class="font-medium">{{ Str::limit($competitor->name ?? 'N/A', 30) }}</div>
-                                                                    <div class="text-[10px] opacity-70">
-                                                                        {{ $competitor->variation ?? 'Standard' }}
-                                                                        @if(!empty($competitor->type))
-                                                                            | {{ $competitor->type }}
-                                                                        @endif
-                                                                    </div>
-                                                                </td>
-                                                                
-                                                                <!-- Prix concurrent -->
-                                                                <td class="text-xs font-bold text-success">
-                                                                    {{ $this->formatPrice($competitor->clean_price ?? $competitor->prix_ht) }}
-                                                                </td>
-                                                                
-                                                                <!-- Différence de prix -->
-                                                                <td class="text-xs">
-                                                                    <div class="flex flex-col">
-                                                                        <span class="font-medium {{ $competitor->price_difference < 0 ? 'text-error' : 'text-success' }}">
-                                                                            {{ $difference }}
-                                                                        </span>
-                                                                        <span class="text-[10px] {{ $competitor->price_difference_percent < 0 ? 'text-error' : 'text-success' }}">
-                                                                            {{ $percentage }}
-                                                                        </span>
-                                                                    </div>
-                                                                </td>
-                                                                
-                                                                <!-- Statut -->
-                                                                <td>
-                                                                    <span class="badge badge-xs {{ $priceStatusClass }}">
-                                                                        {{ $priceStatusLabel }}
-                                                                    </span>
-                                                                </td>
-                                                                
-                                                                <!-- Niveau de correspondance -->
-                                                                <td class="text-xs">
-                                                                    <div class="flex flex-col items-center">
-                                                                        <span class="badge badge-xs {{ $scoreClass }}">
-                                                                            {{ $competitor->match_level ?? 'N/A' }}
-                                                                        </span>
-                                                                    </div>
-                                                                </td>
-                                                                
-                                                                <!-- Score de similarité -->
-                                                                <td class="text-xs">
-                                                                    <div class="flex flex-col items-center">
-                                                                        <span class="badge badge-xs {{ $scoreClass }}">
-                                                                            {{ $scorePercentage }}%
-                                                                        </span>
-                                                                    </div>
-                                                                </td>
-                                                                
-                                                                <!-- Source -->
-                                                                <td>
-                                                                    <span class="badge badge-xs badge-warning">Manuel</span>
-                                                                </td>
-                                                                
-                                                                <!-- Actions -->
-                                                                <td>
-                                                                    @if(!empty($competitor->url))
-                                                                        <a href="{{ $competitor->url }}" 
-                                                                           target="_blank" 
-                                                                           class="btn btn-xs btn-outline btn-warning"
-                                                                           title="Voir le produit">
-                                                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-                                                                            </svg>
-                                                                        </a>
-                                                                    @endif
-                                                                </td>
-                                                            </tr>
-                                                        @endforeach
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        @else
-                                            <div class="text-center py-4">
-                                                <div class="text-gray-400 mb-2">
-                                                    <svg class="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                                    </svg>
-                                                </div>
-                                                <p class="text-sm text-gray-600">Aucun résultat avec un bon niveau de similarité trouvé pour cette recherche.</p>
-                                                <p class="text-xs text-gray-500 mt-1">Seuil minimum : 60% de similarité</p>
                                             </div>
                                         @endif
                                     </div>
@@ -3390,6 +3463,55 @@ tr.selected {
     margin-right: 6px;
 }
 
+/* Style pour les filtres de site */
+.site-filter-container {
+    transition: all 0.3s ease;
+}
+
+.site-filter-badge {
+    cursor: pointer;
+    transition: all 0.2s ease;
+    padding: 4px 8px;
+    border-radius: 12px;
+    border: 1px solid;
+}
+
+.site-filter-badge:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.site-filter-badge.selected {
+    border-width: 2px;
+}
+
+/* Statistiques de filtrage */
+.filter-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.filter-stat-item {
+    text-align: center;
+    padding: 6px;
+    background: #f8fafc;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+}
+
+.filter-stat-value {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 2px;
+}
+
+.filter-stat-label {
+    font-size: 10px;
+    color: #64748b;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .results-table-container {
@@ -3398,6 +3520,16 @@ tr.selected {
     
     .score-indicator {
         width: 40px;
+    }
+    
+    .filter-stats {
+        grid-template-columns: 1fr;
+        gap: 4px;
+    }
+    
+    .site-filter-badge {
+        font-size: 11px;
+        padding: 3px 6px;
     }
 }        
     </style>
@@ -3442,8 +3574,7 @@ tr.selected {
                                     <svg class="w-8 h-8 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                     </svg>
-                                    <p>Aucun résultat avec un bon niveau de similarité trouvé.</p>
-                                    <p class="text-xs text-gray-500 mt-1">Seuil minimum : 60% de similarité</p>
+                                    <p>Aucun résultat ne correspond aux filtres actuels.</p>
                                 `;
                                 table.parentNode.insertBefore(msgDiv, table.nextSibling);
                             }
@@ -3541,6 +3672,18 @@ tr.selected {
                     cell.appendChild(label);
                 }
             });
+            
+            // Gestion des filtres de site
+            const siteFilters = document.querySelectorAll('.site-filter-badge');
+            siteFilters.forEach(badge => {
+                badge.addEventListener('click', function(e) {
+                    if (e.target.type === 'checkbox') return;
+                    const checkbox = this.querySelector('input[type="checkbox"]');
+                    if (checkbox) {
+                        checkbox.click();
+                    }
+                });
+            });
         });
         
         // Fonction pour afficher un indicateur de chargement
@@ -3563,6 +3706,27 @@ tr.selected {
                 loadingDiv.parentNode.removeChild(loadingDiv);
             }
         }
+        
+        // Fonction pour mettre à jour les compteurs de filtres
+        function updateFilterCounts() {
+            document.querySelectorAll('.site-filter-container').forEach(container => {
+                const selectedCount = container.querySelectorAll('input[type="checkbox"]:checked').length;
+                const countBadge = container.querySelector('.selected-count');
+                if (countBadge) {
+                    countBadge.textContent = selectedCount;
+                }
+            });
+        }
+        
+        // Écouter les changements de checkbox pour mettre à jour les compteurs
+        document.addEventListener('change', function(e) {
+            if (e.target.type === 'checkbox' && e.target.closest('.site-filter-container')) {
+                updateFilterCounts();
+            }
+        });
+        
+        // Initialiser les compteurs au chargement
+        document.addEventListener('DOMContentLoaded', updateFilterCounts);
     </script>
     @endpush
 </div>
