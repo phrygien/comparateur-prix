@@ -215,101 +215,229 @@ new class extends Component {
     }
 
     /**
-     * Recherche manuelle avec vendor fixé
-     */
-    protected function searchManualWithFixedVendor(array $vendorVariations, string $searchQuery, string $productName): array
-    {
-        try {
-            $allCompetitors = [];
-            $seenIds = [];
-            
-            // STRATÉGIE 1: Recherche par vendor + searchQuery
-            if (!empty($vendorVariations)) {
-                $competitors1 = $this->searchByVendorAndManualQuery($vendorVariations, $searchQuery);
-                foreach ($competitors1 as $competitor) {
-                    $id = $competitor->id ?? $competitor->url;
-                    if (!in_array($id, $seenIds)) {
-                        $allCompetitors[] = $competitor;
-                        $seenIds[] = $id;
-                    }
-                }
-            }
-            
-            // STRATÉGIE 2: Recherche par type seulement (si searchQuery est un type)
-            if (count($allCompetitors) < 5) {
-                $competitors2 = $this->searchByTypeOnly($searchQuery);
-                foreach ($competitors2 as $competitor) {
-                    $id = $competitor->id ?? $competitor->url;
-                    if (!in_array($id, $seenIds)) {
-                        $allCompetitors[] = $competitor;
-                        $seenIds[] = $id;
-                    }
-                }
-            }
-            
-            // STRATÉGIE 3: Recherche par searchQuery seul (fallback)
-            if (count($allCompetitors) < 3) {
-                $searchQueryForFulltext = $this->prepareSearchTermsForFulltext($searchQuery);
-                if (!empty($searchQueryForFulltext)) {
-                    $competitors3 = $this->searchByFulltext($searchQueryForFulltext);
-                    foreach ($competitors3 as $competitor) {
-                        $id = $competitor->id ?? $competitor->url;
-                        if (!in_array($id, $seenIds)) {
-                            $allCompetitors[] = $competitor;
-                            $seenIds[] = $id;
-                        }
-                    }
-                }
-            }
-            
-            // Filtrer et trier
-            if (!empty($allCompetitors)) {
-                // Traiter les images
-                foreach ($allCompetitors as $competitor) {
-                    $competitor->image = $this->getCompetitorImage($competitor);
-                }
-                
-                // Extraire les composants pour la similarité
-                $components = $this->extractSearchComponentsImproved($productName);
-                
-                // Ajouter le prix de comparaison
-                foreach ($allCompetitors as $competitor) {
-                    $competitorPrice = $this->cleanPrice($competitor->prix_ht ?? 0);
-                    $ourPrice = $this->cleanPrice($components['our_price'] ?? 0);
-                    
-                    // Différence de prix
-                    $competitor->price_difference = $ourPrice - $competitorPrice;
-                    $competitor->price_difference_percent = $ourPrice > 0 ? (($ourPrice - $competitorPrice) / $ourPrice) * 100 : 0;
-                    
-                    // Statut
-                    if ($competitorPrice < $ourPrice * 0.9) {
-                        $competitor->price_status = 'much_cheaper';
-                    } elseif ($competitorPrice < $ourPrice) {
-                        $competitor->price_status = 'cheaper';
-                    } elseif ($competitorPrice == $ourPrice) {
-                        $competitor->price_status = 'same';
-                    } elseif ($competitorPrice <= $ourPrice * 1.1) {
-                        $competitor->price_status = 'slightly_higher';
-                    } else {
-                        $competitor->price_status = 'much_higher';
-                    }
-                    
-                    // Ajouter le prix nettoyé
-                    $competitor->clean_price = $competitorPrice;
-                }
-                
-                // Limiter le nombre de résultats
-                $limitedCompetitors = array_slice($allCompetitors, 0, 15);
-                
-                return $limitedCompetitors;
-            }
-            
-            return [];
-            
-        } catch (\Exception $e) {
+ * Recherche par mots-clés du nom
+ */
+protected function searchByNameKeywords(array $keywords, string $searchQuery): array
+{
+    try {
+        if (empty($keywords)) {
             return [];
         }
+        
+        $conditions = [];
+        $params = [];
+        
+        // Prendre les 3-5 mots-clés les plus significatifs
+        $significantKeywords = array_slice($keywords, 0, min(5, count($keywords)));
+        
+        foreach ($significantKeywords as $keyword) {
+            if (strlen($keyword) > 2) {
+                $conditions[] = "(lp.name LIKE ? OR lp.variation LIKE ? OR lp.vendor LIKE ?)";
+                $params[] = '%' . $keyword . '%';
+                $params[] = '%' . $keyword . '%';
+                $params[] = '%' . $keyword . '%';
+            }
+        }
+        
+        // Ajouter aussi la requête complète
+        if (strlen($searchQuery) > 3) {
+            $conditions[] = "(lp.name LIKE ? OR lp.variation LIKE ?)";
+            $params[] = '%' . $searchQuery . '%';
+            $params[] = '%' . $searchQuery . '%';
+        }
+        
+        if (empty($conditions)) {
+            return [];
+        }
+        
+        $query = "
+            SELECT 
+                lp.*,
+                ws.name as site_name,
+                lp.image_url as image_url,
+                lp.url as product_url
+            FROM last_price_scraped_product lp
+            LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+            WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
+            AND (" . implode(' OR ', $conditions) . ")
+            ORDER BY lp.prix_ht ASC
+            LIMIT 40
+        ";
+        
+        return DB::connection('mysql')->select($query, $params);
+        
+    } catch (\Exception $e) {
+        return [];
     }
+}
+
+/**
+ * Recherche large par requête
+ */
+protected function searchBroadByQuery(string $searchQuery): array
+{
+    try {
+        if (empty($searchQuery) || strlen($searchQuery) < 3) {
+            return [];
+        }
+        
+        // Nettoyer la requête
+        $cleanQuery = $this->normalizeAndCleanText($searchQuery);
+        
+        // Diviser en mots
+        $words = preg_split('/\s+/', $cleanQuery);
+        $words = array_filter($words, function($word) {
+            return strlen($word) > 2;
+        });
+        
+        $conditions = [];
+        $params = [];
+        
+        // Rechercher chaque mot séparément
+        foreach (array_slice($words, 0, 4) as $word) {
+            $conditions[] = "(lp.name LIKE ? OR lp.variation LIKE ? OR lp.vendor LIKE ? OR lp.type LIKE ?)";
+            $params[] = '%' . $word . '%';
+            $params[] = '%' . $word . '%';
+            $params[] = '%' . $word . '%';
+            $params[] = '%' . $word . '%';
+        }
+        
+        // Rechercher aussi la phrase complète
+        if (strlen($cleanQuery) > 4) {
+            $conditions[] = "(lp.name LIKE ? OR lp.variation LIKE ?)";
+            $params[] = '%' . $cleanQuery . '%';
+            $params[] = '%' . $cleanQuery . '%';
+        }
+        
+        if (empty($conditions)) {
+            return [];
+        }
+        
+        $query = "
+            SELECT 
+                lp.*,
+                ws.name as site_name,
+                lp.image_url as image_url,
+                lp.url as product_url
+            FROM last_price_scraped_product lp
+            LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+            WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
+            AND (" . implode(' OR ', $conditions) . ")
+            ORDER BY lp.prix_ht ASC
+            LIMIT 50
+        ";
+        
+        return DB::connection('mysql')->select($query, $params);
+        
+    } catch (\Exception $e) {
+        return [];
+    }
+}
+
+
+/**
+ * Recherche manuelle avec stratégies multiples
+ */
+protected function searchManualWithFixedVendor(array $vendorVariations, string $searchQuery, string $productName): array
+{
+    try {
+        $allCompetitors = [];
+        $seenIds = [];
+        
+        // STRATÉGIE 1: Recherche par le nom complet du produit (sans vendor)
+        $cleanProductName = $this->normalizeAndCleanText($productName);
+        $keywords = $this->extractSearchKeywords($cleanProductName);
+        
+        if (!empty($keywords)) {
+            $competitors1 = $this->searchByNameKeywords($keywords, $searchQuery);
+            foreach ($competitors1 as $competitor) {
+                $id = $competitor->id ?? $competitor->url;
+                if (!in_array($id, $seenIds)) {
+                    $allCompetitors[] = $competitor;
+                    $seenIds[] = $id;
+                }
+            }
+        }
+        
+        // STRATÉGIE 2: Recherche par vendor + searchQuery (si vendor détecté)
+        if (count($allCompetitors) < 10 && !empty($vendorVariations)) {
+            $competitors2 = $this->searchByVendorAndManualQuery($vendorVariations, $searchQuery);
+            foreach ($competitors2 as $competitor) {
+                $id = $competitor->id ?? $competitor->url;
+                if (!in_array($id, $seenIds)) {
+                    $allCompetitors[] = $competitor;
+                    $seenIds[] = $id;
+                }
+            }
+        }
+        
+        // STRATÉGIE 3: Recherche par searchQuery seul (broad search)
+        if (count($allCompetitors) < 5) {
+            $competitors3 = $this->searchBroadByQuery($searchQuery);
+            foreach ($competitors3 as $competitor) {
+                $id = $competitor->id ?? $competitor->url;
+                if (!in_array($id, $seenIds)) {
+                    $allCompetitors[] = $competitor;
+                    $seenIds[] = $id;
+                }
+            }
+        }
+        
+        // STRATÉGIE 4: Recherche par type (si applicable)
+        if (count($allCompetitors) < 3) {
+            $competitors4 = $this->searchByTypeOnly($searchQuery);
+            foreach ($competitors4 as $competitor) {
+                $id = $competitor->id ?? $competitor->url;
+                if (!in_array($id, $seenIds)) {
+                    $allCompetitors[] = $competitor;
+                    $seenIds[] = $id;
+                }
+            }
+        }
+        
+        // STRATÉGIE 5: Recherche FULLTEXT (dernier recours)
+        if (count($allCompetitors) < 3) {
+            $searchQueryForFulltext = $this->prepareSearchTermsForFulltext($searchQuery);
+            if (!empty($searchQueryForFulltext)) {
+                $competitors5 = $this->searchByFulltext($searchQueryForFulltext);
+                foreach ($competitors5 as $competitor) {
+                    $id = $competitor->id ?? $competitor->url;
+                    if (!in_array($id, $seenIds)) {
+                        $allCompetitors[] = $competitor;
+                        $seenIds[] = $id;
+                    }
+                }
+            }
+        }
+        
+        // Filtrer et trier
+        if (!empty($allCompetitors)) {
+            // Traiter les images
+            foreach ($allCompetitors as $competitor) {
+                $competitor->image = $this->getCompetitorImage($competitor);
+            }
+            
+            // Ajouter les comparaisons de prix
+            $ourPrice = $this->cleanPrice(0); // Prix à 0 car nous n'avons pas notre prix ici
+            $competitorsWithComparison = $this->addPriceComparisons($allCompetitors, $ourPrice);
+            
+            // Filtrer par similarité
+            $components = $this->extractSearchComponentsImproved($productName);
+            $filteredCompetitors = $this->filterBySimilarityImproved($competitorsWithComparison, $productName, $components);
+            
+            // Limiter le nombre de résultats
+            $limitedCompetitors = array_slice($filteredCompetitors, 0, 15);
+            
+            return $limitedCompetitors;
+        }
+        
+        return [];
+        
+    } catch (\Exception $e) {
+        return [];
+    }
+}
+
 
     /**
      * Recherche par vendor + requête manuelle complète
