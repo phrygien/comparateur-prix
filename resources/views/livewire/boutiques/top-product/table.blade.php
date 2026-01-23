@@ -2122,8 +2122,7 @@ public function removeMultipleProducts(array $skus): void
             );
             return;
         }
-        
-        dd($skus);
+
         // Compter le nombre de produits avant suppression
         $countBefore = DetailProduct::where('list_product_id', $this->id)
             ->whereIn('EAN', $skus)
