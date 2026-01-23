@@ -34,7 +34,6 @@ new class extends Component {
     public array $manualSearchResults = [];
     public array $manualSearchLoading = [];
     public array $manualSearchExpanded = [];
-    public array $manualSearchType = [];
 
     public function mount($id): void
     {
@@ -142,7 +141,6 @@ new class extends Component {
 
     /**
      * NOUVELLE MÉTHODE : Recherche manuelle pour un produit spécifique
-     * avec vendor fixé et recherche par nom ou type
      */
     public function manualSearchForProduct(string $sku, string $productName = '', $price = 0): void
     {
@@ -161,31 +159,12 @@ new class extends Component {
             $searchQuery = $this->manualSearchQueries[$sku];
             $cleanPrice = $this->cleanPrice($price);
             
-            // 1. Extraire le vendor du nom du produit
-            $vendor = $this->extractVendorFromSearchImproved($productName);
-            
-            // 2. Si recherche par type, extraire le type
-            $searchType = $this->manualSearchType[$sku] ?? 'name';
-            if ($searchType === 'type') {
-                // Essayer d'extraire le type du nom du produit ou utiliser la recherche
-                $type = $this->extractTypeFromProductName($productName);
-                if (empty($type)) {
-                    $type = $searchQuery;
-                }
-                $searchQuery = $type;
-            }
-            
-            // 3. Préparer les variations du vendor
-            $vendorVariations = $this->getVendorVariationsImproved($vendor);
-            
-            // 4. Recherche avec vendor fixé et recherche manuelle
-            $competitors = $this->searchManualWithFixedVendor($vendorVariations, $searchQuery, $productName);
+            // Utiliser la même logique de recherche que la recherche automatique
+            $competitors = $this->findCompetitorsForProduct($searchQuery, $cleanPrice);
             
             if (!empty($competitors)) {
                 $this->manualSearchResults[$sku] = [
                     'search_query' => $searchQuery,
-                    'vendor' => $vendor,
-                    'search_type' => $searchType,
                     'our_price' => $cleanPrice,
                     'competitors' => $competitors,
                     'count' => count($competitors)
@@ -193,8 +172,6 @@ new class extends Component {
             } else {
                 $this->manualSearchResults[$sku] = [
                     'search_query' => $searchQuery,
-                    'vendor' => $vendor,
-                    'search_type' => $searchType,
                     'our_price' => $cleanPrice,
                     'competitors' => [],
                     'count' => 0
@@ -212,384 +189,6 @@ new class extends Component {
         } finally {
             unset($this->manualSearchLoading[$sku]);
         }
-    }
-
-    /**
- * Recherche par mots-clés du nom
- */
-protected function searchByNameKeywords(array $keywords, string $searchQuery): array
-{
-    try {
-        if (empty($keywords)) {
-            return [];
-        }
-        
-        $conditions = [];
-        $params = [];
-        
-        // Prendre les 3-5 mots-clés les plus significatifs
-        $significantKeywords = array_slice($keywords, 0, min(5, count($keywords)));
-        
-        foreach ($significantKeywords as $keyword) {
-            if (strlen($keyword) > 2) {
-                $conditions[] = "(lp.name LIKE ? OR lp.variation LIKE ? OR lp.vendor LIKE ?)";
-                $params[] = '%' . $keyword . '%';
-                $params[] = '%' . $keyword . '%';
-                $params[] = '%' . $keyword . '%';
-            }
-        }
-        
-        // Ajouter aussi la requête complète
-        if (strlen($searchQuery) > 3) {
-            $conditions[] = "(lp.name LIKE ? OR lp.variation LIKE ?)";
-            $params[] = '%' . $searchQuery . '%';
-            $params[] = '%' . $searchQuery . '%';
-        }
-        
-        if (empty($conditions)) {
-            return [];
-        }
-        
-        $query = "
-            SELECT 
-                lp.*,
-                ws.name as site_name,
-                lp.image_url as image_url,
-                lp.url as product_url
-            FROM last_price_scraped_product lp
-            LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-            WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
-            AND (" . implode(' OR ', $conditions) . ")
-            ORDER BY lp.prix_ht ASC
-            LIMIT 40
-        ";
-        
-        return DB::connection('mysql')->select($query, $params);
-        
-    } catch (\Exception $e) {
-        return [];
-    }
-}
-
-/**
- * Recherche large par requête
- */
-protected function searchBroadByQuery(string $searchQuery): array
-{
-    try {
-        if (empty($searchQuery) || strlen($searchQuery) < 3) {
-            return [];
-        }
-        
-        // Nettoyer la requête
-        $cleanQuery = $this->normalizeAndCleanText($searchQuery);
-        
-        // Diviser en mots
-        $words = preg_split('/\s+/', $cleanQuery);
-        $words = array_filter($words, function($word) {
-            return strlen($word) > 2;
-        });
-        
-        $conditions = [];
-        $params = [];
-        
-        // Rechercher chaque mot séparément
-        foreach (array_slice($words, 0, 4) as $word) {
-            $conditions[] = "(lp.name LIKE ? OR lp.variation LIKE ? OR lp.vendor LIKE ? OR lp.type LIKE ?)";
-            $params[] = '%' . $word . '%';
-            $params[] = '%' . $word . '%';
-            $params[] = '%' . $word . '%';
-            $params[] = '%' . $word . '%';
-        }
-        
-        // Rechercher aussi la phrase complète
-        if (strlen($cleanQuery) > 4) {
-            $conditions[] = "(lp.name LIKE ? OR lp.variation LIKE ?)";
-            $params[] = '%' . $cleanQuery . '%';
-            $params[] = '%' . $cleanQuery . '%';
-        }
-        
-        if (empty($conditions)) {
-            return [];
-        }
-        
-        $query = "
-            SELECT 
-                lp.*,
-                ws.name as site_name,
-                lp.image_url as image_url,
-                lp.url as product_url
-            FROM last_price_scraped_product lp
-            LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-            WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
-            AND (" . implode(' OR ', $conditions) . ")
-            ORDER BY lp.prix_ht ASC
-            LIMIT 50
-        ";
-        
-        return DB::connection('mysql')->select($query, $params);
-        
-    } catch (\Exception $e) {
-        return [];
-    }
-}
-
-
-/**
- * Recherche manuelle avec stratégies multiples
- */
-protected function searchManualWithFixedVendor(array $vendorVariations, string $searchQuery, string $productName): array
-{
-    try {
-        $allCompetitors = [];
-        $seenIds = [];
-        
-        // STRATÉGIE 1: Recherche par le nom complet du produit (sans vendor)
-        $cleanProductName = $this->normalizeAndCleanText($productName);
-        $keywords = $this->extractSearchKeywords($cleanProductName);
-        
-        if (!empty($keywords)) {
-            $competitors1 = $this->searchByNameKeywords($keywords, $searchQuery);
-            foreach ($competitors1 as $competitor) {
-                $id = $competitor->id ?? $competitor->url;
-                if (!in_array($id, $seenIds)) {
-                    $allCompetitors[] = $competitor;
-                    $seenIds[] = $id;
-                }
-            }
-        }
-        
-        // STRATÉGIE 2: Recherche par vendor + searchQuery (si vendor détecté)
-        if (count($allCompetitors) < 10 && !empty($vendorVariations)) {
-            $competitors2 = $this->searchByVendorAndManualQuery($vendorVariations, $searchQuery);
-            foreach ($competitors2 as $competitor) {
-                $id = $competitor->id ?? $competitor->url;
-                if (!in_array($id, $seenIds)) {
-                    $allCompetitors[] = $competitor;
-                    $seenIds[] = $id;
-                }
-            }
-        }
-        
-        // STRATÉGIE 3: Recherche par searchQuery seul (broad search)
-        if (count($allCompetitors) < 5) {
-            $competitors3 = $this->searchBroadByQuery($searchQuery);
-            foreach ($competitors3 as $competitor) {
-                $id = $competitor->id ?? $competitor->url;
-                if (!in_array($id, $seenIds)) {
-                    $allCompetitors[] = $competitor;
-                    $seenIds[] = $id;
-                }
-            }
-        }
-        
-        // STRATÉGIE 4: Recherche par type (si applicable)
-        if (count($allCompetitors) < 3) {
-            $competitors4 = $this->searchByTypeOnly($searchQuery);
-            foreach ($competitors4 as $competitor) {
-                $id = $competitor->id ?? $competitor->url;
-                if (!in_array($id, $seenIds)) {
-                    $allCompetitors[] = $competitor;
-                    $seenIds[] = $id;
-                }
-            }
-        }
-        
-        // STRATÉGIE 5: Recherche FULLTEXT (dernier recours)
-        if (count($allCompetitors) < 3) {
-            $searchQueryForFulltext = $this->prepareSearchTermsForFulltext($searchQuery);
-            if (!empty($searchQueryForFulltext)) {
-                $competitors5 = $this->searchByFulltext($searchQueryForFulltext);
-                foreach ($competitors5 as $competitor) {
-                    $id = $competitor->id ?? $competitor->url;
-                    if (!in_array($id, $seenIds)) {
-                        $allCompetitors[] = $competitor;
-                        $seenIds[] = $id;
-                    }
-                }
-            }
-        }
-        
-        // Filtrer et trier
-        if (!empty($allCompetitors)) {
-            // Traiter les images
-            foreach ($allCompetitors as $competitor) {
-                $competitor->image = $this->getCompetitorImage($competitor);
-            }
-            
-            // Ajouter les comparaisons de prix
-            $ourPrice = $this->cleanPrice(0); // Prix à 0 car nous n'avons pas notre prix ici
-            $competitorsWithComparison = $this->addPriceComparisons($allCompetitors, $ourPrice);
-            
-            // Filtrer par similarité
-            $components = $this->extractSearchComponentsImproved($productName);
-            $filteredCompetitors = $this->filterBySimilarityImproved($competitorsWithComparison, $productName, $components);
-            
-            // Limiter le nombre de résultats
-            $limitedCompetitors = array_slice($filteredCompetitors, 0, 15);
-            
-            return $limitedCompetitors;
-        }
-        
-        return [];
-        
-    } catch (\Exception $e) {
-        return [];
-    }
-}
-
-
-    /**
-     * Recherche par vendor + requête manuelle complète
-     */
-    protected function searchByVendorAndManualQuery(array $vendorVariations, string $searchQuery): array
-    {
-        try {
-            if (empty($searchQuery)) {
-                return [];
-            }
-            
-        $vendorConditions = [];
-        $params = [];
-        
-        foreach ($vendorVariations as $variation) {
-            $vendorConditions[] = "lp.vendor LIKE ?";
-            $params[] = '%' . $variation . '%';
-        }
-        
-        // Chercher dans tous les champs pertinents
-        $searchConditions = [];
-        $searchTerms = explode(' ', $searchQuery);
-        
-        foreach (array_slice($searchTerms, 0, 5) as $term) {
-            if (strlen($term) > 2) {
-                $searchConditions[] = "(lp.name LIKE ? OR lp.variation LIKE ? OR lp.type LIKE ?)";
-                $params[] = '%' . $term . '%';
-                $params[] = '%' . $term . '%';
-                $params[] = '%' . $term . '%';
-            }
-        }
-        
-        if (empty($searchConditions)) {
-            // Rechercher la requête complète
-            $searchConditions[] = "(lp.name LIKE ? OR lp.variation LIKE ? OR lp.type LIKE ?)";
-            $params[] = '%' . $searchQuery . '%';
-            $params[] = '%' . $searchQuery . '%';
-            $params[] = '%' . $searchQuery . '%';
-        }
-        
-        $query = "
-            SELECT 
-                lp.*,
-                ws.name as site_name,
-                lp.image_url as image_url,
-                lp.url as product_url
-            FROM last_price_scraped_product lp
-            LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-            WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
-            AND (" . implode(' OR ', $vendorConditions) . ")
-            AND (" . implode(' OR ', $searchConditions) . ")
-            ORDER BY lp.prix_ht ASC
-            LIMIT 30
-        ";
-        
-        return DB::connection('mysql')->select($query, $params);
-        
-        } catch (\Exception $e) {
-            return [];
-        }
-    }
-
-    /**
-     * Recherche par type seulement
-     */
-    protected function searchByTypeOnly(string $type): array
-    {
-        try {
-            if (empty($type) || strlen($type) < 3) {
-                return [];
-            }
-            
-            // Liste des types courants
-            $commonTypes = [
-                'eau de parfum', 'eau de toilette', 'parfum', 'coffret',
-                'crème', 'creme', 'lotion', 'gel', 'sérum', 'serum', 'baume', 'masque',
-                'shampooing', 'soin', 'traitement', 'nettoyant', 'hydratant', 'protecteur',
-                'spray', 'vapo', 'vaporisateur'
-            ];
-            
-            // Vérifier si la recherche correspond à un type
-            $typeLower = mb_strtolower($type);
-            $isType = false;
-            foreach ($commonTypes as $commonType) {
-                if (str_contains($typeLower, $commonType) || str_contains($commonType, $typeLower)) {
-                    $isType = true;
-                    $type = $commonType;
-                    break;
-                }
-            }
-            
-            if (!$isType) {
-                return [];
-            }
-            
-            $query = "
-                SELECT 
-                    lp.*,
-                    ws.name as site_name,
-                    lp.image_url as image_url,
-                    lp.url as product_url
-                FROM last_price_scraped_product lp
-                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-                WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
-                AND (lp.type LIKE ? OR lp.name LIKE ?)
-                ORDER BY lp.prix_ht ASC
-                LIMIT 20
-            ";
-            
-            return DB::connection('mysql')->select($query, [
-                '%' . $type . '%',
-                '%' . $type . '%'
-            ]);
-            
-        } catch (\Exception $e) {
-            return [];
-        }
-    }
-
-    /**
-     * Extraire le type du nom du produit
-     */
-    protected function extractTypeFromProductName(string $productName): string
-    {
-        $productName = $this->normalizeAndCleanText($productName);
-        $productNameLower = mb_strtolower($productName);
-        
-        // Liste des types courants
-        $types = [
-            'eau de parfum' => ['eau de parfum', 'edp', 'parfum'],
-            'eau de toilette' => ['eau de toilette', 'edt', 'toilette'],
-            'cologne' => ['cologne', 'eau de cologne', 'edc'],
-            'crème' => ['crème', 'creme', 'cream'],
-            'lotion' => ['lotion'],
-            'gel' => ['gel'],
-            'sérum' => ['sérum', 'serum'],
-            'baume' => ['baume', 'balm'],
-            'masque' => ['masque', 'mask'],
-            'shampooing' => ['shampooing', 'shampoo', 'shampoing'],
-            'spray' => ['spray', 'vaporisateur', 'vapo'],
-            'coffret' => ['coffret', 'set', 'kit']
-        ];
-        
-        foreach ($types as $type => $keywords) {
-            foreach ($keywords as $keyword) {
-                if (str_contains($productNameLower, $keyword)) {
-                    return $type;
-                }
-            }
-        }
-        
-        return '';
     }
 
     /**
@@ -620,7 +219,6 @@ protected function searchManualWithFixedVendor(array $vendorVariations, string $
         unset($this->manualSearchQueries[$sku]);
         unset($this->manualSearchResults[$sku]);
         unset($this->manualSearchExpanded[$sku]);
-        unset($this->manualSearchType[$sku]);
     }
 
     /**
@@ -2450,9 +2048,7 @@ protected function searchManualWithFixedVendor(array $vendorVariations, string $
     {
         return "list_products_{$type}_" . md5(serialize($params));
     }
-};  ?>
-
-
+}; ?>
 <div>
     <!-- Overlay de chargement -->
     <div wire:loading.delay.flex class="hidden fixed inset-0 z-50 items-center justify-center bg-transparent">
@@ -2710,25 +2306,13 @@ protected function searchManualWithFixedVendor(array $vendorVariations, string $
                             <!-- Recherche manuelle -->
                             <td>
                                 <div class="space-y-1">
-                                    <!-- Type de recherche -->
-                                    <div class="flex space-x-1 mb-1">
-                                        <button wire:click="$set('manualSearchType.{{ $product['sku'] }}', 'name')"
-                                            class="btn btn-xs {{ ($manualSearchType[$product['sku']] ?? 'name') === 'name' ? 'btn-warning' : 'btn-ghost' }}">
-                                            Nom
-                                        </button>
-                                        <button wire:click="$set('manualSearchType.{{ $product['sku'] }}', 'type')"
-                                            class="btn btn-xs {{ ($manualSearchType[$product['sku']] ?? 'name') === 'type' ? 'btn-warning' : 'btn-ghost' }}">
-                                            Type
-                                        </button>
-                                    </div>
-                                    
                                     <!-- Input de recherche -->
                                     <div class="relative">
                                         <input 
                                             type="text" 
                                             wire:model.live.debounce.800ms="manualSearchQueries.{{ $product['sku'] }}"
                                             wire:key="manual-search-{{ $product['sku'] }}"
-                                            placeholder="{{ ($manualSearchType[$product['sku']] ?? 'name') === 'type' ? 'Type (ex: eau de parfum)' : 'Recherche...' }}"
+                                            placeholder="Recherche..."
                                             class="input input-xs input-bordered w-full"
                                         >
                                         @if(isset($manualSearchQueries[$product['sku']]) && !empty($manualSearchQueries[$product['sku']]))
@@ -2967,9 +2551,6 @@ protected function searchManualWithFixedVendor(array $vendorVariations, string $
                                                 </h4>
                                                 <p class="text-xs text-gray-600 mt-1">
                                                     Recherche: <span class="font-semibold">{{ $manualSearchResults[$product['sku']]['search_query'] ?? '' }}</span>
-                                                    @if(!empty($manualSearchResults[$product['sku']]['vendor']))
-                                                        | Vendor: <span class="font-semibold text-warning">{{ $manualSearchResults[$product['sku']]['vendor'] }}</span>
-                                                    @endif
                                                     | Notre prix: <span class="font-bold text-success">{{ $this->formatPrice($product['price']) }}</span>
                                                 </p>
                                             </div>
@@ -2990,6 +2571,7 @@ protected function searchManualWithFixedVendor(array $vendorVariations, string $
                                                             <th class="text-xs">Prix concurrent</th>
                                                             <th class="text-xs">Différence</th>
                                                             <th class="text-xs">Statut de nos prix par rapport aux concurrents</th>
+                                                            <th class="text-xs">Score</th>
                                                             <th class="text-xs">Source</th>
                                                             <th class="text-xs">Actions</th>
                                                         </tr>
@@ -3064,11 +2646,25 @@ protected function searchManualWithFixedVendor(array $vendorVariations, string $
                                                                     </span>
                                                                 </td>
                                                                 
+                                                                <!-- Score de similarité -->
+                                                                <td class="text-xs">
+                                                                    @if(isset($competitor->similarity_score))
+                                                                        <div class="flex flex-col items-center">
+                                                                            <span class="badge badge-xs {{ $competitor->similarity_score >= 0.8 ? 'badge-success' : ($competitor->similarity_score >= 0.6 ? 'badge-warning' : 'badge-error') }}">
+                                                                                {{ number_format($competitor->similarity_score * 100, 0) }}%
+                                                                            </span>
+                                                                            <span class="text-[10px] opacity-70">
+                                                                                {{ $competitor->match_level ?? 'N/A' }}
+                                                                            </span>
+                                                                        </div>
+                                                                    @else
+                                                                        <span class="badge badge-xs badge-neutral">N/A</span>
+                                                                    @endif
+                                                                </td>
+                                                                
                                                                 <!-- Source -->
                                                                 <td>
-                                                                    <span class="badge badge-xs badge-warning">
-                                                                        {{ $manualSearchResults[$product['sku']]['search_type'] ?? 'manuel' }}
-                                                                    </span>
+                                                                    <span class="badge badge-xs badge-warning">Manuel</span>
                                                                 </td>
                                                                 
                                                                 <!-- Actions -->
