@@ -1,5 +1,6 @@
 <?php
 
+use Mary\Traits\Toast;
 use Livewire\Volt\Component;
 use Livewire\Attributes\On;
 use Illuminate\Support\Facades\Log;
@@ -9,6 +10,8 @@ use App\Models\Comparaison;
 use App\Models\DetailProduct;
 
 new class extends Component {
+    use Toast;
+
     public $page = 1;
     public $perPage = 20;
     public $hasMore = true;
@@ -188,10 +191,7 @@ new class extends Component {
     public function openModal()
     {
         if (empty($this->selectedProducts)) {
-            $this->dispatch('notify', [
-                'type' => 'error',
-                'message' => 'Veuillez sélectionner au moins un produit.'
-            ]);
+            $this->warning('Veuillez sélectionner au moins un produit.');
             return;
         }
         
@@ -205,18 +205,12 @@ new class extends Component {
         try {
             // Validation
             if (empty($this->selectedProducts)) {
-                $this->dispatch('notify', [
-                    'type' => 'error',
-                    'message' => 'Veuillez sélectionner au moins un produit.'
-                ]);
+                $this->warning('Veuillez sélectionner au moins un produit.');
                 return;
             }
             
             if (empty($this->listName)) {
-                $this->dispatch('notify', [
-                    'type' => 'error',
-                    'message' => 'Veuillez donner un nom à votre liste.'
-                ]);
+                $this->warning('Veuillez donner un nom à votre liste.');
                 return;
             }
             
@@ -250,10 +244,8 @@ new class extends Component {
             $this->selectedProductsDetails = [];
             $this->listName = '';
             
-            $this->dispatch('notify', [
-                'type' => 'success',
-                'message' => 'Liste sauvegardée avec ' . count($batchData) . ' produit(s).'
-            ]);
+            $this->success('Liste sauvegardée avec ' . count($batchData) . ' produit(s).');
+
             
             // Émettre un événement pour le parent
             $this->dispatch('list-created', ['listId' => $list->id]);
@@ -898,7 +890,7 @@ public function addProductBySku(string $sku): void
     </div>
 
     <!-- Sélection globale - SIMPLIFIÉE -->
-    <div class="mb-4 p-4 bg-base-200 rounded-box">
+    {{-- <div class="mb-4 p-4 bg-base-200 rounded-box">
         <div class="flex items-center justify-between">
             <div class="flex items-center gap-3 cursor-pointer">
                 <input 
@@ -916,7 +908,7 @@ public function addProductBySku(string $sku): void
                 {{ count($selectedProducts) }} produits sélectionnés
             </div>
         </div>
-    </div>
+    </div> --}}
 
     <!-- Section de résumé des produits sélectionnés -->
     @if(count($selectedProducts) > 0)
