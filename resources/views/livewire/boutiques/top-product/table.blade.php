@@ -2216,11 +2216,11 @@ public function removeSelectedProducts(): void
 /**
  * Confirmation de suppression des produits sélectionnés
  */
-public function confirmedRemoveSelectedProducts(): void
-{
-    $this->removeMultipleProducts($this->selectedProducts);
-    $this->selectedProducts = [];
-}
+// public function confirmedRemoveSelectedProducts(): void
+// {
+//     $this->removeMultipleProducts($this->selectedProducts);
+//     $this->selectedProducts = [];
+// }
 
 /**
  * Écouter les événements d'alerte
