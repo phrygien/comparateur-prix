@@ -436,7 +436,7 @@ new class extends Component {
                 $message .= ' ' . count($productsToRemove) . ' produit(s) supprimé(s).';
             }
             
-            $this->success($message);
+            $this->success('MAJ OK');
             
             // Émettre un événement pour le parent
             $this->dispatch('list-updated', ['listId' => $this->listId]);
