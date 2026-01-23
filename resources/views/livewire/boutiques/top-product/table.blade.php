@@ -2048,6 +2048,212 @@ new class extends Component {
     {
         return "list_products_{$type}_" . md5(serialize($params));
     }
+
+
+/**
+ * Supprimer un produit de la liste
+ */
+public function removeProduct(string $sku): void
+{
+    try {
+        // Vérifier si le produit existe dans la liste
+        $exists = DetailProduct::where('list_product_id', $this->id)
+            ->where('EAN', $sku)
+            ->exists();
+        
+        if (!$exists) {
+            $this->dispatch('alert', 
+                type: 'error',
+                message: 'Produit non trouvé dans la liste.'
+            );
+            return;
+        }
+        
+        // Supprimer le produit
+        $deleted = DetailProduct::removeFromList($this->id, $sku);
+        
+        if ($deleted) {
+            // Supprimer des caches si nécessaire
+            Cache::forget("list_skus_{$this->id}");
+            
+            // Réinitialiser les données associées au produit
+            unset($this->competitorResults[$sku]);
+            unset($this->expandedProducts[$sku]);
+            unset($this->manualSearchQueries[$sku]);
+            unset($this->manualSearchResults[$sku]);
+            unset($this->manualSearchExpanded[$sku]);
+            unset($this->searchingProducts[$sku]);
+            unset($this->manualSearchLoading[$sku]);
+            
+            // Rafraîchir la liste
+            $this->dispatch('alert', 
+                type: 'success',
+                message: 'Produit supprimé avec succès.'
+            );
+            
+            // Forcer le rechargement des données
+            $this->refreshProducts();
+        } else {
+            $this->dispatch('alert', 
+                type: 'error',
+                message: 'Erreur lors de la suppression du produit.'
+            );
+        }
+        
+    } catch (\Exception $e) {
+        $this->dispatch('alert', 
+            type: 'error',
+            message: 'Erreur: ' . $e->getMessage()
+        );
+    }
+}
+
+/**
+ * Supprimer plusieurs produits de la liste
+ */
+public function removeMultipleProducts(array $skus): void
+{
+    try {
+        $deletedCount = DetailProduct::where('list_product_id', $this->id)
+            ->whereIn('EAN', $skus)
+            ->delete();
+        
+        if ($deletedCount > 0) {
+            // Supprimer des caches
+            Cache::forget("list_skus_{$this->id}");
+            
+            // Réinitialiser les données des produits supprimés
+            foreach ($skus as $sku) {
+                unset($this->competitorResults[$sku]);
+                unset($this->expandedProducts[$sku]);
+                unset($this->manualSearchQueries[$sku]);
+                unset($this->manualSearchResults[$sku]);
+                unset($this->manualSearchExpanded[$sku]);
+                unset($this->searchingProducts[$sku]);
+                unset($this->manualSearchLoading[$sku]);
+            }
+            
+            $this->dispatch('alert', 
+                type: 'success',
+                message: $deletedCount . ' produit(s) supprimé(s) avec succès.'
+            );
+            
+            // Forcer le rechargement
+            $this->refreshProducts();
+        } else {
+            $this->dispatch('alert', 
+                type: 'error',
+                message: 'Aucun produit supprimé.'
+            );
+        }
+        
+    } catch (\Exception $e) {
+        $this->dispatch('alert', 
+            type: 'error',
+            message: 'Erreur: ' . $e->getMessage()
+        );
+    }
+}
+
+// Ajouter cette propriété pour la sélection multiple
+public array $selectedProducts = [];
+
+/**
+ * Basculer la sélection d'un produit
+ */
+public function toggleProductSelection(string $sku): void
+{
+    if (in_array($sku, $this->selectedProducts)) {
+        $this->selectedProducts = array_diff($this->selectedProducts, [$sku]);
+    } else {
+        $this->selectedProducts[] = $sku;
+    }
+}
+
+/**
+ * Sélectionner tous les produits de la page
+ */
+public function selectAllOnPage(): void
+{
+    $currentProducts = $this->getCurrentPageProducts();
+    $this->selectedProducts = [];
+    
+    foreach ($currentProducts as $product) {
+        if (isset($product['sku'])) {
+            $this->selectedProducts[] = $product['sku'];
+        }
+    }
+}
+
+/**
+ * Désélectionner tous les produits
+ */
+public function deselectAll(): void
+{
+    $this->selectedProducts = [];
+}
+
+/**
+ * Supprimer les produits sélectionnés
+ */
+public function removeSelectedProducts(): void
+{
+    if (empty($this->selectedProducts)) {
+        $this->dispatch('alert', 
+            type: 'warning',
+            message: 'Aucun produit sélectionné.'
+        );
+        return;
+    }
+    
+    // Demander confirmation
+    $this->dispatch('confirm-delete', [
+        'message' => 'Êtes-vous sûr de vouloir supprimer ' . count($this->selectedProducts) . ' produit(s) ?',
+        'callback' => 'confirmedRemoveSelectedProducts'
+    ]);
+}
+
+/**
+ * Confirmation de suppression des produits sélectionnés
+ */
+public function confirmedRemoveSelectedProducts(): void
+{
+    $this->removeMultipleProducts($this->selectedProducts);
+    $this->selectedProducts = [];
+}
+
+/**
+ * Écouter les événements d'alerte
+ */
+protected $listeners = [
+    'alert' => 'showAlert',
+    'confirm-delete' => 'showConfirmModal'
+];
+
+public bool $showConfirmModal = false;
+public array $confirmModalData = [];
+
+public function showConfirmModal(array $data): void
+{
+    $this->confirmModalData = $data;
+    $this->showConfirmModal = true;
+}
+
+public function confirmedRemoveSelectedProducts(): void
+{
+    $this->removeMultipleProducts($this->selectedProducts);
+    $this->selectedProducts = [];
+    $this->showConfirmModal = false;
+}
+
+public function showAlert(string $type, string $message): void
+{
+    session()->flash('alert', [
+        'type' => $type,
+        'message' => $message
+    ]);
+}
+
 }; ?>
 <div>
     <!-- Overlay de chargement -->
@@ -2069,6 +2275,18 @@ new class extends Component {
             </div>
             
             <div class="flex space-x-3">
+
+                @if(!empty($selectedProducts))
+                    <button wire:click="removeSelectedProducts"
+                        class="btn btn-sm btn-error"
+                        wire:loading.attr="disabled">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                        </svg>
+                        Supprimer ({{ count($selectedProducts) }})
+                    </button>
+                @endif
+
                 <button wire:click="refreshProducts"
                     class="btn btn-sm btn-outline"
                     wire:loading.attr="disabled">
@@ -2196,6 +2414,15 @@ new class extends Component {
             <table class="table table-xs">
                 <thead>
                     <tr>
+                        <th>
+                            <!-- Case à cocher pour sélectionner tous les produits de la page -->
+                            <label class="cursor-pointer">
+                                <input type="checkbox" 
+                                    class="checkbox checkbox-xs" 
+                                    wire:click="selectAllOnPage"
+                                    {{ count($selectedProducts) === count($products) && count($products) > 0 ? 'checked' : '' }}>
+                            </label>
+                        </th>
                         <th>#</th>
                         <th>SKU</th>
                         <th>Image</th>
@@ -2227,6 +2454,14 @@ new class extends Component {
                             }
                         @endphp
                         <tr class="hover">
+                            <td>
+                                <label class="cursor-pointer">
+                                    <input type="checkbox" 
+                                        class="checkbox checkbox-xs" 
+                                        wire:click="toggleProductSelection('{{ $product['sku'] }}')"
+                                        {{ in_array($product['sku'], $selectedProducts) ? 'checked' : '' }}>
+                                </label>
+                            </td>
                             <!-- Numéro de ligne -->
                             <th>{{ $rowNumber }}</th>
                             
@@ -2367,6 +2602,16 @@ new class extends Component {
                                         </svg>
                                     </button>
                                     
+                                    <!-- Bouton Supprimer -->
+                                    <button wire:click="removeProduct('{{ $product['sku'] }}')"
+                                        class="btn btn-xs btn-error btn-outline"
+                                        title="Supprimer de la liste"
+                                        onclick="return confirm('Êtes-vous sûr de vouloir supprimer ce produit de la liste ?')">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                        </svg>
+                                    </button>
+
                                     @if($hasCompetitors)
                                         <div class="tooltip" data-tip="{{ $competitorResults[$product['sku']]['count'] ?? 0 }} concurrent(s)">
                                             <div class="badge badge-info">
@@ -2763,6 +3008,21 @@ new class extends Component {
                 </div>
             </div>
         @endif
+
+
+<!-- Modal de confirmation -->
+@if(session()->has('confirm-delete'))
+    <div class="modal modal-open">
+        <div class="modal-box">
+            <h3 class="font-bold text-lg">Confirmation de suppression</h3>
+            <p class="py-4">{{ session('confirm-delete.message') }}</p>
+            <div class="modal-action">
+                <button class="btn btn-ghost" wire:click="$set('showConfirmModal', false)">Annuler</button>
+                <button class="btn btn-error" wire:click="{{ session('confirm-delete.callback') }}">Confirmer</button>
+            </div>
+        </div>
+    </div>
+@endif        
     </div>
 
     @push('styles')
@@ -2903,7 +3163,41 @@ new class extends Component {
             background-color: #3b82f6;
             color: white;
         }
+
+/* Style pour les boutons de suppression */
+.btn-error.btn-outline {
+    border-color: #ef4444;
+    color: #ef4444;
+    background-color: transparent;
+}
+
+.btn-error.btn-outline:hover {
+    background-color: #ef4444;
+    color: white;
+}
+
+/* Animation pour la suppression */
+@keyframes fadeOut {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+
+.removing {
+    animation: fadeOut 0.3s ease-out;
+}
+
+/* Style pour les cases à cocher */
+.checkbox:checked {
+    background-color: #3b82f6;
+    border-color: #3b82f6;
+}
+
+/* Style pour les lignes sélectionnées */
+tr.selected {
+    background-color: #eff6ff !important;
+}        
     </style>
+    
     @endpush
 
     @push('scripts')

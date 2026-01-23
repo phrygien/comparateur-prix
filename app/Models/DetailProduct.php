@@ -19,4 +19,13 @@ class DetailProduct extends Model
     {
         return $this->belongsTo(Comparaison::class, 'list_product_id');
     }
+    
+    // Méthode pour supprimer un produit d'une liste
+    public static function removeFromList(int $listId, string $ean): bool
+    {
+        return self::where('list_product_id', $listId)
+            ->where('EAN', $ean)
+            ->delete() > 0;
+    }
+    
 }
