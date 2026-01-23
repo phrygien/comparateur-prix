@@ -2114,15 +2114,38 @@ public function removeProduct(string $sku): void
 public function removeMultipleProducts(array $skus): void
 {
     try {
+        // Valider que nous avons bien une liste de SKUs
+        if (empty($skus)) {
+            $this->dispatch('alert', 
+                type: 'warning',
+                message: 'Aucun produit sélectionné.'
+            );
+            return;
+        }
+        
+        // Compter le nombre de produits avant suppression
+        $countBefore = DetailProduct::where('list_product_id', $this->id)
+            ->whereIn('EAN', $skus)
+            ->count();
+        
+        if ($countBefore === 0) {
+            $this->dispatch('alert', 
+                type: 'warning',
+                message: 'Aucun des produits sélectionnés n\'existe dans cette liste.'
+            );
+            return;
+        }
+        
+        // Supprimer les produits
         $deletedCount = DetailProduct::where('list_product_id', $this->id)
             ->whereIn('EAN', $skus)
             ->delete();
         
         if ($deletedCount > 0) {
-            // Supprimer des caches
+            // Supprimer les caches
             Cache::forget("list_skus_{$this->id}");
             
-            // Réinitialiser les données des produits supprimés
+            // Supprimer les données associées aux produits supprimés
             foreach ($skus as $sku) {
                 unset($this->competitorResults[$sku]);
                 unset($this->expandedProducts[$sku]);
@@ -2133,17 +2156,21 @@ public function removeMultipleProducts(array $skus): void
                 unset($this->manualSearchLoading[$sku]);
             }
             
+            // Vider la sélection
+            $this->selectedProducts = [];
+            
             $this->dispatch('alert', 
                 type: 'success',
                 message: $deletedCount . ' produit(s) supprimé(s) avec succès.'
             );
             
-            // Forcer le rechargement
-            $this->refreshProducts();
+            // Forcer le rechargement sans changer de page
+            $this->loading = true;
+            
         } else {
             $this->dispatch('alert', 
                 type: 'error',
-                message: 'Aucun produit supprimé.'
+                message: 'Erreur lors de la suppression des produits.'
             );
         }
         
