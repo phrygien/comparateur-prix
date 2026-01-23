@@ -1119,8 +1119,6 @@ public function addProductBySku(string $sku): void
                         <th>Marque</th>
                         <th>Type</th>
                         <th>Prix</th>
-                        <th>Stock</th>
-                        <th>Statut</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1181,7 +1179,7 @@ public function addProductBySku(string $sku): void
                                     </span>
                                 @endif
                             </td>
-                            <td>
+                            {{-- <td>
                                 <span class="{{ ($product['quatity'] ?? 0) > 0 ? 'text-success' : 'text-error' }}">
                                     {{ $product['quatity'] ?? 0 }}
                                 </span>
@@ -1190,7 +1188,7 @@ public function addProductBySku(string $sku): void
                                 <span class="badge badge-sm {{ ($product['quatity_status'] ?? 0) == 1 ? 'badge-success' : 'badge-error' }}">
                                     {{ ($product['quatity_status'] ?? 0) == 1 ? 'En stock' : 'Rupture' }}
                                 </span>
-                            </td>
+                            </td> --}}
                         </tr>
                     @empty
                         <tr>
