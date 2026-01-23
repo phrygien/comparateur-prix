@@ -47,13 +47,20 @@ new class extends Component {
     public $existingProducts = [];
     public $existingProductsDetails = [];
     
+    // Calculs pour le template
+    public $existingCount = 0;
+    public $newCount = 0;
+    public $removedCount = 0;
+
     public function mount($id = null)
     {
+        $this->listId = $id;
         $this->loading = true;
-
-            $this->listId = $id;
+        
+        if ($this->listId) {
             $this->loadList();
             $this->loadExistingProductsFromDatabase();
+        }
     }
     
     // Charger les informations de la liste
@@ -76,96 +83,10 @@ new class extends Component {
             ->pluck('EAN')
             ->toArray();
         
-        // Charger les détails de ces produits
-        $this->loadExistingProductsDetails();
+        $this->existingCount = count($this->existingProducts);
         
         // Initialiser les produits sélectionnés avec les produits existants
         $this->selectedProducts = $this->existingProducts;
-        
-        // Fusionner les détails dans selectedProductsDetails
-        $this->selectedProductsDetails = $this->existingProductsDetails;
-    }
-    
-    // Charger les détails des produits existants
-    protected function loadExistingProductsDetails()
-    {
-        if (empty($this->existingProducts)) {
-            $this->existingProductsDetails = [];
-            return;
-        }
-        
-        $skus = array_values($this->existingProducts);
-        $placeholders = implode(',', array_fill(0, count($skus), '?'));
-        
-        $query = "
-            SELECT 
-                produit.sku as sku,
-                CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) as title,
-                product_char.thumbnail as thumbnail
-            FROM catalog_product_entity as produit
-            LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
-            WHERE produit.sku IN ($placeholders)
-            ORDER BY FIELD(produit.sku, " . implode(',', $skus) . ")
-            LIMIT 100
-        ";
-        
-        try {
-            $products = DB::connection('mysqlMagento')->select($query, $skus);
-            $this->existingProductsDetails = array_map(fn($p) => (array) $p, $products);
-        } catch (\Exception $e) {
-            Log::error('Erreur chargement détails produits existants: ' . $e->getMessage());
-            $this->existingProductsDetails = [];
-        }
-    }
-    
-    // Charger les détails des produits sélectionnés
-    protected function loadSelectedProductsDetails()
-    {
-        if (empty($this->selectedProducts)) {
-            $this->selectedProductsDetails = [];
-            return;
-        }
-        
-        // Filtrer les produits dont on n'a pas encore les détails
-        $existingSkus = array_column($this->selectedProductsDetails, 'sku');
-        $skusToLoad = array_diff($this->selectedProducts, $existingSkus);
-        
-        if (empty($skusToLoad)) {
-            return;
-        }
-        
-        $skus = array_values($skusToLoad);
-        $placeholders = implode(',', array_fill(0, count($skus), '?'));
-        
-        $query = "
-            SELECT 
-                produit.sku as sku,
-                CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) as title,
-                product_char.thumbnail as thumbnail
-            FROM catalog_product_entity as produit
-            LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
-            WHERE produit.sku IN ($placeholders)
-            ORDER BY FIELD(produit.sku, " . implode(',', $skus) . ")
-            LIMIT 100
-        ";
-        
-        try {
-            $products = DB::connection('mysqlMagento')->select($query, $skus);
-            $newProducts = array_map(fn($p) => (array) $p, $products);
-            
-            // Fusionner avec les détails existants
-            $this->selectedProductsDetails = array_merge($this->selectedProductsDetails, $newProducts);
-            
-            // Trier pour garder l'ordre des SKU
-            usort($this->selectedProductsDetails, function($a, $b) {
-                $indexA = array_search($a['sku'], $this->selectedProducts);
-                $indexB = array_search($b['sku'], $this->selectedProducts);
-                return $indexA - $indexB;
-            });
-            
-        } catch (\Exception $e) {
-            Log::error('Erreur chargement détails produits: ' . $e->getMessage());
-        }
     }
     
     public function loadMore()
@@ -195,31 +116,20 @@ new class extends Component {
         if (in_array($sku, $this->selectedProducts)) {
             // Retirer de la sélection
             $this->selectedProducts = array_diff($this->selectedProducts, [$sku]);
-            // Retirer du résumé
-            $this->selectedProductsDetails = array_filter($this->selectedProductsDetails, 
-                fn($product) => $product['sku'] !== $sku
-            );
         } else {
             // Ajouter à la sélection
             $this->selectedProducts[] = $sku;
-            
-            // Charger les détails si pas déjà chargés
-            $existsInDetails = array_filter($this->selectedProductsDetails, 
-                fn($product) => $product['sku'] === $sku
-            );
-            
-            if (empty($existsInDetails) && !empty($title)) {
-                // Ajouter au résumé immédiatement
-                $this->selectedProductsDetails[] = [
-                    'sku' => $sku,
-                    'title' => $title,
-                    'thumbnail' => $thumbnail
-                ];
-            } else {
-                // Sinon, charger les détails
-                $this->loadSelectedProductsDetails();
-            }
         }
+        
+        // Recalculer les compteurs
+        $this->updateCounters();
+    }
+    
+    // Mettre à jour les compteurs
+    protected function updateCounters()
+    {
+        $this->newCount = count(array_diff($this->selectedProducts, $this->existingProducts));
+        $this->removedCount = count(array_diff($this->existingProducts, $this->selectedProducts));
     }
     
     public function updatedSelectAll($value)
@@ -253,9 +163,7 @@ new class extends Component {
         // Sinon, simplement retirer de la sélection temporaire
         if (in_array($sku, $this->selectedProducts)) {
             $this->selectedProducts = array_diff($this->selectedProducts, [$sku]);
-            $this->selectedProductsDetails = array_filter($this->selectedProductsDetails, 
-                fn($product) => $product['sku'] !== $sku
-            );
+            $this->updateCounters();
         }
     }
     
@@ -272,36 +180,24 @@ new class extends Component {
                 // Retirer des tableaux locaux
                 if (in_array($sku, $this->existingProducts)) {
                     $this->existingProducts = array_diff($this->existingProducts, [$sku]);
+                    $this->existingCount = count($this->existingProducts);
                 }
                 
                 if (in_array($sku, $this->selectedProducts)) {
                     $this->selectedProducts = array_diff($this->selectedProducts, [$sku]);
                 }
                 
-                // Retirer du résumé
-                $this->selectedProductsDetails = array_filter($this->selectedProductsDetails, 
-                    fn($product) => $product['sku'] !== $sku
-                );
+                // Recalculer les compteurs
+                $this->updateCounters();
                 
-                // Retirer des détails existants
-                $this->existingProductsDetails = array_filter($this->existingProductsDetails, 
-                    fn($product) => $product['sku'] !== $sku
-                );
-                
-                $this->dispatch('notify', [
-                    'type' => 'success',
-                    'message' => 'Produit retiré de la liste avec succès.'
-                ]);
-                
-                // Nettoyer le cache
+                // Mettre à jour le cache
                 Cache::forget("list_skus_{$this->listId}");
+                
+                $this->success('Produit retiré de la liste avec succès.');
             }
         } catch (\Exception $e) {
             Log::error('Erreur suppression produit: ' . $e->getMessage());
-            $this->dispatch('notify', [
-                'type' => 'error',
-                'message' => 'Erreur lors de la suppression: ' . $e->getMessage()
-            ]);
+            $this->error('Erreur lors de la suppression: ' . $e->getMessage());
         }
     }
     
@@ -349,10 +245,7 @@ new class extends Component {
     public function openModal()
     {
         if (empty($this->selectedProducts)) {
-            $this->dispatch('notify', [
-                'type' => 'warning',
-                'message' => 'La liste ne peut pas être vide. Ajoutez au moins un produit.'
-            ]);
+            $this->warning('La liste ne peut pas être vide. Ajoutez au moins un produit.');
             return;
         }
         
@@ -365,36 +258,24 @@ new class extends Component {
         try {
             // Validation
             if (empty($this->selectedProducts)) {
-                $this->dispatch('notify', [
-                    'type' => 'error',
-                    'message' => 'La liste ne peut pas être vide.'
-                ]);
+                $this->error('La liste ne peut pas être vide.');
                 return;
             }
             
             if (empty($this->listName)) {
-                $this->dispatch('notify', [
-                    'type' => 'error',
-                    'message' => 'Veuillez donner un nom à votre liste.'
-                ]);
+                $this->error('Veuillez donner un nom à votre liste.');
                 return;
             }
             
             // Vérifier que la liste existe
             if (!$this->listId) {
-                $this->dispatch('notify', [
-                    'type' => 'error',
-                    'message' => 'Liste non trouvée.'
-                ]);
+                $this->error('Liste non trouvée.');
                 return;
             }
             
             $list = Comparaison::find($this->listId);
             if (!$list) {
-                $this->dispatch('notify', [
-                    'type' => 'error',
-                    'message' => 'Liste non trouvée.'
-                ]);
+                $this->error('Liste non trouvée.');
                 return;
             }
             
@@ -405,7 +286,6 @@ new class extends Component {
             ]);
             
             // Identifier les produits à conserver, ajouter et supprimer
-            $productsToKeep = array_intersect($this->existingProducts, $this->selectedProducts);
             $productsToAdd = array_diff($this->selectedProducts, $this->existingProducts);
             $productsToRemove = array_diff($this->existingProducts, $this->selectedProducts);
             
@@ -437,7 +317,8 @@ new class extends Component {
             
             // Mettre à jour les données locales
             $this->existingProducts = $this->selectedProducts;
-            $this->existingProductsDetails = $this->selectedProductsDetails;
+            $this->existingCount = count($this->existingProducts);
+            $this->updateCounters();
             
             // Message de succès
             $message = 'Liste mise à jour avec succès.';
@@ -448,20 +329,14 @@ new class extends Component {
                 $message .= ' ' . count($productsToRemove) . ' produit(s) supprimé(s).';
             }
             
-            $this->dispatch('notify', [
-                'type' => 'success',
-                'message' => $message
-            ]);
+            $this->success($message);
             
             // Émettre un événement pour le parent
             $this->dispatch('list-updated', ['listId' => $this->listId]);
             
         } catch (\Exception $e) {
             Log::error('Erreur mise à jour liste: ' . $e->getMessage());
-            $this->dispatch('notify', [
-                'type' => 'error',
-                'message' => 'Erreur lors de la mise à jour: ' . $e->getMessage()
-            ]);
+            $this->error('Erreur lors de la mise à jour: ' . $e->getMessage());
         }
     }
     
@@ -478,18 +353,6 @@ new class extends Component {
         return in_array($sku, $this->selectedProducts) && !$existsInDatabase;
     }
     
-    // Obtenir les nouveaux produits sélectionnés
-    public function getNewProducts()
-    {
-        return array_diff($this->selectedProducts, $this->existingProducts);
-    }
-    
-    // Obtenir les produits supprimés
-    public function getRemovedProducts()
-    {
-        return array_diff($this->existingProducts, $this->selectedProducts);
-    }
-    
     public function cancel()
     {
         return redirect()->route('comparison.lists');
@@ -497,10 +360,16 @@ new class extends Component {
     
     public function with(): array
     {
+        $this->loading = true;
+        
         try {
             $allProducts = [];
             $totalItems = 0;
             
+            // Calculer les compteurs une fois
+            $this->updateCounters();
+            
+            // Charger les produits paginés
             for ($i = 1; $i <= $this->page; $i++) {
                 $result = $this->fetchProductsFromDatabase($this->search, $i, $this->perPage);
                 
@@ -525,12 +394,19 @@ new class extends Component {
                 $this->hasMore = false;
             }
             
+            // Charger les détails des produits sélectionnés (via with pour optimiser)
+            $selectedProductsDetails = $this->loadSelectedProductsDetailsForTemplate($this->selectedProducts);
+            
             $this->loading = false;
             $this->loadingMore = false;
             
             return [
                 'products' => $allProducts,
                 'totalItems' => $totalItems,
+                'selectedProductsDetails' => $selectedProductsDetails,
+                'existingCount' => $this->existingCount,
+                'newCount' => $this->newCount,
+                'removedCount' => $this->removedCount,
             ];
             
         } catch (\Exception $e) {
@@ -543,7 +419,42 @@ new class extends Component {
             return [
                 'products' => [],
                 'totalItems' => 0,
+                'selectedProductsDetails' => [],
+                'existingCount' => 0,
+                'newCount' => 0,
+                'removedCount' => 0,
             ];
+        }
+    }
+    
+    // Charger les détails des produits sélectionnés (optimisé pour with)
+    protected function loadSelectedProductsDetailsForTemplate($skus)
+    {
+        if (empty($skus)) {
+            return [];
+        }
+        
+        try {
+            $placeholders = implode(',', array_fill(0, count($skus), '?'));
+            
+            $query = "
+                SELECT 
+                    produit.sku as sku,
+                    CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) as title,
+                    product_char.thumbnail as thumbnail
+                FROM catalog_product_entity as produit
+                LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+                WHERE produit.sku IN ($placeholders)
+                ORDER BY FIELD(produit.sku, " . implode(',', $skus) . ")
+                LIMIT 100
+            ";
+            
+            $products = DB::connection('mysqlMagento')->select($query, $skus);
+            return array_map(fn($p) => (array) $p, $products);
+            
+        } catch (\Exception $e) {
+            Log::error('Erreur chargement détails produits template: ' . $e->getMessage());
+            return [];
         }
     }
     
