@@ -2,6 +2,7 @@
 
 namespace App\Livewire;
 
+use Mary\Traits\Toast;
 use Livewire\Volt\Component;
 use App\Models\DetailProduct;
 use App\Models\Comparaison;
@@ -10,6 +11,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 new class extends Component {
+    use Toast;
 
     public int $id;
     public string $listTitle = '';
@@ -2116,10 +2118,7 @@ public function removeMultipleProducts(array $skus): void
     try {
         // Valider que nous avons bien une liste de SKUs
         if (empty($skus)) {
-            $this->dispatch('alert', 
-                type: 'warning',
-                message: 'Aucun produit sélectionné.'
-            );
+            $this->warning('Aucun produit sélectionné.');
             return;
         }
 
@@ -2129,10 +2128,7 @@ public function removeMultipleProducts(array $skus): void
             ->count();
         
         if ($countBefore === 0) {
-            $this->dispatch('alert', 
-                type: 'warning',
-                message: 'Aucun des produits sélectionnés n\'existe dans cette liste.'
-            );
+            $this->warning('Aucun des produits sélectionnés n\'existe dans cette liste.');
             return;
         }
         
@@ -2159,19 +2155,13 @@ public function removeMultipleProducts(array $skus): void
             // Vider la sélection
             $this->selectedProducts = [];
             
-            $this->dispatch('alert', 
-                type: 'success',
-                message: $deletedCount . ' produit(s) supprimé(s) avec succès.'
-            );
+            $this->success('produit(s) supprimé(s) avec succès.');
             
             // Forcer le rechargement sans changer de page
             $this->loading = true;
             
         } else {
-            $this->dispatch('alert', 
-                type: 'error',
-                message: 'Erreur lors de la suppression des produits.'
-            );
+            $this->error('Erreur lors de la suppression des produits.');
         }
         
     } catch (\Exception $e) {
@@ -2244,10 +2234,7 @@ public function deselectAll(): void
 public function removeSelectedProducts(): void
 {
     if (empty($this->selectedProducts)) {
-        $this->dispatch('alert', 
-            type: 'warning',
-            message: 'Aucun produit sélectionné.'
-        );
+        $this->warning('Aucun produit sélectionné.');
         return;
     }
     
