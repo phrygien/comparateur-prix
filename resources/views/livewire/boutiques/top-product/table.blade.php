@@ -283,7 +283,7 @@ new class extends Component {
             $cleanPrice = $this->cleanPrice($price);
             
             // Utiliser l'algorithme de recherche amélioré
-            $competitors = $this->findCompetitorsForProduct($cleanedProductName, $cleanPrice);
+            $competitors = $this->findCompetitorsWithMl($cleanedProductName, $cleanPrice);
             
             if (!empty($competitors)) {
                 // Compter les bons résultats (similarité >= 0.6)
@@ -348,7 +348,7 @@ new class extends Component {
             $cleanPrice = $this->cleanPrice($price);
             
             // Utiliser la même logique de recherche que la recherche automatique
-            $competitors = $this->findCompetitorsForProduct($searchQuery, $cleanPrice);
+            $competitors = $this->findCompetitorsWithMl($searchQuery, $cleanPrice);
             
             if (!empty($competitors)) {
                 $this->manualSearchResults[$sku] = [
@@ -537,37 +537,39 @@ new class extends Component {
     }
 
     /**
-     * Algorithme de recherche de concurrents AMÉLIORÉ
-     * Utilise la même logique que le premier composant
+     * ALGORITHME AMÉLIORÉ : Recherche de concurrents avec ML-like
      */
-    protected function findCompetitorsForProduct(string $search, float $ourPrice): array
+    protected function findCompetitorsWithMl(string $search, float $ourPrice): array
     {
         try {
-            // Cache pour éviter les recherches répétées
-            $cacheKey = 'competitor_search_' . md5($search . '_' . $ourPrice);
+            // Cache
+            $cacheKey = 'ml_competitor_search_' . md5($search . '_' . $ourPrice);
             $cached = Cache::get($cacheKey);
             
             if ($cached !== null) {
                 return $cached;
             }
             
-            // 1. Extraire le vendor de manière intelligente (comme le premier composant)
-            $vendor = $this->extractVendorFromSearchImproved($search);
+            // 1. Extraction des caractéristiques
+            $features = $this->extractProductFeatures($search);
             
-            // 2. Extraire les mots de recherche significatifs (méthode améliorée)
-            $searchKeywords = $this->extractSearchKeywords($search, $vendor);
+            // 2. Identification du vendor
+            $vendor = $this->identifyVendorMl($search, $features);
             
-            // 3. Extraire les composants de la recherche
-            $components = $this->extractSearchComponentsImproved($search, $vendor, $searchKeywords);
+            // 3. Classification du type de produit
+            $productType = $this->classifyProductType($search, $features);
             
-            // 4. Préparer les variations du vendor
-            $vendorVariations = $this->getVendorVariationsImproved($vendor);
+            // 4. Extraction des mots-clés sémantiques
+            $semanticKeywords = $this->extractSemanticKeywords($search, $productType, $vendor);
             
-            // 5. Recherche avec plusieurs stratégies
-            $competitors = $this->searchWithMultipleStrategies($search, $vendor, $vendorVariations, $searchKeywords, $components);
+            // 5. Recherche en plusieurs phases
+            $allCompetitors = $this->multiPhaseSearch($search, $vendor, $productType, $semanticKeywords, $features);
             
-            // 6. Filtrer par similarité améliorée (avec seuil plus élevé et limite)
-            $filteredCompetitors = $this->filterBySimilarityImproved($competitors, $search, $components);
+            // 6. Calcul de similarité avancé
+            $scoredCompetitors = $this->calculateAdvancedSimilarity($allCompetitors, $search, $features);
+            
+            // 7. Filtrage intelligent
+            $filteredCompetitors = $this->intelligentFiltering($scoredCompetitors, $ourPrice);
             
             $competitorsWithComparison = $this->addPriceComparisons($filteredCompetitors, $ourPrice);
             
@@ -581,15 +583,1504 @@ new class extends Component {
     }
 
     /**
+     * Extraction des caractéristiques du produit
+     */
+    protected function extractProductFeatures(string $search): array
+    {
+        $search = $this->normalizeAndCleanText($search);
+        
+        $features = [
+            'vendor_candidates' => [],
+            'type_candidates' => [],
+            'keywords' => [],
+            'volumes' => [],
+            'colors' => [],
+            'genders' => [],
+            'qualifiers' => [],
+            'numbers' => [],
+            'capacity' => null,
+            'is_set' => false,
+            'is_limited' => false,
+            'is_travel' => false
+        ];
+        
+        $searchLower = mb_strtolower($search);
+        
+        // Extraire les volumes (ml, L, etc.)
+        if (preg_match_all('/(\d+(?:[.,]\d+)?)\s*(ml|l|cl|fl\s*oz)/i', $search, $matches)) {
+            foreach ($matches[1] as $index => $volume) {
+                $unit = strtolower($matches[2][$index]);
+                $features['volumes'][] = [
+                    'value' => (float) str_replace(',', '.', $volume),
+                    'unit' => $unit,
+                    'original' => $matches[0][$index]
+                ];
+            }
+        }
+        
+        // Extraire la capacité (g, kg, etc.)
+        if (preg_match('/(\d+(?:[.,]\d+)?)\s*(g|kg|mg|oz)/i', $search, $matches)) {
+            $features['capacity'] = [
+                'value' => (float) str_replace(',', '.', $matches[1]),
+                'unit' => strtolower($matches[2])
+            ];
+        }
+        
+        // Détecter le genre
+        $genderPatterns = [
+            'homme' => ['homme', 'men', 'man', 'masculin', 'masculine', 'for men', 'pour homme'],
+            'femme' => ['femme', 'women', 'woman', 'féminin', 'feminine', 'for women', 'pour femme'],
+            'unisexe' => ['unisexe', 'unisex', 'mixte', 'both']
+        ];
+        
+        foreach ($genderPatterns as $gender => $patterns) {
+            foreach ($patterns as $pattern) {
+                if (str_contains($searchLower, $pattern)) {
+                    $features['genders'][] = $gender;
+                    break;
+                }
+            }
+        }
+        
+        // Détecter les qualificatifs
+        $qualifiers = [
+            'extrait' => ['extrait', 'extract', 'pure', 'intense'],
+            'legere' => ['légère', 'legere', 'light', 'lite'],
+            'fraiche' => ['fraîche', 'fraiche', 'fresh'],
+            'intense' => ['intense', 'concentré', 'concentre'],
+            'delicate' => ['délicate', 'delicate', 'sensitive'],
+            'nuit' => ['nuit', 'night'],
+            'jour' => ['jour', 'day']
+        ];
+        
+        foreach ($qualifiers as $qualifier => $patterns) {
+            foreach ($patterns as $pattern) {
+                if (preg_match('/\b' . preg_quote($pattern, '/') . '\b/i', $search)) {
+                    $features['qualifiers'][] = $qualifier;
+                    break;
+                }
+            }
+        }
+        
+        // Détecter les éditions spéciales
+        $specialMarkers = [
+            'limited' => ['limited', 'limité', 'limitee', 'édition limitée', 'limited edition'],
+            'collector' => ['collector', 'collector', 'collectors'],
+            'anniversary' => ['anniversaire', 'anniversary'],
+            'travel' => ['travel', 'voyage', 'mini', 'miniature'],
+            'set' => ['coffret', 'set', 'pack', 'ensemble', 'kit', 'boîte', 'boite']
+        ];
+        
+        foreach ($specialMarkers as $marker => $patterns) {
+            foreach ($patterns as $pattern) {
+                if (str_contains($searchLower, $pattern)) {
+                    if ($marker === 'set') {
+                        $features['is_set'] = true;
+                    } elseif ($marker === 'limited') {
+                        $features['is_limited'] = true;
+                    } elseif ($marker === 'travel') {
+                        $features['is_travel'] = true;
+                    }
+                    break;
+                }
+            }
+        }
+        
+        // Extraire les numéros (N°5, No 5, etc.)
+        if (preg_match_all('/(?:n[°o]|no\.?|numéro|numero)\s*(\d+)/i', $search, $matches)) {
+            $features['numbers'] = $matches[1];
+        }
+        
+        // Extraire les couleurs
+        $colors = [
+            'rouge', 'blanc', 'noir', 'bleu', 'vert', 'jaune', 'rose', 'violet',
+            'orange', 'marron', 'gris', 'brun', 'argent', 'or', 'doré', 'argenté',
+            'transparent', 'transparente'
+        ];
+        
+        foreach ($colors as $color) {
+            if (str_contains($searchLower, $color)) {
+                $features['colors'][] = $color;
+            }
+        }
+        
+        // Extraire les mots-clés significatifs
+        $tokens = preg_split('/[\s\-]+/', $searchLower);
+        $stopWords = array_merge(
+            $this->getGeneralStopWords(),
+            $this->getProductStopWords(),
+            $this->getTechnicalTerms()
+        );
+        
+        foreach ($tokens as $token) {
+            $token = trim($token);
+            if (strlen($token) > 2 && !in_array($token, $stopWords) && !is_numeric($token)) {
+                // Vérifier que ce n'est pas un volume/capacité
+                $isMeasurement = preg_match('/^\d+[a-z]+$/i', $token);
+                if (!$isMeasurement) {
+                    $features['keywords'][] = $token;
+                }
+            }
+        }
+        
+        // Détecter les candidats vendors (première partie avant tiret)
+        if (preg_match('/^([^-]+)\s*-\s*/i', $search, $matches)) {
+            $potentialVendor = trim($matches[1]);
+            if (strlen($potentialVendor) > 2) {
+                $features['vendor_candidates'][] = $potentialVendor;
+            }
+        }
+        
+        // Détecter les candidats type
+        $typePatterns = [
+            'eau de parfum' => ['eau de parfum', 'edp'],
+            'eau de toilette' => ['eau de toilette', 'edt'],
+            'parfum' => ['parfum'],
+            'eau de cologne' => ['eau de cologne', 'edc'],
+            'coffret' => ['coffret', 'set', 'pack'],
+            'crème' => ['crème', 'creme', 'cream'],
+            'lotion' => ['lotion'],
+            'gel' => ['gel'],
+            'sérum' => ['sérum', 'serum'],
+            'masque' => ['masque', 'mask'],
+            'shampooing' => ['shampooing', 'shampoing']
+        ];
+        
+        foreach ($typePatterns as $type => $patterns) {
+            foreach ($patterns as $pattern) {
+                if (str_contains($searchLower, $pattern)) {
+                    $features['type_candidates'][] = $type;
+                    break;
+                }
+            }
+        }
+        
+        return $features;
+    }
+
+    /**
+     * Identification du vendor avec ML-like
+     */
+    protected function identifyVendorMl(string $search, array $features): string
+    {
+        $search = $this->normalizeAndCleanText($search);
+        $searchLower = mb_strtolower(trim($search));
+        
+        // Charger les vendors avec leurs variations
+        $knownVendors = $this->loadKnownVendorsWithVariations();
+        
+        $bestVendor = '';
+        $bestScore = 0;
+        
+        // 1. Vérifier les candidats extraits
+        foreach ($features['vendor_candidates'] as $candidate) {
+            $vendorResult = $this->findBestMatchingVendor($candidate, $knownVendors);
+            if ($vendorResult['score'] > $bestScore) {
+                $bestVendor = $vendorResult['vendor'];
+                $bestScore = $vendorResult['score'];
+            }
+        }
+        
+        // 2. Rechercher dans toute la chaîne
+        if ($bestScore < 80) {
+            foreach ($knownVendors as $vendorData) {
+                foreach ($vendorData['variations'] as $vendorName) {
+                    $vendorLower = mb_strtolower($vendorName);
+                    $position = mb_strpos($searchLower, $vendorLower);
+                    
+                    if ($position !== false) {
+                        // Vérifier que c'est bien un mot complet
+                        $before = $position > 0 ? mb_substr($searchLower, $position - 1, 1) : ' ';
+                        $afterPos = $position + mb_strlen($vendorLower);
+                        $after = $afterPos < mb_strlen($searchLower) 
+                            ? mb_substr($searchLower, $afterPos, 1) 
+                            : ' ';
+                        
+                        $delimiters = [' ', '-', '(', '[', ',', '.', ';', ':', '/', '|'];
+                        if (in_array($before, $delimiters) && in_array($after, $delimiters)) {
+                            $score = $this->calculateVendorMatchScore($vendorName, $search, $position);
+                            if ($score > $bestScore) {
+                                $bestVendor = $vendorData['main_name'];
+                                $bestScore = $score;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 3. Chercher des modèles courants
+        if ($bestScore < 70) {
+            $patterns = [
+                '/parfums?\s+([a-z0-9&\'\.\-]+)/i',
+                '/([a-z0-9&\'\.\-]+)\s+paris/i',
+                '/([a-z0-9&\'\.\-]+)\s+maison/i',
+                '/([a-z0-9&\'\.\-]+)\s+collection/i'
+            ];
+            
+            foreach ($patterns as $pattern) {
+                if (preg_match($pattern, $search, $matches)) {
+                    $potentialVendor = trim($matches[1]);
+                    $vendorResult = $this->findBestMatchingVendor($potentialVendor, $knownVendors);
+                    if ($vendorResult['score'] > $bestScore) {
+                        $bestVendor = $vendorResult['vendor'];
+                        $bestScore = $vendorResult['score'];
+                        break;
+                    }
+                }
+            }
+        }
+        
+        return $bestScore >= 60 ? $bestVendor : '';
+    }
+
+    /**
+     * Trouver le meilleur vendor correspondant
+     */
+    protected function findBestMatchingVendor(string $candidate, array $knownVendors): array
+    {
+        $bestMatch = ['vendor' => '', 'score' => 0];
+        $candidateLower = mb_strtolower(trim($candidate));
+        
+        foreach ($knownVendors as $vendorData) {
+            foreach ($vendorData['variations'] as $vendorVariation) {
+                $vendorLower = mb_strtolower($vendorVariation);
+                
+                // Score basé sur plusieurs facteurs
+                $score = 0;
+                
+                // Correspondance exacte
+                if ($candidateLower === $vendorLower) {
+                    $score = 100;
+                }
+                // Le candidat commence par le vendor
+                elseif (str_starts_with($candidateLower, $vendorLower)) {
+                    $score = 90;
+                }
+                // Le vendor commence par le candidat
+                elseif (str_starts_with($vendorLower, $candidateLower)) {
+                    $score = 85;
+                }
+                // Contient
+                elseif (str_contains($candidateLower, $vendorLower)) {
+                    $score = 70;
+                }
+                elseif (str_contains($vendorLower, $candidateLower)) {
+                    $score = 65;
+                }
+                
+                // Similarité de Levenshtein
+                $levenshtein = levenshtein($candidateLower, $vendorLower);
+                $maxLength = max(strlen($candidateLower), strlen($vendorLower));
+                if ($maxLength > 0) {
+                    $similarity = (1 - ($levenshtein / $maxLength)) * 100;
+                    if ($similarity > 80) {
+                        $score = max($score, $similarity);
+                    }
+                }
+                
+                if ($score > $bestMatch['score']) {
+                    $bestMatch = [
+                        'vendor' => $vendorData['main_name'],
+                        'score' => $score
+                    ];
+                }
+            }
+        }
+        
+        return $bestMatch;
+    }
+
+    /**
+     * Calculer le score de match du vendor
+     */
+    protected function calculateVendorMatchScore(string $vendor, string $search, int $position): float
+    {
+        $score = 0;
+        
+        // Bonus si le vendor est au début
+        if ($position === 0) {
+            $score += 30;
+        }
+        
+        // Bonus si suivi immédiatement par un tiret
+        $after = mb_substr(mb_strtolower($search), $position + mb_strlen($vendor), 1);
+        if ($after === '-') {
+            $score += 20;
+        }
+        
+        // Bonus selon la longueur du vendor
+        $length = mb_strlen($vendor);
+        if ($length >= 3) {
+            $score += min(20, ($length - 2) * 5);
+        }
+        
+        // Pénalité si trop court
+        if ($length < 2) {
+            $score -= 50;
+        }
+        
+        return $score;
+    }
+
+    /**
+     * Charger les vendors avec leurs variations
+     */
+    protected function loadKnownVendorsWithVariations(): array
+    {
+        $cacheKey = 'all_vendors_with_variations';
+        $cachedVendors = Cache::get($cacheKey);
+        
+        if ($cachedVendors !== null) {
+            return $cachedVendors;
+        }
+        
+        try {
+            $vendors = DB::connection('mysql')
+                ->table('scraped_product')
+                ->select('vendor', DB::raw('COUNT(*) as count'))
+                ->whereNotNull('vendor')
+                ->where('vendor', '!=', '')
+                ->groupBy('vendor')
+                ->orderByDesc('count')
+                ->get();
+            
+            $vendorMap = [];
+            foreach ($vendors as $vendor) {
+                $cleanVendor = $this->normalizeAndCleanText($vendor->vendor);
+                if (!empty($cleanVendor) && strlen($cleanVendor) > 1) {
+                    $vendorLower = mb_strtolower($cleanVendor);
+                    
+                    // Créer des variations
+                    $variations = $this->generateVendorVariations($cleanVendor);
+                    
+                    // Chercher un vendor principal existant similaire
+                    $found = false;
+                    foreach ($vendorMap as &$existingVendor) {
+                        $similarity = $this->calculateVendorSimilarity($vendorLower, 
+                            mb_strtolower($existingVendor['main_name']));
+                        
+                        if ($similarity > 0.8) {
+                            // Fusionner avec le vendor existant
+                            $existingVendor['variations'] = array_unique(array_merge(
+                                $existingVendor['variations'],
+                                $variations
+                            ));
+                            $existingVendor['count'] += $vendor->count;
+                            $found = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!$found) {
+                        $vendorMap[] = [
+                            'main_name' => $cleanVendor,
+                            'variations' => $variations,
+                            'count' => $vendor->count
+                        ];
+                    }
+                }
+            }
+            
+            // Trier par fréquence décroissante
+            usort($vendorMap, function($a, $b) {
+                return $b['count'] <=> $a['count'];
+            });
+            
+            Cache::put($cacheKey, $vendorMap, now()->addHours(24));
+            
+            return $vendorMap;
+            
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Générer les variations d'un vendor
+     */
+    protected function generateVendorVariations(string $vendor): array
+    {
+        $variations = [trim($vendor)];
+        
+        // Supprimer les mots génériques
+        $genericWords = ['parfums', 'parfum', 'paris', 'maison', 'collection', 'edition', 
+                        'international', 'france', 'luxe', 'prestige', 'elite'];
+        
+        $vendorWithoutGenerics = $vendor;
+        foreach ($genericWords as $word) {
+            $patterns = [
+                '/\b' . preg_quote($word, '/') . '\b\s*/i',
+                '/\s*\b' . preg_quote($word, '/') . '\b/i'
+            ];
+            foreach ($patterns as $pattern) {
+                $vendorWithoutGenerics = preg_replace($pattern, '', $vendorWithoutGenerics);
+            }
+        }
+        $vendorWithoutGenerics = trim($vendorWithoutGenerics);
+        if (!empty($vendorWithoutGenerics) && $vendorWithoutGenerics !== $vendor) {
+            $variations[] = $vendorWithoutGenerics;
+        }
+        
+        // Variations de casse
+        $variations[] = mb_strtoupper($vendor);
+        $variations[] = mb_strtolower($vendor);
+        $variations[] = mb_convert_case($vendor, MB_CASE_TITLE);
+        $variations[] = ucfirst(mb_strtolower($vendor));
+        
+        // Supprimer les caractères spéciaux
+        $noSpecial = preg_replace('/[^a-zA-Z0-9\s]/', '', $vendor);
+        if ($noSpecial !== $vendor) {
+            $variations[] = trim($noSpecial);
+        }
+        
+        // Supprimer les espaces
+        if (str_contains($vendor, ' ')) {
+            $noSpaces = str_replace(' ', '', $vendor);
+            $variations[] = $noSpaces;
+            $variations[] = str_replace(' ', '-', $vendor);
+            $variations[] = str_replace(' ', '.', $vendor);
+            $variations[] = str_replace(' ', '_', $vendor);
+        }
+        
+        // Abréviations pour les noms longs
+        if (strlen($vendor) > 10 && str_contains($vendor, ' ')) {
+            $words = explode(' ', $vendor);
+            $abbreviation = '';
+            foreach ($words as $word) {
+                if (strlen($word) > 0) {
+                    $abbreviation .= mb_substr($word, 0, 1);
+                }
+            }
+            if (strlen($abbreviation) > 1) {
+                $variations[] = mb_strtoupper($abbreviation);
+            }
+        }
+        
+        return array_unique(array_filter($variations, function($v) {
+            return !empty($v) && strlen($v) > 1;
+        }));
+    }
+
+    /**
+     * Calculer la similarité entre deux vendors
+     */
+    protected function calculateVendorSimilarity(string $vendor1, string $vendor2): float
+    {
+        // Utiliser Jaro-Winkler pour les noms
+        return $this->jaroWinklerSimilarity($vendor1, $vendor2);
+    }
+
+    /**
+     * Classifier le type de produit
+     */
+    protected function classifyProductType(string $search, array $features): string
+    {
+        $search = $this->normalizeAndCleanText($search);
+        $searchLower = mb_strtolower($search);
+        
+        // Types avec leurs synonymes et abréviations
+        $typeMapping = [
+            'eau de parfum' => ['eau de parfum', 'edp', 'parfum', 'spray parfum', 'vaporisateur parfum'],
+            'eau de toilette' => ['eau de toilette', 'edt', 'toilette'],
+            'parfum' => ['parfum', 'extrait de parfum', 'pure parfum'],
+            'eau de cologne' => ['eau de cologne', 'edc', 'cologne'],
+            'coffret' => ['coffret', 'set', 'pack', 'ensemble', 'kit', 'boîte cadeau'],
+            'crème' => ['crème', 'creme', 'cream', 'baume', 'pommade'],
+            'lotion' => ['lotion', 'lait', 'emulsion'],
+            'gel' => ['gel', 'gelée', 'mousse'],
+            'sérum' => ['sérum', 'serum', 'concentré', 'concentrate'],
+            'masque' => ['masque', 'mask', 'pack'],
+            'shampooing' => ['shampooing', 'shampoing', 'shampoo', 'shampoo'],
+            'soin' => ['soin', 'traitement', 'care', 'treatment'],
+            'nettoyant' => ['nettoyant', 'cleanser', 'démaquillant', 'demaquillant'],
+            'hydratant' => ['hydratant', 'moisturizer', 'hydrating'],
+            'protecteur' => ['protecteur', 'protector', 'protection']
+        ];
+        
+        $bestMatch = '';
+        $bestScore = 0;
+        
+        foreach ($typeMapping as $mainType => $variations) {
+            foreach ($variations as $variation) {
+                $variationLower = mb_strtolower($variation);
+                $position = mb_strpos($searchLower, $variationLower);
+                
+                if ($position !== false) {
+                    // Calculer un score
+                    $score = 100;
+                    
+                    // Bonus si le type est à la fin
+                    if ($position + strlen($variationLower) >= strlen($searchLower) - 2) {
+                        $score += 30;
+                    }
+                    
+                    // Pénalité si c'est au début
+                    if ($position < 5) {
+                        $score -= 20;
+                    }
+                    
+                    // Bonus pour les correspondances exactes
+                    if (preg_match('/\b' . preg_quote($variationLower, '/') . '\b/i', $searchLower)) {
+                        $score += 15;
+                    }
+                    
+                    if ($score > $bestScore) {
+                        $bestScore = $score;
+                        $bestMatch = $mainType;
+                    }
+                }
+            }
+        }
+        
+        // Vérifier les abréviations
+        if (empty($bestMatch)) {
+            $abbreviations = [
+                'edp' => 'eau de parfum',
+                'edt' => 'eau de toilette',
+                'edc' => 'eau de cologne',
+                'spf' => 'crème',
+                'uv' => 'crème'
+            ];
+            
+            foreach ($abbreviations as $abbr => $type) {
+                if (preg_match('/\b' . preg_quote($abbr, '/') . '\b/i', $search)) {
+                    $bestMatch = $type;
+                    break;
+                }
+            }
+        }
+        
+        // Utiliser les caractéristiques extraites
+        if (empty($bestMatch) && !empty($features['type_candidates'])) {
+            $bestMatch = $features['type_candidates'][0] ?? '';
+        }
+        
+        return $bestMatch;
+    }
+
+    /**
+     * Extraire les mots-clés sémantiques
+     */
+    protected function extractSemanticKeywords(string $search, string $productType, string $vendor): array
+    {
+        $search = $this->normalizeAndCleanText($search);
+        
+        // Supprimer le vendor si présent
+        if (!empty($vendor)) {
+            $pattern = '/^' . preg_quote($vendor, '/') . '\s*-\s*/i';
+            $search = preg_replace($pattern, '', $search);
+            $search = str_ireplace($vendor, '', $search);
+        }
+        
+        // Supprimer le type de produit
+        if (!empty($productType)) {
+            $search = str_ireplace($productType, '', $search);
+        }
+        
+        // Liste de stop words étendue
+        $stopWords = array_merge(
+            $this->getGeneralStopWords(),
+            $this->getProductStopWords(),
+            $this->getTechnicalTerms(),
+            ['ml', 'g', 'kg', 'l', 'oz', 'fl', 'cm', 'mm', 'mm']
+        );
+        
+        // Nettoyer et tokeniser
+        $search = mb_strtolower($search);
+        $search = preg_replace('/[^\p{L}\p{N}\s-]/u', ' ', $search);
+        $tokens = preg_split('/[\s-]+/', $search);
+        
+        // Filtrer les tokens
+        $keywords = [];
+        foreach ($tokens as $token) {
+            $token = trim($token);
+            
+            // Exclure les stop words, nombres seuls, et tokens trop courts
+            if (strlen($token) > 2 && 
+                !in_array($token, $stopWords) && 
+                !is_numeric($token) &&
+                !preg_match('/^\d+[a-z]+$/i', $token)) {
+                
+                $keywords[] = $token;
+            }
+        }
+        
+        return array_unique(array_slice($keywords, 0, 10));
+    }
+
+    /**
+     * Recherche en plusieurs phases
+     */
+    protected function multiPhaseSearch(string $search, string $vendor, string $productType, array $keywords, array $features): array
+    {
+        $allCompetitors = [];
+        $seenIds = [];
+        
+        try {
+            // PHASE 1: Recherche par vendor + type + keywords (précise)
+            if (!empty($vendor) && !empty($productType)) {
+                $competitors1 = $this->searchByVendorTypeAndKeywords($vendor, $productType, $keywords);
+                $allCompetitors = $this->mergeCompetitors($allCompetitors, $competitors1, $seenIds);
+            }
+            
+            // PHASE 2: Recherche par vendor + keywords
+            if (!empty($vendor) && count($allCompetitors) < 10) {
+                $competitors2 = $this->searchByVendorAndKeywords($vendor, $keywords);
+                $allCompetitors = $this->mergeCompetitors($allCompetitors, $competitors2, $seenIds);
+            }
+            
+            // PHASE 3: Recherche FULLTEXT améliorée
+            if (count($allCompetitors) < 20) {
+                $searchQuery = $this->prepareEnhancedFulltextQuery($search, $features);
+                if (!empty($searchQuery)) {
+                    $competitors3 = $this->searchByEnhancedFulltext($searchQuery);
+                    $allCompetitors = $this->mergeCompetitors($allCompetitors, $competitors3, $seenIds);
+                }
+            }
+            
+            // PHASE 4: Recherche par type + caractéristiques
+            if (count($allCompetitors) < 10 && (!empty($productType) || !empty($features['volumes']))) {
+                $competitors4 = $this->searchByTypeAndFeatures($productType, $features);
+                $allCompetitors = $this->mergeCompetitors($allCompetitors, $competitors4, $seenIds);
+            }
+            
+            // PHASE 5: Recherche par keywords seulement
+            if (count($allCompetitors) < 5 && !empty($keywords)) {
+                $competitors5 = $this->searchByKeywordsOnly($keywords);
+                $allCompetitors = $this->mergeCompetitors($allCompetitors, $competitors5, $seenIds);
+            }
+            
+            // Traiter les images
+            foreach ($allCompetitors as $competitor) {
+                $competitor->image = $this->getCompetitorImage($competitor);
+            }
+            
+            return $allCompetitors;
+            
+        } catch (\Exception $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Recherche par vendor, type et keywords
+     */
+    protected function searchByVendorTypeAndKeywords(string $vendor, string $productType, array $keywords): array
+    {
+        try {
+            if (empty($vendor) || empty($productType)) {
+                return [];
+            }
+            
+            $vendorVariations = $this->generateVendorVariations($vendor);
+            $typeVariations = $this->getTypeVariations($productType);
+            
+            $vendorConditions = [];
+            $params = [];
+            
+            foreach ($vendorVariations as $variation) {
+                $vendorConditions[] = "lp.vendor LIKE ?";
+                $params[] = '%' . $variation . '%';
+            }
+            
+            $typeConditions = [];
+            foreach ($typeVariations as $variation) {
+                $typeConditions[] = "lp.type LIKE ?";
+                $params[] = '%' . $variation . '%';
+            }
+            
+            // Ajouter les conditions pour les keywords
+            $keywordConditions = [];
+            foreach (array_slice($keywords, 0, 3) as $keyword) {
+                $keywordConditions[] = "(lp.name LIKE ? OR lp.variation LIKE ?)";
+                $params[] = '%' . $keyword . '%';
+                $params[] = '%' . $keyword . '%';
+            }
+            
+            $query = "
+                SELECT 
+                    lp.*,
+                    ws.name as site_name,
+                    lp.image_url as image_url,
+                    lp.url as product_url
+                FROM last_price_scraped_product lp
+                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+                WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
+                AND (" . implode(' OR ', $vendorConditions) . ")
+                AND (" . implode(' OR ', $typeConditions) . ")
+            ";
+            
+            if (!empty($keywordConditions)) {
+                $query .= " AND (" . implode(' OR ', $keywordConditions) . ")";
+            }
+            
+            $query .= " ORDER BY lp.prix_ht ASC LIMIT 50";
+            
+            return DB::connection('mysql')->select($query, $params);
+            
+        } catch (\Exception $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Obtenir les variations d'un type
+     */
+    protected function getTypeVariations(string $type): array
+    {
+        $variations = [$type];
+        
+        $typeMapping = [
+            'eau de parfum' => ['edp'],
+            'eau de toilette' => ['edt'],
+            'eau de cologne' => ['edc'],
+            'crème' => ['creme', 'cream'],
+            'sérum' => ['serum'],
+            'shampooing' => ['shampoing']
+        ];
+        
+        if (isset($typeMapping[$type])) {
+            $variations = array_merge($variations, $typeMapping[$type]);
+        }
+        
+        return array_unique($variations);
+    }
+
+    /**
+     * Fusionner les concurrents en évitant les doublons
+     */
+    protected function mergeCompetitors(array $existing, array $new, array &$seenIds): array
+    {
+        foreach ($new as $competitor) {
+            $id = $competitor->id ?? $competitor->url;
+            if (!in_array($id, $seenIds)) {
+                $existing[] = $competitor;
+                $seenIds[] = $id;
+            }
+        }
+        return $existing;
+    }
+
+    /**
+     * Préparer la requête FULLTEXT améliorée
+     */
+    protected function prepareEnhancedFulltextQuery(string $search, array $features): string
+    {
+        $search = $this->normalizeAndCleanText($search);
+        $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ\s]/', ' ', $search);
+        $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
+        $searchClean = mb_strtolower($searchClean);
+        
+        // Extraire les mots significatifs
+        $words = explode(' ', $searchClean);
+        $significantWords = [];
+        
+        $stopWords = array_merge(
+            $this->getGeneralStopWords(),
+            $this->getProductStopWords()
+        );
+        
+        foreach ($words as $word) {
+            $word = trim($word);
+            if (strlen($word) > 2 && !in_array($word, $stopWords) && !is_numeric($word)) {
+                // Ajouter avec opérateur booléen
+                $significantWords[] = '+' . $word . '*';
+            }
+        }
+        
+        // Ajouter les keywords des caractéristiques
+        foreach ($features['keywords'] as $keyword) {
+            if (strlen($keyword) > 2) {
+                $significantWords[] = '+' . $keyword . '*';
+            }
+        }
+        
+        // Limiter et retourner
+        $significantWords = array_slice($significantWords, 0, 8);
+        return implode(' ', $significantWords);
+    }
+
+    /**
+     * Recherche FULLTEXT améliorée
+     */
+    protected function searchByEnhancedFulltext(string $searchQuery): array
+    {
+        try {
+            $query = "
+                SELECT 
+                    lp.*,
+                    ws.name as site_name,
+                    lp.image_url as image_url,
+                    lp.url as product_url
+                FROM last_price_scraped_product lp
+                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+                WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation, lp.description) 
+                    AGAINST (? IN BOOLEAN MODE)
+                AND (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
+                ORDER BY lp.prix_ht ASC
+                LIMIT 100
+            ";
+            
+            return DB::connection('mysql')->select($query, [$searchQuery]);
+            
+        } catch (\Exception $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Recherche par type et caractéristiques
+     */
+    protected function searchByTypeAndFeatures(string $productType, array $features): array
+    {
+        try {
+            $conditions = [];
+            $params = [];
+            
+            // Condition pour le type
+            if (!empty($productType)) {
+                $typeVariations = $this->getTypeVariations($productType);
+                foreach ($typeVariations as $variation) {
+                    $conditions[] = "lp.type LIKE ?";
+                    $params[] = '%' . $variation . '%';
+                }
+            }
+            
+            // Condition pour les volumes
+            if (!empty($features['volumes'])) {
+                $volumeConditions = [];
+                foreach ($features['volumes'] as $volume) {
+                    $volumeConditions[] = "lp.name LIKE ?";
+                    $params[] = '%' . $volume['value'] . $volume['unit'] . '%';
+                }
+                if (!empty($volumeConditions)) {
+                    $conditions[] = "(" . implode(' OR ', $volumeConditions) . ")";
+                }
+            }
+            
+            if (empty($conditions)) {
+                return [];
+            }
+            
+            $query = "
+                SELECT 
+                    lp.*,
+                    ws.name as site_name,
+                    lp.image_url as image_url,
+                    lp.url as product_url
+                FROM last_price_scraped_product lp
+                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+                WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
+                AND (" . implode(' OR ', $conditions) . ")
+                ORDER BY lp.prix_ht ASC
+                LIMIT 50
+            ";
+            
+            return DB::connection('mysql')->select($query, $params);
+            
+        } catch (\Exception $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Recherche par keywords seulement
+     */
+    protected function searchByKeywordsOnly(array $keywords): array
+    {
+        try {
+            if (empty($keywords)) {
+                return [];
+            }
+            
+            $conditions = [];
+            $params = [];
+            
+            foreach (array_slice($keywords, 0, 5) as $keyword) {
+                $conditions[] = "(lp.name LIKE ? OR lp.variation LIKE ? OR lp.type LIKE ?)";
+                $params[] = '%' . $keyword . '%';
+                $params[] = '%' . $keyword . '%';
+                $params[] = '%' . $keyword . '%';
+            }
+            
+            $query = "
+                SELECT 
+                    lp.*,
+                    ws.name as site_name,
+                    lp.image_url as image_url,
+                    lp.url as product_url
+                FROM last_price_scraped_product lp
+                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+                WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
+                AND (" . implode(' OR ', $conditions) . ")
+                ORDER BY lp.prix_ht ASC
+                LIMIT 30
+            ";
+            
+            return DB::connection('mysql')->select($query, $params);
+            
+        } catch (\Exception $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Calcul de similarité avancé
+     */
+    protected function calculateAdvancedSimilarity(array $competitors, string $search, array $features): array
+    {
+        $scoredCompetitors = [];
+        
+        foreach ($competitors as $competitor) {
+            $scores = [];
+            
+            // 1. Similarité du vendor (25%)
+            $vendorScore = $this->calculateVendorSimilarityScoreMl($competitor, $features['vendor_candidates']);
+            $scores['vendor'] = ['score' => $vendorScore, 'weight' => 0.25];
+            
+            // 2. Similarité du type (20%)
+            $typeScore = $this->calculateTypeSimilarityScoreMl($competitor, $features['type_candidates']);
+            $scores['type'] = ['score' => $typeScore, 'weight' => 0.20];
+            
+            // 3. Similarité des mots-clés (15%)
+            $keywordScore = $this->calculateKeywordSimilarityScoreMl($competitor, $features['keywords']);
+            $scores['keywords'] = ['score' => $keywordScore, 'weight' => 0.15];
+            
+            // 4. Similarité des volumes/capacités (15%)
+            $volumeScore = $this->calculateVolumeSimilarityScoreMl($competitor, $features);
+            $scores['volume'] = ['score' => $volumeScore, 'weight' => 0.15];
+            
+            // 5. Similarité des caractéristiques (10%)
+            $featureScore = $this->calculateFeatureSimilarityScoreMl($competitor, $features);
+            $scores['features'] = ['score' => $featureScore, 'weight' => 0.10];
+            
+            // 6. Similarité textuelle (10%)
+            $textScore = $this->calculateTextSimilarityScoreMl($competitor, $search);
+            $scores['text'] = ['score' => $textScore, 'weight' => 0.10];
+            
+            // 7. Similarité de variation (5%)
+            $variationScore = $this->calculateVariationSimilarityScoreMl($competitor, $features);
+            $scores['variation'] = ['score' => $variationScore, 'weight' => 0.05];
+            
+            // Calcul du score total pondéré
+            $totalScore = 0;
+            foreach ($scores as $category => $data) {
+                $totalScore += $data['score'] * $data['weight'];
+            }
+            
+            $competitor->similarity_score = min(1.0, $totalScore);
+            $competitor->similarity_details = $scores;
+            $competitor->match_level = $this->getMatchLevel($competitor->similarity_score);
+            
+            $scoredCompetitors[] = $competitor;
+        }
+        
+        // Trier par score décroissant
+        usort($scoredCompetitors, function($a, $b) {
+            return $b->similarity_score <=> $a->similarity_score;
+        });
+        
+        return $scoredCompetitors;
+    }
+
+    /**
+     * Score de similarité du vendor (ML)
+     */
+    protected function calculateVendorSimilarityScoreMl($competitor, array $vendorCandidates): float
+    {
+        $productVendor = mb_strtolower(trim($competitor->vendor ?? ''));
+        
+        if (empty($productVendor)) {
+            return 0;
+        }
+        
+        $bestScore = 0;
+        
+        foreach ($vendorCandidates as $candidate) {
+            $candidateLower = mb_strtolower($candidate);
+            
+            // Score basé sur la similarité de chaîne
+            $similarity = $this->computeStringSimilarity($productVendor, $candidateLower);
+            
+            // Bonus pour les correspondances exactes
+            if ($productVendor === $candidateLower) {
+                $similarity = 1.0;
+            }
+            
+            // Bonus si le vendor du produit commence par le candidat
+            if (str_starts_with($productVendor, $candidateLower)) {
+                $similarity = max($similarity, 0.9);
+            }
+            
+            $bestScore = max($bestScore, $similarity);
+        }
+        
+        return $bestScore;
+    }
+
+    /**
+     * Calculer la similarité de chaîne avec plusieurs méthodes
+     */
+    protected function computeStringSimilarity(string $str1, string $str2): float
+    {
+        // Levenshtein
+        $levenshtein = levenshtein($str1, $str2);
+        $maxLength = max(strlen($str1), strlen($str2));
+        $levenshteinScore = $maxLength > 0 ? 1 - ($levenshtein / $maxLength) : 0;
+        
+        // Jaro-Winkler
+        $jaroScore = $this->jaroWinklerSimilarity($str1, $str2);
+        
+        // Similarité cosinus sur les trigrammes
+        $cosineScore = $this->cosineSimilarity($str1, $str2);
+        
+        // Moyenne pondérée
+        return ($levenshteinScore * 0.3) + ($jaroScore * 0.4) + ($cosineScore * 0.3);
+    }
+
+    /**
+     * Similarité Jaro-Winkler
+     */
+    protected function jaroWinklerSimilarity(string $str1, string $str2): float
+    {
+        $str1 = mb_strtolower($str1);
+        $str2 = mb_strtolower($str2);
+        
+        $len1 = mb_strlen($str1);
+        $len2 = mb_strlen($str2);
+        
+        if ($len1 == 0 || $len2 == 0) {
+            return 0.0;
+        }
+        
+        $matchDistance = (int) floor(max($len1, $len2) / 2) - 1;
+        $matches = 0;
+        $transpositions = 0;
+        
+        $str1Matches = array_fill(0, $len1, false);
+        $str2Matches = array_fill(0, $len2, false);
+        
+        // Trouver les matches
+        for ($i = 0; $i < $len1; $i++) {
+            $start = max(0, $i - $matchDistance);
+            $end = min($i + $matchDistance + 1, $len2);
+            
+            for ($j = $start; $j < $end; $j++) {
+                if (!$str2Matches[$j] && mb_substr($str1, $i, 1) === mb_substr($str2, $j, 1)) {
+                    $str1Matches[$i] = true;
+                    $str2Matches[$j] = true;
+                    $matches++;
+                    break;
+                }
+            }
+        }
+        
+        if ($matches == 0) {
+            return 0.0;
+        }
+        
+        // Compter les transpositions
+        $k = 0;
+        for ($i = 0; $i < $len1; $i++) {
+            if ($str1Matches[$i]) {
+                while (!$str2Matches[$k]) {
+                    $k++;
+                }
+                if (mb_substr($str1, $i, 1) !== mb_substr($str2, $k, 1)) {
+                    $transpositions++;
+                }
+                $k++;
+            }
+        }
+        
+        $transpositions /= 2;
+        
+        // Distance de Jaro
+        $jaroDistance = (($matches / $len1) + ($matches / $len2) + 
+                        (($matches - $transpositions) / $matches)) / 3.0;
+        
+        // Préfixe commun (max 4 caractères)
+        $prefix = 0;
+        for ($i = 0; $i < min(4, $len1, $len2); $i++) {
+            if (mb_substr($str1, $i, 1) === mb_substr($str2, $i, 1)) {
+                $prefix++;
+            } else {
+                break;
+            }
+        }
+        
+        // Distance de Jaro-Winkler
+        $jaroWinklerDistance = $jaroDistance + ($prefix * 0.1 * (1 - $jaroDistance));
+        
+        return $jaroWinklerDistance;
+    }
+
+    /**
+     * Similarité cosinus sur trigrammes
+     */
+    protected function cosineSimilarity(string $str1, string $str2): float
+    {
+        // Créer les trigrammes
+        $trigrams1 = $this->getTrigrams($str1);
+        $trigrams2 = $this->getTrigrams($str2);
+        
+        // Compter les occurrences
+        $count1 = array_count_values($trigrams1);
+        $count2 = array_count_values($trigrams2);
+        
+        // Tous les trigrammes uniques
+        $allTrigrams = array_unique(array_merge($trigrams1, $trigrams2));
+        
+        // Vecteurs
+        $vector1 = [];
+        $vector2 = [];
+        foreach ($allTrigrams as $trigram) {
+            $vector1[] = $count1[$trigram] ?? 0;
+            $vector2[] = $count2[$trigram] ?? 0;
+        }
+        
+        // Produit scalaire
+        $dotProduct = 0;
+        for ($i = 0; $i < count($vector1); $i++) {
+            $dotProduct += $vector1[$i] * $vector2[$i];
+        }
+        
+        // Normes
+        $norm1 = sqrt(array_sum(array_map(function($x) { return $x * $x; }, $vector1)));
+        $norm2 = sqrt(array_sum(array_map(function($x) { return $x * $x; }, $vector2)));
+        
+        if ($norm1 == 0 || $norm2 == 0) {
+            return 0.0;
+        }
+        
+        return $dotProduct / ($norm1 * $norm2);
+    }
+
+    /**
+     * Générer les trigrammes d'une chaîne
+     */
+    protected function getTrigrams(string $str): array
+    {
+        $str = ' ' . $str . ' ';
+        $trigrams = [];
+        $len = mb_strlen($str);
+        
+        for ($i = 0; $i < $len - 2; $i++) {
+            $trigrams[] = mb_substr($str, $i, 3);
+        }
+        
+        return $trigrams;
+    }
+
+    /**
+     * Score de similarité du type (ML)
+     */
+    protected function calculateTypeSimilarityScoreMl($competitor, array $typeCandidates): float
+    {
+        $productType = mb_strtolower(trim($competitor->type ?? ''));
+        
+        if (empty($productType) || empty($typeCandidates)) {
+            return 0.3;
+        }
+        
+        $bestScore = 0;
+        
+        foreach ($typeCandidates as $candidate) {
+            $candidateLower = mb_strtolower($candidate);
+            
+            if ($productType === $candidateLower) {
+                return 1.0;
+            }
+            
+            if (str_contains($productType, $candidateLower) || str_contains($candidateLower, $productType)) {
+                $bestScore = max($bestScore, 0.8);
+            }
+            
+            // Vérifier les abréviations
+            $typeMappings = [
+                'edp' => 'eau de parfum',
+                'edt' => 'eau de toilette',
+                'edc' => 'eau de cologne',
+                'creme' => 'crème',
+                'serum' => 'sérum'
+            ];
+            
+            foreach ($typeMappings as $abbr => $full) {
+                if (($productType === $abbr && str_contains($candidateLower, $full)) ||
+                    ($candidateLower === $abbr && str_contains($productType, $full))) {
+                    $bestScore = max($bestScore, 0.7);
+                }
+            }
+        }
+        
+        return max($bestScore, 0.2);
+    }
+
+    /**
+     * Score de similarité des keywords (ML)
+     */
+    protected function calculateKeywordSimilarityScoreMl($competitor, array $keywords): float
+    {
+        if (empty($keywords)) {
+            return 0.5;
+        }
+        
+        $productName = mb_strtolower($competitor->name ?? '');
+        $productVariation = mb_strtolower($competitor->variation ?? '');
+        $productType = mb_strtolower($competitor->type ?? '');
+        
+        $productText = $productName . ' ' . $productVariation . ' ' . $productType;
+        
+        $matches = 0;
+        foreach ($keywords as $keyword) {
+            $keywordLower = mb_strtolower($keyword);
+            if (str_contains($productText, $keywordLower)) {
+                $matches++;
+            }
+        }
+        
+        return $matches / count($keywords);
+    }
+
+    /**
+     * Score de similarité des volumes (ML)
+     */
+    protected function calculateVolumeSimilarityScoreMl($competitor, array $features): float
+    {
+        if (empty($features['volumes'])) {
+            return 0.5;
+        }
+        
+        $productText = mb_strtolower(($competitor->name ?? '') . ' ' . ($competitor->variation ?? ''));
+        
+        $matches = 0;
+        foreach ($features['volumes'] as $volume) {
+            $pattern = '/' . $volume['value'] . '\s*' . $volume['unit'] . '/i';
+            if (preg_match($pattern, $productText)) {
+                $matches++;
+            }
+        }
+        
+        if (!empty($features['volumes'])) {
+            return $matches / count($features['volumes']);
+        }
+        
+        return 0;
+    }
+
+    /**
+     * Score de similarité des caractéristiques (ML)
+     */
+    protected function calculateFeatureSimilarityScoreMl($competitor, array $features): float
+    {
+        $score = 0.5;
+        
+        $productText = mb_strtolower(($competitor->name ?? '') . ' ' . ($competitor->variation ?? ''));
+        
+        // Vérifier le genre
+        if (!empty($features['genders'])) {
+            $genderTerms = [
+                'homme' => ['homme', 'men', 'man', 'masculin'],
+                'femme' => ['femme', 'women', 'woman', 'féminin'],
+                'unisexe' => ['unisexe', 'unisex']
+            ];
+            
+            foreach ($features['genders'] as $gender) {
+                if (isset($genderTerms[$gender])) {
+                    foreach ($genderTerms[$gender] as $term) {
+                        if (str_contains($productText, $term)) {
+                            $score += 0.1;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Vérifier les qualificatifs
+        if (!empty($features['qualifiers'])) {
+            $qualifierTerms = [
+                'extrait' => ['extrait', 'pure', 'intense'],
+                'legere' => ['légère', 'legere', 'light'],
+                'fraiche' => ['fraîche', 'fraiche', 'fresh'],
+                'intense' => ['intense', 'concentré'],
+                'nuit' => ['nuit', 'night'],
+                'jour' => ['jour', 'day']
+            ];
+            
+            foreach ($features['qualifiers'] as $qualifier) {
+                if (isset($qualifierTerms[$qualifier])) {
+                    foreach ($qualifierTerms[$qualifier] as $term) {
+                        if (str_contains($productText, $term)) {
+                            $score += 0.05;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Vérifier les couleurs
+        if (!empty($features['colors'])) {
+            foreach ($features['colors'] as $color) {
+                if (str_contains($productText, $color)) {
+                    $score += 0.05;
+                }
+            }
+        }
+        
+        return min(1.0, $score);
+    }
+
+    /**
+     * Score de similarité textuelle (ML)
+     */
+    protected function calculateTextSimilarityScoreMl($competitor, string $search): float
+    {
+        $productName = $competitor->name ?? '';
+        $productVariation = $competitor->variation ?? '';
+        
+        if (empty($productName) || empty($search)) {
+            return 0.3;
+        }
+        
+        $productText = mb_strtolower($productName . ' ' . $productVariation);
+        $searchLower = mb_strtolower($search);
+        
+        // Si le texte du produit contient la recherche (ou vice versa)
+        if (str_contains($productText, $searchLower) || 
+            str_contains($searchLower, $productText)) {
+            return 0.9;
+        }
+        
+        // Extraire les mots significatifs
+        $searchWords = preg_split('/\s+/', $searchLower);
+        $searchWords = array_filter($searchWords, function($word) {
+            return strlen($word) > 2 && !$this->isStopWord($word);
+        });
+        
+        if (empty($searchWords)) {
+            return 0.3;
+        }
+        
+        $matches = 0;
+        foreach ($searchWords as $word) {
+            if (str_contains($productText, $word)) {
+                $matches++;
+            }
+        }
+        
+        return $matches / count($searchWords);
+    }
+
+    /**
+     * Score de similarité de variation (ML)
+     */
+    protected function calculateVariationSimilarityScoreMl($competitor, array $features): float
+    {
+        $productVariation = mb_strtolower($competitor->variation ?? '');
+        
+        if (empty($productVariation)) {
+            return 0.3;
+        }
+        
+        $score = 0.3;
+        
+        // Vérifier les caractéristiques dans la variation
+        if (!empty($features['qualifiers'])) {
+            foreach ($features['qualifiers'] as $qualifier) {
+                if (str_contains($productVariation, $qualifier)) {
+                    $score += 0.2;
+                }
+            }
+        }
+        
+        if (!empty($features['colors'])) {
+            foreach ($features['colors'] as $color) {
+                if (str_contains($productVariation, $color)) {
+                    $score += 0.1;
+                }
+            }
+        }
+        
+        return min(1.0, $score);
+    }
+
+    /**
+     * Filtrage intelligent
+     */
+    protected function intelligentFiltering(array $competitors, float $ourPrice): array
+    {
+        $filtered = [];
+        $seenProducts = [];
+        
+        foreach ($competitors as $competitor) {
+            // Seuil minimum de similarité
+            if (($competitor->similarity_score ?? 0) < 0.6) {
+                continue;
+            }
+            
+            // Éviter les doublons
+            $signature = $this->createProductSignature($competitor);
+            if (in_array($signature, $seenProducts)) {
+                continue;
+            }
+            $seenProducts[] = $signature;
+            
+            // Filtrer les prix aberrants
+            $competitorPrice = $this->cleanPrice($competitor->prix_ht ?? 0);
+            if ($ourPrice > 0) {
+                // Trop cher (plus de 3x notre prix)
+                if ($competitorPrice > ($ourPrice * 3)) {
+                    continue;
+                }
+                // Trop bon marché (moins de 10% de notre prix)
+                if ($competitorPrice < ($ourPrice * 0.1)) {
+                    continue;
+                }
+            }
+            
+            // Vérifier le nom
+            if (empty($competitor->name) || strlen(trim($competitor->name)) < 3) {
+                continue;
+            }
+            
+            $filtered[] = $competitor;
+            
+            // Limiter à 50 résultats
+            if (count($filtered) >= 50) {
+                break;
+            }
+        }
+        
+        return $filtered;
+    }
+
+    /**
+     * Créer une signature unique pour un produit
+     */
+    protected function createProductSignature($competitor): string
+    {
+        $parts = [
+            mb_strtolower(trim($competitor->vendor ?? '')),
+            mb_strtolower(trim($competitor->name ?? '')),
+            mb_strtolower(trim($competitor->variation ?? '')),
+            $this->cleanPrice($competitor->prix_ht ?? 0),
+            $competitor->web_site_id ?? 0
+        ];
+        
+        return md5(implode('|', $parts));
+    }
+
+    /**
      * Normaliser et nettoyer un texte (UTF-8)
      */
     protected function normalizeAndCleanText(string $text): string
     {
-        // Vérifier si le texte est déjà en UTF-8
+        // Vérifier l'encodage
         if (!mb_check_encoding($text, 'UTF-8')) {
-            // Essayer de convertir depuis différents encodages
             $encodings = ['ISO-8859-1', 'ISO-8859-15', 'Windows-1252', 'CP1252'];
-            
             foreach ($encodings as $encoding) {
                 $converted = mb_convert_encoding($text, 'UTF-8', $encoding);
                 if (mb_check_encoding($converted, 'UTF-8') && !$this->hasInvalidUtf8($converted)) {
@@ -599,14 +2090,13 @@ new class extends Component {
             }
         }
         
-        // Normaliser les caractères Unicode (NFC normalization)
+        // Normaliser Unicode
         if (function_exists('normalizer_normalize')) {
             $text = normalizer_normalize($text, \Normalizer::FORM_C);
         }
         
-        // Remplacer les caractères mal encodés spécifiques
+        // Remplacer les caractères mal encodés
         $replacements = [
-            // Caractères mal encodés courants
             '�' => 'é', '�' => 'è', '�' => 'ê', '�' => 'ë',
             '�' => 'à', '�' => 'â', '�' => 'ä',
             '�' => 'î', '�' => 'ï',
@@ -619,12 +2109,11 @@ new class extends Component {
             '�' => 'Ô', '�' => 'Ö',
             '�' => 'Ù', '�' => 'Û', '�' => 'Ü',
             '�' => 'Ç',
-            // Caractères spéciaux
-            '�' => "'", '�' => "'", // Guillemets simples
-            '�' => '"', '�' => '"', // Guillemets doubles
+            '�' => "'", '�' => "'",
+            '�' => '"', '�' => '"',
             '�' => '€',
             '�' => '...',
-            '[' => '', ']' => '', // Supprimer les crochets souvent mal formatés
+            '[' => '', ']' => '',
         ];
         
         $text = strtr($text, $replacements);
@@ -647,159 +2136,6 @@ new class extends Component {
         return preg_match('//u', $text) !== 1;
     }
 
-    /**
-     * Extraire le vendor de manière plus intelligente
-     * Similaire à la méthode du premier composant
-     */
-    protected function extractVendorFromSearchImproved(string $search): string
-    {
-        $search = $this->normalizeAndCleanText($search);
-        $searchLower = mb_strtolower(trim($search));
-        
-        // Charger la liste des vendors connus
-        $knownVendors = $this->loadKnownVendors();
-        
-        // Essayer plusieurs stratégies d'extraction
-        $vendor = '';
-        
-        // 1. Recherche par motif "VENDOR - " au début
-        if (preg_match('/^([^-]+)\s*-\s*/i', $search, $matches)) {
-            $potentialVendor = trim($matches[1]);
-            $vendor = $this->findMatchingVendor($potentialVendor, $knownVendors);
-        }
-        
-        // 2. Si pas trouvé, chercher le vendor n'importe où dans la chaîne
-        if (empty($vendor)) {
-            foreach ($knownVendors as $knownVendor) {
-                $knownLower = mb_strtolower($knownVendor);
-                if (str_contains($searchLower, $knownLower)) {
-                    // Vérifier qu'il n'est pas dans un mot plus long
-                    $position = mb_strpos($searchLower, $knownLower);
-                    $before = $position > 0 ? mb_substr($searchLower, $position - 1, 1) : ' ';
-                    $afterCharPosition = $position + mb_strlen($knownLower);
-                    $after = $afterCharPosition < mb_strlen($searchLower) 
-                        ? mb_substr($searchLower, $afterCharPosition, 1) 
-                        : ' ';
-                    
-                    // Le vendor doit être délimité par des espaces, tirets, etc.
-                    $delimiters = [' ', '-', '(', '[', ',', '.', ';', ':', '/'];
-                    if (in_array($before, $delimiters) && in_array($after, $delimiters)) {
-                        $vendor = $knownVendor;
-                        break;
-                    }
-                }
-            }
-        }
-        
-        // 3. Si toujours pas trouvé, utiliser la première partie avant le premier tiret
-        if (empty($vendor)) {
-            $parts = preg_split('/\s*-\s*/', $search, 2);
-            $firstPart = trim($parts[0]);
-            
-            // Éviter les mots clés produits
-            $productKeywords = $this->getProductKeywords();
-            
-            $hasProductKeyword = false;
-            foreach ($productKeywords as $keyword) {
-                if (stripos($firstPart, $keyword) !== false) {
-                    $hasProductKeyword = true;
-                    break;
-                }
-            }
-            
-            if (!$hasProductKeyword && !empty($firstPart)) {
-                $vendor = $this->findMatchingVendor($firstPart, $knownVendors);
-            }
-        }
-        
-        return $vendor ?: '';
-    }
-
-    /**
-     * Extraire les mots clés de recherche significatifs
-     * Méthode générale qui fonctionne pour tous les types de produits
-     */
-    protected function extractSearchKeywords(string $search, ?string $vendor = null): array
-    {
-        $search = $this->normalizeAndCleanText($search);
-        
-        // Supprimer le vendor si présent
-        if (!empty($vendor)) {
-            $pattern = '/^' . preg_quote($vendor, '/') . '\s*-\s*/i';
-            $searchWithoutVendor = preg_replace($pattern, '', $search);
-            
-            if ($searchWithoutVendor !== $search) {
-                $search = $searchWithoutVendor;
-            } else {
-                $search = str_ireplace($vendor, '', $search);
-            }
-        }
-        
-        // Liste exhaustive de mots à exclure (stop words)
-        $stopWords = array_merge(
-            $this->getGeneralStopWords(),
-            $this->getProductStopWords(),
-            $this->getTechnicalTerms()
-        );
-        
-        // Nettoyer et tokeniser
-        $search = mb_strtolower($search);
-        
-        // Supprimer les ponctuations mais garder les tirets pour les mots composés
-        $search = preg_replace('/[^\p{L}\p{N}\s-]/u', ' ', $search);
-        
-        // Tokeniser
-        $tokens = preg_split('/[\s-]+/', $search);
-        
-        // Filtrer les tokens
-        $keywords = [];
-        foreach ($tokens as $token) {
-            $token = trim($token);
-            
-            // Exclure les stop words, nombres seuls, et tokens trop courts
-            if (strlen($token) > 2 && 
-                !in_array($token, $stopWords) && 
-                !is_numeric($token) &&
-                !preg_match('/^\d+ml$/i', $token) && // Exclure "50ml" etc.
-                !preg_match('/^\d+g$/i', $token) &&  // Exclure "100g" etc.
-                !preg_match('/^\d+\%$/i', $token)) { // Exclure "10%" etc.
-                
-                // Garder les tokens qui semblent être des mots significatifs
-                if ($this->isSignificantWord($token)) {
-                    $keywords[] = $token;
-                }
-            }
-        }
-        
-        // Limiter le nombre de keywords et éviter les doublons
-        $keywords = array_unique($keywords);
-        $keywords = array_slice($keywords, 0, 10); // Maximum 10 keywords
-        
-        return $keywords;
-    }
-    
-    /**
-     * Vérifier si un mot est significatif
-     */
-    protected function isSignificantWord(string $word): bool
-    {
-        // Exclure les codes produits, références, etc.
-        if (preg_match('/^[A-Z0-9]{2,}[A-Z0-9-]*$/i', $word) && strlen($word) >= 4) {
-            // Probablement un code produit (ex: "HA", "SPF50", "N°5")
-            return false;
-        }
-        
-        // Exclure les mots qui sont des tailles/capacités
-        $sizePatterns = ['\d+ml', '\d+l', '\d+g', '\d+kg', '\d+oz', '\d+fl'];
-        foreach ($sizePatterns as $pattern) {
-            if (preg_match('/^' . $pattern . '$/i', $word)) {
-                return false;
-            }
-        }
-        
-        return true;
-    }
-    
     /**
      * Obtenir les stop words généraux
      */
@@ -845,761 +2181,6 @@ new class extends Component {
     }
     
     /**
-     * Obtenir les mots clés produits généraux
-     */
-    protected function getProductKeywords(): array
-    {
-        return array_merge(
-            $this->getProductStopWords(),
-            $this->getTechnicalTerms(),
-            [
-                'recharge', 'personnalisable', 'rouge', 'blanc', 'noir', 'bleu', 'vert', 'jaune',
-                'rose', 'violet', 'orange', 'marron', 'gris', 'doré', 'dore', 'argenté', 'argente',
-                'brun', 'amarante', 'satin', 'mat', 'brillant', 'nacré', 'nacre', 'perlé', 'perle'
-            ]
-        );
-    }
-
-    /**
-     * Extraire tous les composants de la recherche (comme le premier composant)
-     */
-    protected function extractSearchComponentsImproved(string $search, ?string $vendor = null, array $keywords = []): array
-    {
-        $search = $this->normalizeAndCleanText($search);
-        
-        $components = [
-            'vendor' => $vendor,
-            'product_name' => '',
-            'keywords' => $keywords,
-            'variation' => '',
-            'volumes' => [],
-            'capacities' => [],
-            'type' => '',
-            'color' => '',
-            'finish' => ''
-        ];
-        
-        // Extraire les volumes (ml)
-        if (preg_match_all('/(\d+)\s*ml/i', $search, $matches)) {
-            $components['volumes'] = $matches[1];
-        }
-        
-        // Extraire les capacités (g, kg, etc.)
-        if (preg_match_all('/(\d+)\s*(g|kg|oz|l)/i', $search, $matches)) {
-            $components['capacities'] = array_map(function($value, $unit) {
-                return $value . strtolower($unit);
-            }, $matches[1], $matches[2]);
-        }
-        
-        // Extraire le nom du produit (reste de la recherche après nettoyage)
-        $remainingSearch = $search;
-        
-        if (!empty($vendor)) {
-            // Supprimer le vendor
-            $pattern = '/^' . preg_quote($vendor, '/') . '\s*-\s*/i';
-            $remainingSearch = preg_replace($pattern, '', $remainingSearch);
-            
-            if ($remainingSearch === $search) {
-                $remainingSearch = str_ireplace($vendor, '', $remainingSearch);
-            }
-        }
-        
-        // Supprimer les parties techniques
-        $technicalParts = array_merge(
-            $this->getProductStopWords(),
-            $this->getTechnicalTerms(),
-            ['ml', 'g', 'kg', 'l', 'oz']
-        );
-        
-        foreach ($technicalParts as $part) {
-            $remainingSearch = preg_replace('/\b' . preg_quote($part, '/') . '\b/i', '', $remainingSearch);
-        }
-        
-        // Supprimer les volumes et capacités
-        $remainingSearch = preg_replace('/\d+\s*(ml|g|kg|oz|l)/i', '', $remainingSearch);
-        
-        // Supprimer les nombres isolés
-        $remainingSearch = preg_replace('/\s\d+\s/', ' ', $remainingSearch);
-        
-        // Nettoyer
-        $remainingSearch = trim(preg_replace('/\s+/', ' ', $remainingSearch));
-        $remainingSearch = preg_replace('/^\s*-\s*|\s*-\s*$/i', '', $remainingSearch);
-        
-        $components['product_name'] = $remainingSearch;
-        
-        // Extraire le type
-        $types = ['eau de parfum', 'eau de toilette', 'parfum', 'coffret', 'edp', 'edt', 
-                 'crème', 'creme', 'lotion', 'gel', 'sérum', 'serum', 'baume', 'masque',
-                 'shampooing', 'soin', 'traitement', 'nettoyant', 'hydratant', 'protecteur'];
-        
-        foreach ($types as $type) {
-            if (stripos($search, $type) !== false) {
-                $components['type'] = $type;
-                break;
-            }
-        }
-        
-        // Extraire la couleur
-        $colors = ['rouge', 'blanc', 'noir', 'bleu', 'vert', 'jaune', 'rose', 'violet', 
-                  'orange', 'marron', 'gris', 'brun', 'amarante', 'doré', 'dore', 'argenté', 'argente'];
-        
-        foreach ($colors as $color) {
-            if (stripos($search, $color) !== false) {
-                $components['color'] = $color;
-                break;
-            }
-        }
-        
-        // Extraire la finition
-        $finishes = ['satin', 'mat', 'brillant', 'nacré', 'nacre', 'perlé', 'perle'];
-        
-        foreach ($finishes as $finish) {
-            if (stripos($search, $finish) !== false) {
-                $components['finish'] = $finish;
-                break;
-            }
-        }
-        
-        // Extraire la variation (partie après le deuxième tiret)
-        $parts = preg_split('/\s*-\s*/', $search, 3);
-        if (count($parts) >= 3) {
-            $components['variation'] = trim($parts[2]);
-        } elseif (count($parts) == 2) {
-            $components['variation'] = trim($parts[1]);
-        }
-        
-        return $components;
-    }
-
-    /**
-     * Recherche avec plusieurs stratégies
-     */
-    protected function searchWithMultipleStrategies(string $search, string $vendor, array $vendorVariations, array $keywords, array $components): array
-    {
-        $allCompetitors = [];
-        $seenIds = [];
-        
-        try {
-            // STRATÉGIE 1: Recherche par vendor + keywords
-            if (!empty($vendorVariations) && !empty($keywords)) {
-                $competitors1 = $this->searchByVendorAndKeywords($vendorVariations, $keywords);
-                foreach ($competitors1 as $competitor) {
-                    $id = $competitor->id ?? $competitor->url;
-                    if (!in_array($id, $seenIds)) {
-                        $allCompetitors[] = $competitor;
-                        $seenIds[] = $id;
-                    }
-                }
-            }
-            
-            // STRATÉGIE 2: Recherche FULLTEXT avec la recherche originale
-            if (count($allCompetitors) < 10) {
-                $searchQuery = $this->prepareSearchTermsForFulltext($search);
-                if (!empty($searchQuery)) {
-                    $competitors2 = $this->searchByFulltext($searchQuery);
-                    foreach ($competitors2 as $competitor) {
-                        $id = $competitor->id ?? $competitor->url;
-                        if (!in_array($id, $seenIds)) {
-                            $allCompetitors[] = $competitor;
-                            $seenIds[] = $id;
-                        }
-                    }
-                }
-            }
-            
-            // STRATÉGIE 3: Recherche par vendor seul
-            if (count($allCompetitors) < 5 && !empty($vendorVariations)) {
-                $competitors3 = $this->searchByVendorOnly($vendorVariations);
-                foreach ($competitors3 as $competitor) {
-                    $id = $competitor->id ?? $competitor->url;
-                    if (!in_array($id, $seenIds)) {
-                        $allCompetitors[] = $competitor;
-                        $seenIds[] = $id;
-                    }
-                }
-            }
-            
-            // STRATÉGIE 4: Recherche par type et caractéristiques
-            if (count($allCompetitors) < 5 && (!empty($components['type']) || !empty($components['color']))) {
-                $competitors4 = $this->searchByTypeAndFeatures($components);
-                foreach ($competitors4 as $competitor) {
-                    $id = $competitor->id ?? $competitor->url;
-                    if (!in_array($id, $seenIds)) {
-                        $allCompetitors[] = $competitor;
-                        $seenIds[] = $id;
-                    }
-                }
-            }
-            
-            // Traiter les images
-            foreach ($allCompetitors as $competitor) {
-                $competitor->image = $this->getCompetitorImage($competitor);
-            }
-            
-            return $allCompetitors;
-            
-        } catch (\Exception $e) {
-            return [];
-        }
-    }
-
-    /**
-     * Recherche par vendor + keywords
-     */
-    protected function searchByVendorAndKeywords(array $vendorVariations, array $keywords): array
-    {
-        try {
-            if (empty($keywords)) {
-                return [];
-            }
-            
-            $vendorConditions = [];
-            $params = [];
-            
-            foreach ($vendorVariations as $variation) {
-                $vendorConditions[] = "lp.vendor LIKE ?";
-                $params[] = '%' . $variation . '%';
-            }
-            
-            // Construire les conditions pour les keywords
-            $keywordConditions = [];
-            foreach (array_slice($keywords, 0, 5) as $keyword) { // Limiter à 5 keywords
-                $keywordConditions[] = "(lp.name LIKE ? OR lp.variation LIKE ?)";
-                $params[] = '%' . $keyword . '%';
-                $params[] = '%' . $keyword . '%';
-            }
-            
-            $query = "
-                SELECT 
-                    lp.*,
-                    ws.name as site_name,
-                    lp.image_url as image_url,
-                    lp.url as product_url
-                FROM last_price_scraped_product lp
-                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-                WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
-                AND (" . implode(' OR ', $vendorConditions) . ")
-                AND (" . implode(' OR ', $keywordConditions) . ")
-                ORDER BY lp.prix_ht ASC
-                LIMIT 50  -- RÉDUIRE À 50
-            ";
-            
-            return DB::connection('mysql')->select($query, $params);
-            
-        } catch (\Exception $e) {
-            return [];
-        }
-    }
-
-    /**
-     * Recherche par type et caractéristiques
-     */
-    protected function searchByTypeAndFeatures(array $components): array
-    {
-        try {
-            $conditions = [];
-            $params = [];
-            
-            // Condition pour le type
-            if (!empty($components['type'])) {
-                $conditions[] = "lp.type LIKE ?";
-                $params[] = '%' . $components['type'] . '%';
-            }
-            
-            // Condition pour la couleur
-            if (!empty($components['color'])) {
-                $conditions[] = "(lp.name LIKE ? OR lp.variation LIKE ?)";
-                $params[] = '%' . $components['color'] . '%';
-                $params[] = '%' . $components['color'] . '%';
-            }
-            
-            // Condition pour la finition
-            if (!empty($components['finish'])) {
-                $conditions[] = "(lp.name LIKE ? OR lp.variation LIKE ?)";
-                $params[] = '%' . $components['finish'] . '%';
-                $params[] = '%' . $components['finish'] . '%';
-            }
-            
-            if (empty($conditions)) {
-                return [];
-            }
-            
-            $query = "
-                SELECT 
-                    lp.*,
-                    ws.name as site_name,
-                    lp.image_url as image_url,
-                    lp.url as product_url
-                FROM last_price_scraped_product lp
-                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-                WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
-                AND (" . implode(' OR ', $conditions) . ")
-                ORDER BY lp.prix_ht ASC
-                LIMIT 50  -- RÉDUIRE À 50
-            ";
-            
-            return DB::connection('mysql')->select($query, $params);
-            
-        } catch (\Exception $e) {
-            return [];
-        }
-    }
-
-    /**
-     * Préparer les termes de recherche pour FULLTEXT
-     */
-    protected function prepareSearchTermsForFulltext(string $search): string
-    {
-        $search = $this->normalizeAndCleanText($search);
-        $searchClean = preg_replace('/[^a-zA-ZÀ-ÿ\s]/', ' ', $search);
-        $searchClean = trim(preg_replace('/\s+/', ' ', $searchClean));
-        $searchClean = mb_strtolower($searchClean);
-        
-        // Extraire les mots significatifs
-        $words = explode(' ', $searchClean);
-        $significantWords = [];
-        
-        $stopWords = array_merge(
-            $this->getGeneralStopWords(),
-            $this->getProductStopWords()
-        );
-        
-        foreach ($words as $word) {
-            $word = trim($word);
-            if (strlen($word) > 2 && !in_array($word, $stopWords) && !is_numeric($word)) {
-                $significantWords[] = '+' . $word . '*';
-            }
-        }
-        
-        // Limiter à 5 mots maximum
-        $significantWords = array_slice($significantWords, 0, 5);
-        
-        return implode(' ', $significantWords);
-    }
-
-    /**
-     * Recherche FULLTEXT
-     */
-    protected function searchByFulltext(string $searchQuery): array
-    {
-        try {
-            $query = "
-                SELECT 
-                    lp.*,
-                    ws.name as site_name,
-                    lp.image_url as image_url,
-                    lp.url as product_url
-                FROM last_price_scraped_product lp
-                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-                WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
-                    AGAINST (? IN BOOLEAN MODE)
-                AND (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
-                ORDER BY lp.prix_ht ASC
-                LIMIT 50  -- RÉDUIRE À 50
-            ";
-            
-            return DB::connection('mysql')->select($query, [$searchQuery]);
-            
-        } catch (\Exception $e) {
-            return [];
-        }
-    }
-
-    /**
-     * Recherche par vendor seul
-     */
-    protected function searchByVendorOnly(array $vendorVariations): array
-    {
-        try {
-            $vendorConditions = [];
-            $params = [];
-            
-            foreach ($vendorVariations as $variation) {
-                $vendorConditions[] = "lp.vendor LIKE ?";
-                $params[] = '%' . $variation . '%';
-            }
-            
-            $query = "
-                SELECT 
-                    lp.*,
-                    ws.name as site_name,
-                    lp.image_url as image_url,
-                    lp.url as product_url
-                FROM last_price_scraped_product lp
-                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-                WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
-                AND (" . implode(' OR ', $vendorConditions) . ")
-                ORDER BY lp.prix_ht ASC
-                LIMIT 50  -- RÉDUIRE À 50
-            ";
-            
-            return DB::connection('mysql')->select($query, $params);
-            
-        } catch (\Exception $e) {
-            return [];
-        }
-    }
-
-    /**
-     * Filtrer par similarité améliorée
-     * MODIFIÉ : seuil augmenté à 0.6 et limité à 50 résultats
-     */
-    protected function filterBySimilarityImproved(array $competitors, string $search, array $components): array
-    {
-        $filtered = [];
-        
-        foreach ($competitors as $competitor) {
-            $similarityScore = $this->computeSimilarityScoreImproved($competitor, $search, $components);
-            
-            // SEUIL AUGMENTÉ À 0.6 POUR UN BON NIVEAU DE SIMILARITÉ
-            if ($similarityScore >= 0.6) {
-                $competitor->similarity_score = $similarityScore;
-                $competitor->match_level = $this->getMatchLevel($similarityScore);
-                $filtered[] = $competitor;
-            }
-        }
-        
-        // Trier par score décroissant
-        usort($filtered, function($a, $b) {
-            return $b->similarity_score <=> $a->similarity_score;
-        });
-        
-        // LIMITER À 50 RÉSULTATS
-        return array_slice($filtered, 0, 50);
-    }
-
-    /**
-     * Calculer le score de similarité amélioré
-     */
-    protected function computeSimilarityScoreImproved($competitor, $search, $components): float
-    {
-        $weights = [
-            'vendor' => 0.25,
-            'keywords' => 0.20,
-            'name' => 0.15,
-            'type' => 0.15,
-            'variation' => 0.10,
-            'volumes' => 0.05,
-            'color' => 0.05,
-            'features' => 0.05
-        ];
-        
-        $totalScore = 0;
-        
-        // 1. Score du vendor
-        $vendorScore = $this->computeVendorSimilarity($competitor, $components['vendor']);
-        $totalScore += $vendorScore * $weights['vendor'];
-        
-        // 2. Score des keywords
-        $keywordsScore = $this->computeKeywordsSimilarity($competitor, $components['keywords']);
-        $totalScore += $keywordsScore * $weights['keywords'];
-        
-        // 3. Score du nom
-        $nameScore = $this->computeNameSimilarity($competitor->name ?? '', $components['product_name']);
-        $totalScore += $nameScore * $weights['name'];
-        
-        // 4. Score du type
-        $typeScore = $this->computeTypeSimilarity($competitor, $components['type']);
-        $totalScore += $typeScore * $weights['type'];
-        
-        // 5. Score de la variation
-        $variationScore = $this->computeVariationSimilarity($competitor, $components['variation']);
-        $totalScore += $variationScore * $weights['variation'];
-        
-        // 6. Score des volumes
-        $volumeScore = $this->computeVolumeSimilarity($competitor, $components['volumes']);
-        $totalScore += $volumeScore * $weights['volumes'];
-        
-        // 7. Score de la couleur
-        $colorScore = $this->computeColorSimilarity($competitor, $components['color']);
-        $totalScore += $colorScore * $weights['color'];
-        
-        // 8. Score des caractéristiques (finition, etc.)
-        $featuresScore = $this->computeFeaturesSimilarity($competitor, $components);
-        $totalScore += $featuresScore * $weights['features'];
-        
-        return min(1.0, $totalScore);
-    }
-
-    /**
-     * Similarité du vendor
-     */
-    protected function computeVendorSimilarity($competitor, $searchVendor): float
-    {
-        $productVendor = $competitor->vendor ?? '';
-        
-        if (empty($productVendor) || empty($searchVendor)) {
-            return 0;
-        }
-        
-        $productLower = mb_strtolower(trim($productVendor));
-        $searchLower = mb_strtolower(trim($searchVendor));
-        
-        if ($productLower === $searchLower) {
-            return 1.0;
-        }
-        
-        if (str_starts_with($productLower, $searchLower) || str_starts_with($searchLower, $productLower)) {
-            return 0.9;
-        }
-        
-        if (str_contains($productLower, $searchLower) || str_contains($searchLower, $productLower)) {
-            return 0.8;
-        }
-        
-        // Similarité de Levenshtein
-        $levenshtein = levenshtein($productLower, $searchLower);
-        $maxLength = max(strlen($productLower), strlen($searchLower));
-        
-        if ($maxLength > 0) {
-            $similarity = 1 - ($levenshtein / $maxLength);
-            if ($similarity > 0.7) {
-                return $similarity;
-            }
-        }
-        
-        return 0;
-    }
-
-    /**
-     * Similarité des keywords
-     */
-    protected function computeKeywordsSimilarity($competitor, $keywords): float
-    {
-        if (empty($keywords)) {
-            return 0.5; // Pas de pénalité si pas de keywords
-        }
-        
-        $productName = $competitor->name ?? '';
-        $productVariation = $competitor->variation ?? '';
-        $productType = $competitor->type ?? '';
-        
-        $productText = mb_strtolower($productName . ' ' . $productVariation . ' ' . $productType);
-        
-        $matches = 0;
-        foreach ($keywords as $keyword) {
-            $keywordLower = mb_strtolower($keyword);
-            if (str_contains($productText, $keywordLower)) {
-                $matches++;
-            }
-        }
-        
-        return $matches / count($keywords);
-    }
-
-    /**
-     * Similarité du nom
-     */
-    protected function computeNameSimilarity($productName, $searchProductName): float
-    {
-        if (empty($productName) || empty($searchProductName)) {
-            return 0.3; // Score minimum si un des deux est vide
-        }
-        
-        $productNameLower = mb_strtolower(trim($productName));
-        $searchProductNameLower = mb_strtolower(trim($searchProductName));
-        
-        // Si le nom du produit contient le nom recherché (ou vice versa)
-        if (str_contains($productNameLower, $searchProductNameLower) || 
-            str_contains($searchProductNameLower, $productNameLower)) {
-            return 0.9;
-        }
-        
-        // Extraire les mots clés du nom recherché
-        $searchWords = preg_split('/\s+/', $searchProductNameLower);
-        $searchWords = array_filter($searchWords, function($word) {
-            return strlen($word) > 2 && !$this->isStopWord($word);
-        });
-        
-        if (empty($searchWords)) {
-            return 0.3;
-        }
-        
-        $matches = 0;
-        foreach ($searchWords as $word) {
-            if (str_contains($productNameLower, $word)) {
-                $matches++;
-            }
-        }
-        
-        return $matches / count($searchWords);
-    }
-
-    /**
-     * Similarité du type
-     */
-    protected function computeTypeSimilarity($competitor, $searchType): float
-    {
-        $productType = $competitor->type ?? '';
-        
-        if (empty($productType) || empty($searchType)) {
-            return 0.3; // Score minimum si un des deux est vide
-        }
-        
-        $productLower = mb_strtolower($productType);
-        $searchLower = mb_strtolower($searchType);
-        
-        if ($productLower === $searchLower) {
-            return 1.0;
-        }
-        
-        if (str_contains($productLower, $searchLower) || str_contains($searchLower, $productLower)) {
-            return 0.8;
-        }
-        
-        // Vérifier les abréviations (ex: "edp" pour "eau de parfum")
-        $typeMappings = [
-            'edp' => 'eau de parfum',
-            'edt' => 'eau de toilette',
-            'edc' => 'eau de cologne',
-            'creme' => 'crème',
-            'serum' => 'sérum'
-        ];
-        
-        foreach ($typeMappings as $abbr => $full) {
-            if (($productLower === $abbr && str_contains($searchLower, $full)) ||
-                ($searchLower === $abbr && str_contains($productLower, $full))) {
-                return 0.7;
-            }
-        }
-        
-        return 0.2;
-    }
-
-    /**
-     * Similarité de la variation
-     */
-    protected function computeVariationSimilarity($competitor, $searchVariation): float
-    {
-        $productVariation = $competitor->variation ?? '';
-        
-        if (empty($productVariation) || empty($searchVariation)) {
-            return 0.3; // Score minimum si un des deux est vide
-        }
-        
-        $productLower = mb_strtolower($productVariation);
-        $searchLower = mb_strtolower($searchVariation);
-        
-        if ($productLower === $searchLower) {
-            return 1.0;
-        }
-        
-        if (str_contains($productLower, $searchLower) || str_contains($searchLower, $productLower)) {
-            return 0.8;
-        }
-        
-        return 0.2;
-    }
-
-    /**
-     * Similarité des volumes
-     */
-    protected function computeVolumeSimilarity($competitor, $searchVolumes): float
-    {
-        if (empty($searchVolumes)) {
-            return 0.5; // Pas de pénalité si pas de volumes recherchés
-        }
-        
-        $productVolumes = $this->extractVolumesFromText(
-            ($competitor->name ?? '') . ' ' . ($competitor->variation ?? '')
-        );
-        
-        if (empty($productVolumes)) {
-            return 0;
-        }
-        
-        $matches = array_intersect($searchVolumes, $productVolumes);
-        
-        if (!empty($matches)) {
-            return count($matches) / count($searchVolumes);
-        }
-        
-        return 0;
-    }
-
-    /**
-     * Similarité de la couleur
-     */
-    protected function computeColorSimilarity($competitor, $searchColor): float
-    {
-        if (empty($searchColor)) {
-            return 0.5; // Pas de pénalité si pas de couleur recherchée
-        }
-        
-        $productName = $competitor->name ?? '';
-        $productVariation = $competitor->variation ?? '';
-        $productText = mb_strtolower($productName . ' ' . $productVariation);
-        
-        $colorMappings = [
-            'rouge' => ['red', 'rosso', 'rojo'],
-            'blanc' => ['white', 'blanco', 'bianco'],
-            'noir' => ['black', 'nero', 'negro'],
-            'bleu' => ['blue', 'blu', 'azul'],
-            'vert' => ['green', 'verde', 'verde'],
-            'rose' => ['pink', 'rosa', 'rosado'],
-            'brun' => ['brown', 'marrone', 'marrón'],
-            'amarante' => ['amaranth', 'amaranto'],
-            'doré' => ['gold', 'golden', 'dorado', 'dore'],
-            'argenté' => ['silver', 'silvery', 'plateado', 'argente']
-        ];
-        
-        $searchLower = mb_strtolower($searchColor);
-        
-        // Vérifier la couleur exacte
-        if (str_contains($productText, $searchLower)) {
-            return 1.0;
-        }
-        
-        // Vérifier les équivalents dans d'autres langues
-        if (isset($colorMappings[$searchLower])) {
-            foreach ($colorMappings[$searchLower] as $equivalent) {
-                if (str_contains($productText, $equivalent)) {
-                    return 0.8;
-                }
-            }
-        }
-        
-        return 0;
-    }
-
-    /**
-     * Similarité des caractéristiques
-     */
-    protected function computeFeaturesSimilarity($competitor, $components): float
-    {
-        $score = 0.5; // Score de base
-        
-        $productName = $competitor->name ?? '';
-        $productVariation = $competitor->variation ?? '';
-        $productText = mb_strtolower($productName . ' ' . $productVariation);
-        
-        // Vérifier la finition
-        if (!empty($components['finish'])) {
-            $finishLower = mb_strtolower($components['finish']);
-            $finishMappings = [
-                'satin' => ['satiny', 'satiné', 'satinée'],
-                'mat' => ['matte', 'mate', 'opaque'],
-                'brillant' => ['shiny', 'glossy', 'brillante', 'lustré'],
-                'nacré' => ['pearly', 'iridescent', 'nacre', 'nacrée'],
-                'perlé' => ['pearlescent', 'pearlized', 'perle', 'perlée']
-            ];
-            
-            if (str_contains($productText, $finishLower)) {
-                $score += 0.1;
-            } elseif (isset($finishMappings[$finishLower])) {
-                foreach ($finishMappings[$finishLower] as $equivalent) {
-                    if (str_contains($productText, $equivalent)) {
-                        $score += 0.05;
-                        break;
-                    }
-                }
-            }
-        }
-        
-        return min(1.0, $score);
-    }
-
-    /**
      * Vérifier si un mot est un stop word
      */
     protected function isStopWord(string $word): bool
@@ -1614,192 +2195,14 @@ new class extends Component {
 
     /**
      * Obtenir le niveau de correspondance
-     * MODIFIÉ : seuils ajustés
      */
     protected function getMatchLevel(float $similarityScore): string
     {
-        // Ajuster les seuils pour être plus restrictifs
         if ($similarityScore >= 0.8) return 'excellent';
-        if ($similarityScore >= 0.7) return 'très bon'; // Ajouter un niveau intermédiaire
-        if ($similarityScore >= 0.6) return 'bon'; // Seuil pour "bon niveau"
+        if ($similarityScore >= 0.7) return 'très bon';
+        if ($similarityScore >= 0.6) return 'bon';
         if ($similarityScore >= 0.5) return 'moyen';
         return 'faible';
-    }
-
-    /**
-     * Charger la liste des vendors connus
-     */
-    protected function loadKnownVendors(): array
-    {
-        $cacheKey = 'all_vendors_list';
-        $cachedVendors = Cache::get($cacheKey);
-        
-        if ($cachedVendors !== null) {
-            return $cachedVendors;
-        }
-        
-        try {
-            $vendors = DB::connection('mysql')
-                ->table('scraped_product')
-                ->select('vendor')
-                ->whereNotNull('vendor')
-                ->where('vendor', '!=', '')
-                ->distinct()
-                ->get()
-                ->pluck('vendor')
-                ->toArray();
-            
-            $cleanVendors = [];
-            foreach ($vendors as $vendor) {
-                $clean = $this->normalizeAndCleanText($vendor);
-                if (!empty($clean) && strlen($clean) > 1) {
-                    $cleanVendors[] = $clean;
-                }
-            }
-            
-            $uniqueVendors = array_unique($cleanVendors);
-            Cache::put($cacheKey, $uniqueVendors, now()->addHours(24));
-            
-            return $uniqueVendors;
-            
-        } catch (\Throwable $e) {
-            return [];
-        }
-    }
-
-    /**
-     * Trouver le vendor correspondant
-     */
-    protected function findMatchingVendor(string $searchVendor, array $knownVendors): string
-    {
-        if (empty($searchVendor) || empty($knownVendors)) {
-            return '';
-        }
-        
-        $searchVendor = $this->normalizeAndCleanText($searchVendor);
-        $searchVendorLower = mb_strtolower(trim($searchVendor));
-        $bestMatch = '';
-        $bestScore = 0;
-        
-        foreach ($knownVendors as $knownVendor) {
-            $knownVendor = $this->normalizeAndCleanText($knownVendor);
-            $knownVendorLower = mb_strtolower($knownVendor);
-            $score = 0;
-            
-            // 1. Correspondance exacte
-            if ($searchVendorLower === $knownVendorLower) {
-                return $knownVendor;
-            }
-            
-            // 2. Le vendor recherché est contenu au début
-            if (str_starts_with($knownVendorLower, $searchVendorLower)) {
-                $score = 90;
-            }
-            
-            // 3. Le vendor connu est contenu au début
-            if (str_starts_with($searchVendorLower, $knownVendorLower)) {
-                $score = 85;
-            }
-            
-            // 4. Correspondance partielle
-            if (str_contains($knownVendorLower, $searchVendorLower)) {
-                $score = max($score, 70);
-            }
-            
-            if (str_contains($searchVendorLower, $knownVendorLower)) {
-                $score = max($score, 65);
-            }
-            
-            // 5. Similarité de Levenshtein
-            $levenshtein = levenshtein($searchVendorLower, $knownVendorLower);
-            $maxLength = max(strlen($searchVendorLower), strlen($knownVendorLower));
-            
-            if ($maxLength > 0) {
-                $similarity = (1 - ($levenshtein / $maxLength)) * 100;
-                if ($similarity > 80) {
-                    $score = max($score, $similarity);
-                }
-            }
-            
-            // 6. Correspondance sans caractères spéciaux
-            $searchNoSpecial = preg_replace('/[^a-z0-9]/i', '', $searchVendorLower);
-            $knownNoSpecial = preg_replace('/[^a-z0-9]/i', '', $knownVendorLower);
-            
-            if ($searchNoSpecial === $knownNoSpecial && !empty($searchNoSpecial)) {
-                $score = max($score, 95);
-            }
-            
-            if ($score > $bestScore) {
-                $bestScore = $score;
-                $bestMatch = $knownVendor;
-            }
-        }
-        
-        // Seuil minimum de confiance
-        return $bestScore >= 60 ? $bestMatch : '';
-    }
-
-    /**
-     * Générer les variations du vendor (améliorée)
-     */
-    protected function getVendorVariationsImproved(string $vendor): array
-    {
-        if (empty($vendor)) {
-            return [];
-        }
-        
-        $vendor = $this->normalizeAndCleanText($vendor);
-        $variations = [trim($vendor)];
-        
-        // Variations de casse
-        $variations[] = mb_strtoupper($vendor);
-        $variations[] = mb_strtolower($vendor);
-        $variations[] = mb_convert_case($vendor, MB_CASE_TITLE);
-        $variations[] = ucfirst(mb_strtolower($vendor));
-        
-        // Variations sans espaces
-        if (str_contains($vendor, ' ')) {
-            $noSpace = str_replace(' ', '', $vendor);
-            $variations[] = $noSpace;
-            $variations[] = mb_strtoupper($noSpace);
-            $variations[] = mb_strtolower($noSpace);
-        }
-        
-        // Variations avec tirets
-        if (str_contains($vendor, ' ')) {
-            $withDash = str_replace(' ', '-', $vendor);
-            $variations[] = $withDash;
-            $variations[] = mb_strtoupper($withDash);
-            $variations[] = mb_strtolower($withDash);
-        }
-        
-        // Variations avec points
-        if (str_contains($vendor, ' ')) {
-            $withDot = str_replace(' ', '.', $vendor);
-            $variations[] = $withDot;
-            $variations[] = mb_strtoupper($withDot);
-            $variations[] = mb_strtolower($withDot);
-        }
-        
-        // Chercher des variations similaires dans la base de données
-        $knownVendors = $this->loadKnownVendors();
-        $vendorLower = mb_strtolower($vendor);
-        
-        foreach ($knownVendors as $knownVendor) {
-            $knownLower = mb_strtolower($knownVendor);
-            $distance = levenshtein($vendorLower, $knownLower);
-            $maxLength = max(strlen($vendorLower), strlen($knownLower));
-            
-            if ($maxLength > 0 && ($distance / $maxLength) < 0.2) {
-                $variations[] = $knownVendor;
-            }
-            
-            if (str_contains($knownLower, $vendorLower) || str_contains($vendorLower, $knownLower)) {
-                $variations[] = $knownVendor;
-            }
-        }
-        
-        return array_unique(array_filter($variations));
     }
 
     /**
@@ -1844,21 +2247,17 @@ new class extends Component {
         if (!empty($competitor->image_url)) {
             $imageUrl = $this->normalizeAndCleanText($competitor->image_url);
             
-            // Vérifier si c'est une URL complète ou un chemin relatif
             if (filter_var($imageUrl, FILTER_VALIDATE_URL)) {
                 return $imageUrl;
             }
             
-            // Si c'est un chemin relatif, essayer de construire une URL complète
+            // Si chemin relatif
             if (strpos($imageUrl, 'http') !== 0) {
-                // Essayer de deviner le domaine à partir de l'URL du produit
                 $productUrl = $competitor->product_url ?? '';
                 if (!empty($productUrl)) {
                     $parsed = parse_url($productUrl);
                     if (isset($parsed['scheme']) && isset($parsed['host'])) {
                         $baseUrl = $parsed['scheme'] . '://' . $parsed['host'];
-                        
-                        // Si l'image commence par /, ajouter au domaine
                         if (strpos($imageUrl, '/') === 0) {
                             return $baseUrl . $imageUrl;
                         }
@@ -1869,14 +2268,12 @@ new class extends Component {
             return $imageUrl;
         }
         
-        // Priorité 2: extraire de l'URL du produit
+        // Priorité 2: URL du produit
         if (!empty($competitor->product_url)) {
-            // Essayer d'extraire une image de l'URL
-            $productUrl = $competitor->product_url;
-            return $productUrl;
+            return $competitor->product_url;
         }
         
-        // Fallback: image par défaut
+        // Fallback
         return 'https://placehold.co/100x100/cccccc/999999?text=No+Image';
     }
 
@@ -1945,17 +2342,14 @@ new class extends Component {
         
         $url = $this->normalizeAndCleanText($url);
         
-        // Vérifier si c'est une URL valide
         if (!filter_var($url, FILTER_VALIDATE_URL)) {
             return false;
         }
         
-        // Vérifier les extensions d'image courantes
         $imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
         $path = parse_url($url, PHP_URL_PATH);
         $extension = pathinfo($path, PATHINFO_EXTENSION);
         
-        // Si pas d'extension, on suppose que c'est OK (peut être une URL dynamique)
         if (empty($extension)) {
             return true;
         }
@@ -1968,25 +2362,11 @@ new class extends Component {
      */
     public function getCompetitorImageUrl($competitor): string
     {
-        // Si l'image est déjà définie dans l'objet
         if (isset($competitor->image) && !empty($competitor->image)) {
             return $this->normalizeAndCleanText($competitor->image);
         }
         
-        // Sinon, utiliser la méthode de secours
         return $this->getCompetitorImage($competitor);
-    }
-
-    /**
-     * Extraire les volumes d'un texte
-     */
-    protected function extractVolumesFromText(string $text): array
-    {
-        $volumes = [];
-        if (preg_match_all('/(\d+)\s*ml/i', $text, $matches)) {
-            $volumes = $matches[1];
-        }
-        return $volumes;
     }
 
     // Changer de page
@@ -1998,11 +2378,11 @@ new class extends Component {
 
         $this->loading = true;
         $this->page = (int) $page;
-        $this->expandedProducts = []; // Réinitialiser les produits étendus
-        $this->manualSearchQueries = []; // Réinitialiser les recherches manuelles
-        $this->manualSearchResults = []; // Réinitialiser les résultats manuels
-        $this->manualSearchExpanded = []; // Réinitialiser l'expansion manuelle
-        $this->selectedSitesByProduct = []; // Réinitialiser les filtres de site
+        $this->expandedProducts = [];
+        $this->manualSearchQueries = [];
+        $this->manualSearchResults = [];
+        $this->manualSearchExpanded = [];
+        $this->selectedSitesByProduct = [];
     }
 
     // Page précédente
@@ -2031,8 +2411,8 @@ new class extends Component {
         $this->manualSearchQueries = [];
         $this->manualSearchResults = [];
         $this->manualSearchExpanded = [];
-        $this->selectedProducts = []; // Réinitialiser la sélection
-        $this->selectedSitesByProduct = []; // Réinitialiser les filtres de site
+        $this->selectedProducts = [];
+        $this->selectedSitesByProduct = [];
         $this->loadListTitle();
     }
 
@@ -2247,7 +2627,6 @@ new class extends Component {
     public function removeProduct(string $sku): void
     {
         try {
-            // Vérifier si le produit existe dans la liste
             $exists = DetailProduct::where('list_product_id', $this->id)
                 ->where('EAN', $sku)
                 ->exists();
@@ -2257,14 +2636,11 @@ new class extends Component {
                 return;
             }
             
-            // Supprimer le produit
             $deleted = DetailProduct::removeFromList($this->id, $sku);
             
             if ($deleted) {
-                // Supprimer des caches si nécessaire
                 Cache::forget("list_skus_{$this->id}");
                 
-                // Réinitialiser les données associées au produit
                 unset($this->competitorResults[$sku]);
                 unset($this->expandedProducts[$sku]);
                 unset($this->manualSearchQueries[$sku]);
@@ -2274,16 +2650,12 @@ new class extends Component {
                 unset($this->manualSearchLoading[$sku]);
                 unset($this->selectedSitesByProduct[$sku]);
                 
-                // Retirer de la sélection
                 $this->selectedProducts = array_filter(
                     $this->selectedProducts, 
                     fn($selectedSku) => $selectedSku !== $sku
                 );
                 
-                // Rafraîchir la liste
                 $this->success('Produit supprimé avec succès.');
-                
-                // Forcer le rechargement des données
                 $this->refreshProducts();
             } else {
                 $this->error('Erreur lors de la suppression du produit.');
@@ -2303,13 +2675,11 @@ new class extends Component {
     public function removeMultipleProducts(array $skus): void
     {
         try {
-            // Valider que nous avons bien une liste de SKUs
             if (empty($skus)) {
                 $this->warning('Aucun produit sélectionné.');
                 return;
             }
 
-            // Compter le nombre de produits avant suppression
             $countBefore = DetailProduct::where('list_product_id', $this->id)
                 ->whereIn('EAN', $skus)
                 ->count();
@@ -2319,16 +2689,13 @@ new class extends Component {
                 return;
             }
             
-            // Supprimer les produits
             $deletedCount = DetailProduct::where('list_product_id', $this->id)
                 ->whereIn('EAN', $skus)
                 ->delete();
             
             if ($deletedCount > 0) {
-                // Supprimer les caches
                 Cache::forget("list_skus_{$this->id}");
                 
-                // Supprimer les données associées aux produits supprimés
                 foreach ($skus as $sku) {
                     unset($this->competitorResults[$sku]);
                     unset($this->expandedProducts[$sku]);
@@ -2340,12 +2707,8 @@ new class extends Component {
                     unset($this->selectedSitesByProduct[$sku]);
                 }
                 
-                // Vider la sélection
                 $this->selectedProducts = [];
-                
                 $this->success('produit(s) supprimé(s) avec succès.');
-                
-                // Forcer le rechargement sans changer de page
                 $this->loading = true;
                 
             } else {
@@ -2368,12 +2731,9 @@ new class extends Component {
         $key = array_search($sku, $this->selectedProducts);
         
         if ($key !== false) {
-            // Retirer le produit de la sélection
             unset($this->selectedProducts[$key]);
-            // Réindexer le tableau
             $this->selectedProducts = array_values($this->selectedProducts);
         } else {
-            // Ajouter le produit à la sélection
             $this->selectedProducts[] = $sku;
         }
     }
@@ -2392,14 +2752,11 @@ new class extends Component {
             }
         }
         
-        // Si tous les produits de la page sont déjà sélectionnés, les désélectionner tous
         $allSelected = !array_diff($currentSkus, $this->selectedProducts);
         
         if ($allSelected) {
-            // Désélectionner tous les produits de la page
             $this->selectedProducts = array_diff($this->selectedProducts, $currentSkus);
         } else {
-            // Ajouter les produits de la page qui ne sont pas déjà sélectionnés
             $newSelections = array_diff($currentSkus, $this->selectedProducts);
             $this->selectedProducts = array_merge($this->selectedProducts, $newSelections);
         }
@@ -2423,7 +2780,6 @@ new class extends Component {
             return;
         }
         
-        // Appeler directement la suppression sans confirmation intermédiaire
         $this->removeMultipleProducts($this->selectedProducts);
     }
 
@@ -2453,7 +2809,6 @@ new class extends Component {
             }
         }
         
-        // Vérifier si tous les SKUs de la page sont dans la sélection
         return empty(array_diff($currentSkus, $this->selectedProducts));
     }
 
@@ -2488,6 +2843,58 @@ new class extends Component {
         $this->removeMultipleProducts($this->selectedProducts);
         $this->selectedProducts = [];
         $this->showConfirmModal = false;
+    }
+
+    // Ancienne méthode pour compatibilité (peut être supprimée plus tard)
+    protected function findCompetitorsForProduct(string $search, float $ourPrice): array
+    {
+        // Appeler la nouvelle méthode
+        return $this->findCompetitorsWithMl($search, $ourPrice);
+    }
+    
+    protected function searchByVendorAndKeywords(array $vendorVariations, array $keywords): array
+    {
+        // Méthode de secours pour compatibilité
+        try {
+            if (empty($keywords)) {
+                return [];
+            }
+            
+            $vendorConditions = [];
+            $params = [];
+            
+            foreach ($vendorVariations as $variation) {
+                $vendorConditions[] = "lp.vendor LIKE ?";
+                $params[] = '%' . $variation . '%';
+            }
+            
+            $keywordConditions = [];
+            foreach (array_slice($keywords, 0, 5) as $keyword) {
+                $keywordConditions[] = "(lp.name LIKE ? OR lp.variation LIKE ?)";
+                $params[] = '%' . $keyword . '%';
+                $params[] = '%' . $keyword . '%';
+            }
+            
+            $query = "
+                SELECT 
+                    lp.*,
+                    ws.name as site_name,
+                    lp.image_url as image_url,
+                    lp.url as product_url
+                FROM last_price_scraped_product lp
+                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+                WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
+                AND (" . implode(' OR ', $vendorConditions) . ")
+                AND (" . implode(' OR ', $keywordConditions) . ")
+                ORDER BY lp.prix_ht ASC
+                LIMIT 50
+            ";
+            
+            return DB::connection('mysql')->select($query, $params);
+            
+        } catch (\Exception $e) {
+            return [];
+        }
     }
 
 }; ?>
