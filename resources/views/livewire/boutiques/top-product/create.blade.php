@@ -244,7 +244,11 @@ new class extends Component {
             $this->selectedProductsDetails = [];
             $this->listName = '';
             
-            $this->success('Liste sauvegardée avec ' . count($batchData) . ' produit(s).');
+            $this->success(
+                'Liste sauvegardée !',
+                'Vous pouvez consulter les détails…',
+                redirectTo: '/top-product'
+            );
 
             
             // Émettre un événement pour le parent
