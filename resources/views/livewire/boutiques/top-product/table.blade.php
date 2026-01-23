@@ -37,6 +37,9 @@ new class extends Component {
     public array $manualSearchLoading = [];
     public array $manualSearchExpanded = [];
 
+    // Sélection multiple
+    public array $selectedProducts = [];
+
     public function mount($id): void
     {
         $this->id = $id;
@@ -113,18 +116,23 @@ new class extends Component {
             $competitors = $this->findCompetitorsForProduct($cleanedProductName, $cleanPrice);
             
             if (!empty($competitors)) {
+                // Compter les bons résultats (similarité >= 0.6)
+                $goodResults = array_filter($competitors, fn($c) => ($c->similarity_score ?? 0) >= 0.6);
+                
                 $this->competitorResults[$sku] = [
                     'product_name' => $cleanedProductName,
                     'our_price' => $cleanPrice,
                     'competitors' => $competitors,
-                    'count' => count($competitors)
+                    'count' => count($competitors),
+                    'good_count' => count($goodResults) // Ajouter un compteur pour les bons résultats
                 ];
             } else {
                 $this->competitorResults[$sku] = [
                     'product_name' => $cleanedProductName,
                     'our_price' => $cleanPrice,
                     'competitors' => [],
-                    'count' => 0
+                    'count' => 0,
+                    'good_count' => 0
                 ];
             }
 
@@ -134,6 +142,7 @@ new class extends Component {
                 'our_price' => $this->cleanPrice($price),
                 'competitors' => [],
                 'count' => 0,
+                'good_count' => 0,
                 'error' => $e->getMessage()
             ];
         } finally {
@@ -378,13 +387,10 @@ new class extends Component {
             // 5. Recherche avec plusieurs stratégies
             $competitors = $this->searchWithMultipleStrategies($search, $vendor, $vendorVariations, $searchKeywords, $components);
             
-            // 6. Filtrer par similarité améliorée
+            // 6. Filtrer par similarité améliorée (avec seuil plus élevé et limite)
             $filteredCompetitors = $this->filterBySimilarityImproved($competitors, $search, $components);
             
-            // 7. Limiter le nombre de résultats et ajouter les comparaisons
-            $limitedCompetitors = array_slice($filteredCompetitors, 0, 100); // Limiter à 20 résultats
-            
-            $competitorsWithComparison = $this->addPriceComparisons($limitedCompetitors, $ourPrice);
+            $competitorsWithComparison = $this->addPriceComparisons($filteredCompetitors, $ourPrice);
             
             Cache::put($cacheKey, $competitorsWithComparison, now()->addHours(1));
             
@@ -896,7 +902,7 @@ new class extends Component {
                 AND (" . implode(' OR ', $vendorConditions) . ")
                 AND (" . implode(' OR ', $keywordConditions) . ")
                 ORDER BY lp.prix_ht ASC
-                LIMIT 100
+                LIMIT 50  -- RÉDUIRE À 50
             ";
             
             return DB::connection('mysql')->select($query, $params);
@@ -950,7 +956,7 @@ new class extends Component {
                 WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
                 AND (" . implode(' OR ', $conditions) . ")
                 ORDER BY lp.prix_ht ASC
-                LIMIT 100
+                LIMIT 50  -- RÉDUIRE À 50
             ";
             
             return DB::connection('mysql')->select($query, $params);
@@ -1010,7 +1016,7 @@ new class extends Component {
                     AGAINST (? IN BOOLEAN MODE)
                 AND (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
                 ORDER BY lp.prix_ht ASC
-                LIMIT 100
+                LIMIT 50  -- RÉDUIRE À 50
             ";
             
             return DB::connection('mysql')->select($query, [$searchQuery]);
@@ -1045,7 +1051,7 @@ new class extends Component {
                 WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
                 AND (" . implode(' OR ', $vendorConditions) . ")
                 ORDER BY lp.prix_ht ASC
-                LIMIT 100
+                LIMIT 50  -- RÉDUIRE À 50
             ";
             
             return DB::connection('mysql')->select($query, $params);
@@ -1057,6 +1063,7 @@ new class extends Component {
 
     /**
      * Filtrer par similarité améliorée
+     * MODIFIÉ : seuil augmenté à 0.6 et limité à 50 résultats
      */
     protected function filterBySimilarityImproved(array $competitors, string $search, array $components): array
     {
@@ -1065,8 +1072,8 @@ new class extends Component {
         foreach ($competitors as $competitor) {
             $similarityScore = $this->computeSimilarityScoreImproved($competitor, $search, $components);
             
-            // Seuil ajustable
-            if ($similarityScore >= 0.3) { // Seuil plus bas pour plus de résultats
+            // SEUIL AUGMENTÉ À 0.6 POUR UN BON NIVEAU DE SIMILARITÉ
+            if ($similarityScore >= 0.6) {
                 $competitor->similarity_score = $similarityScore;
                 $competitor->match_level = $this->getMatchLevel($similarityScore);
                 $filtered[] = $competitor;
@@ -1078,7 +1085,8 @@ new class extends Component {
             return $b->similarity_score <=> $a->similarity_score;
         });
         
-        return $filtered;
+        // LIMITER À 50 RÉSULTATS
+        return array_slice($filtered, 0, 50);
     }
 
     /**
@@ -1427,12 +1435,15 @@ new class extends Component {
 
     /**
      * Obtenir le niveau de correspondance
+     * MODIFIÉ : seuils ajustés
      */
     protected function getMatchLevel(float $similarityScore): string
     {
+        // Ajuster les seuils pour être plus restrictifs
         if ($similarityScore >= 0.8) return 'excellent';
-        if ($similarityScore >= 0.6) return 'bon';
-        if ($similarityScore >= 0.4) return 'moyen';
+        if ($similarityScore >= 0.7) return 'très bon'; // Ajouter un niveau intermédiaire
+        if ($similarityScore >= 0.6) return 'bon'; // Seuil pour "bon niveau"
+        if ($similarityScore >= 0.5) return 'moyen';
         return 'faible';
     }
 
@@ -1840,33 +1851,69 @@ new class extends Component {
         $this->manualSearchQueries = [];
         $this->manualSearchResults = [];
         $this->manualSearchExpanded = [];
+        $this->selectedProducts = []; // Réinitialiser la sélection
         $this->loadListTitle();
     }
 
-public function with(): array
-{
-    try {
-        // REMPLACEZ CE BLOC (qui utilise le cache) :
-        // $allSkus = Cache::remember("list_skus_{$this->id}", 300, function () {
-        //     return DetailProduct::where('list_product_id', $this->id)
-        //         ->pluck('EAN')
-        //         ->unique()
-        //         ->values()
-        //         ->toArray();
-        // });
+    public function with(): array
+    {
+        try {
+            $allSkus = DetailProduct::where('list_product_id', $this->id)
+                ->pluck('EAN')
+                ->unique()
+                ->values()
+                ->toArray();
 
-        // PAR CE BLOC (sans cache) :
-        $allSkus = DetailProduct::where('list_product_id', $this->id)
-            ->pluck('EAN')
-            ->unique()
-            ->values()
-            ->toArray();
+            $totalItems = count($allSkus);
 
-        $totalItems = count($allSkus);
+            if ($totalItems === 0) {
+                $this->loading = false;
+                $this->totalPages = 1;
+                return [
+                    'products' => [],
+                    'totalItems' => 0,
+                    'totalPages' => 1,
+                    'allSkus' => [],
+                ];
+            }
 
-        if ($totalItems === 0) {
+            // Calculer le nombre total de pages
+            $this->totalPages = max(1, ceil($totalItems / $this->perPage));
+
+            // Charger uniquement la page courante
+            $result = $this->fetchProductsFromDatabase($allSkus, $this->page, $this->perPage);
+
+            if (isset($result['error'])) {
+                $products = [];
+            } else {
+                $products = $result['data'] ?? [];
+                $products = array_map(fn($p) => (array) $p, $products);
+                
+                // Nettoyer les prix et noms des produits
+                foreach ($products as &$product) {
+                    $product['price'] = $this->cleanPrice($product['price'] ?? 0);
+                    $product['special_price'] = $this->cleanPrice($product['special_price'] ?? 0);
+                    if (isset($product['title'])) {
+                        $product['title'] = $this->normalizeAndCleanText($product['title']);
+                    }
+                }
+            }
+
             $this->loading = false;
+            $this->loadingMore = false;
+
+            return [
+                'products' => $products,
+                'totalItems' => $totalItems,
+                'totalPages' => $this->totalPages,
+                'allSkus' => $allSkus,
+            ];
+
+        } catch (\Exception $e) {
+            $this->loading = false;
+            $this->loadingMore = false;
             $this->totalPages = 1;
+
             return [
                 'products' => [],
                 'totalItems' => 0,
@@ -1874,52 +1921,7 @@ public function with(): array
                 'allSkus' => [],
             ];
         }
-
-        // Calculer le nombre total de pages
-        $this->totalPages = max(1, ceil($totalItems / $this->perPage));
-
-        // Charger uniquement la page courante
-        $result = $this->fetchProductsFromDatabase($allSkus, $this->page, $this->perPage);
-
-        if (isset($result['error'])) {
-            $products = [];
-        } else {
-            $products = $result['data'] ?? [];
-            $products = array_map(fn($p) => (array) $p, $products);
-            
-            // Nettoyer les prix et noms des produits
-            foreach ($products as &$product) {
-                $product['price'] = $this->cleanPrice($product['price'] ?? 0);
-                $product['special_price'] = $this->cleanPrice($product['special_price'] ?? 0);
-                if (isset($product['title'])) {
-                    $product['title'] = $this->normalizeAndCleanText($product['title']);
-                }
-            }
-        }
-
-        $this->loading = false;
-        $this->loadingMore = false;
-
-        return [
-            'products' => $products,
-            'totalItems' => $totalItems,
-            'totalPages' => $this->totalPages,
-            'allSkus' => $allSkus,
-        ];
-
-    } catch (\Exception $e) {
-        $this->loading = false;
-        $this->loadingMore = false;
-        $this->totalPages = 1;
-
-        return [
-            'products' => [],
-            'totalItems' => 0,
-            'totalPages' => 1,
-            'allSkus' => [],
-        ];
     }
-}
 
     /**
      * Récupère les produits depuis la base de données
@@ -2058,89 +2060,30 @@ public function with(): array
         return "list_products_{$type}_" . md5(serialize($params));
     }
 
-
-/**
- * Supprimer un produit de la liste
- */
-public function removeProduct(string $sku): void
-{
-    try {
-        // Vérifier si le produit existe dans la liste
-        $exists = DetailProduct::where('list_product_id', $this->id)
-            ->where('EAN', $sku)
-            ->exists();
-        
-        if (!$exists) {
-            $this->error('Produit non trouvé dans la liste.');
-            return;
-        }
-        
-        // Supprimer le produit
-        $deleted = DetailProduct::removeFromList($this->id, $sku);
-        
-        if ($deleted) {
-            // Supprimer des caches si nécessaire
-            Cache::forget("list_skus_{$this->id}");
+    /**
+     * Supprimer un produit de la liste
+     */
+    public function removeProduct(string $sku): void
+    {
+        try {
+            // Vérifier si le produit existe dans la liste
+            $exists = DetailProduct::where('list_product_id', $this->id)
+                ->where('EAN', $sku)
+                ->exists();
             
-            // Réinitialiser les données associées au produit
-            unset($this->competitorResults[$sku]);
-            unset($this->expandedProducts[$sku]);
-            unset($this->manualSearchQueries[$sku]);
-            unset($this->manualSearchResults[$sku]);
-            unset($this->manualSearchExpanded[$sku]);
-            unset($this->searchingProducts[$sku]);
-            unset($this->manualSearchLoading[$sku]);
+            if (!$exists) {
+                $this->error('Produit non trouvé dans la liste.');
+                return;
+            }
             
-            // Rafraîchir la liste
-            $this->success('Produit supprimé avec succès.');
+            // Supprimer le produit
+            $deleted = DetailProduct::removeFromList($this->id, $sku);
             
-            // Forcer le rechargement des données
-            $this->refreshProducts();
-        } else {
-            $this->error('Erreur lors de la suppression du produit.');
-        }
-        
-    } catch (\Exception $e) {
-        $this->dispatch('alert', 
-            type: 'error',
-            message: 'Erreur: ' . $e->getMessage()
-        );
-    }
-}
-
-/**
- * Supprimer plusieurs produits de la liste
- */
-public function removeMultipleProducts(array $skus): void
-{
-    try {
-        // Valider que nous avons bien une liste de SKUs
-        if (empty($skus)) {
-            $this->warning('Aucun produit sélectionné.');
-            return;
-        }
-
-        // Compter le nombre de produits avant suppression
-        $countBefore = DetailProduct::where('list_product_id', $this->id)
-            ->whereIn('EAN', $skus)
-            ->count();
-        
-        if ($countBefore === 0) {
-            $this->warning('Aucun des produits sélectionnés n\'existe dans cette liste.');
-            return;
-        }
-        
-        // Supprimer les produits
-        $deletedCount = DetailProduct::where('list_product_id', $this->id)
-            ->whereIn('EAN', $skus)
-            ->delete();
-        
-        if ($deletedCount > 0) {
-            // Supprimer les caches
-            Cache::forget("list_skus_{$this->id}");
-            
-            // Supprimer les données associées aux produits supprimés
-            foreach ($skus as $sku) {
+            if ($deleted) {
+                // Supprimer des caches si nécessaire
+                Cache::forget("list_skus_{$this->id}");
+                
+                // Réinitialiser les données associées au produit
                 unset($this->competitorResults[$sku]);
                 unset($this->expandedProducts[$sku]);
                 unset($this->manualSearchQueries[$sku]);
@@ -2148,169 +2091,221 @@ public function removeMultipleProducts(array $skus): void
                 unset($this->manualSearchExpanded[$sku]);
                 unset($this->searchingProducts[$sku]);
                 unset($this->manualSearchLoading[$sku]);
+                
+                // Retirer de la sélection
+                $this->selectedProducts = array_filter(
+                    $this->selectedProducts, 
+                    fn($selectedSku) => $selectedSku !== $sku
+                );
+                
+                // Rafraîchir la liste
+                $this->success('Produit supprimé avec succès.');
+                
+                // Forcer le rechargement des données
+                $this->refreshProducts();
+            } else {
+                $this->error('Erreur lors de la suppression du produit.');
             }
             
-            // Vider la sélection
-            $this->selectedProducts = [];
+        } catch (\Exception $e) {
+            $this->dispatch('alert', 
+                type: 'error',
+                message: 'Erreur: ' . $e->getMessage()
+            );
+        }
+    }
+
+    /**
+     * Supprimer plusieurs produits de la liste
+     */
+    public function removeMultipleProducts(array $skus): void
+    {
+        try {
+            // Valider que nous avons bien une liste de SKUs
+            if (empty($skus)) {
+                $this->warning('Aucun produit sélectionné.');
+                return;
+            }
+
+            // Compter le nombre de produits avant suppression
+            $countBefore = DetailProduct::where('list_product_id', $this->id)
+                ->whereIn('EAN', $skus)
+                ->count();
             
-            $this->success('produit(s) supprimé(s) avec succès.');
+            if ($countBefore === 0) {
+                $this->warning('Aucun des produits sélectionnés n\'existe dans cette liste.');
+                return;
+            }
             
-            // Forcer le rechargement sans changer de page
-            $this->loading = true;
+            // Supprimer les produits
+            $deletedCount = DetailProduct::where('list_product_id', $this->id)
+                ->whereIn('EAN', $skus)
+                ->delete();
             
+            if ($deletedCount > 0) {
+                // Supprimer les caches
+                Cache::forget("list_skus_{$this->id}");
+                
+                // Supprimer les données associées aux produits supprimés
+                foreach ($skus as $sku) {
+                    unset($this->competitorResults[$sku]);
+                    unset($this->expandedProducts[$sku]);
+                    unset($this->manualSearchQueries[$sku]);
+                    unset($this->manualSearchResults[$sku]);
+                    unset($this->manualSearchExpanded[$sku]);
+                    unset($this->searchingProducts[$sku]);
+                    unset($this->manualSearchLoading[$sku]);
+                }
+                
+                // Vider la sélection
+                $this->selectedProducts = [];
+                
+                $this->success('produit(s) supprimé(s) avec succès.');
+                
+                // Forcer le rechargement sans changer de page
+                $this->loading = true;
+                
+            } else {
+                $this->error('Erreur lors de la suppression des produits.');
+            }
+            
+        } catch (\Exception $e) {
+            $this->dispatch('alert', 
+                type: 'error',
+                message: 'Erreur: ' . $e->getMessage()
+            );
+        }
+    }
+
+    /**
+     * Basculer la sélection d'un produit
+     */
+    public function toggleProductSelection(string $sku): void
+    {
+        $key = array_search($sku, $this->selectedProducts);
+        
+        if ($key !== false) {
+            // Retirer le produit de la sélection
+            unset($this->selectedProducts[$key]);
+            // Réindexer le tableau
+            $this->selectedProducts = array_values($this->selectedProducts);
         } else {
-            $this->error('Erreur lors de la suppression des produits.');
+            // Ajouter le produit à la sélection
+            $this->selectedProducts[] = $sku;
+        }
+    }
+
+    /**
+     * Sélectionner tous les produits de la page courante
+     */
+    public function selectAllOnPage(): void
+    {
+        $currentProducts = $this->getCurrentPageProducts();
+        $currentSkus = [];
+        
+        foreach ($currentProducts as $product) {
+            if (isset($product['sku'])) {
+                $currentSkus[] = $product['sku'];
+            }
         }
         
-    } catch (\Exception $e) {
-        $this->dispatch('alert', 
-            type: 'error',
-            message: 'Erreur: ' . $e->getMessage()
-        );
-    }
-}
-
-// Ajouter cette propriété pour la sélection multiple
-public array $selectedProducts = [];
-
-/**
- * Basculer la sélection d'un produit
- */
-public function toggleProductSelection(string $sku): void
-{
-    $key = array_search($sku, $this->selectedProducts);
-    
-    if ($key !== false) {
-        // Retirer le produit de la sélection
-        unset($this->selectedProducts[$key]);
-        // Réindexer le tableau
-        $this->selectedProducts = array_values($this->selectedProducts);
-    } else {
-        // Ajouter le produit à la sélection
-        $this->selectedProducts[] = $sku;
-    }
-}
-
-/**
- * Sélectionner tous les produits de la page courante
- */
-public function selectAllOnPage(): void
-{
-    $currentProducts = $this->getCurrentPageProducts();
-    $currentSkus = [];
-    
-    foreach ($currentProducts as $product) {
-        if (isset($product['sku'])) {
-            $currentSkus[] = $product['sku'];
+        // Si tous les produits de la page sont déjà sélectionnés, les désélectionner tous
+        $allSelected = !array_diff($currentSkus, $this->selectedProducts);
+        
+        if ($allSelected) {
+            // Désélectionner tous les produits de la page
+            $this->selectedProducts = array_diff($this->selectedProducts, $currentSkus);
+        } else {
+            // Ajouter les produits de la page qui ne sont pas déjà sélectionnés
+            $newSelections = array_diff($currentSkus, $this->selectedProducts);
+            $this->selectedProducts = array_merge($this->selectedProducts, $newSelections);
         }
     }
-    
-    // Si tous les produits de la page sont déjà sélectionnés, les désélectionner tous
-    $allSelected = !array_diff($currentSkus, $this->selectedProducts);
-    
-    if ($allSelected) {
-        // Désélectionner tous les produits de la page
-        $this->selectedProducts = array_diff($this->selectedProducts, $currentSkus);
-    } else {
-        // Ajouter les produits de la page qui ne sont pas déjà sélectionnés
-        $newSelections = array_diff($currentSkus, $this->selectedProducts);
-        $this->selectedProducts = array_merge($this->selectedProducts, $newSelections);
+
+    /**
+     * Désélectionner tous les produits
+     */
+    public function deselectAll(): void
+    {
+        $this->selectedProducts = [];
     }
-}
 
-/**
- * Désélectionner tous les produits
- */
-public function deselectAll(): void
-{
-    $this->selectedProducts = [];
-}
-
-/**
- * Supprimer les produits sélectionnés
- */
-public function removeSelectedProducts(): void
-{
-    if (empty($this->selectedProducts)) {
-        $this->warning('Aucun produit sélectionné.');
-        return;
-    }
-    
-    // Appeler directement la suppression sans confirmation intermédiaire
-    $this->removeMultipleProducts($this->selectedProducts);
-}
-
-/**
- * Confirmation de suppression des produits sélectionnés
- */
-// public function confirmedRemoveSelectedProducts(): void
-// {
-//     $this->removeMultipleProducts($this->selectedProducts);
-//     $this->selectedProducts = [];
-// }
-
-/**
- * Écouter les événements d'alerte
- */
-protected $listeners = [
-    'alert' => 'showAlert',
-    'confirm-delete' => 'showConfirmModal'
-];
-
-public bool $showConfirmModal = false;
-public array $confirmModalData = [];
-
-public function showConfirmModal(array $data): void
-{
-    $this->confirmModalData = $data;
-    $this->showConfirmModal = true;
-}
-
-public function confirmedRemoveSelectedProducts(): void
-{
-    $this->removeMultipleProducts($this->selectedProducts);
-    $this->selectedProducts = [];
-    $this->showConfirmModal = false;
-}
-
-public function showAlert(string $type, string $message): void
-{
-    session()->flash('alert', [
-        'type' => $type,
-        'message' => $message
-    ]);
-}
-
-/**
- * Vérifier si un produit est sélectionné
- */
-public function isProductSelected(string $sku): bool
-{
-    return in_array($sku, $this->selectedProducts);
-}
-
-/**
- * Vérifier si tous les produits de la page sont sélectionnés
- */
-public function areAllProductsOnPageSelected(): bool
-{
-    $currentProducts = $this->getCurrentPageProducts();
-    
-    if (empty($currentProducts) || empty($this->selectedProducts)) {
-        return false;
-    }
-    
-    $currentSkus = [];
-    foreach ($currentProducts as $product) {
-        if (isset($product['sku'])) {
-            $currentSkus[] = $product['sku'];
+    /**
+     * Supprimer les produits sélectionnés
+     */
+    public function removeSelectedProducts(): void
+    {
+        if (empty($this->selectedProducts)) {
+            $this->warning('Aucun produit sélectionné.');
+            return;
         }
+        
+        // Appeler directement la suppression sans confirmation intermédiaire
+        $this->removeMultipleProducts($this->selectedProducts);
     }
-    
-    // Vérifier si tous les SKUs de la page sont dans la sélection
-    return empty(array_diff($currentSkus, $this->selectedProducts));
-}
 
+    /**
+     * Vérifier si un produit est sélectionné
+     */
+    public function isProductSelected(string $sku): bool
+    {
+        return in_array($sku, $this->selectedProducts);
+    }
+
+    /**
+     * Vérifier si tous les produits de la page sont sélectionnés
+     */
+    public function areAllProductsOnPageSelected(): bool
+    {
+        $currentProducts = $this->getCurrentPageProducts();
+        
+        if (empty($currentProducts) || empty($this->selectedProducts)) {
+            return false;
+        }
+        
+        $currentSkus = [];
+        foreach ($currentProducts as $product) {
+            if (isset($product['sku'])) {
+                $currentSkus[] = $product['sku'];
+            }
+        }
+        
+        // Vérifier si tous les SKUs de la page sont dans la sélection
+        return empty(array_diff($currentSkus, $this->selectedProducts));
+    }
+
+    // Modal de confirmation
+    public bool $showConfirmModal = false;
+    public array $confirmModalData = [];
+
+    /**
+     * Écouter les événements d'alerte
+     */
+    protected $listeners = [
+        'alert' => 'showAlert',
+        'confirm-delete' => 'showConfirmModal'
+    ];
+
+    public function showConfirmModal(array $data): void
+    {
+        $this->confirmModalData = $data;
+        $this->showConfirmModal = true;
+    }
+
+    public function showAlert(string $type, string $message): void
+    {
+        session()->flash('alert', [
+            'type' => $type,
+            'message' => $message
+        ]);
+    }
+
+    public function confirmedRemoveSelectedProducts(): void
+    {
+        $this->removeMultipleProducts($this->selectedProducts);
+        $this->selectedProducts = [];
+        $this->showConfirmModal = false;
+    }
 
 }; ?>
 <div>
