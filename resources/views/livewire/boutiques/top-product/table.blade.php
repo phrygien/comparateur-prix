@@ -2499,7 +2499,7 @@ public function areAllProductsOnPageSelected(): bool
                         <th>Produit</th>
                         <th>Notre Prix</th>
                         <th>Concurrents auto</th>
-                        <th>Recherche manuelle</th>
+                        {{-- <th>Recherche manuelle</th> --}}
                         <th>Type</th>
                         <th>Actions</th>
                     </tr>
@@ -2610,7 +2610,7 @@ public function areAllProductsOnPageSelected(): bool
                             </td>
                             
                             <!-- Recherche manuelle -->
-                            <td>
+                            {{-- <td>
                                 <div class="space-y-1">
                                     <!-- Input de recherche -->
                                     <div class="relative">
@@ -2648,7 +2648,7 @@ public function areAllProductsOnPageSelected(): bool
                                         </button>
                                     @endif
                                 </div>
-                            </td>
+                            </td> --}}
                             
                             <!-- Type -->
                             <td>
@@ -2664,14 +2664,14 @@ public function areAllProductsOnPageSelected(): bool
                             <!-- Actions -->
                             <td>
                                 <div class="flex space-x-1">
-                                    <button wire:click="$dispatch('openModal', { component: 'plateformes.detail', arguments: { id: '{{ $product['sku'] }}' }})"
+                                    {{-- <button wire:click="$dispatch('openModal', { component: 'plateformes.detail', arguments: { id: '{{ $product['sku'] }}' }})"
                                         class="btn btn-xs btn-outline"
                                         title="Détails">
                                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                                 d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                         </svg>
-                                    </button>
+                                    </button> --}}
                                     
                                     <!-- Bouton Supprimer -->
                                     <button wire:click="removeProduct('{{ $product['sku'] }}')"
