@@ -54,9 +54,9 @@
                 {{-- <x-menu-item title="Accueil" icon="o-sparkles" link="/home" /> --}}
 
                 <x-menu-item title="Boutiques" icon="o-building-storefront" link="/boutique" />
-                @if(auth()->user()->email == 'admin@admin.com')
+                {{-- @if(auth()->user()->email == 'admin@admin.com') --}}
                     <x-menu-item title="Créer une liste personnalisée" icon="o-clipboard-document-list" link="/top-product" />
-                @endif
+                {{-- @endif --}}
 
                 <x-menu-item title="Parcourir les concurrents" icon="o-magnifying-glass" link="/scraped_products" />
                 {{-- <x-menu-sub title="Settings" icon="o-cog-6-tooth">
