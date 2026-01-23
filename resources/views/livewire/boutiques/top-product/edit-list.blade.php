@@ -41,14 +41,21 @@ new class extends Component {
     public $listId = null;
     public $list = null;
     
+    // Produits déjà dans la liste
+    public $existingProducts = [];
+    public $existingProductsDetails = [];
+    
     public function mount($listId = null)
     {
         $this->loading = true;
-        // Si on a un ID de liste, on charge les produits déjà sélectionnés
+        // Uniquement pour la mise à jour de liste
         if ($listId) {
             $this->listId = $listId;
             $this->loadList();
-            $this->loadExistingProducts();
+            $this->loadExistingProductsFromDatabase();
+        } else {
+            // Redirection si pas d'ID de liste
+            return redirect()->route('comparison.lists');
         }
     }
     
@@ -58,29 +65,39 @@ new class extends Component {
         $this->list = Comparaison::find($this->listId);
         if ($this->list) {
             $this->listName = $this->list->libelle;
+        } else {
+            // Redirection si liste non trouvée
+            return redirect()->route('comparison.lists');
         }
     }
     
-    // Charger les produits déjà dans la liste
-    protected function loadExistingProducts()
+    // Charger les produits déjà dans la liste (depuis la base de données)
+    protected function loadExistingProductsFromDatabase()
     {
-        $existingProducts = DetailProduct::where('list_product_id', $this->listId)
+        // Récupérer les SKU des produits existants
+        $this->existingProducts = DetailProduct::where('list_product_id', $this->listId)
             ->pluck('EAN')
             ->toArray();
         
-        $this->selectedProducts = $existingProducts;
-        $this->loadSelectedProductsDetails();
+        // Charger les détails de ces produits
+        $this->loadExistingProductsDetails();
+        
+        // Initialiser les produits sélectionnés avec les produits existants
+        $this->selectedProducts = $this->existingProducts;
+        
+        // Fusionner les détails dans selectedProductsDetails
+        $this->selectedProductsDetails = $this->existingProductsDetails;
     }
     
-    // Charger les détails des produits sélectionnés
-    protected function loadSelectedProductsDetails()
+    // Charger les détails des produits existants
+    protected function loadExistingProductsDetails()
     {
-        if (empty($this->selectedProducts)) {
-            $this->selectedProductsDetails = [];
+        if (empty($this->existingProducts)) {
+            $this->existingProductsDetails = [];
             return;
         }
         
-        $skus = array_values($this->selectedProducts);
+        $skus = array_values($this->existingProducts);
         $placeholders = implode(',', array_fill(0, count($skus), '?'));
         
         $query = "
@@ -97,10 +114,60 @@ new class extends Component {
         
         try {
             $products = DB::connection('mysqlMagento')->select($query, $skus);
-            $this->selectedProductsDetails = array_map(fn($p) => (array) $p, $products);
+            $this->existingProductsDetails = array_map(fn($p) => (array) $p, $products);
+        } catch (\Exception $e) {
+            Log::error('Erreur chargement détails produits existants: ' . $e->getMessage());
+            $this->existingProductsDetails = [];
+        }
+    }
+    
+    // Charger les détails des produits sélectionnés
+    protected function loadSelectedProductsDetails()
+    {
+        if (empty($this->selectedProducts)) {
+            $this->selectedProductsDetails = [];
+            return;
+        }
+        
+        // Filtrer les produits dont on n'a pas encore les détails
+        $existingSkus = array_column($this->selectedProductsDetails, 'sku');
+        $skusToLoad = array_diff($this->selectedProducts, $existingSkus);
+        
+        if (empty($skusToLoad)) {
+            return;
+        }
+        
+        $skus = array_values($skusToLoad);
+        $placeholders = implode(',', array_fill(0, count($skus), '?'));
+        
+        $query = "
+            SELECT 
+                produit.sku as sku,
+                CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) as title,
+                product_char.thumbnail as thumbnail
+            FROM catalog_product_entity as produit
+            LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+            WHERE produit.sku IN ($placeholders)
+            ORDER BY FIELD(produit.sku, " . implode(',', $skus) . ")
+            LIMIT 100
+        ";
+        
+        try {
+            $products = DB::connection('mysqlMagento')->select($query, $skus);
+            $newProducts = array_map(fn($p) => (array) $p, $products);
+            
+            // Fusionner avec les détails existants
+            $this->selectedProductsDetails = array_merge($this->selectedProductsDetails, $newProducts);
+            
+            // Trier pour garder l'ordre des SKU
+            usort($this->selectedProductsDetails, function($a, $b) {
+                $indexA = array_search($a['sku'], $this->selectedProducts);
+                $indexB = array_search($b['sku'], $this->selectedProducts);
+                return $indexA - $indexB;
+            });
+            
         } catch (\Exception $e) {
             Log::error('Erreur chargement détails produits: ' . $e->getMessage());
-            $this->selectedProductsDetails = [];
         }
     }
     
@@ -119,19 +186,15 @@ new class extends Component {
     public function toggleSelect($sku, $title = '', $thumbnail = '')
     {
         // Vérifier si le produit existe déjà dans la liste (base de données)
-        $existsInDatabase = DetailProduct::where('list_product_id', $this->listId)
-            ->where('EAN', $sku)
-            ->exists();
+        $existsInDatabase = in_array($sku, $this->existingProducts);
         
         if ($existsInDatabase) {
-            $this->dispatch('notify', [
-                'type' => 'info',
-                'message' => 'Ce produit est déjà dans la liste et ne peut pas être ajouté à nouveau.'
-            ]);
+            // Si déjà dans la liste, on le retire
+            $this->removeFromDatabase($sku);
             return;
         }
         
-        // Vérifier si le produit est déjà sélectionné (interface)
+        // Vérifier si le produit est déjà sélectionné (temporairement)
         if (in_array($sku, $this->selectedProducts)) {
             // Retirer de la sélection
             $this->selectedProducts = array_diff($this->selectedProducts, [$sku]);
@@ -142,12 +205,23 @@ new class extends Component {
         } else {
             // Ajouter à la sélection
             $this->selectedProducts[] = $sku;
-            // Ajouter au résumé immédiatement
-            $this->selectedProductsDetails[] = [
-                'sku' => $sku,
-                'title' => $title,
-                'thumbnail' => $thumbnail
-            ];
+            
+            // Charger les détails si pas déjà chargés
+            $existsInDetails = array_filter($this->selectedProductsDetails, 
+                fn($product) => $product['sku'] === $sku
+            );
+            
+            if (empty($existsInDetails) && !empty($title)) {
+                // Ajouter au résumé immédiatement
+                $this->selectedProductsDetails[] = [
+                    'sku' => $sku,
+                    'title' => $title,
+                    'thumbnail' => $thumbnail
+                ];
+            } else {
+                // Sinon, charger les détails
+                $this->loadSelectedProductsDetails();
+            }
         }
     }
     
@@ -166,9 +240,7 @@ new class extends Component {
     public function removeFromSummary($sku)
     {
         // Vérifier si le produit est dans la base de données
-        $existsInDatabase = DetailProduct::where('list_product_id', $this->listId)
-            ->where('EAN', $sku)
-            ->exists();
+        $existsInDatabase = in_array($sku, $this->existingProducts);
         
         if ($existsInDatabase) {
             // Demander confirmation pour supprimer un produit déjà dans la liste
@@ -200,13 +272,24 @@ new class extends Component {
                 ->delete();
             
             if ($deleted) {
-                // Retirer aussi de la sélection locale si présent
+                // Retirer des tableaux locaux
+                if (in_array($sku, $this->existingProducts)) {
+                    $this->existingProducts = array_diff($this->existingProducts, [$sku]);
+                }
+                
                 if (in_array($sku, $this->selectedProducts)) {
                     $this->selectedProducts = array_diff($this->selectedProducts, [$sku]);
-                    $this->selectedProductsDetails = array_filter($this->selectedProductsDetails, 
-                        fn($product) => $product['sku'] !== $sku
-                    );
                 }
+                
+                // Retirer du résumé
+                $this->selectedProductsDetails = array_filter($this->selectedProductsDetails, 
+                    fn($product) => $product['sku'] !== $sku
+                );
+                
+                // Retirer des détails existants
+                $this->existingProductsDetails = array_filter($this->existingProductsDetails, 
+                    fn($product) => $product['sku'] !== $sku
+                );
                 
                 $this->dispatch('notify', [
                     'type' => 'success',
@@ -270,15 +353,10 @@ new class extends Component {
     {
         if (empty($this->selectedProducts)) {
             $this->dispatch('notify', [
-                'type' => 'error',
-                'message' => 'Veuillez sélectionner au moins un produit.'
+                'type' => 'warning',
+                'message' => 'La liste ne peut pas être vide. Ajoutez au moins un produit.'
             ]);
             return;
-        }
-        
-        // Si on met à jour une liste, utiliser le nom existant
-        if (!$this->listId) {
-            $this->listName = 'Liste du ' . date('d/m/Y H:i');
         }
         
         $this->showModal = true;
@@ -292,7 +370,7 @@ new class extends Component {
             if (empty($this->selectedProducts)) {
                 $this->dispatch('notify', [
                     'type' => 'error',
-                    'message' => 'Veuillez sélectionner au moins un produit.'
+                    'message' => 'La liste ne peut pas être vide.'
                 ]);
                 return;
             }
@@ -329,16 +407,20 @@ new class extends Component {
                 'updated_at' => now(),
             ]);
             
-            // Récupérer les produits déjà dans la liste (base de données)
-            $existingProducts = DetailProduct::where('list_product_id', $this->listId)
-                ->pluck('EAN')
-                ->toArray();
+            // Identifier les produits à conserver, ajouter et supprimer
+            $productsToKeep = array_intersect($this->existingProducts, $this->selectedProducts);
+            $productsToAdd = array_diff($this->selectedProducts, $this->existingProducts);
+            $productsToRemove = array_diff($this->existingProducts, $this->selectedProducts);
             
-            // Filtrer les produits à ajouter (ne pas ajouter les doublons)
-            $productsToAdd = array_diff($this->selectedProducts, $existingProducts);
+            // Supprimer les produits retirés
+            if (!empty($productsToRemove)) {
+                DetailProduct::where('list_product_id', $this->listId)
+                    ->whereIn('EAN', $productsToRemove)
+                    ->delete();
+            }
             
+            // Ajouter les nouveaux produits
             if (!empty($productsToAdd)) {
-                // Sauvegarder les nouveaux produits sélectionnés
                 $batchData = [];
                 foreach ($productsToAdd as $ean) {
                     $batchData[] = [
@@ -349,37 +431,30 @@ new class extends Component {
                     ];
                 }
                 
-                // Insertion par lots pour plus de performance
+                // Insertion par lots
                 DetailProduct::insert($batchData);
-                
-                $addedCount = count($batchData);
-            } else {
-                $addedCount = 0;
             }
             
             // Fermer le modal
             $this->showModal = false;
             
-            // Ne pas réinitialiser complètement la sélection
-            // Mais vider seulement les produits temporairement sélectionnés
-            // (ceux qui ne sont pas encore dans la base de données)
-            $this->selectedProducts = $existingProducts;
-            
-            // Recharger les détails des produits
-            $this->loadSelectedProductsDetails();
+            // Mettre à jour les données locales
+            $this->existingProducts = $this->selectedProducts;
+            $this->existingProductsDetails = $this->selectedProductsDetails;
             
             // Message de succès
-            if ($addedCount > 0) {
-                $this->dispatch('notify', [
-                    'type' => 'success',
-                    'message' => 'Liste mise à jour avec ' . $addedCount . ' nouveau(x) produit(s).'
-                ]);
-            } else {
-                $this->dispatch('notify', [
-                    'type' => 'info',
-                    'message' => 'Liste mise à jour (aucun nouveau produit ajouté).'
-                ]);
+            $message = 'Liste mise à jour avec succès.';
+            if (!empty($productsToAdd)) {
+                $message .= ' ' . count($productsToAdd) . ' nouveau(x) produit(s) ajouté(s).';
             }
+            if (!empty($productsToRemove)) {
+                $message .= ' ' . count($productsToRemove) . ' produit(s) supprimé(s).';
+            }
+            
+            $this->dispatch('notify', [
+                'type' => 'success',
+                'message' => $message
+            ]);
             
             // Émettre un événement pour le parent
             $this->dispatch('list-updated', ['listId' => $this->listId]);
@@ -396,21 +471,26 @@ new class extends Component {
     // Vérifier si un produit est déjà dans la liste (base de données)
     public function isInDatabase($sku)
     {
-        if (!$this->listId) return false;
-        
-        return DetailProduct::where('list_product_id', $this->listId)
-            ->where('EAN', $sku)
-            ->exists();
+        return in_array($sku, $this->existingProducts);
     }
     
     // Vérifier si un produit est temporairement sélectionné (pas encore en base)
     public function isTemporarilySelected($sku)
     {
-        $existsInDatabase = DetailProduct::where('list_product_id', $this->listId)
-            ->where('EAN', $sku)
-            ->exists();
-        
+        $existsInDatabase = in_array($sku, $this->existingProducts);
         return in_array($sku, $this->selectedProducts) && !$existsInDatabase;
+    }
+    
+    // Obtenir les nouveaux produits sélectionnés
+    public function getNewProducts()
+    {
+        return array_diff($this->selectedProducts, $this->existingProducts);
+    }
+    
+    // Obtenir les produits supprimés
+    public function getRemovedProducts()
+    {
+        return array_diff($this->existingProducts, $this->selectedProducts);
     }
     
     public function cancel()
@@ -660,7 +740,7 @@ new class extends Component {
 
 <div class="mx-auto w-full">
     <x-header 
-        title="{{ $listId ? 'Mettre à jour la liste : ' . $listName : 'Créer une nouvelle liste' }}" 
+        title="Mettre à jour la liste : {{ $listName }}" 
         separator progress-indicator
     >
         <x-slot:middle class="!justify-end">
@@ -670,11 +750,22 @@ new class extends Component {
                 @endif
                 <div class="text-sm text-base-content/70">
                     @php
-                        $existingCount = $listId ? DetailProduct::where('list_product_id', $listId)->count() : 0;
-                        $newCount = count($selectedProducts) - $existingCount;
+                        $existingCount = count($existingProducts);
+                        $newCount = count($this->getNewProducts());
+                        $removedCount = count($this->getRemovedProducts());
                     @endphp
                     <span class="font-semibold text-primary">{{ count($selectedProducts) }}</span> 
-                    produits ({{ $existingCount }} existants + {{ $newCount }} nouveaux)
+                    produits 
+                    @if($newCount > 0 || $removedCount > 0)
+                        ({{ $existingCount - $removedCount }} existants 
+                        @if($newCount > 0)
+                            <span class="text-warning">+{{ $newCount }} nouveaux</span>
+                        @endif
+                        @if($removedCount > 0)
+                            <span class="text-error">-{{ $removedCount }} supprimés</span>
+                        @endif
+                        )
+                    @endif
                 </div>
                 <div class="text-sm text-base-content/70">
                     {{ count($products) }} / {{ $totalItems }} produits affichés
@@ -683,8 +774,8 @@ new class extends Component {
         </x-slot:middle>
         <x-slot:actions>
             <x-button class="btn-error" label="Annuler" wire:click="cancel"
-                wire:confirm="Êtes-vous sûr de vouloir annuler ?" />
-            <x-button class="btn-primary" label="{{ $listId ? 'Mettre à jour' : 'Créer' }}" wire:click="openModal" />
+                wire:confirm="Êtes-vous sûr de vouloir annuler ? Les modifications seront perdues." />
+            <x-button class="btn-primary" label="Mettre à jour" wire:click="openModal" />
         </x-slot:actions>
     </x-header>
 
@@ -722,34 +813,6 @@ new class extends Component {
         />
     </div>
 
-    <!-- Sélection globale - SIMPLIFIÉE -->
-    <div class="mb-4 p-4 bg-base-200 rounded-box">
-        <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3 cursor-pointer">
-                <input 
-                    type="checkbox" 
-                    id="selectAllCheckbox"
-                    class="checkbox checkbox-primary" 
-                    {{ $selectAll ? 'checked' : '' }}
-                    wire:click="updatedSelectAll($event.target.checked)"
-                >
-                <label for="selectAllCheckbox" class="font-semibold">
-                    Sélectionner tout ({{ count($products) }} produits affichés)
-                </label>
-            </div>
-            <div class="flex items-center gap-4">
-                <div class="badge badge-primary badge-lg">
-                    {{ count($selectedProducts) }} produits sélectionnés
-                </div>
-                @if($listId)
-                    <div class="text-sm text-base-content/60">
-                        <span class="font-medium">{{ $existingCount ?? 0 }}</span> produits dans la liste
-                    </div>
-                @endif
-            </div>
-        </div>
-    </div>
-
     <!-- Section de résumé des produits sélectionnés -->
     @if(count($selectedProducts) > 0)
         <div class="mb-6 border rounded-box border-base-content/10 bg-base-100 overflow-hidden">
@@ -759,19 +822,24 @@ new class extends Component {
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                             <path fill-rule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z" clip-rule="evenodd" />
                         </svg>
-                        Produits sélectionnés
+                        Produits dans la liste
                         <span class="badge badge-primary">{{ count($selectedProducts) }}</span>
                     </h3>
-                    @if($listId)
-                        <div class="flex gap-2">
-                            <div class="badge badge-sm badge-success">
-                                {{ $existingCount ?? 0 }} existants
-                            </div>
-                            <div class="badge badge-sm badge-warning">
-                                {{ $newCount ?? 0 }} nouveaux
-                            </div>
+                    <div class="flex gap-2">
+                        <div class="badge badge-sm badge-success">
+                            {{ $existingCount - $removedCount }} existants
                         </div>
-                    @endif
+                        @if($newCount > 0)
+                            <div class="badge badge-sm badge-warning">
+                                +{{ $newCount }} nouveaux
+                            </div>
+                        @endif
+                        @if($removedCount > 0)
+                            <div class="badge badge-sm badge-error">
+                                -{{ $removedCount }} supprimés
+                            </div>
+                        @endif
+                    </div>
                 </div>
                 <button 
                     wire:click="toggleSummaryTable"
@@ -827,31 +895,40 @@ new class extends Component {
                             <!-- Première ligne -->
                             <div class="flex gap-3 min-w-max">
                                 @foreach($selectedProductsDetails as $index => $product)
-                                    @if($index % 2 == 0) <!-- Produits pairs (0, 2, 4...) -->
+                                    @if($index % 2 == 0)
                                         @php
-                                            $isInDatabase = $listId ? $this->isInDatabase($product['sku']) : false;
-                                            $isTemporarilySelected = $listId ? $this->isTemporarilySelected($product['sku']) : true;
+                                            $isInDatabase = $this->isInDatabase($product['sku']);
+                                            $isNew = $this->isTemporarilySelected($product['sku']);
+                                            $isRemoved = in_array($product['sku'], $this->getRemovedProducts());
                                         @endphp
-                                        <div class="relative group border rounded-lg p-3 {{ $isInDatabase ? 'bg-success/10 border-success' : ($isTemporarilySelected ? 'bg-warning/10 border-warning' : 'bg-base-100 hover:bg-base-200') }} transition-colors flex-shrink-0"
+                                        <div class="relative group border rounded-lg p-3 
+                                            {{ $isRemoved ? 'bg-error/10 border-error line-through' : 
+                                              ($isNew ? 'bg-warning/10 border-warning' : 
+                                              'bg-success/10 border-success') }} 
+                                            transition-colors flex-shrink-0"
                                             style="width: 300px;">
                                             <!-- Badge d'état -->
-                                            @if($listId)
-                                                <div class="absolute top-2 right-2">
-                                                    @if($isInDatabase)
-                                                        <span class="badge badge-sm badge-success" title="Déjà dans la liste">
-                                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-                                                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-                                                            </svg>
-                                                        </span>
-                                                    @elseif($isTemporarilySelected)
-                                                        <span class="badge badge-sm badge-warning" title="À ajouter">
-                                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-                                                                <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
-                                                            </svg>
-                                                        </span>
-                                                    @endif
-                                                </div>
-                                            @endif
+                                            <div class="absolute top-2 right-2">
+                                                @if($isRemoved)
+                                                    <span class="badge badge-sm badge-error" title="À supprimer">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                                        </svg>
+                                                    </span>
+                                                @elseif($isNew)
+                                                    <span class="badge badge-sm badge-warning" title="Nouveau - À ajouter">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                                            <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
+                                                        </svg>
+                                                    </span>
+                                                @else
+                                                    <span class="badge badge-sm badge-success" title="Déjà dans la liste">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                                                        </svg>
+                                                    </span>
+                                                @endif
+                                            </div>
                                             
                                             <div class="flex items-start gap-3">
                                                 <!-- Image -->
@@ -887,18 +964,12 @@ new class extends Component {
                                                         <span class="badge badge-sm badge-neutral">{{ $index + 1 }}</span>
                                                         <button 
                                                             wire:click="removeFromSummary('{{ $product['sku'] }}')"
-                                                            class="btn btn-xs {{ $isInDatabase ? 'btn-error' : 'btn-ghost' }}"
-                                                            title="{{ $isInDatabase ? 'Supprimer de la liste' : 'Retirer de la sélection' }}"
+                                                            class="btn btn-xs btn-error"
+                                                            title="Retirer de la liste"
                                                         >
-                                                            @if($isInDatabase)
-                                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                                                    <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
-                                                                </svg>
-                                                            @else
-                                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                                                    <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-                                                                </svg>
-                                                            @endif
+                                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                                            </svg>
                                                         </button>
                                                     </div>
                                                 </div>
@@ -911,31 +982,40 @@ new class extends Component {
                             <!-- Deuxième ligne -->
                             <div class="flex gap-3 min-w-max">
                                 @foreach($selectedProductsDetails as $index => $product)
-                                    @if($index % 2 == 1) <!-- Produits impairs (1, 3, 5...) -->
+                                    @if($index % 2 == 1)
                                         @php
-                                            $isInDatabase = $listId ? $this->isInDatabase($product['sku']) : false;
-                                            $isTemporarilySelected = $listId ? $this->isTemporarilySelected($product['sku']) : true;
+                                            $isInDatabase = $this->isInDatabase($product['sku']);
+                                            $isNew = $this->isTemporarilySelected($product['sku']);
+                                            $isRemoved = in_array($product['sku'], $this->getRemovedProducts());
                                         @endphp
-                                        <div class="relative group border rounded-lg p-3 {{ $isInDatabase ? 'bg-success/10 border-success' : ($isTemporarilySelected ? 'bg-warning/10 border-warning' : 'bg-base-100 hover:bg-base-200') }} transition-colors flex-shrink-0"
+                                        <div class="relative group border rounded-lg p-3 
+                                            {{ $isRemoved ? 'bg-error/10 border-error line-through' : 
+                                              ($isNew ? 'bg-warning/10 border-warning' : 
+                                              'bg-success/10 border-success') }} 
+                                            transition-colors flex-shrink-0"
                                             style="width: 300px;">
                                             <!-- Badge d'état -->
-                                            @if($listId)
-                                                <div class="absolute top-2 right-2">
-                                                    @if($isInDatabase)
-                                                        <span class="badge badge-sm badge-success" title="Déjà dans la liste">
-                                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-                                                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-                                                            </svg>
-                                                        </span>
-                                                    @elseif($isTemporarilySelected)
-                                                        <span class="badge badge-sm badge-warning" title="À ajouter">
-                                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-                                                                <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
-                                                            </svg>
-                                                        </span>
-                                                    @endif
-                                                </div>
-                                            @endif
+                                            <div class="absolute top-2 right-2">
+                                                @if($isRemoved)
+                                                    <span class="badge badge-sm badge-error" title="À supprimer">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                                        </svg>
+                                                    </span>
+                                                @elseif($isNew)
+                                                    <span class="badge badge-sm badge-warning" title="Nouveau - À ajouter">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                                            <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
+                                                        </svg>
+                                                    </span>
+                                                @else
+                                                    <span class="badge badge-sm badge-success" title="Déjà dans la liste">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                                                        </svg>
+                                                    </span>
+                                                @endif
+                                            </div>
                                             
                                             <div class="flex items-start gap-3">
                                                 <!-- Image -->
@@ -971,18 +1051,12 @@ new class extends Component {
                                                         <span class="badge badge-sm badge-neutral">{{ $index + 1 }}</span>
                                                         <button 
                                                             wire:click="removeFromSummary('{{ $product['sku'] }}')"
-                                                            class="btn btn-xs {{ $isInDatabase ? 'btn-error' : 'btn-ghost' }}"
-                                                            title="{{ $isInDatabase ? 'Supprimer de la liste' : 'Retirer de la sélection' }}"
+                                                            class="btn btn-xs btn-error"
+                                                            title="Retirer de la liste"
                                                         >
-                                                            @if($isInDatabase)
-                                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                                                    <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
-                                                                </svg>
-                                                            @else
-                                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                                                    <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-                                                                </svg>
-                                                            @endif
+                                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                                            </svg>
                                                         </button>
                                                     </div>
                                                 </div>
@@ -1008,6 +1082,16 @@ new class extends Component {
     @endif
 
     <div class="rounded-box border border-base-content/5 bg-base-100 overflow-hidden">
+        <!-- En-tête de la table -->
+        <div class="bg-base-200 p-4 border-b border-base-content/10">
+            <div class="flex items-center justify-between">
+                <div class="font-semibold">Sélectionner des produits à ajouter à la liste</div>
+                <div class="text-sm text-base-content/70">
+                    Cochez les produits que vous souhaitez ajouter à votre liste
+                </div>
+            </div>
+        </div>
+        
         <!-- Conteneur principal -->
         <div class="max-h-[600px] overflow-y-auto">
             <!-- Table -->
@@ -1031,17 +1115,22 @@ new class extends Component {
                     @forelse($products as $index => $product)
                         @php
                             $isSelected = in_array($product['sku'], $selectedProducts);
-                            $isInDatabase = $listId ? $this->isInDatabase($product['sku']) : false;
-                            $isTemporarilySelected = $listId ? $this->isTemporarilySelected($product['sku']) : false;
+                            $isInDatabase = $this->isInDatabase($product['sku']);
                         @endphp
                         <tr wire:key="product-{{ $product['id'] ?? $index }}"
-                            class="{{ $isSelected ? ($isInDatabase ? 'bg-success/5' : ($isTemporarilySelected ? 'bg-warning/5' : 'bg-primary/5')) : '' }}">
+                            class="{{ $isSelected ? ($isInDatabase ? 'bg-success/5' : 'bg-warning/5') : '' }}">
                             <td>
                                 @if($isInDatabase)
-                                    <div class="tooltip" data-tip="Déjà dans la liste">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-success" viewBox="0 0 20 20" fill="currentColor">
-                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-                                        </svg>
+                                    <div class="tooltip" data-tip="Déjà dans la liste - Cliquez pour retirer">
+                                        <button 
+                                            type="button"
+                                            wire:click="toggleSelect('{{ $product['sku'] }}')"
+                                            class="text-success hover:text-error transition-colors"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                                            </svg>
+                                        </button>
                                     </div>
                                 @else
                                     <input 
@@ -1049,7 +1138,7 @@ new class extends Component {
                                         class="checkbox checkbox-primary checkbox-xs" 
                                         {{ $isSelected ? 'checked' : '' }}
                                         wire:click="toggleSelect('{{ $product['sku'] }}', '{{ addslashes($product['title'] ?? '') }}', '{{ $product['thumbnail'] ?? '' }}')"
-                                    >
+                                    />
                                 @endif
                             </td>
                             <td>
@@ -1183,8 +1272,8 @@ new class extends Component {
         </div>
     </div>
 
-    <!-- Modal de confirmation -->
-    <x-modal wire:model="showModal" title="{{ $listId ? 'Mettre à jour la liste' : 'Créer une nouvelle liste' }}" persistent separator>
+    <!-- Modal de confirmation de mise à jour -->
+    <x-modal wire:model="showModal" title="Mettre à jour la liste" persistent separator>
         <div class="space-y-4">
             <!-- Nom de la liste -->
             <div>
@@ -1197,58 +1286,65 @@ new class extends Component {
                 />
             </div>
         
-            <!-- Résumé de la sélection -->
+            <!-- Résumé des modifications -->
             <div class="border rounded-box p-4">
-                <h4 class="font-semibold mb-2">Résumé de la sélection</h4>
+                <h4 class="font-semibold mb-2">Résumé des modifications</h4>
                 <div class="space-y-2">
-                    @if($listId)
-                        <div class="flex justify-between">
-                            <span>Produits déjà dans la liste:</span>
-                            <span class="font-semibold text-success">{{ $existingCount ?? 0 }}</span>
-                        </div>
+                    <div class="flex justify-between">
+                        <span>Produits dans la liste actuelle:</span>
+                        <span class="font-semibold">{{ count($existingProducts) }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Nouvelle configuration:</span>
+                        <span class="font-semibold text-primary">{{ count($selectedProducts) }} produits</span>
+                    </div>
+                    
+                    <div class="divider my-1"></div>
+                    
+                    @if($newCount > 0)
                         <div class="flex justify-between">
                             <span>Nouveaux produits à ajouter:</span>
-                            <span class="font-semibold text-warning">{{ $newCount ?? 0 }}</span>
+                            <span class="font-semibold text-warning">{{ $newCount }}</span>
                         </div>
-                        <div class="divider my-1"></div>
                     @endif
-                    <div class="flex justify-between font-semibold">
-                        <span>Total des produits:</span>
-                        <span class="text-primary">{{ count($selectedProducts) }}</span>
-                    </div>
+                    
+                    @if($removedCount > 0)
+                        <div class="flex justify-between">
+                            <span>Produits à supprimer:</span>
+                            <span class="font-semibold text-error">{{ $removedCount }}</span>
+                        </div>
+                    @endif
+                    
+                    @if($newCount == 0 && $removedCount == 0)
+                        <div class="flex justify-between">
+                            <span>Modifications:</span>
+                            <span class="font-semibold text-info">Aucune</span>
+                        </div>
+                    @endif
                 </div>
             </div>
             
             <!-- Avertissement -->
-            @if($listId)
-                <div class="alert alert-info">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                    </svg>
-                    <div>
-                        <div class="font-semibold">Mise à jour de liste</div>
-                        <div class="text-sm">Seuls les nouveaux produits seront ajoutés. Les produits existants resteront dans la liste.</div>
-                    </div>
+            <div class="alert alert-warning">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <div>
+                    <div class="font-semibold">Attention</div>
+                    <div class="text-sm">Cette action mettra à jour la liste existante. Les modifications seront permanentes.</div>
                 </div>
-            @else
-                <div class="alert alert-info">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                    </svg>
-                    <span>La liste sera sauvegardée dans la base de données et vous pourrez y accéder ultérieurement.</span>
-                </div>
-            @endif
+            </div>
         </div>
         
         <x-slot:actions>
             <x-button label="Annuler" @click="$wire.showModal = false" />
-            <x-button label="{{ $listId ? 'Mettre à jour' : 'Créer' }}" class="btn-primary" 
-                wire:click="{{ $listId ? 'updateList' : 'saveList' }}" 
+            <x-button label="Mettre à jour" class="btn-primary" 
+                wire:click="updateList" 
                 wire:loading.attr="disabled">
-                <span wire:loading.remove>{{ $listId ? 'Mettre à jour' : 'Créer' }}</span>
-                <span wire:loading wire:target="{{ $listId ? 'updateList' : 'saveList' }}" class="flex items-center gap-2">
+                <span wire:loading.remove>Mettre à jour</span>
+                <span wire:loading wire:target="updateList" class="flex items-center gap-2">
                     <span class="loading loading-spinner loading-sm"></span>
-                    {{ $listId ? 'Mise à jour...' : 'Création...' }}
+                    Mise à jour en cours...
                 </span>
             </x-button>
         </x-slot:actions>
@@ -1282,19 +1378,8 @@ new class extends Component {
             }
         });
         
-        Livewire.on('list-created', (event) => {
-            // Redirection ou autre action après création
-            console.log('Liste créée avec ID:', event.listId);
-            // Rediriger vers la page des listes
-            setTimeout(() => {
-                window.location.href = '/comparison/lists';
-            }, 1500);
-        });
-        
         Livewire.on('list-updated', (event) => {
-            // Redirection ou autre action après mise à jour
-            console.log('Liste mise à jour avec ID:', event.listId);
-            // Rediriger vers la page de détail de la liste
+            // Redirection vers la page de détail de la liste après mise à jour
             setTimeout(() => {
                 window.location.href = `/comparison/lists/${event.listId}`;
             }, 1500);
