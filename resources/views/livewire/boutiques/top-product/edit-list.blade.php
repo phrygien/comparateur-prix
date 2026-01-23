@@ -365,24 +365,36 @@ new class extends Component {
         try {
             // Validation
             if (empty($this->selectedProducts)) {
-                $this->warning('La liste ne peut pas être vide.');
+                $this->dispatch('notify', [
+                    'type' => 'error',
+                    'message' => 'La liste ne peut pas être vide.'
+                ]);
                 return;
             }
             
             if (empty($this->listName)) {
-                $this->warning('Veuillez donner un nom à votre liste.');
+                $this->dispatch('notify', [
+                    'type' => 'error',
+                    'message' => 'Veuillez donner un nom à votre liste.'
+                ]);
                 return;
             }
             
             // Vérifier que la liste existe
             if (!$this->listId) {
-                $this->warning('Liste non trouvée.');
+                $this->dispatch('notify', [
+                    'type' => 'error',
+                    'message' => 'Liste non trouvée.'
+                ]);
                 return;
             }
             
             $list = Comparaison::find($this->listId);
             if (!$list) {
-                $this->warning('Liste non trouvée.');
+                $this->dispatch('notify', [
+                    'type' => 'error',
+                    'message' => 'Liste non trouvée.'
+                ]);
                 return;
             }
             
@@ -436,7 +448,10 @@ new class extends Component {
                 $message .= ' ' . count($productsToRemove) . ' produit(s) supprimé(s).';
             }
             
-            $this->success('MAJ OK');
+            $this->dispatch('notify', [
+                'type' => 'success',
+                'message' => $message
+            ]);
             
             // Émettre un événement pour le parent
             $this->dispatch('list-updated', ['listId' => $this->listId]);
