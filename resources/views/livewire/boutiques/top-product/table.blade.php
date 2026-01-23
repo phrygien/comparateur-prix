@@ -2517,6 +2517,12 @@ new class extends Component {
                             } elseif (!empty($product['image']) && filter_var($product['image'], FILTER_VALIDATE_URL)) {
                                 $imageUrl = $product['image'];
                             }
+                            
+                            // Compter les bons résultats (similarité >= 0.6)
+                            $goodCompetitorsCount = 0;
+                            if ($hasCompetitors && isset($competitorResults[$product['sku']]['good_count'])) {
+                                $goodCompetitorsCount = $competitorResults[$product['sku']]['good_count'];
+                            }
                         @endphp
                         <tr class="hover">
                             <!-- Case à cocher pour sélectionner le produit -->
@@ -2595,55 +2601,25 @@ new class extends Component {
                                             Recherche...
                                         @else
                                             @if($hasCompetitors)
-                                                {{ $competitorResults[$product['sku']]['count'] ?? 0 }} résultat(s)
+                                                @if($goodCompetitorsCount > 0)
+                                                    <span class="badge badge-success mr-1">{{ $goodCompetitorsCount }}</span>
+                                                    bon(s) résultat(s)
+                                                @else
+                                                    Aucun bon résultat
+                                                @endif
                                             @else
                                                 Rechercher
                                             @endif
                                         @endif
                                     </button>
-                                </div>
-                            </td>
-                            
-                            <!-- Recherche manuelle -->
-                            {{-- <td>
-                                <div class="space-y-1">
-                                    <!-- Input de recherche -->
-                                    <div class="relative">
-                                        <input 
-                                            type="text" 
-                                            wire:model.live.debounce.800ms="manualSearchQueries.{{ $product['sku'] }}"
-                                            wire:key="manual-search-{{ $product['sku'] }}"
-                                            placeholder="Recherche..."
-                                            class="input input-xs input-bordered w-full"
-                                        >
-                                        @if(isset($manualSearchQueries[$product['sku']]) && !empty($manualSearchQueries[$product['sku']]))
-                                            <button 
-                                                type="button"
-                                                wire:click="clearManualSearch('{{ $product['sku'] }}')"
-                                                class="absolute right-1 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                                            >
-                                                ×
-                                            </button>
-                                        @endif
-                                    </div>
                                     
-                                    <!-- Bouton de recherche -->
-                                    @if(isset($manualSearchQueries[$product['sku']]) && !empty($manualSearchQueries[$product['sku']]))
-                                        <button 
-                                            wire:click="manualSearchForProduct('{{ $product['sku'] }}', '{{ addslashes($product['title'] ?? '') }}', {{ $product['price'] ?? 0 }})"
-                                            class="btn btn-xs btn-warning w-full"
-                                            wire:loading.attr="disabled"
-                                            wire:target="manualSearchForProduct('{{ $product['sku'] }}')"
-                                        >
-                                            @if($isSearchingManual)
-                                                <span class="loading loading-spinner loading-xs"></span>
-                                            @else
-                                                Rechercher
-                                            @endif
-                                        </button>
+                                    @if($hasCompetitors && $goodCompetitorsCount > 0)
+                                        <div class="text-xs text-center text-gray-500">
+                                            ({{ $competitorResults[$product['sku']]['count'] ?? 0 }} au total)
+                                        </div>
                                     @endif
                                 </div>
-                            </td> --}}
+                            </td>
                             
                             <!-- Type -->
                             <td>
@@ -2678,10 +2654,10 @@ new class extends Component {
                                         </svg>
                                     </button>
 
-                                    @if($hasCompetitors)
-                                        <div class="tooltip" data-tip="{{ $competitorResults[$product['sku']]['count'] ?? 0 }} concurrent(s)">
-                                            <div class="badge badge-info">
-                                                {{ $competitorResults[$product['sku']]['count'] ?? 0 }}
+                                    @if($hasCompetitors && $goodCompetitorsCount > 0)
+                                        <div class="tooltip" data-tip="{{ $goodCompetitorsCount }} résultat(s) avec bon niveau de similarité (≥60%)">
+                                            <div class="badge badge-success">
+                                                {{ $goodCompetitorsCount }}
                                             </div>
                                         </div>
                                     @endif
@@ -2691,6 +2667,12 @@ new class extends Component {
                         
                         <!-- Tableau des résultats des concurrents automatiques -->
                         @if($hasCompetitors && isset($expandedProducts[$product['sku']]))
+                            @php
+                                // Filtrer pour ne montrer que les résultats avec bon niveau (≥ 0.6)
+                                $allCompetitors = $competitorResults[$product['sku']]['competitors'] ?? [];
+                                $goodCompetitors = array_filter($allCompetitors, fn($c) => ($c->similarity_score ?? 0) >= 0.6);
+                                $hasGoodCompetitors = count($goodCompetitors) > 0;
+                            @endphp
                             <tr class="bg-base-100 border-t-0">
                                 <td colspan="9" class="p-0">
                                     <div class="p-4 bg-base-50 border border-base-300 rounded-lg m-2">
@@ -2698,13 +2680,19 @@ new class extends Component {
                                             <div>
                                                 <h4 class="font-bold text-sm">
                                                     <span class="text-info">Résultats des concurrents automatiques</span>
-                                                    <span class="badge badge-info ml-2">
-                                                        {{ $competitorResults[$product['sku']]['count'] ?? 0 }} résultat(s)
+                                                    <span class="badge badge-success ml-2">
+                                                        {{ count($goodCompetitors) }} bon(s) résultat(s)
                                                     </span>
+                                                    @if(count($allCompetitors) > count($goodCompetitors))
+                                                        <span class="badge badge-neutral ml-1">
+                                                            {{ count($allCompetitors) - count($goodCompetitors) }} autre(s)
+                                                        </span>
+                                                    @endif
                                                 </h4>
                                                 <p class="text-xs text-gray-600 mt-1">
                                                     Produit: <span class="font-semibold">{{ $product['title'] }}</span> 
                                                     | Notre prix: <span class="font-bold text-success">{{ $this->formatPrice($product['price']) }}</span>
+                                                    | Seuil de similarité: ≥60%
                                                 </p>
                                             </div>
                                             <button wire:click="toggleCompetitors('{{ $product['sku'] }}')" 
@@ -2713,7 +2701,7 @@ new class extends Component {
                                             </button>
                                         </div>
                                         
-                                        @if(isset($competitorResults[$product['sku']]['competitors']) && count($competitorResults[$product['sku']]['competitors']) > 0)
+                                        @if($hasGoodCompetitors)
                                             <div class="overflow-x-auto">
                                                 <table class="table table-xs table-zebra">
                                                     <thead>
@@ -2725,17 +2713,23 @@ new class extends Component {
                                                             <th class="text-xs">Différence</th>
                                                             <th class="text-xs">Statut de nos prix par rapport aux concurrents</th>
                                                             <th class="text-xs">Niveau de correspondance</th>
+                                                            <th class="text-xs">Score</th>
                                                             <th class="text-xs">Actions</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
-                                                        @foreach($competitorResults[$product['sku']]['competitors'] as $competitor)
+                                                        @foreach($goodCompetitors as $competitor)
                                                             @php
                                                                 $competitorImage = $this->getCompetitorImageUrl($competitor);
                                                                 $priceStatusClass = $this->getPriceStatusClass($competitor->price_status ?? 'same');
                                                                 $priceStatusLabel = $this->getPriceStatusLabel($competitor->price_status ?? 'same');
                                                                 $difference = $this->formatPriceDifference($competitor->price_difference ?? 0);
                                                                 $percentage = $this->formatPercentage($competitor->price_difference_percent ?? 0);
+                                                                $similarityScore = $competitor->similarity_score ?? 0;
+                                                                $scorePercentage = round($similarityScore * 100);
+                                                                $scoreClass = $similarityScore >= 0.8 ? 'badge-success' : 
+                                                                              ($similarityScore >= 0.7 ? 'badge-primary' : 
+                                                                              ($similarityScore >= 0.6 ? 'badge-warning' : 'badge-neutral'));
                                                             @endphp
                                                             <tr>
                                                                 <!-- Image du concurrent -->
@@ -2798,20 +2792,22 @@ new class extends Component {
                                                                     </span>
                                                                 </td>
                                                                 
+                                                                <!-- Niveau de correspondance -->
+                                                                <td class="text-xs">
+                                                                    <div class="flex flex-col items-center">
+                                                                        <span class="badge badge-xs {{ $scoreClass }}">
+                                                                            {{ $competitor->match_level ?? 'N/A' }}
+                                                                        </span>
+                                                                    </div>
+                                                                </td>
+                                                                
                                                                 <!-- Score de similarité -->
                                                                 <td class="text-xs">
-                                                                    @if(isset($competitor->similarity_score))
-                                                                        <div class="flex flex-col items-center">
-                                                                            <span class="badge badge-xs {{ $competitor->similarity_score >= 0.8 ? 'badge-success' : ($competitor->similarity_score >= 0.6 ? 'badge-warning' : 'badge-error') }}">
-                                                                                {{ number_format($competitor->similarity_score * 100, 0) }}%
-                                                                            </span>
-                                                                            <span class="text-[10px] opacity-70">
-                                                                                {{ $competitor->match_level ?? 'N/A' }}
-                                                                            </span>
-                                                                        </div>
-                                                                    @else
-                                                                        <span class="badge badge-xs badge-neutral">N/A</span>
-                                                                    @endif
+                                                                    <div class="flex flex-col items-center">
+                                                                        <span class="badge badge-xs {{ $scoreClass }}">
+                                                                            {{ $scorePercentage }}%
+                                                                        </span>
+                                                                    </div>
                                                                 </td>
                                                                 
                                                                 <!-- Actions -->
@@ -2832,14 +2828,39 @@ new class extends Component {
                                                     </tbody>
                                                 </table>
                                             </div>
+                                            
+                                            <!-- Légende des scores -->
+                                            <div class="mt-4 p-3 bg-base-100 border border-base-300 rounded-lg">
+                                                <div class="text-xs font-semibold mb-2">Légende des scores de similarité :</div>
+                                                <div class="flex flex-wrap gap-2">
+                                                    <div class="flex items-center">
+                                                        <span class="badge badge-xs badge-success mr-1"></span>
+                                                        <span class="text-xs">Excellent (≥80%)</span>
+                                                    </div>
+                                                    <div class="flex items-center">
+                                                        <span class="badge badge-xs badge-primary mr-1"></span>
+                                                        <span class="text-xs">Très bon (≥70%)</span>
+                                                    </div>
+                                                    <div class="flex items-center">
+                                                        <span class="badge badge-xs badge-warning mr-1"></span>
+                                                        <span class="text-xs">Bon (≥60%)</span>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         @else
-                                            <div class="text-center py-4">
+                                            <div class="text-center py-8">
                                                 <div class="text-gray-400 mb-2">
                                                     <svg class="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                                     </svg>
                                                 </div>
-                                                <p class="text-sm text-gray-600">Aucun concurrent trouvé pour ce produit.</p>
+                                                <p class="text-sm text-gray-600">Aucun concurrent avec un bon niveau de similarité trouvé.</p>
+                                                <p class="text-xs text-gray-500 mt-1">Seuil minimum : 60% de similarité</p>
+                                                @if(count($allCompetitors) > 0)
+                                                    <p class="text-xs text-gray-500 mt-1">
+                                                        {{ count($allCompetitors) }} résultat(s) trouvé(s) mais aucun n'atteint le seuil minimum.
+                                                    </p>
+                                                @endif
                                             </div>
                                         @endif
                                     </div>
@@ -2849,6 +2870,12 @@ new class extends Component {
                         
                         <!-- Tableau des résultats de recherche manuelle -->
                         @if(isset($manualSearchResults[$product['sku']]) && isset($manualSearchExpanded[$product['sku']]) && $manualSearchExpanded[$product['sku']])
+                            @php
+                                // Filtrer pour ne montrer que les résultats avec bon niveau (≥ 0.6)
+                                $allManualCompetitors = $manualSearchResults[$product['sku']]['competitors'] ?? [];
+                                $goodManualCompetitors = array_filter($allManualCompetitors, fn($c) => ($c->similarity_score ?? 0) >= 0.6);
+                                $hasGoodManualCompetitors = count($goodManualCompetitors) > 0;
+                            @endphp
                             <tr class="bg-base-100 border-t-0">
                                 <td colspan="9" class="p-0">
                                     <div class="p-4 bg-warning/5 border border-warning/20 rounded-lg m-2">
@@ -2857,12 +2884,18 @@ new class extends Component {
                                                 <h4 class="font-bold text-sm">
                                                     <span class="text-warning">Résultats de recherche manuelle</span>
                                                     <span class="badge badge-warning ml-2">
-                                                        {{ $manualSearchResults[$product['sku']]['count'] ?? 0 }} résultat(s)
+                                                        {{ count($goodManualCompetitors) }} bon(s) résultat(s)
                                                     </span>
+                                                    @if(count($allManualCompetitors) > count($goodManualCompetitors))
+                                                        <span class="badge badge-neutral ml-1">
+                                                            {{ count($allManualCompetitors) - count($goodManualCompetitors) }} autre(s)
+                                                        </span>
+                                                    @endif
                                                 </h4>
                                                 <p class="text-xs text-gray-600 mt-1">
                                                     Recherche: <span class="font-semibold">{{ $manualSearchResults[$product['sku']]['search_query'] ?? '' }}</span>
                                                     | Notre prix: <span class="font-bold text-success">{{ $this->formatPrice($product['price']) }}</span>
+                                                    | Seuil de similarité: ≥60%
                                                 </p>
                                             </div>
                                             <button wire:click="toggleManualSearchResults('{{ $product['sku'] }}')" 
@@ -2871,7 +2904,7 @@ new class extends Component {
                                             </button>
                                         </div>
                                         
-                                        @if(isset($manualSearchResults[$product['sku']]['competitors']) && count($manualSearchResults[$product['sku']]['competitors']) > 0)
+                                        @if($hasGoodManualCompetitors)
                                             <div class="overflow-x-auto">
                                                 <table class="table table-xs table-zebra">
                                                     <thead>
@@ -2883,18 +2916,24 @@ new class extends Component {
                                                             <th class="text-xs">Différence</th>
                                                             <th class="text-xs">Statut de nos prix par rapport aux concurrents</th>
                                                             <th class="text-xs">Niveau de correspondance</th>
+                                                            <th class="text-xs">Score</th>
                                                             <th class="text-xs">Source</th>
                                                             <th class="text-xs">Actions</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
-                                                        @foreach($manualSearchResults[$product['sku']]['competitors'] as $competitor)
+                                                        @foreach($goodManualCompetitors as $competitor)
                                                             @php
                                                                 $competitorImage = $this->getCompetitorImageUrl($competitor);
                                                                 $priceStatusClass = $this->getPriceStatusClass($competitor->price_status ?? 'same');
                                                                 $priceStatusLabel = $this->getPriceStatusLabel($competitor->price_status ?? 'same');
                                                                 $difference = $this->formatPriceDifference($competitor->price_difference ?? 0);
                                                                 $percentage = $this->formatPercentage($competitor->price_difference_percent ?? 0);
+                                                                $similarityScore = $competitor->similarity_score ?? 0;
+                                                                $scorePercentage = round($similarityScore * 100);
+                                                                $scoreClass = $similarityScore >= 0.8 ? 'badge-success' : 
+                                                                              ($similarityScore >= 0.7 ? 'badge-primary' : 
+                                                                              ($similarityScore >= 0.6 ? 'badge-warning' : 'badge-neutral'));
                                                             @endphp
                                                             <tr>
                                                                 <!-- Image du concurrent -->
@@ -2957,20 +2996,22 @@ new class extends Component {
                                                                     </span>
                                                                 </td>
                                                                 
+                                                                <!-- Niveau de correspondance -->
+                                                                <td class="text-xs">
+                                                                    <div class="flex flex-col items-center">
+                                                                        <span class="badge badge-xs {{ $scoreClass }}">
+                                                                            {{ $competitor->match_level ?? 'N/A' }}
+                                                                        </span>
+                                                                    </div>
+                                                                </td>
+                                                                
                                                                 <!-- Score de similarité -->
                                                                 <td class="text-xs">
-                                                                    @if(isset($competitor->similarity_score))
-                                                                        <div class="flex flex-col items-center">
-                                                                            <span class="badge badge-xs {{ $competitor->similarity_score >= 0.8 ? 'badge-success' : ($competitor->similarity_score >= 0.6 ? 'badge-warning' : 'badge-error') }}">
-                                                                                {{ number_format($competitor->similarity_score * 100, 0) }}%
-                                                                            </span>
-                                                                            <span class="text-[10px] opacity-70">
-                                                                                {{ $competitor->match_level ?? 'N/A' }}
-                                                                            </span>
-                                                                        </div>
-                                                                    @else
-                                                                        <span class="badge badge-xs badge-neutral">N/A</span>
-                                                                    @endif
+                                                                    <div class="flex flex-col items-center">
+                                                                        <span class="badge badge-xs {{ $scoreClass }}">
+                                                                            {{ $scorePercentage }}%
+                                                                        </span>
+                                                                    </div>
                                                                 </td>
                                                                 
                                                                 <!-- Source -->
@@ -3003,7 +3044,8 @@ new class extends Component {
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                                     </svg>
                                                 </div>
-                                                <p class="text-sm text-gray-600">Aucun résultat trouvé pour cette recherche.</p>
+                                                <p class="text-sm text-gray-600">Aucun résultat avec un bon niveau de similarité trouvé pour cette recherche.</p>
+                                                <p class="text-xs text-gray-500 mt-1">Seuil minimum : 60% de similarité</p>
                                             </div>
                                         @endif
                                     </div>
@@ -3182,6 +3224,11 @@ new class extends Component {
             color: white !important;
         }
         
+        .badge-primary {
+            background-color: #0ea5e9 !important;
+            color: white !important;
+        }
+        
         /* Animation pour l'expansion des résultats */
         .results-transition {
             transition: all 0.3s ease-in-out;
@@ -3261,6 +3308,97 @@ new class extends Component {
 /* Style pour les lignes sélectionnées */
 tr.selected {
     background-color: #eff6ff !important;
+}
+
+/* Style pour les indicateurs de score */
+.score-indicator {
+    width: 60px;
+    height: 6px;
+    background: #e5e7eb;
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+}
+
+.score-fill {
+    height: 100%;
+    position: absolute;
+    left: 0;
+    top: 0;
+}
+
+.score-fill.excellent { background: #10b981; }
+.score-fill.very-good { background: #0ea5e9; }
+.score-fill.good { background: #f59e0b; }
+.score-fill.medium { background: #6b7280; }
+.score-fill.poor { background: #ef4444; }
+
+/* Légende des scores */
+.score-legend {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.score-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: #6b7280;
+}
+
+.score-legend-color {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+}
+
+/* Badge pour les bons résultats */
+.badge-good {
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: white;
+    font-weight: 600;
+}
+
+/* Indicateur de seuil */
+.threshold-indicator {
+    position: relative;
+    padding-left: 20px;
+}
+
+.threshold-indicator::before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #10b981;
+    font-weight: bold;
+}
+
+/* Style pour les résultats filtrés */
+.filtered-results-info {
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+}
+
+.filtered-results-info .badge {
+    margin-right: 6px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .results-table-container {
+        font-size: 12px;
+    }
+    
+    .score-indicator {
+        width: 40px;
+    }
 }        
     </style>
     
@@ -3285,6 +3423,33 @@ tr.selected {
                         block: 'center' 
                     });
                 }
+            });
+            
+            // Afficher un message lorsque les résultats sont filtrés
+            Livewire.hook('message.processed', (message) => {
+                // Vérifier si nous avons des résultats de concurrents
+                const competitorTables = document.querySelectorAll('.competitor-results-table');
+                competitorTables.forEach(table => {
+                    const rows = table.querySelectorAll('tbody tr');
+                    if (rows.length === 0) {
+                        const container = table.closest('.competitor-results-container');
+                        if (container) {
+                            const noResultsMsg = container.querySelector('.no-results-message');
+                            if (!noResultsMsg) {
+                                const msgDiv = document.createElement('div');
+                                msgDiv.className = 'no-results-message text-center py-4 text-sm text-gray-600';
+                                msgDiv.innerHTML = `
+                                    <svg class="w-8 h-8 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    <p>Aucun résultat avec un bon niveau de similarité trouvé.</p>
+                                    <p class="text-xs text-gray-500 mt-1">Seuil minimum : 60% de similarité</p>
+                                `;
+                                table.parentNode.insertBefore(msgDiv, table.nextSibling);
+                            }
+                        }
+                    }
+                });
             });
         });
         
@@ -3336,7 +3501,68 @@ tr.selected {
                     }
                 });
             });
+            
+            // Ajouter des indicateurs visuels pour les scores
+            const scoreCells = document.querySelectorAll('[data-score]');
+            scoreCells.forEach(cell => {
+                const score = parseFloat(cell.getAttribute('data-score'));
+                if (!isNaN(score)) {
+                    const percentage = Math.round(score * 100);
+                    const indicator = document.createElement('div');
+                    indicator.className = 'score-indicator';
+                    
+                    const fill = document.createElement('div');
+                    fill.className = 'score-fill';
+                    fill.style.width = percentage + '%';
+                    
+                    // Déterminer la classe en fonction du score
+                    if (score >= 0.8) {
+                        fill.className += ' excellent';
+                    } else if (score >= 0.7) {
+                        fill.className += ' very-good';
+                    } else if (score >= 0.6) {
+                        fill.className += ' good';
+                    } else if (score >= 0.4) {
+                        fill.className += ' medium';
+                    } else {
+                        fill.className += ' poor';
+                    }
+                    
+                    indicator.appendChild(fill);
+                    
+                    // Ajouter un label
+                    const label = document.createElement('div');
+                    label.className = 'text-xs text-center mt-1';
+                    label.textContent = percentage + '%';
+                    
+                    // Remplacer le contenu de la cellule
+                    cell.innerHTML = '';
+                    cell.appendChild(indicator);
+                    cell.appendChild(label);
+                }
+            });
         });
+        
+        // Fonction pour afficher un indicateur de chargement
+        function showLoadingIndicator(element) {
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'loading-indicator';
+            loadingDiv.innerHTML = `
+                <div class="flex items-center justify-center p-4">
+                    <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mr-3"></div>
+                    <span class="text-sm text-gray-600">Recherche en cours...</span>
+                </div>
+            `;
+            element.appendChild(loadingDiv);
+            return loadingDiv;
+        }
+        
+        // Fonction pour masquer l'indicateur de chargement
+        function hideLoadingIndicator(loadingDiv) {
+            if (loadingDiv && loadingDiv.parentNode) {
+                loadingDiv.parentNode.removeChild(loadingDiv);
+            }
+        }
     </script>
     @endpush
 </div>
