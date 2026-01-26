@@ -2673,7 +2673,7 @@ new class extends Component {
                             </label>
                         </th>
                         <th>#</th>
-                        <th>SKU</th>
+                        <th>EAN</th>
                         <th>Image</th>
                         <th>Produit</th>
                         <th>Notre Prix</th>
@@ -2756,7 +2756,7 @@ new class extends Component {
                             
                             <!-- Produit -->
                             <td>
-                                <div class="font-medium">{{ Str::limit($product['title'], 50) }}</div>
+                                <div class="font-medium">{{ $product['title'] }}</div>
                                 @if(!empty($product['vendor']))
                                     <div class="text-xs opacity-70">
                                         {{ $product['vendor'] }}
@@ -2963,7 +2963,7 @@ new class extends Component {
                                                             <th class="text-xs">Différence</th>
                                                             <th class="text-xs">Statut de nos prix par rapport aux concurrents</th>
                                                             <th class="text-xs">Niveau de correspondance</th>
-                                                            <th class="text-xs">Score</th>
+                                                            <th class="text-xs">Date MAJ</th>
                                                             <th class="text-xs">Actions</th>
                                                         </tr>
                                                     </thead>
@@ -3054,14 +3054,18 @@ new class extends Component {
                                                                 </td>
                                                                 
                                                                 <!-- Score de similarité -->
-                                                                <td class="text-xs">
+                                                                {{-- <td class="text-xs">
                                                                     <div class="flex flex-col items-center">
                                                                         <span class="badge badge-xs {{ $scoreClass }}">
                                                                             {{ $scorePercentage }}%
                                                                         </span>
                                                                     </div>
-                                                                </td>
-                                                                
+                                                                </td> --}}
+                                                                <td class="text-xs">
+                                                                    <div class="flex flex-col items-center">
+                                                                        {{ \Carbon\Carbon::parse($competitor->updated_at)->translatedFormat('j F Y \\à H:i') }}
+                                                                    </div>
+                                                                </td>                                                                
                                                                 <!-- Actions -->
                                                                 <td>
                                                                     @if(!empty($competitor->url))
