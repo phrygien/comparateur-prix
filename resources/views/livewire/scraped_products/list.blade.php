@@ -673,9 +673,9 @@ public function exportCsv()
                                 </td>
                                 
                                 <td class="text-gray-600 text-sm px-3 py-2 border-r border-gray-300 hidden lg:table-cell">
-                                    <div class="whitespace-nowrap">
+                                    {{-- <div class="whitespace-nowrap">
                                         {{ \Carbon\Carbon::parse($product->updated_at)->translatedFormat('j F Y \\à H:i') }}
-                                    </div>
+                                    </div> --}}
                                     <div class="text-xs text-gray-400">
                                         {{ \Carbon\Carbon::parse($product->updated_at)->translatedFormat('j F Y \\à H:i') }}
                                     </div>
