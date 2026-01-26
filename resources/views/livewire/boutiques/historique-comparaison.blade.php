@@ -4,6 +4,7 @@ namespace App\Http\Livewire;
 
 use Livewire\Volt\Component;
 use App\Models\Comparaison;
+use App\Models\DetailProduct;
 use Carbon\Carbon;
 
 new class extends Component {
@@ -12,6 +13,11 @@ new class extends Component {
     public $loading = false;
     public $hasMore = true;
     public $comparaisons;
+    
+    // Pour la confirmation de suppression
+    public $showDeleteModal = false;
+    public $comparaisonToDelete;
+    public $comparaisonToDeleteName;
     
     public function mount()
     {
@@ -56,7 +62,53 @@ new class extends Component {
         
         return Carbon::parse($date)->isoFormat('D MMMM YYYY [à] HH[h]mm');
     }
-        
+    
+    // Méthode pour ouvrir le modal de confirmation
+    public function confirmDelete($comparaisonId, $comparaisonName)
+    {
+        $this->comparaisonToDelete = $comparaisonId;
+        $this->comparaisonToDeleteName = $comparaisonName;
+        $this->showDeleteModal = true;
+    }
+    
+    // Méthode pour supprimer la comparaison et ses détails
+    public function deleteComparaison()
+    {
+        try {
+            $comparaison = Comparaison::find($this->comparaisonToDelete);
+            
+            if ($comparaison) {
+                // Supprimer d'abord tous les détails associés
+                DetailProduct::where('list_product_id', $comparaison->id)->delete();
+                
+                // Puis supprimer la comparaison elle-même
+                $comparaison->delete();
+                
+                // Recharger les données
+                $this->comparaisons = $this->comparaisons->reject(function ($item) {
+                    return $item->id == $this->comparaisonToDelete;
+                });
+                
+                // Fermer le modal
+                $this->showDeleteModal = false;
+                
+                // Réinitialiser les variables
+                $this->comparaisonToDelete = null;
+                $this->comparaisonToDeleteName = null;
+                
+                // Émettre une notification de succès
+                $this->dispatch('notify', [
+                    'type' => 'success',
+                    'message' => 'La comparaison et ses détails ont été supprimés avec succès.'
+                ]);
+            }
+        } catch (\Exception $e) {
+            $this->dispatch('notify', [
+                'type' => 'error',
+                'message' => 'Une erreur est survenue lors de la suppression.'
+            ]);
+        }
+    }
 }; ?>
 
 <div 
@@ -83,7 +135,7 @@ new class extends Component {
                     {{-- <th class="uppercase">Statut</th> --}}
                     <th class="uppercase">Date de création</th>
                     <th class="uppercase">Dernière modification</th>
-                    <th class="uppercase">DETAILS</th>
+                    <th class="uppercase">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -102,14 +154,26 @@ new class extends Component {
                         {{ $this->formatDateFr($comparaison->updated_at) }}
                     </td>
                     <td>
-                        <x-button wire:navigate href="{{ route('top-product.show', $comparaison->id) }}" label="Détails" class="btn-primary" />
+                        <div class="flex space-x-2">
+                            <x-button 
+                                wire:navigate 
+                                href="{{ route('top-product.show', $comparaison->id) }}" 
+                                label="Détails" 
+                                class="btn-primary btn-sm" 
+                            />
+                            <x-button 
+                                wire:click="confirmDelete({{ $comparaison->id }}, '{{ addslashes($comparaison->libelle) }}')" 
+                                label="Supprimer" 
+                                class="btn-error btn-sm" 
+                            />
+                        </div>
                     </td>
                 </tr>
                 @endforeach
                 
                 @if($comparaisons->isEmpty() && !$loading)
                 <tr>
-                    <td colspan="4" class="text-center py-8 text-gray-500">
+                    <td colspan="5" class="text-center py-8 text-gray-500">
                         <div class="flex flex-col items-center">
                             <svg class="w-12 h-12 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
@@ -122,6 +186,48 @@ new class extends Component {
             </tbody>
         </table>
     </div>
+
+    <!-- Modal de confirmation de suppression -->
+    <x-modal wire:model="showDeleteModal" title="Confirmer la suppression" class="backdrop-blur">
+        <div class="space-y-4">
+            <div class="alert alert-warning alert-soft">
+                <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.998-.833-2.732 0L4.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                <div>
+                    <h3 class="font-bold">Attention !</h3>
+                    <div class="text-sm">
+                        Cette action est irréversible.
+                    </div>
+                </div>
+            </div>
+
+            <p class="text-gray-700">
+                Êtes-vous sûr de vouloir supprimer la comparaison 
+                <strong>"{{ $comparaisonToDeleteName }}"</strong> ?
+            </p>
+            
+            <p class="text-gray-600 text-sm">
+                Tous les détails de produits associés à cette liste seront également supprimés définitivement.
+            </p>
+        </div>
+
+        <x-slot:actions>
+            <x-button label="Annuler" @click="$wire.showDeleteModal = false" />
+            <x-button 
+                label="Supprimer" 
+                class="btn-error" 
+                wire:click="deleteComparaison" 
+                wire:loading.attr="disabled"
+            >
+                <span wire:loading.remove>Supprimer</span>
+                <span wire:loading>
+                    <span class="loading loading-spinner loading-xs"></span>
+                    Suppression...
+                </span>
+            </x-button>
+        </x-slot:actions>
+    </x-modal>
 
     <!-- Indicateur de chargement -->
     @if($loading)
