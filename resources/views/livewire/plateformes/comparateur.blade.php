@@ -3740,6 +3740,25 @@ new class extends Component {
                                     </div>
                                 </th>
 
+                                 <!-- Colonne Type avec filtre -->
+                                <th
+                                    class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
+                                    <div class="flex flex-col space-y-1">
+                                        <span>Type</span>
+                                        <div class="relative">
+                                            <input type="text" wire:model.live.debounce.800ms="filters.type"
+                                                placeholder="Filtrer..."
+                                                class="px-2 py-1 text-xs border border-gray-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-full"
+                                                wire:loading.attr="disabled">
+                                            <div wire:loading wire:target="filters.type"
+                                                class="absolute right-2 top-1/2 transform -translate-y-1/2">
+                                                <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </th>
+
                                 <!-- Colonne Site Source avec filtre -->
                                 <!-- Colonne Site Source avec filtre multi-select personnalisé -->
                                 <th
@@ -3867,25 +3886,6 @@ new class extends Component {
                                         </div>
                                     </th>
                                 @endif
-
-                                <!-- Colonne Type avec filtre -->
-                                <th
-                                    class="border border-gray-300 px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider bg-gray-200">
-                                    <div class="flex flex-col space-y-1">
-                                        <span>Type</span>
-                                        <div class="relative">
-                                            <input type="text" wire:model.live.debounce.800ms="filters.type"
-                                                placeholder="Filtrer..."
-                                                class="px-2 py-1 text-xs border border-gray-400 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 w-full"
-                                                wire:loading.attr="disabled">
-                                            <div wire:loading wire:target="filters.type"
-                                                class="absolute right-2 top-1/2 transform -translate-y-1/2">
-                                                <div class="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600">
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </th>
 
                                 <!-- Colonne Actions -->
                                 <th
@@ -4114,6 +4114,14 @@ new class extends Component {
                                             @endif
                                         </td>
 
+                                        <!-- Colonne Type -->
+                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
+                                            <span
+                                                class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-300">
+                                                {{ $product->type ?? 'N/A' }}
+                                            </span>
+                                        </td>
+
                                         <!-- Colonne Site Source -->
                                         <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
                                             <div class="flex items-center">
@@ -4214,14 +4222,6 @@ new class extends Component {
                                                 @endif
                                             </td>
                                         @endif
-
-                                        <!-- Colonne Type -->
-                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
-                                            <span
-                                                class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-300">
-                                                {{ $product->type ?? 'N/A' }}
-                                            </span>
-                                        </td>
 
                                         <!-- Colonne Actions -->
                                         <td class="border border-gray-300 px-4 py-3 whitespace-nowrap text-sm font-medium">
