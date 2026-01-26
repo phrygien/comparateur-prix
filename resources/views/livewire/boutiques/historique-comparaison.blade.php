@@ -4,6 +4,7 @@ namespace App\Http\Livewire;
 
 use Livewire\Volt\Component;
 use App\Models\Comparaison;
+use App\Models\DetailProduct;
 use Carbon\Carbon;
 
 new class extends Component {
@@ -55,7 +56,67 @@ new class extends Component {
         Carbon::setLocale('fr');
         
         return Carbon::parse($date)->isoFormat('D MMMM YYYY [à] HH[h]mm');
-    }    
+    }
+    
+// Dans le composant Livewire
+public function deleteComparaison($comparaisonId)
+{
+    $this->js("
+        Swal.fire({
+            title: 'Êtes-vous sûr ?',
+            text: 'Cette action supprimera la comparaison et tous ses détails.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'Oui, supprimer',
+            cancelButtonText: 'Annuler'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                $wire.deleteConfirmed($comparaisonId);
+            }
+        });
+    ");
+}
+
+public function deleteConfirmed($comparaisonId)
+{
+    try {
+        $comparaison = Comparaison::find($comparaisonId);
+        
+        if ($comparaison) {
+            // Supprimer les détails d'abord
+            DetailProduct::where('list_product_id', $comparaison->id)->delete();
+            
+            // Puis supprimer la comparaison
+            $comparaison->delete();
+            
+            // Mettre à jour la liste
+            $this->comparaisons = $this->comparaisons->reject(function ($item) use ($comparaisonId) {
+                return $item->id == $comparaisonId;
+            });
+            
+            $this->js("
+                Swal.fire({
+                    title: 'Supprimé !',
+                    text: 'La comparaison a été supprimée avec succès.',
+                    icon: 'success',
+                    confirmButtonText: 'OK'
+                });
+            ");
+        }
+    } catch (\Exception $e) {
+        $this->js("
+            Swal.fire({
+                title: 'Erreur !',
+                text: 'Une erreur est survenue lors de la suppression.',
+                icon: 'error',
+                confirmButtonText: 'OK'
+            });
+        ");
+    }
+}
+    
 }; ?>
 
 <div 
@@ -102,6 +163,12 @@ new class extends Component {
                     </td>
                     <td>
                         <x-button wire:navigate href="{{ route('top-product.show', $comparaison->id) }}" label="Détails" class="btn-primary" />
+                            <button 
+    wire:click="deleteComparaison({{ $comparaison->id }})" 
+    class="btn btn-error btn-sm"
+>
+    Supprimer
+</button>
                     </td>
                 </tr>
                 @endforeach
