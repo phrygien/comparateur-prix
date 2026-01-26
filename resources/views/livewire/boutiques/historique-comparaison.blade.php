@@ -6,8 +6,11 @@ use Livewire\Volt\Component;
 use App\Models\Comparaison;
 use App\Models\DetailProduct;
 use Carbon\Carbon;
+use Mary\Traits\Toast;
 
 new class extends Component {
+    use Toast;
+
     public $perPage = 15;
     public $page = 1;
     public $loading = false;
@@ -97,16 +100,18 @@ new class extends Component {
                 $this->comparaisonToDeleteName = null;
                 
                 // Émettre une notification de succès
-                $this->dispatch('notify', [
-                    'type' => 'success',
-                    'message' => 'La comparaison et ses détails ont été supprimés avec succès.'
-                ]);
+                $this->success('La comparaison et ses détails ont été supprimés avec succès');
+                // $this->dispatch('notify', [
+                //     'type' => 'success',
+                //     'message' => 'La comparaison et ses détails ont été supprimés avec succès.'
+                // ]);
             }
         } catch (\Exception $e) {
-            $this->dispatch('notify', [
-                'type' => 'error',
-                'message' => 'Une erreur est survenue lors de la suppression.'
-            ]);
+            $this->error('Une erreur est survenue lors de la suppression.')
+            // $this->dispatch('notify', [
+            //     'type' => 'error',
+            //     'message' => 'Une erreur est survenue lors de la suppression.'
+            // ]);
         }
     }
 }; ?>
