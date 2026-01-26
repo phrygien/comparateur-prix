@@ -107,7 +107,7 @@ new class extends Component {
                 // ]);
             }
         } catch (\Exception $e) {
-            $this->error('Une erreur est survenue lors de la suppression.')
+            $this->error('Une erreur est survenue lors de la suppression.');
             // $this->dispatch('notify', [
             //     'type' => 'error',
             //     'message' => 'Une erreur est survenue lors de la suppression.'
