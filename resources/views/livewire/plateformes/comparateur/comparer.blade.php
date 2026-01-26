@@ -3,7 +3,7 @@
 use Livewire\Volt\Component;
 
 new class extends Component {
-    public $productText = "Armani - My Way Sunny Vanilla - Eau de Parfum Vaporisateur 90 ml";
+    public $productText = "Yves Saint Laurent - Loveshine Gloss soin effet repulpant - 10 Stardust Love";
     
     public $vendor = '';
     public $name = '';
