@@ -4090,7 +4090,7 @@ new class extends Component {
                                         </td>
 
                                         <!-- Colonne Variation -->
-                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
+                                        <td class="border border-gray-300 px-4 py-3">
                                             <div class="text-sm text-gray-900 max-w-xs"
                                                 title="{{ $product->variation ?? 'Standard' }}">
                                                 @if($isAutomaticSearch && !empty($searchVariationKeywords))
