@@ -3011,7 +3011,7 @@ new class extends Component {
                                                                 
                                                                 <!-- Produit / Variation -->
                                                                 <td class="text-xs">
-                                                                    <div class="font-medium">{{ Str::limit($competitor->name ?? 'N/A', 30) }}</div>
+                                                                    <div class="font-medium">{{ $competitor->name ?? 'N/A' }}</div>
                                                                     <div class="text-[10px] opacity-70">
                                                                         {{ $competitor->variation ?? 'Standard' }}
                                                                         @if(!empty($competitor->type))
