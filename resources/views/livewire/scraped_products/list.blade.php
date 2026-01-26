@@ -657,7 +657,7 @@ public function exportCsv()
                                 </td>
                                 
                                 <td class="text-gray-800 text-sm px-3 py-2 border-r border-gray-300 text-center font-semibold text-green-600">
-                                    <div class="block lg:hidden font-semibold text-gray-600">Prix:</div>
+                                    <span class="lg:hidden font-semibold text-gray-600">Prix: </span>
                                     {{ $product->prix_ht }} {{ $product->currency }}
                                 </td>
                                 
