@@ -600,7 +600,10 @@ public function exportCsv()
                             <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-48 lg:min-w-56 xl:min-w-64">Nom</th>
                             <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32 max-w-48 excel-truncate hidden md:table-cell">Type</th>
                             <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32 max-w-48 excel-truncate hidden lg:table-cell">Variation</th>
-                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-32">Prix HT</th>
+                            <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center">
+    <div class="hidden lg:block">Prix HT</div>
+    <div class="block lg:hidden">Prix</div>
+</th>
                             <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 min-w-32 hidden xl:table-cell">Site</th>
                             <th class="font-bold text-gray-700 text-sm px-3 py-2 border-r border-gray-300 text-center w-32 hidden lg:table-cell">Date</th>
                             <th class="font-bold text-gray-700 text-sm px-3 py-2 text-center w-24">Actions</th>
