@@ -38,7 +38,6 @@ new class extends Component {
                     $this->searchResults[] = $result;
                 }
             }
-            
 
         } catch (\Exception $e) {
             $this->errorMessage = 'Erreur: ' . $e->getMessage();
@@ -50,8 +49,8 @@ new class extends Component {
     private function searchOnSite($site)
     {
         try {
-            // Appel à l'API OpenAI pour construire une stratégie de recherche
-            $response = Http::withHeaders([
+            // Étape 1: Demander à OpenAI de scraper/analyser le site pour trouver le produit exact
+            $response = Http::timeout(30)->withHeaders([
                 'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
                 'Content-Type' => 'application/json',
             ])->post('https://api.openai.com/v1/chat/completions', [
@@ -59,15 +58,15 @@ new class extends Component {
                 'messages' => [
                     [
                         'role' => 'system',
-                        'content' => 'Tu es un assistant spécialisé dans la recherche de produits sur des sites e-commerce. Tu dois analyser le nom du produit et suggérer comment le trouver sur un site concurrent.'
+                        'content' => 'Tu es un expert en web scraping et recherche de produits. Tu dois trouver l\'URL EXACTE de la page produit sur un site e-commerce, pas une page de recherche. Analyse la structure typique des URLs du site pour construire l\'URL probable de la page produit.'
                     ],
                     [
                         'role' => 'user',
-                        'content' => "Produit à rechercher: {$this->productName}\nSite concurrent: {$site->name} ({$site->url})\n\nGénère une URL de recherche probable et estime un prix basé sur des produits similaires. Réponds au format JSON avec les clés: search_url, estimated_price, product_name, notes"
+                        'content' => "Produit à trouver: {$this->productName}\n\nSite concurrent: {$site->name}\nURL du site: {$site->url}\n\nInstructions:\n1. Analyse le nom du produit (marque, gamme, type, volume)\n2. Construis l'URL DIRECTE de la page produit (pas une recherche)\n3. Estime le prix basé sur ce type de produit\n4. Format de réponse STRICT en JSON:\n{\n  \"product_url\": \"URL complète de la page produit\",\n  \"estimated_price\": \"Prix en EUR\",\n  \"product_name\": \"Nom formaté du produit\",\n  \"confidence\": \"high/medium/low\",\n  \"notes\": \"Explication de ta logique\"\n}\n\nSi tu ne peux pas trouver une URL exacte, mets 'not_found' dans product_url."
                     ]
                 ],
-                'temperature' => 0.7,
-                'max_tokens' => 500
+                'temperature' => 0.3,
+                'max_tokens' => 600
             ]);
 
             if ($response->successful()) {
@@ -79,13 +78,26 @@ new class extends Component {
                 if (!empty($matches[0])) {
                     $parsedData = json_decode($matches[0], true);
                     
+                    $productUrl = $parsedData['product_url'] ?? 'not_found';
+                    $confidence = $parsedData['confidence'] ?? 'low';
+                    
+                    // Si l'URL n'a pas été trouvée, on laisse null
+                    if ($productUrl === 'not_found' || empty($productUrl)) {
+                        $productUrl = null;
+                        $status = 'Non trouvé';
+                    } else {
+                        $status = $confidence === 'high' ? 'Trouvé ✓' : 'À vérifier';
+                    }
+                    
                     return [
                         'site_name' => $site->name,
                         'site_url' => $site->url,
-                        'search_url' => $parsedData['search_url'] ?? $site->url,
+                        'product_url' => $productUrl,
                         'estimated_price' => $parsedData['estimated_price'] ?? 'N/A',
                         'product_name' => $parsedData['product_name'] ?? $this->productName,
-                        'notes' => $parsedData['notes'] ?? 'Recherche générée par IA'
+                        'confidence' => $confidence,
+                        'status' => $status,
+                        'notes' => $parsedData['notes'] ?? 'Analyse par IA'
                     ];
                 }
             }
@@ -94,14 +106,25 @@ new class extends Component {
             return [
                 'site_name' => $site->name,
                 'site_url' => $site->url,
-                'search_url' => $site->url . '/search?q=' . urlencode($this->productName),
-                'estimated_price' => 'À vérifier',
+                'product_url' => null,
+                'estimated_price' => 'N/A',
                 'product_name' => $this->productName,
-                'notes' => 'Recherche manuelle nécessaire'
+                'confidence' => 'low',
+                'status' => 'Erreur API',
+                'notes' => 'Impossible de contacter l\'API OpenAI'
             ];
 
         } catch (\Exception $e) {
-            return null;
+            return [
+                'site_name' => $site->name,
+                'site_url' => $site->url,
+                'product_url' => null,
+                'estimated_price' => 'N/A',
+                'product_name' => $this->productName,
+                'confidence' => 'low',
+                'status' => 'Erreur',
+                'notes' => 'Erreur: ' . $e->getMessage()
+            ];
         }
     }
 
@@ -176,40 +199,83 @@ new class extends Component {
                         <th>Site concurrent</th>
                         <th>Produit trouvé</th>
                         <th>Prix estimé</th>
-                        <th>Notes</th>
+                        <th>Statut</th>
+                        <th>Confiance</th>
                         <th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach($searchResults as $index => $result)
-                        <tr>
+                        <tr class="{{ $result['product_url'] ? '' : 'opacity-60' }}">
                             <th>{{ $index + 1 }}</th>
                             <td>
                                 <div class="font-bold">{{ $result['site_name'] }}</div>
                                 <div class="text-sm opacity-50">{{ $result['site_url'] }}</div>
                             </td>
-                            <td>{{ $result['product_name'] }}</td>
                             <td>
-                                <span class="badge badge-success">{{ $result['estimated_price'] }}</span>
+                                <div>{{ $result['product_name'] }}</div>
+                                @if($result['product_url'])
+                                    <div class="text-xs opacity-70 mt-1 max-w-xs truncate" title="{{ $result['product_url'] }}">
+                                        {{ $result['product_url'] }}
+                                    </div>
+                                @endif
                             </td>
                             <td>
-                                <div class="text-sm max-w-xs truncate" title="{{ $result['notes'] }}">
-                                    {{ $result['notes'] }}
+                                <span class="badge {{ $result['estimated_price'] !== 'N/A' ? 'badge-success' : 'badge-ghost' }}">
+                                    {{ $result['estimated_price'] }}
+                                </span>
+                            </td>
+                            <td>
+                                @if($result['status'] === 'Trouvé ✓')
+                                    <span class="badge badge-success">{{ $result['status'] }}</span>
+                                @elseif($result['status'] === 'À vérifier')
+                                    <span class="badge badge-warning">{{ $result['status'] }}</span>
+                                @else
+                                    <span class="badge badge-error">{{ $result['status'] }}</span>
+                                @endif
+                            </td>
+                            <td>
+                                <div class="flex items-center gap-1">
+                                    @if($result['confidence'] === 'high')
+                                        <div class="badge badge-sm badge-success gap-1">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                                            </svg>
+                                            Haute
+                                        </div>
+                                    @elseif($result['confidence'] === 'medium')
+                                        <div class="badge badge-sm badge-warning gap-1">Moyenne</div>
+                                    @else
+                                        <div class="badge badge-sm badge-ghost gap-1">Faible</div>
+                                    @endif
                                 </div>
                             </td>
                             <td>
-                                <a 
-                                    href="{{ $result['search_url'] }}" 
-                                    target="_blank"
-                                    class="btn btn-sm btn-outline"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                    </svg>
-                                    Visiter
-                                </a>
+                                @if($result['product_url'])
+                                    <a 
+                                        href="{{ $result['product_url'] }}" 
+                                        target="_blank"
+                                        class="btn btn-sm btn-primary"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                        </svg>
+                                        Voir produit
+                                    </a>
+                                @else
+                                    <button class="btn btn-sm btn-disabled" disabled>
+                                        Non disponible
+                                    </button>
+                                @endif
                             </td>
                         </tr>
+                        @if($result['notes'])
+                            <tr class="bg-base-200/50">
+                                <td colspan="7" class="text-sm italic opacity-70">
+                                    💡 {{ $result['notes'] }}
+                                </td>
+                            </tr>
+                        @endif
                     @endforeach
                 </tbody>
             </table>
