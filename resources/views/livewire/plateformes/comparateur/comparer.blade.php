@@ -1,7 +1,7 @@
 <?php
 
 use Livewire\Volt\Component;
-use App\Models\ScrapedProduct;
+use App\Models\Product;
 use Illuminate\Support\Facades\DB;
 
 new class extends Component {
@@ -81,7 +81,7 @@ new class extends Component {
             return;
         }
         
-        $query = ScrapedProduct::query();
+        $query = Product::query();
         
         // Recherche par vendor (marque)
         if (!empty($this->vendor)) {
