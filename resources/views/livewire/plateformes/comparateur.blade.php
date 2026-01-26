@@ -4115,7 +4115,7 @@ new class extends Component {
                                         </td>
 
                                         <!-- Colonne Type -->
-                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap">
+                                        <td class="border border-gray-300 px-4 py-3 whitespace-nowrap" style="text-wrap: auto;">
                                             <span
                                                 class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-300">
                                                 {{ $product->type ?? 'N/A' }}
