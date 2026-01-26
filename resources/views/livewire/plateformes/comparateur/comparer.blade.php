@@ -39,6 +39,8 @@ new class extends Component {
                 }
             }
 
+            dd($this->searchResults);
+
         } catch (\Exception $e) {
             $this->errorMessage = 'Erreur: ' . $e->getMessage();
         }
