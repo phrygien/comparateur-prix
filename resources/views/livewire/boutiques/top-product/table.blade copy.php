@@ -9,6 +9,7 @@ use App\Models\Comparaison;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
+use OpenAI;
 
 new class extends Component {
     use Toast;
@@ -44,6 +45,9 @@ new class extends Component {
     public array $siteFilters = [];
     public array $availableSites = [];
     public array $selectedSitesByProduct = [];
+
+    // Propriété pour activer/désactiver OpenAI
+    public bool $useOpenAI = true;
 
     public function mount($id): void
     {
@@ -282,8 +286,13 @@ new class extends Component {
             // Nettoyer le prix
             $cleanPrice = $this->cleanPrice($price);
             
-            // Utiliser l'algorithme de recherche amélioré
-            $competitors = $this->findCompetitorsForProduct($cleanedProductName, $cleanPrice);
+            // Utiliser OpenAI si activé
+            if ($this->useOpenAI && config('services.openai.api_key')) {
+                $competitors = $this->findCompetitorsWithOpenAI($cleanedProductName, $cleanPrice, $sku);
+            } else {
+                // Utiliser l'algorithme de recherche traditionnel
+                $competitors = $this->findCompetitorsForProduct($cleanedProductName, $cleanPrice);
+            }
             
             if (!empty($competitors)) {
                 // Compter les bons résultats (similarité >= 0.6)
@@ -294,7 +303,8 @@ new class extends Component {
                     'our_price' => $cleanPrice,
                     'competitors' => $competitors,
                     'count' => count($competitors),
-                    'good_count' => count($goodResults)
+                    'good_count' => count($goodResults),
+                    'source' => $this->useOpenAI ? 'openai' : 'traditional'
                 ];
                 
                 // Initialiser les sites sélectionnés avec tous les sites disponibles
@@ -309,7 +319,8 @@ new class extends Component {
                     'our_price' => $cleanPrice,
                     'competitors' => [],
                     'count' => 0,
-                    'good_count' => 0
+                    'good_count' => 0,
+                    'source' => $this->useOpenAI ? 'openai' : 'traditional'
                 ];
             }
 
@@ -320,7 +331,8 @@ new class extends Component {
                 'competitors' => [],
                 'count' => 0,
                 'good_count' => 0,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'source' => $this->useOpenAI ? 'openai_error' : 'traditional_error'
             ];
         } finally {
             unset($this->searchingProducts[$sku]);
@@ -347,22 +359,29 @@ new class extends Component {
             $searchQuery = $this->manualSearchQueries[$sku];
             $cleanPrice = $this->cleanPrice($price);
             
-            // Utiliser la même logique de recherche que la recherche automatique
-            $competitors = $this->findCompetitorsForProduct($searchQuery, $cleanPrice);
+            // Utiliser OpenAI si activé
+            if ($this->useOpenAI && config('services.openai.api_key')) {
+                $competitors = $this->findCompetitorsWithOpenAI($searchQuery, $cleanPrice, $sku);
+            } else {
+                // Utiliser la même logique de recherche que la recherche automatique
+                $competitors = $this->findCompetitorsForProduct($searchQuery, $cleanPrice);
+            }
             
             if (!empty($competitors)) {
                 $this->manualSearchResults[$sku] = [
                     'search_query' => $searchQuery,
                     'our_price' => $cleanPrice,
                     'competitors' => $competitors,
-                    'count' => count($competitors)
+                    'count' => count($competitors),
+                    'source' => $this->useOpenAI ? 'openai' : 'traditional'
                 ];
             } else {
                 $this->manualSearchResults[$sku] = [
                     'search_query' => $searchQuery,
                     'our_price' => $cleanPrice,
                     'competitors' => [],
-                    'count' => 0
+                    'count' => 0,
+                    'source' => $this->useOpenAI ? 'openai' : 'traditional'
                 ];
             }
 
@@ -372,7 +391,8 @@ new class extends Component {
                 'our_price' => $this->cleanPrice($price),
                 'competitors' => [],
                 'count' => 0,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'source' => $this->useOpenAI ? 'openai_error' : 'traditional_error'
             ];
         } finally {
             unset($this->manualSearchLoading[$sku]);
@@ -459,6 +479,21 @@ new class extends Component {
     }
 
     /**
+     * Toggle l'utilisation d'OpenAI
+     */
+    public function toggleOpenAI(): void
+    {
+        $this->useOpenAI = !$this->useOpenAI;
+        
+        // Réinitialiser tous les résultats si on change de méthode
+        $this->competitorResults = [];
+        $this->manualSearchResults = [];
+        $this->expandedProducts = [];
+        
+        $this->success($this->useOpenAI ? 'OpenAI activé' : 'OpenAI désactivé');
+    }
+
+    /**
      * Obtenir les produits de la page courante
      */
     protected function getCurrentPageProducts(): array
@@ -537,8 +572,684 @@ new class extends Component {
     }
 
     /**
-     * Algorithme de recherche de concurrents AMÉLIORÉ
-     * Utilise la même logique que le premier composant
+     * NOUVELLE MÉTHODE : Recherche de concurrents avec OpenAI
+     */
+    protected function findCompetitorsWithOpenAI(string $search, float $ourPrice, string $sku = ''): array
+    {
+        $cacheKey = 'openai_competitors_' . md5($search . '_' . $ourPrice . '_' . $sku);
+        $cached = Cache::get($cacheKey);
+        
+        if ($cached !== null) {
+            return $cached;
+        }
+        
+        try {
+            // 1. Analyser le produit avec OpenAI
+            $analysis = $this->analyzeProductWithOpenAI($search);
+            
+            // 2. Générer des termes de recherche optimisés
+            $searchTerms = $this->generateSearchTermsWithOpenAI($search);
+            
+            // 3. Rechercher avec les composants extraits
+            $competitors = $this->searchWithOpenAIAnalysis($analysis, $searchTerms, $search);
+            
+            // 4. Filtrer avec OpenAI si nécessaire
+            if (count($competitors) > 10) {
+                $competitors = $this->filterCompetitorsWithOpenAI($search, $competitors);
+            }
+            
+            // 5. Calculer la similarité avec les résultats OpenAI
+            $competitorsWithSimilarity = $this->calculateSimilarityWithOpenAI($search, $competitors, $analysis);
+            
+            // 6. Ajouter les comparaisons de prix
+            $competitorsWithComparison = $this->addPriceComparisons($competitorsWithSimilarity, $ourPrice);
+            
+            // Stocker les métadonnées OpenAI
+            foreach ($competitorsWithComparison as &$competitor) {
+                $competitor->openai_analysis = $analysis;
+                $competitor->search_terms = $searchTerms;
+            }
+            
+            Cache::put($cacheKey, $competitorsWithComparison, now()->addHours(2));
+            
+            return $competitorsWithComparison;
+            
+        } catch (\Exception $e) {
+            \Log::error('OpenAI search error: ' . $e->getMessage());
+            // Fallback vers la méthode traditionnelle
+            return $this->findCompetitorsForProduct($search, $ourPrice);
+        }
+    }
+
+    /**
+     * Analyser un produit avec OpenAI
+     */
+    protected function analyzeProductWithOpenAI(string $productName): array
+    {
+        $cacheKey = 'openai_analysis_' . md5($productName);
+        $cached = Cache::get($cacheKey);
+        
+        if ($cached !== null) {
+            return $cached;
+        }
+        
+        $apiKey = config('services.openai.api_key');
+        
+        if (empty($apiKey)) {
+            return $this->getFallbackAnalysis($productName);
+        }
+        
+        try {
+            $client = OpenAI::client($apiKey);
+            
+            $response = $client->chat()->create([
+                'model' => 'gpt-3.5-turbo',
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => 'Tu es un expert en analyse de produits cosmétiques et parfums. 
+                        Analyse ce nom de produit et extrais ces informations au format JSON:
+                        {
+                            "vendor": "marque/fabricant",
+                            "product_name": "nom principal du produit sans la marque",
+                            "variation": "variation (couleur, parfum, taille, édition limitée, etc.)",
+                            "type": "type de produit (eau de parfum, crème, gel, coffret, etc.)",
+                            "keywords": ["mots-clés importants"],
+                            "is_kit": "boolean si c\'est un coffret/kit",
+                            "volume_ml": "volume en ml si présent",
+                            "weight_g": "poids en g si présent"
+                        }
+                        Retourne uniquement le JSON, sans autre texte.'
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => $productName
+                    ]
+                ],
+                'temperature' => 0.3,
+                'max_tokens' => 500,
+            ]);
+            
+            $content = $response->choices[0]->message->content;
+            
+            // Extraire le JSON
+            if (preg_match('/\{.*\}/s', $content, $matches)) {
+                $json = $matches[0];
+                $analysis = json_decode($json, true);
+                
+                if ($analysis) {
+                    Cache::put($cacheKey, $analysis, now()->addHours(24));
+                    return $analysis;
+                }
+            }
+            
+        } catch (\Exception $e) {
+            \Log::error('OpenAI analysis error: ' . $e->getMessage());
+        }
+        
+        return $this->getFallbackAnalysis($productName);
+    }
+
+    /**
+     * Générer des termes de recherche avec OpenAI
+     */
+    protected function generateSearchTermsWithOpenAI(string $productName): array
+    {
+        $cacheKey = 'openai_search_terms_' . md5($productName);
+        $cached = Cache::get($cacheKey);
+        
+        if ($cached !== null) {
+            return $cached;
+        }
+        
+        $apiKey = config('services.openai.api_key');
+        
+        if (empty($apiKey)) {
+            return [
+                'terms' => [$productName],
+                'exact_match' => $productName,
+                'broad_match' => $productName
+            ];
+        }
+        
+        try {
+            $client = OpenAI::client($apiKey);
+            
+            $response = $client->chat()->create([
+                'model' => 'gpt-3.5-turbo',
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => 'Génère 5-10 variations de termes de recherche optimisés pour trouver ce produit chez des concurrents.
+                        Retourne au format JSON: {
+                            "terms": ["terme1", "terme2", ...],
+                            "exact_match": "terme de recherche exact le plus précis",
+                            "broad_match": "terme de recherche large pour trouver des produits similaires"
+                        }'
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => "Produit: " . $productName
+                    ]
+                ],
+                'temperature' => 0.4,
+                'max_tokens' => 300,
+            ]);
+            
+            $content = $response->choices[0]->message->content;
+            
+            if (preg_match('/\{.*\}/s', $content, $matches)) {
+                $json = $matches[0];
+                $terms = json_decode($json, true);
+                
+                if ($terms) {
+                    Cache::put($cacheKey, $terms, now()->addHours(12));
+                    return $terms;
+                }
+            }
+            
+        } catch (\Exception $e) {
+            \Log::error('OpenAI search terms error: ' . $e->getMessage());
+        }
+        
+        return [
+            'terms' => [$productName],
+            'exact_match' => $productName,
+            'broad_match' => $productName
+        ];
+    }
+
+    /**
+     * Rechercher avec l'analyse OpenAI
+     */
+    protected function searchWithOpenAIAnalysis(array $analysis, array $searchTerms, string $originalSearch): array
+    {
+        $allCompetitors = [];
+        $seenIds = [];
+        
+        // Stratégie 1: Recherche avec les termes générés par OpenAI
+        if (!empty($searchTerms['terms'])) {
+            foreach ($searchTerms['terms'] as $term) {
+                $results = $this->searchWithTermOpenAI($term);
+                foreach ($results as $result) {
+                    $id = $result->id ?? $result->url;
+                    if (!in_array($id, $seenIds)) {
+                        $result->search_strategy = 'openai_term';
+                        $result->search_term = $term;
+                        $allCompetitors[] = $result;
+                        $seenIds[] = $id;
+                    }
+                }
+            }
+        }
+        
+        // Stratégie 2: Recherche par vendor (extrait par OpenAI)
+        if (!empty($analysis['vendor'])) {
+            $vendorResults = $this->searchByVendorOpenAI($analysis['vendor']);
+            foreach ($vendorResults as $result) {
+                $id = $result->id ?? $result->url;
+                if (!in_array($id, $seenIds)) {
+                    $result->search_strategy = 'openai_vendor';
+                    $allCompetitors[] = $result;
+                    $seenIds[] = $id;
+                }
+            }
+        }
+        
+        // Stratégie 3: Recherche par type (extrait par OpenAI)
+        if (!empty($analysis['type'])) {
+            $typeResults = $this->searchByTypeOpenAI($analysis['type'], $analysis['keywords'] ?? []);
+            foreach ($typeResults as $result) {
+                $id = $result->id ?? $result->url;
+                if (!in_array($id, $seenIds)) {
+                    $result->search_strategy = 'openai_type';
+                    $allCompetitors[] = $result;
+                    $seenIds[] = $id;
+                }
+            }
+        }
+        
+        // Stratégie 4: Recherche par nom de produit (extrait par OpenAI)
+        if (!empty($analysis['product_name'])) {
+            $productNameResults = $this->searchByProductNameOpenAI($analysis['product_name']);
+            foreach ($productNameResults as $result) {
+                $id = $result->id ?? $result->url;
+                if (!in_array($id, $seenIds)) {
+                    $result->search_strategy = 'openai_product_name';
+                    $allCompetitors[] = $result;
+                    $seenIds[] = $id;
+                }
+            }
+        }
+        
+        // Stratégie 5: Fallback - recherche FULLTEXT avec le terme exact d'OpenAI
+        if (count($allCompetitors) < 10 && !empty($searchTerms['exact_match'])) {
+            $exactResults = $this->searchByFulltextOpenAI($searchTerms['exact_match']);
+            foreach ($exactResults as $result) {
+                $id = $result->id ?? $result->url;
+                if (!in_array($id, $seenIds)) {
+                    $result->search_strategy = 'openai_exact_match';
+                    $allCompetitors[] = $result;
+                    $seenIds[] = $id;
+                }
+            }
+        }
+        
+        // Stratégie 6: Recherche traditionnelle comme fallback
+        if (count($allCompetitors) < 5) {
+            $traditionalResults = $this->findCompetitorsForProduct($originalSearch, 0);
+            foreach ($traditionalResults as $result) {
+                $id = $result->id ?? $result->url;
+                if (!in_array($id, $seenIds)) {
+                    $result->search_strategy = 'traditional_fallback';
+                    $allCompetitors[] = $result;
+                    $seenIds[] = $id;
+                }
+            }
+        }
+        
+        return $allCompetitors;
+    }
+
+    /**
+     * Recherche avec un terme spécifique (OpenAI)
+     */
+    protected function searchWithTermOpenAI(string $term): array
+    {
+        try {
+            $query = "
+                SELECT 
+                    lp.*,
+                    ws.name as site_name,
+                    lp.image_url as image_url,
+                    lp.url as product_url,
+                    MATCH(lp.name, lp.vendor, lp.type, lp.variation) 
+                    AGAINST(? IN BOOLEAN MODE) as relevance_score
+                FROM last_price_scraped_product lp
+                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+                WHERE MATCH(lp.name, lp.vendor, lp.type, lp.variation) 
+                    AGAINST(? IN BOOLEAN MODE)
+                AND (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
+                ORDER BY relevance_score DESC, lp.prix_ht ASC
+                LIMIT 20
+            ";
+            
+            $booleanTerm = '+' . str_replace(' ', ' +', $term) . '*';
+            
+            return DB::connection('mysql')->select($query, [$booleanTerm, $booleanTerm]);
+            
+        } catch (\Exception $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Recherche par vendor (OpenAI)
+     */
+    protected function searchByVendorOpenAI(string $vendor): array
+    {
+        try {
+            // Créer des variations du vendor
+            $vendorVariations = $this->getVendorVariations($vendor);
+            
+            $vendorConditions = [];
+            $params = [];
+            
+            foreach ($vendorVariations as $variation) {
+                $vendorConditions[] = "lp.vendor LIKE ?";
+                $params[] = '%' . $variation . '%';
+            }
+            
+            $query = "
+                SELECT 
+                    lp.*,
+                    ws.name as site_name,
+                    lp.image_url as image_url,
+                    lp.url as product_url
+                FROM last_price_scraped_product lp
+                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+                WHERE (" . implode(' OR ', $vendorConditions) . ")
+                AND (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
+                ORDER BY lp.prix_ht ASC
+                LIMIT 15
+            ";
+            
+            return DB::connection('mysql')->select($query, $params);
+            
+        } catch (\Exception $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Recherche par type (OpenAI)
+     */
+    protected function searchByTypeOpenAI(string $type, array $keywords): array
+    {
+        try {
+            if (empty($keywords)) {
+                $keywords = [$type];
+            }
+            
+            $conditions = [];
+            $params = [];
+            
+            // Condition pour le type
+            $conditions[] = "lp.type LIKE ?";
+            $params[] = '%' . $type . '%';
+            
+            // Conditions pour les keywords
+            foreach (array_slice($keywords, 0, 3) as $keyword) {
+                $conditions[] = "(lp.name LIKE ? OR lp.variation LIKE ?)";
+                $params[] = '%' . $keyword . '%';
+                $params[] = '%' . $keyword . '%';
+            }
+            
+            $query = "
+                SELECT 
+                    lp.*,
+                    ws.name as site_name,
+                    lp.image_url as image_url,
+                    lp.url as product_url
+                FROM last_price_scraped_product lp
+                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+                WHERE (" . implode(' OR ', $conditions) . ")
+                AND (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
+                ORDER BY lp.prix_ht ASC
+                LIMIT 15
+            ";
+            
+            return DB::connection('mysql')->select($query, $params);
+            
+        } catch (\Exception $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Recherche par nom de produit (OpenAI)
+     */
+    protected function searchByProductNameOpenAI(string $productName): array
+    {
+        try {
+            // Nettoyer le nom du produit
+            $cleanName = $this->normalizeAndCleanText($productName);
+            
+            // Extraire les mots clés
+            $keywords = $this->extractSearchKeywords($cleanName);
+            
+            if (empty($keywords)) {
+                return [];
+            }
+            
+            $keywordConditions = [];
+            $params = [];
+            
+            foreach (array_slice($keywords, 0, 5) as $keyword) {
+                $keywordConditions[] = "(lp.name LIKE ? OR lp.variation LIKE ?)";
+                $params[] = '%' . $keyword . '%';
+                $params[] = '%' . $keyword . '%';
+            }
+            
+            $query = "
+                SELECT 
+                    lp.*,
+                    ws.name as site_name,
+                    lp.image_url as image_url,
+                    lp.url as product_url
+                FROM last_price_scraped_product lp
+                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+                WHERE (" . implode(' OR ', $keywordConditions) . ")
+                AND (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
+                ORDER BY lp.prix_ht ASC
+                LIMIT 15
+            ";
+            
+            return DB::connection('mysql')->select($query, $params);
+            
+        } catch (\Exception $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Recherche FULLTEXT avec terme OpenAI
+     */
+    protected function searchByFulltextOpenAI(string $searchQuery): array
+    {
+        return $this->searchByFulltext($this->prepareSearchTermsForFulltext($searchQuery));
+    }
+
+    /**
+     * Filtrer les concurrents avec OpenAI
+     */
+    protected function filterCompetitorsWithOpenAI(string $ourProduct, array $competitors): array
+    {
+        if (count($competitors) <= 20) {
+            return $competitors;
+        }
+        
+        $apiKey = config('services.openai.api_key');
+        
+        if (empty($apiKey)) {
+            // Limiter manuellement si pas d'OpenAI
+            return array_slice($competitors, 0, 20);
+        }
+        
+        try {
+            // Préparer les données pour OpenAI
+            $competitorList = [];
+            foreach (array_slice($competitors, 0, 30) as $index => $competitor) { // Limiter à 30 pour éviter les coûts
+                $competitorList[] = [
+                    'id' => $index,
+                    'name' => $competitor->name ?? '',
+                    'vendor' => $competitor->vendor ?? '',
+                    'variation' => $competitor->variation ?? '',
+                    'type' => $competitor->type ?? ''
+                ];
+            }
+            
+            $competitorText = json_encode($competitorList);
+            
+            $client = OpenAI::client($apiKey);
+            
+            $response = $client->chat()->create([
+                'model' => 'gpt-3.5-turbo',
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => 'Analyse ces produits concurrents et sélectionne les 10-15 plus similaires à notre produit.
+                        Notre produit: "' . $ourProduct . '"
+                        Retourne un tableau JSON avec les IDs des produits les plus similaires, triés par similarité décroissante.
+                        Format: [{"id": 0, "similarity_score": 0.85, "reason": "explication"}, ...]'
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => $competitorText
+                    ]
+                ],
+                'temperature' => 0.2,
+                'max_tokens' => 800,
+            ]);
+            
+            $content = $response->choices[0]->message->content;
+            
+            if (preg_match('/\[.*\]/s', $content, $matches)) {
+                $json = $matches[0];
+                $selectedIds = json_decode($json, true);
+                
+                if ($selectedIds) {
+                    // Filtrer et trier selon les scores OpenAI
+                    $filtered = [];
+                    foreach ($selectedIds as $selected) {
+                        $id = $selected['id'] ?? null;
+                        if (isset($competitors[$id])) {
+                            $competitors[$id]->openai_similarity_score = $selected['similarity_score'] ?? 0.7;
+                            $competitors[$id]->openai_similarity_reason = $selected['reason'] ?? '';
+                            $filtered[] = $competitors[$id];
+                        }
+                    }
+                    
+                    return $filtered;
+                }
+            }
+            
+        } catch (\Exception $e) {
+            \Log::error('OpenAI filter error: ' . $e->getMessage());
+        }
+        
+        // Fallback: prendre les premiers 20
+        return array_slice($competitors, 0, 20);
+    }
+
+    /**
+     * Calculer la similarité avec OpenAI
+     */
+    protected function calculateSimilarityWithOpenAI(string $ourProduct, array $competitors, array $analysis): array
+    {
+        foreach ($competitors as &$competitor) {
+            // Si OpenAI a déjà calculé un score, l'utiliser
+            if (isset($competitor->openai_similarity_score)) {
+                $competitor->similarity_score = $competitor->openai_similarity_score;
+            } else {
+                // Sinon, calculer avec la méthode traditionnelle améliorée
+                $components = [
+                    'vendor' => $analysis['vendor'] ?? '',
+                    'product_name' => $analysis['product_name'] ?? '',
+                    'keywords' => $analysis['keywords'] ?? [],
+                    'type' => $analysis['type'] ?? '',
+                    'variation' => $analysis['variation'] ?? ''
+                ];
+                
+                $competitor->similarity_score = $this->computeSimilarityScoreImproved(
+                    $competitor, 
+                    $ourProduct, 
+                    $components
+                );
+            }
+            
+            $competitor->match_level = $this->getMatchLevel($competitor->similarity_score);
+        }
+        
+        // Trier par score décroissant
+        usort($competitors, function($a, $b) {
+            return ($b->similarity_score ?? 0) <=> ($a->similarity_score ?? 0);
+        });
+        
+        return $competitors;
+    }
+
+    /**
+     * Obtenir des variations de vendor
+     */
+    protected function getVendorVariations(string $vendor): array
+    {
+        $variations = [trim($vendor)];
+        
+        // Variations de casse
+        $variations[] = mb_strtoupper($vendor);
+        $variations[] = mb_strtolower($vendor);
+        $variations[] = mb_convert_case($vendor, MB_CASE_TITLE);
+        
+        // Variations sans espaces
+        if (str_contains($vendor, ' ')) {
+            $variations[] = str_replace(' ', '', $vendor);
+        }
+        
+        // Variations avec tirets
+        if (str_contains($vendor, ' ')) {
+            $variations[] = str_replace(' ', '-', $vendor);
+        }
+        
+        return array_unique(array_filter($variations));
+    }
+
+    /**
+     * Analyse de fallback
+     */
+    protected function getFallbackAnalysis(string $productName): array
+    {
+        // Logique simple d'extraction
+        $parts = explode(' - ', $productName, 3);
+        
+        return [
+            'vendor' => $parts[0] ?? '',
+            'product_name' => $parts[1] ?? $productName,
+            'variation' => $parts[2] ?? '',
+            'type' => $this->guessType($productName),
+            'keywords' => $this->extractKeywordsSimple($productName),
+            'is_kit' => stripos($productName, 'coffret') !== false || stripos($productName, 'kit') !== false,
+            'volume_ml' => $this->extractVolume($productName),
+            'weight_g' => $this->extractWeight($productName)
+        ];
+    }
+
+    /**
+     * Deviner le type
+     */
+    protected function guessType(string $productName): string
+    {
+        $types = [
+            'eau de parfum' => ['eau de parfum', 'edp', 'parfum'],
+            'eau de toilette' => ['eau de toilette', 'edt'],
+            'crème' => ['crème', 'creme', 'cream'],
+            'lotion' => ['lotion'],
+            'gel' => ['gel'],
+            'sérum' => ['sérum', 'serum'],
+            'shampooing' => ['shampooing', 'shampoing'],
+            'coffret' => ['coffret', 'kit', 'set']
+        ];
+        
+        $nameLower = mb_strtolower($productName);
+        
+        foreach ($types as $type => $keywords) {
+            foreach ($keywords as $keyword) {
+                if (str_contains($nameLower, $keyword)) {
+                    return $type;
+                }
+            }
+        }
+        
+        return '';
+    }
+
+    /**
+     * Extraire des mots-clés simples
+     */
+    protected function extractKeywordsSimple(string $productName): array
+    {
+        $stopWords = ['de', 'le', 'la', 'les', 'un', 'une', 'des', 'et', 'pour', 'avec', 'ml', 'g', 'pour'];
+        $words = preg_split('/[\s\-]+/', mb_strtolower($productName));
+        
+        return array_filter(array_unique($words), function($word) use ($stopWords) {
+            return strlen($word) > 2 && !in_array($word, $stopWords) && !is_numeric($word);
+        });
+    }
+
+    /**
+     * Extraire le volume
+     */
+    protected function extractVolume(string $productName): ?int
+    {
+        if (preg_match('/(\d+)\s*ml/i', $productName, $matches)) {
+            return (int) $matches[1];
+        }
+        return null;
+    }
+
+    /**
+     * Extraire le poids
+     */
+    protected function extractWeight(string $productName): ?int
+    {
+        if (preg_match('/(\d+)\s*g/i', $productName, $matches)) {
+            return (int) $matches[1];
+        }
+        return null;
+    }
+
+    /**
+     * Algorithme de recherche de concurrents traditionnel
      */
     protected function findCompetitorsForProduct(string $search, float $ourPrice): array
     {
@@ -551,10 +1262,10 @@ new class extends Component {
                 return $cached;
             }
             
-            // 1. Extraire le vendor de manière intelligente (comme le premier composant)
+            // 1. Extraire le vendor de manière intelligente
             $vendor = $this->extractVendorFromSearchImproved($search);
             
-            // 2. Extraire les mots de recherche significatifs (méthode améliorée)
+            // 2. Extraire les mots de recherche significatifs
             $searchKeywords = $this->extractSearchKeywords($search, $vendor);
             
             // 3. Extraire les composants de la recherche
@@ -566,7 +1277,7 @@ new class extends Component {
             // 5. Recherche avec plusieurs stratégies
             $competitors = $this->searchWithMultipleStrategies($search, $vendor, $vendorVariations, $searchKeywords, $components);
             
-            // 6. Filtrer par similarité améliorée (avec seuil plus élevé et limite)
+            // 6. Filtrer par similarité
             $filteredCompetitors = $this->filterBySimilarityImproved($competitors, $search, $components);
             
             $competitorsWithComparison = $this->addPriceComparisons($filteredCompetitors, $ourPrice);
@@ -649,7 +1360,6 @@ new class extends Component {
 
     /**
      * Extraire le vendor de manière plus intelligente
-     * Similaire à la méthode du premier composant
      */
     protected function extractVendorFromSearchImproved(string $search): string
     {
@@ -717,7 +1427,6 @@ new class extends Component {
 
     /**
      * Extraire les mots clés de recherche significatifs
-     * Méthode générale qui fonctionne pour tous les types de produits
      */
     protected function extractSearchKeywords(string $search, ?string $vendor = null): array
     {
@@ -861,7 +1570,7 @@ new class extends Component {
     }
 
     /**
-     * Extraire tous les composants de la recherche (comme le premier composant)
+     * Extraire tous les composants de la recherche
      */
     protected function extractSearchComponentsImproved(string $search, ?string $vendor = null, array $keywords = []): array
     {
@@ -1081,7 +1790,7 @@ new class extends Component {
                 AND (" . implode(' OR ', $vendorConditions) . ")
                 AND (" . implode(' OR ', $keywordConditions) . ")
                 ORDER BY lp.prix_ht ASC
-                LIMIT 50  -- RÉDUIRE À 50
+                LIMIT 50
             ";
             
             return DB::connection('mysql')->select($query, $params);
@@ -1135,7 +1844,7 @@ new class extends Component {
                 WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
                 AND (" . implode(' OR ', $conditions) . ")
                 ORDER BY lp.prix_ht ASC
-                LIMIT 50  -- RÉDUIRE À 50
+                LIMIT 50
             ";
             
             return DB::connection('mysql')->select($query, $params);
@@ -1195,7 +1904,7 @@ new class extends Component {
                     AGAINST (? IN BOOLEAN MODE)
                 AND (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
                 ORDER BY lp.prix_ht ASC
-                LIMIT 50  -- RÉDUIRE À 50
+                LIMIT 50
             ";
             
             return DB::connection('mysql')->select($query, [$searchQuery]);
@@ -1230,7 +1939,7 @@ new class extends Component {
                 WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
                 AND (" . implode(' OR ', $vendorConditions) . ")
                 ORDER BY lp.prix_ht ASC
-                LIMIT 50  -- RÉDUIRE À 50
+                LIMIT 50
             ";
             
             return DB::connection('mysql')->select($query, $params);
@@ -1242,7 +1951,6 @@ new class extends Component {
 
     /**
      * Filtrer par similarité améliorée
-     * MODIFIÉ : seuil augmenté à 0.6 et limité à 50 résultats
      */
     protected function filterBySimilarityImproved(array $competitors, string $search, array $components): array
     {
@@ -1251,7 +1959,6 @@ new class extends Component {
         foreach ($competitors as $competitor) {
             $similarityScore = $this->computeSimilarityScoreImproved($competitor, $search, $components);
             
-            // SEUIL AUGMENTÉ À 0.6 POUR UN BON NIVEAU DE SIMILARITÉ
             if ($similarityScore >= 0.6) {
                 $competitor->similarity_score = $similarityScore;
                 $competitor->match_level = $this->getMatchLevel($similarityScore);
@@ -1264,7 +1971,7 @@ new class extends Component {
             return $b->similarity_score <=> $a->similarity_score;
         });
         
-        // LIMITER À 50 RÉSULTATS
+        // Limiter à 50 résultats
         return array_slice($filtered, 0, 50);
     }
 
@@ -1367,7 +2074,7 @@ new class extends Component {
     protected function computeKeywordsSimilarity($competitor, $keywords): float
     {
         if (empty($keywords)) {
-            return 0.5; // Pas de pénalité si pas de keywords
+            return 0.5;
         }
         
         $productName = $competitor->name ?? '';
@@ -1393,19 +2100,17 @@ new class extends Component {
     protected function computeNameSimilarity($productName, $searchProductName): float
     {
         if (empty($productName) || empty($searchProductName)) {
-            return 0.3; // Score minimum si un des deux est vide
+            return 0.3;
         }
         
         $productNameLower = mb_strtolower(trim($productName));
         $searchProductNameLower = mb_strtolower(trim($searchProductName));
         
-        // Si le nom du produit contient le nom recherché (ou vice versa)
         if (str_contains($productNameLower, $searchProductNameLower) || 
             str_contains($searchProductNameLower, $productNameLower)) {
             return 0.9;
         }
         
-        // Extraire les mots clés du nom recherché
         $searchWords = preg_split('/\s+/', $searchProductNameLower);
         $searchWords = array_filter($searchWords, function($word) {
             return strlen($word) > 2 && !$this->isStopWord($word);
@@ -1433,7 +2138,7 @@ new class extends Component {
         $productType = $competitor->type ?? '';
         
         if (empty($productType) || empty($searchType)) {
-            return 0.3; // Score minimum si un des deux est vide
+            return 0.3;
         }
         
         $productLower = mb_strtolower($productType);
@@ -1447,7 +2152,6 @@ new class extends Component {
             return 0.8;
         }
         
-        // Vérifier les abréviations (ex: "edp" pour "eau de parfum")
         $typeMappings = [
             'edp' => 'eau de parfum',
             'edt' => 'eau de toilette',
@@ -1474,7 +2178,7 @@ new class extends Component {
         $productVariation = $competitor->variation ?? '';
         
         if (empty($productVariation) || empty($searchVariation)) {
-            return 0.3; // Score minimum si un des deux est vide
+            return 0.3;
         }
         
         $productLower = mb_strtolower($productVariation);
@@ -1497,7 +2201,7 @@ new class extends Component {
     protected function computeVolumeSimilarity($competitor, $searchVolumes): float
     {
         if (empty($searchVolumes)) {
-            return 0.5; // Pas de pénalité si pas de volumes recherchés
+            return 0.5;
         }
         
         $productVolumes = $this->extractVolumesFromText(
@@ -1523,7 +2227,7 @@ new class extends Component {
     protected function computeColorSimilarity($competitor, $searchColor): float
     {
         if (empty($searchColor)) {
-            return 0.5; // Pas de pénalité si pas de couleur recherchée
+            return 0.5;
         }
         
         $productName = $competitor->name ?? '';
@@ -1545,12 +2249,10 @@ new class extends Component {
         
         $searchLower = mb_strtolower($searchColor);
         
-        // Vérifier la couleur exacte
         if (str_contains($productText, $searchLower)) {
             return 1.0;
         }
         
-        // Vérifier les équivalents dans d'autres langues
         if (isset($colorMappings[$searchLower])) {
             foreach ($colorMappings[$searchLower] as $equivalent) {
                 if (str_contains($productText, $equivalent)) {
@@ -1567,13 +2269,12 @@ new class extends Component {
      */
     protected function computeFeaturesSimilarity($competitor, $components): float
     {
-        $score = 0.5; // Score de base
+        $score = 0.5;
         
         $productName = $competitor->name ?? '';
         $productVariation = $competitor->variation ?? '';
         $productText = mb_strtolower($productName . ' ' . $productVariation);
         
-        // Vérifier la finition
         if (!empty($components['finish'])) {
             $finishLower = mb_strtolower($components['finish']);
             $finishMappings = [
@@ -1614,14 +2315,12 @@ new class extends Component {
 
     /**
      * Obtenir le niveau de correspondance
-     * MODIFIÉ : seuils ajustés
      */
     protected function getMatchLevel(float $similarityScore): string
     {
-        // Ajuster les seuils pour être plus restrictifs
         if ($similarityScore >= 0.8) return 'excellent';
-        if ($similarityScore >= 0.7) return 'très bon'; // Ajouter un niveau intermédiaire
-        if ($similarityScore >= 0.6) return 'bon'; // Seuil pour "bon niveau"
+        if ($similarityScore >= 0.7) return 'très bon';
+        if ($similarityScore >= 0.6) return 'bon';
         if ($similarityScore >= 0.5) return 'moyen';
         return 'faible';
     }
@@ -1686,22 +2385,18 @@ new class extends Component {
             $knownVendorLower = mb_strtolower($knownVendor);
             $score = 0;
             
-            // 1. Correspondance exacte
             if ($searchVendorLower === $knownVendorLower) {
                 return $knownVendor;
             }
             
-            // 2. Le vendor recherché est contenu au début
             if (str_starts_with($knownVendorLower, $searchVendorLower)) {
                 $score = 90;
             }
             
-            // 3. Le vendor connu est contenu au début
             if (str_starts_with($searchVendorLower, $knownVendorLower)) {
                 $score = 85;
             }
             
-            // 4. Correspondance partielle
             if (str_contains($knownVendorLower, $searchVendorLower)) {
                 $score = max($score, 70);
             }
@@ -1710,7 +2405,6 @@ new class extends Component {
                 $score = max($score, 65);
             }
             
-            // 5. Similarité de Levenshtein
             $levenshtein = levenshtein($searchVendorLower, $knownVendorLower);
             $maxLength = max(strlen($searchVendorLower), strlen($knownVendorLower));
             
@@ -1721,7 +2415,6 @@ new class extends Component {
                 }
             }
             
-            // 6. Correspondance sans caractères spéciaux
             $searchNoSpecial = preg_replace('/[^a-z0-9]/i', '', $searchVendorLower);
             $knownNoSpecial = preg_replace('/[^a-z0-9]/i', '', $knownVendorLower);
             
@@ -1735,12 +2428,11 @@ new class extends Component {
             }
         }
         
-        // Seuil minimum de confiance
         return $bestScore >= 60 ? $bestMatch : '';
     }
 
     /**
-     * Générer les variations du vendor (améliorée)
+     * Générer les variations du vendor
      */
     protected function getVendorVariationsImproved(string $vendor): array
     {
@@ -1751,13 +2443,11 @@ new class extends Component {
         $vendor = $this->normalizeAndCleanText($vendor);
         $variations = [trim($vendor)];
         
-        // Variations de casse
         $variations[] = mb_strtoupper($vendor);
         $variations[] = mb_strtolower($vendor);
         $variations[] = mb_convert_case($vendor, MB_CASE_TITLE);
         $variations[] = ucfirst(mb_strtolower($vendor));
         
-        // Variations sans espaces
         if (str_contains($vendor, ' ')) {
             $noSpace = str_replace(' ', '', $vendor);
             $variations[] = $noSpace;
@@ -1765,7 +2455,6 @@ new class extends Component {
             $variations[] = mb_strtolower($noSpace);
         }
         
-        // Variations avec tirets
         if (str_contains($vendor, ' ')) {
             $withDash = str_replace(' ', '-', $vendor);
             $variations[] = $withDash;
@@ -1773,7 +2462,6 @@ new class extends Component {
             $variations[] = mb_strtolower($withDash);
         }
         
-        // Variations avec points
         if (str_contains($vendor, ' ')) {
             $withDot = str_replace(' ', '.', $vendor);
             $variations[] = $withDot;
@@ -1781,7 +2469,6 @@ new class extends Component {
             $variations[] = mb_strtolower($withDot);
         }
         
-        // Chercher des variations similaires dans la base de données
         $knownVendors = $this->loadKnownVendors();
         $vendorLower = mb_strtolower($vendor);
         
@@ -1808,14 +2495,11 @@ new class extends Component {
     protected function addPriceComparisons(array $competitors, float $ourPrice): array
     {
         foreach ($competitors as $competitor) {
-            // Nettoyer le prix du concurrent
             $competitorPrice = $this->cleanPrice($competitor->prix_ht ?? 0);
             
-            // Différence de prix
             $competitor->price_difference = $ourPrice - $competitorPrice;
             $competitor->price_difference_percent = $ourPrice > 0 ? (($ourPrice - $competitorPrice) / $ourPrice) * 100 : 0;
             
-            // Statut
             if ($competitorPrice < $ourPrice * 0.9) {
                 $competitor->price_status = 'much_cheaper';
             } elseif ($competitorPrice < $ourPrice) {
@@ -1828,7 +2512,6 @@ new class extends Component {
                 $competitor->price_status = 'much_higher';
             }
             
-            // Ajouter le prix nettoyé
             $competitor->clean_price = $competitorPrice;
         }
         
@@ -1840,25 +2523,20 @@ new class extends Component {
      */
     protected function getCompetitorImage($competitor): string
     {
-        // Priorité 1: image_url direct
         if (!empty($competitor->image_url)) {
             $imageUrl = $this->normalizeAndCleanText($competitor->image_url);
             
-            // Vérifier si c'est une URL complète ou un chemin relatif
             if (filter_var($imageUrl, FILTER_VALIDATE_URL)) {
                 return $imageUrl;
             }
             
-            // Si c'est un chemin relatif, essayer de construire une URL complète
             if (strpos($imageUrl, 'http') !== 0) {
-                // Essayer de deviner le domaine à partir de l'URL du produit
                 $productUrl = $competitor->product_url ?? '';
                 if (!empty($productUrl)) {
                     $parsed = parse_url($productUrl);
                     if (isset($parsed['scheme']) && isset($parsed['host'])) {
                         $baseUrl = $parsed['scheme'] . '://' . $parsed['host'];
                         
-                        // Si l'image commence par /, ajouter au domaine
                         if (strpos($imageUrl, '/') === 0) {
                             return $baseUrl . $imageUrl;
                         }
@@ -1869,14 +2547,10 @@ new class extends Component {
             return $imageUrl;
         }
         
-        // Priorité 2: extraire de l'URL du produit
         if (!empty($competitor->product_url)) {
-            // Essayer d'extraire une image de l'URL
-            $productUrl = $competitor->product_url;
-            return $productUrl;
+            return $competitor->product_url;
         }
         
-        // Fallback: image par défaut
         return 'https://placehold.co/100x100/cccccc/999999?text=No+Image';
     }
 
@@ -1945,17 +2619,14 @@ new class extends Component {
         
         $url = $this->normalizeAndCleanText($url);
         
-        // Vérifier si c'est une URL valide
         if (!filter_var($url, FILTER_VALIDATE_URL)) {
             return false;
         }
         
-        // Vérifier les extensions d'image courantes
         $imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
         $path = parse_url($url, PHP_URL_PATH);
         $extension = pathinfo($path, PATHINFO_EXTENSION);
         
-        // Si pas d'extension, on suppose que c'est OK (peut être une URL dynamique)
         if (empty($extension)) {
             return true;
         }
@@ -1968,12 +2639,10 @@ new class extends Component {
      */
     public function getCompetitorImageUrl($competitor): string
     {
-        // Si l'image est déjà définie dans l'objet
         if (isset($competitor->image) && !empty($competitor->image)) {
             return $this->normalizeAndCleanText($competitor->image);
         }
         
-        // Sinon, utiliser la méthode de secours
         return $this->getCompetitorImage($competitor);
     }
 
@@ -1998,11 +2667,11 @@ new class extends Component {
 
         $this->loading = true;
         $this->page = (int) $page;
-        $this->expandedProducts = []; // Réinitialiser les produits étendus
-        $this->manualSearchQueries = []; // Réinitialiser les recherches manuelles
-        $this->manualSearchResults = []; // Réinitialiser les résultats manuels
-        $this->manualSearchExpanded = []; // Réinitialiser l'expansion manuelle
-        $this->selectedSitesByProduct = []; // Réinitialiser les filtres de site
+        $this->expandedProducts = [];
+        $this->manualSearchQueries = [];
+        $this->manualSearchResults = [];
+        $this->manualSearchExpanded = [];
+        $this->selectedSitesByProduct = [];
     }
 
     // Page précédente
@@ -2031,8 +2700,8 @@ new class extends Component {
         $this->manualSearchQueries = [];
         $this->manualSearchResults = [];
         $this->manualSearchExpanded = [];
-        $this->selectedProducts = []; // Réinitialiser la sélection
-        $this->selectedSitesByProduct = []; // Réinitialiser les filtres de site
+        $this->selectedProducts = [];
+        $this->selectedSitesByProduct = [];
         $this->loadListTitle();
     }
 
@@ -2058,10 +2727,8 @@ new class extends Component {
                 ];
             }
 
-            // Calculer le nombre total de pages
             $this->totalPages = max(1, ceil($totalItems / $this->perPage));
 
-            // Charger uniquement la page courante
             $result = $this->fetchProductsFromDatabase($allSkus, $this->page, $this->perPage);
 
             if (isset($result['error'])) {
@@ -2070,7 +2737,6 @@ new class extends Component {
                 $products = $result['data'] ?? [];
                 $products = array_map(fn($p) => (array) $p, $products);
                 
-                // Nettoyer les prix et noms des produits
                 foreach ($products as &$product) {
                     $product['price'] = $this->cleanPrice($product['price'] ?? 0);
                     $product['special_price'] = $this->cleanPrice($product['special_price'] ?? 0);
@@ -2186,18 +2852,15 @@ new class extends Component {
         $current = $this->page;
         $total = $this->totalPages;
 
-        // Toujours afficher la première page
         $buttons[] = [
             'page' => 1,
             'label' => '1',
             'active' => $current === 1,
         ];
 
-        // Afficher les pages autour de la page courante
         $start = max(2, $current - 2);
         $end = min($total - 1, $current + 2);
 
-        // Ajouter "..." après la première page si nécessaire
         if ($start > 2) {
             $buttons[] = [
                 'page' => null,
@@ -2206,7 +2869,6 @@ new class extends Component {
             ];
         }
 
-        // Pages du milieu
         for ($i = $start; $i <= $end; $i++) {
             $buttons[] = [
                 'page' => $i,
@@ -2215,7 +2877,6 @@ new class extends Component {
             ];
         }
 
-        // Ajouter "..." avant la dernière page si nécessaire
         if ($end < $total - 1) {
             $buttons[] = [
                 'page' => null,
@@ -2224,7 +2885,6 @@ new class extends Component {
             ];
         }
 
-        // Toujours afficher la dernière page si elle existe
         if ($total > 1) {
             $buttons[] = [
                 'page' => $total,
@@ -2247,7 +2907,6 @@ new class extends Component {
     public function removeProduct(string $sku): void
     {
         try {
-            // Vérifier si le produit existe dans la liste
             $exists = DetailProduct::where('list_product_id', $this->id)
                 ->where('EAN', $sku)
                 ->exists();
@@ -2257,14 +2916,11 @@ new class extends Component {
                 return;
             }
             
-            // Supprimer le produit
             $deleted = DetailProduct::removeFromList($this->id, $sku);
             
             if ($deleted) {
-                // Supprimer des caches si nécessaire
                 Cache::forget("list_skus_{$this->id}");
                 
-                // Réinitialiser les données associées au produit
                 unset($this->competitorResults[$sku]);
                 unset($this->expandedProducts[$sku]);
                 unset($this->manualSearchQueries[$sku]);
@@ -2274,16 +2930,12 @@ new class extends Component {
                 unset($this->manualSearchLoading[$sku]);
                 unset($this->selectedSitesByProduct[$sku]);
                 
-                // Retirer de la sélection
                 $this->selectedProducts = array_filter(
                     $this->selectedProducts, 
                     fn($selectedSku) => $selectedSku !== $sku
                 );
                 
-                // Rafraîchir la liste
                 $this->success('Produit supprimé avec succès.');
-                
-                // Forcer le rechargement des données
                 $this->refreshProducts();
             } else {
                 $this->error('Erreur lors de la suppression du produit.');
@@ -2303,13 +2955,11 @@ new class extends Component {
     public function removeMultipleProducts(array $skus): void
     {
         try {
-            // Valider que nous avons bien une liste de SKUs
             if (empty($skus)) {
                 $this->warning('Aucun produit sélectionné.');
                 return;
             }
 
-            // Compter le nombre de produits avant suppression
             $countBefore = DetailProduct::where('list_product_id', $this->id)
                 ->whereIn('EAN', $skus)
                 ->count();
@@ -2319,16 +2969,13 @@ new class extends Component {
                 return;
             }
             
-            // Supprimer les produits
             $deletedCount = DetailProduct::where('list_product_id', $this->id)
                 ->whereIn('EAN', $skus)
                 ->delete();
             
             if ($deletedCount > 0) {
-                // Supprimer les caches
                 Cache::forget("list_skus_{$this->id}");
                 
-                // Supprimer les données associées aux produits supprimés
                 foreach ($skus as $sku) {
                     unset($this->competitorResults[$sku]);
                     unset($this->expandedProducts[$sku]);
@@ -2340,12 +2987,9 @@ new class extends Component {
                     unset($this->selectedSitesByProduct[$sku]);
                 }
                 
-                // Vider la sélection
                 $this->selectedProducts = [];
                 
                 $this->success('produit(s) supprimé(s) avec succès.');
-                
-                // Forcer le rechargement sans changer de page
                 $this->loading = true;
                 
             } else {
@@ -2368,12 +3012,9 @@ new class extends Component {
         $key = array_search($sku, $this->selectedProducts);
         
         if ($key !== false) {
-            // Retirer le produit de la sélection
             unset($this->selectedProducts[$key]);
-            // Réindexer le tableau
             $this->selectedProducts = array_values($this->selectedProducts);
         } else {
-            // Ajouter le produit à la sélection
             $this->selectedProducts[] = $sku;
         }
     }
@@ -2392,14 +3033,11 @@ new class extends Component {
             }
         }
         
-        // Si tous les produits de la page sont déjà sélectionnés, les désélectionner tous
         $allSelected = !array_diff($currentSkus, $this->selectedProducts);
         
         if ($allSelected) {
-            // Désélectionner tous les produits de la page
             $this->selectedProducts = array_diff($this->selectedProducts, $currentSkus);
         } else {
-            // Ajouter les produits de la page qui ne sont pas déjà sélectionnés
             $newSelections = array_diff($currentSkus, $this->selectedProducts);
             $this->selectedProducts = array_merge($this->selectedProducts, $newSelections);
         }
@@ -2423,7 +3061,6 @@ new class extends Component {
             return;
         }
         
-        // Appeler directement la suppression sans confirmation intermédiaire
         $this->removeMultipleProducts($this->selectedProducts);
     }
 
@@ -2453,7 +3090,6 @@ new class extends Component {
             }
         }
         
-        // Vérifier si tous les SKUs de la page sont dans la sélection
         return empty(array_diff($currentSkus, $this->selectedProducts));
     }
 
@@ -2512,27 +3148,36 @@ new class extends Component {
             </div>
             
             <div class="flex space-x-3">
+                <!-- Bouton toggle OpenAI -->
+                <button wire:click="toggleOpenAI"
+                    class="btn btn-sm {{ $useOpenAI ? 'btn-primary' : 'btn-outline' }}"
+                    title="{{ $useOpenAI ? 'OpenAI activé - Cliquer pour désactiver' : 'OpenAI désactivé - Cliquer pour activer' }}">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                    </svg>
+                    {{ $useOpenAI ? 'IA Activée' : 'IA Désactivée' }}
+                </button>
 
-            @if(!empty($selectedProducts))
-            <button wire:click="removeSelectedProducts"
-                wire:confirm="Êtes-vous sûr de vouloir supprimer {{ count($selectedProducts) }} produit(s) ?"
-                class="btn btn-sm btn-error"
-                wire:loading.attr="disabled">
-                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                </svg>
-                Supprimer ({{ count($selectedProducts) }})
-            </button>
-                
-                <button wire:click="deselectAll"
-                    class="btn btn-sm btn-ghost"
+                @if(!empty($selectedProducts))
+                <button wire:click="removeSelectedProducts"
+                    wire:confirm="Êtes-vous sûr de vouloir supprimer {{ count($selectedProducts) }} produit(s) ?"
+                    class="btn btn-sm btn-error"
                     wire:loading.attr="disabled">
                     <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                     </svg>
-                    Désélectionner tout
+                    Supprimer ({{ count($selectedProducts) }})
                 </button>
-            @endif
+                    
+                    <button wire:click="deselectAll"
+                        class="btn btn-sm btn-ghost"
+                        wire:loading.attr="disabled">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                        Désélectionner tout
+                    </button>
+                @endif
 
                 <x-button wire:navigate href="{{ route('top-product.edit', $id) }}" label="Ajouter produit dans la list" class="btn-primary" />
 
@@ -2559,6 +3204,23 @@ new class extends Component {
             </div>
         </div>
 
+        <!-- Indicateur OpenAI -->
+        @if($useOpenAI)
+            <div class="mb-4 p-3 bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg">
+                <div class="flex items-center">
+                    <svg class="w-5 h-5 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                    </svg>
+                    <span class="text-sm font-medium text-blue-800">
+                        OpenAI est activé pour l'analyse intelligente des produits
+                    </span>
+                    @if(!config('services.openai.api_key'))
+                        <span class="ml-2 badge badge-warning badge-xs">Clé API manquante</span>
+                    @endif
+                </div>
+            </div>
+        @endif
+
         <!-- Indicateur de chargement des concurrents -->
         @if($searchingCompetitors)
             <div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
@@ -2566,6 +3228,9 @@ new class extends Component {
                     <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-3"></div>
                     <span class="text-sm font-medium text-blue-800">
                         Recherche des concurrents en cours...
+                        @if($useOpenAI)
+                            <span class="text-blue-600">(avec OpenAI)</span>
+                        @endif
                     </span>
                 </div>
             </div>
@@ -2664,7 +3329,6 @@ new class extends Component {
                 <thead>
                     <tr>
                         <th>
-                            <!-- Case à cocher pour sélectionner/désélectionner tous les produits de la page -->
                             <label class="cursor-pointer">
                                 <input type="checkbox" 
                                     class="checkbox checkbox-xs" 
@@ -2710,6 +3374,10 @@ new class extends Component {
                             // Obtenir les concurrents filtrés
                             $filteredCompetitors = $this->getFilteredCompetitors($product['sku']);
                             $filteredCount = count($filteredCompetitors);
+                            
+                            // Savoir si c'est une recherche OpenAI
+                            $isOpenAI = $hasCompetitors && isset($competitorResults[$product['sku']]['source']) && 
+                                        $competitorResults[$product['sku']]['source'] === 'openai';
                         @endphp
                         <tr class="hover">
                             <!-- Case à cocher pour sélectionner le produit -->
@@ -2785,9 +3453,16 @@ new class extends Component {
                                         wire:target="toggleCompetitors('{{ $product['sku'] }}')">
                                         @if($isSearchingAuto)
                                             <span class="loading loading-spinner loading-xs"></span>
-                                            Recherche...
+                                            @if($useOpenAI)
+                                                Analyse IA...
+                                            @else
+                                                Recherche...
+                                            @endif
                                         @else
                                             @if($hasCompetitors)
+                                                @if($isOpenAI)
+                                                    <span class="badge badge-primary mr-1">IA</span>
+                                                @endif
                                                 @if($filteredCount > 0)
                                                     <span class="badge badge-success mr-1">{{ $filteredCount }}</span>
                                                     filtré(s)
@@ -2795,6 +3470,9 @@ new class extends Component {
                                                     Aucun résultat
                                                 @endif
                                             @else
+                                                @if($useOpenAI)
+                                                    <span class="badge badge-primary mr-1">IA</span>
+                                                @endif
                                                 Rechercher
                                             @endif
                                         @endif
@@ -2857,7 +3535,13 @@ new class extends Component {
                                         <div class="flex justify-between items-center mb-4">
                                             <div>
                                                 <h4 class="font-bold text-sm">
-                                                    <span class="text-info">Résultats des concurrents automatiques</span>
+                                                    <span class="text-info">Résultats des concurrents 
+                                                        @if($isOpenAI)
+                                                            <span class="badge badge-primary ml-1">IA OpenAI</span>
+                                                        @else
+                                                            <span class="badge badge-neutral ml-1">Traditionnel</span>
+                                                        @endif
+                                                    </span>
                                                     <span class="badge badge-success ml-2">
                                                         {{ $filteredCount }} résultat(s) filtré(s)
                                                     </span>
@@ -2872,6 +3556,13 @@ new class extends Component {
                                                     | Notre prix: <span class="font-bold text-success">{{ $this->formatPrice($product['price']) }}</span>
                                                     | Seuil de similarité: ≥60%
                                                 </p>
+                                                @if($isOpenAI && isset($competitorResults[$product['sku']]['openai_analysis']))
+                                                    <div class="mt-2 text-xs text-gray-500">
+                                                        <span class="font-medium">Analyse IA:</span>
+                                                        {{ $competitorResults[$product['sku']]['openai_analysis']['vendor'] ?? 'N/A' }} - 
+                                                        {{ $competitorResults[$product['sku']]['openai_analysis']['product_name'] ?? 'N/A' }}
+                                                    </div>
+                                                @endif
                                             </div>
                                             <button wire:click="toggleCompetitors('{{ $product['sku'] }}')" 
                                                     class="btn btn-xs btn-ghost">
@@ -2961,8 +3652,11 @@ new class extends Component {
                                                             <th class="text-xs">Produit / Variation</th>
                                                             <th class="text-xs">Prix concurrent</th>
                                                             <th class="text-xs">Différence</th>
-                                                            <th class="text-xs">Statut de nos prix par rapport aux concurrents</th>
-                                                            <th class="text-xs">Niveau de correspondance</th>
+                                                            <th class="text-xs">Statut prix</th>
+                                                            <th class="text-xs">Correspondance</th>
+                                                            @if($isOpenAI)
+                                                                <th class="text-xs">Score IA</th>
+                                                            @endif
                                                             <th class="text-xs">Date MAJ</th>
                                                             <th class="text-xs">Actions</th>
                                                         </tr>
@@ -3037,7 +3731,7 @@ new class extends Component {
                                                                     </div>
                                                                 </td>
                                                                 
-                                                                <!-- Statut -->
+                                                                <!-- Statut prix -->
                                                                 <td>
                                                                     <span class="badge badge-xs {{ $priceStatusClass }}">
                                                                         {{ $priceStatusLabel }}
@@ -3053,19 +3747,32 @@ new class extends Component {
                                                                     </div>
                                                                 </td>
                                                                 
-                                                                <!-- Score de similarité -->
-                                                                {{-- <td class="text-xs">
-                                                                    <div class="flex flex-col items-center">
-                                                                        <span class="badge badge-xs {{ $scoreClass }}">
-                                                                            {{ $scorePercentage }}%
-                                                                        </span>
-                                                                    </div>
-                                                                </td> --}}
+                                                                <!-- Score OpenAI (si applicable) -->
+                                                                @if($isOpenAI)
+                                                                    <td class="text-xs">
+                                                                        @if(!empty($competitor->openai_similarity_score))
+                                                                            <div class="flex flex-col items-center">
+                                                                                <span class="badge badge-xs 
+                                                                                    @if($competitor->openai_similarity_score >= 0.8) badge-success
+                                                                                    @elseif($competitor->openai_similarity_score >= 0.7) badge-primary
+                                                                                    @elseif($competitor->openai_similarity_score >= 0.6) badge-warning
+                                                                                    @else badge-neutral @endif">
+                                                                                    {{ round($competitor->openai_similarity_score * 100) }}%
+                                                                                </span>
+                                                                            </div>
+                                                                        @else
+                                                                            <span class="text-gray-400">-</span>
+                                                                        @endif
+                                                                    </td>
+                                                                @endif
+                                                                
+                                                                <!-- Date MAJ -->
                                                                 <td class="text-xs">
                                                                     <div class="flex flex-col items-center">
                                                                         {{ \Carbon\Carbon::parse($competitor->updated_at)->translatedFormat('j F Y \\à H:i') }}
                                                                     </div>
-                                                                </td>                                                                
+                                                                </td>
+                                                                
                                                                 <!-- Actions -->
                                                                 <td>
                                                                     @if(!empty($competitor->url))
@@ -3101,6 +3808,14 @@ new class extends Component {
                                                         <span class="badge badge-xs badge-warning mr-1"></span>
                                                         <span class="text-xs">Bon (≥60%)</span>
                                                     </div>
+                                                    @if($isOpenAI)
+                                                        <div class="flex items-center mt-2">
+                                                            <svg class="w-3 h-3 text-blue-600 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                                            </svg>
+                                                            <span class="text-xs text-blue-600">Score calculé par IA OpenAI</span>
+                                                        </div>
+                                                    @endif
                                                 </div>
                                             </div>
                                         @else
@@ -3304,6 +4019,13 @@ new class extends Component {
         .badge-primary {
             background-color: #0ea5e9 !important;
             color: white !important;
+        }
+        
+        /* Style pour les badges OpenAI */
+        .badge-openai {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 600;
         }
         
         /* Animation pour l'expansion des résultats */
@@ -3516,6 +4238,23 @@ tr.selected {
     color: #64748b;
 }
 
+/* Style pour OpenAI */
+.openai-badge {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.openai-indicator {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 600;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .results-table-container {
@@ -3535,6 +4274,11 @@ tr.selected {
         font-size: 11px;
         padding: 3px 6px;
     }
+    
+    .openai-badge {
+        font-size: 9px;
+        padding: 1px 4px;
+    }
 }        
     </style>
     
@@ -3545,13 +4289,11 @@ tr.selected {
         // Script pour gérer l'affichage des modaux
         document.addEventListener('livewire:init', () => {
             Livewire.on('openModal', (data) => {
-                // Vous pouvez ajouter ici une logique pour ouvrir un modal si nécessaire
                 console.log('Ouvrir modal avec:', data);
             });
             
             // Écouter l'expansion des résultats
             Livewire.on('resultsExpanded', (sku) => {
-                // Smooth scroll vers les résultats
                 const element = document.querySelector(`[data-product-sku="${sku}"]`);
                 if (element) {
                     element.scrollIntoView({ 
@@ -3563,7 +4305,6 @@ tr.selected {
             
             // Afficher un message lorsque les résultats sont filtrés
             Livewire.hook('message.processed', (message) => {
-                // Vérifier si nous avons des résultats de concurrents
                 const competitorTables = document.querySelectorAll('.competitor-results-table');
                 competitorTables.forEach(table => {
                     const rows = table.querySelectorAll('tbody tr');
