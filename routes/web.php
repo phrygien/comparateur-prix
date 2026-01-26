@@ -20,4 +20,6 @@ Route::middleware(['check.auth', 'boutique.cache'])->group(function () {
     Volt::route('/top-product/create', 'boutiques.top-product.create')->name('comparaison.create-list');
     Volt::route('/top-product/{id}', 'boutiques.top-product.table')->name('top-product.show');
     Volt::route('/top-product/{id}/edit', 'boutiques.top-product.edit-list')->name('top-product.edit');
+
+    Volt::route('/chat', 'plateformes.comparateur.comparer')->name('chat');
 });
