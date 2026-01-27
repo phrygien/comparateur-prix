@@ -27,110 +27,34 @@ new class extends Component {
         $this->isLoading = true;
         
         try {
-            // Étape 1: Récupérer tous les derniers produits de chaque site
-            $latestProductIds = DB::table('scraped_product as sp')
-                ->select('sp.id')
-                ->join(DB::raw('(
-                    SELECT web_site_id, MAX(scrap_reference_id) as max_ref_id 
-                    FROM scraped_product 
-                    GROUP BY web_site_id
-                ) as latest'), function($join) {
-                    $join->on('sp.web_site_id', '=', 'latest.web_site_id')
-                         ->on('sp.scrap_reference_id', '=', 'latest.max_ref_id');
-                })
-                ->pluck('id')
-                ->toArray();
+            // Étape 1: Extraire les critères du produit recherché
+            $extractedCriteria = $this->extractProductCriteria();
+            
+            if (!$extractedCriteria) {
+                throw new \Exception('Impossible d\'extraire les critères du produit');
+            }
 
-            $allProducts = Product::with(['website', 'scraped_reference'])
-                ->whereIn('id', $latestProductIds)
-                ->get()
-                ->map(function($product) {
-                    return [
-                        'id' => $product->id,
-                        'vendor' => $product->vendor,
-                        'name' => $product->name,
-                        'type' => $product->type,
-                        'variation' => $product->variation,
-                        'prix_ht' => $product->prix_ht,
-                        'currency' => $product->currency,
-                        'site_name' => $product->website->name ?? 'Unknown',
-                        'scrap_reference_id' => $product->scrap_reference_id,
-                    ];
-                })
-                ->toArray();
+            $this->extractedData = $extractedCriteria;
 
-            if (empty($allProducts)) {
-                session()->flash('error', 'Aucun produit disponible dans la base de données.');
+            // Étape 2: Pré-filtrer les produits dans la base de données
+            $candidateProducts = $this->preFilterProducts($extractedCriteria);
+
+            if ($candidateProducts->isEmpty()) {
+                session()->flash('error', 'Aucun produit candidat trouvé dans la base de données.');
+                $this->matchingProducts = [];
                 return;
             }
 
-            // Étape 2: Demander à OpenAI d'analyser et trouver les correspondances
-            $response = Http::timeout(60)->withHeaders([
-                'Content-Type' => 'application/json',
-                'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
-            ])->post('https://api.openai.com/v1/chat/completions', [
-                'model' => 'gpt-4o',
-                'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' => 'Tu es un expert en comparaison et matching de produits cosmétiques. Tu dois analyser un produit recherché et trouver les meilleurs correspondances dans une liste de produits disponibles. Tu dois être précis dans tes comparaisons en tenant compte des variations d\'orthographe, des abréviations, et des différences mineures de formulation.'
-                    ],
-                    [
-                        'role' => 'user',
-                        'content' => $this->buildAIPrompt($allProducts)
-                    ]
-                ],
-                'temperature' => 0.2,
-                'max_tokens' => 2000
-            ]);
+            // Étape 3: Demander à l'IA de comparer avec les candidats (limité)
+            $this->compareWithAI($extractedCriteria, $candidateProducts);
 
-            if ($response->successful()) {
-                $data = $response->json();
-                $content = $data['choices'][0]['message']['content'];
-                
-                // Nettoyer le contenu
-                $content = preg_replace('/```json\s*|\s*```/', '', $content);
-                $content = trim($content);
-                
-                $aiResult = json_decode($content, true);
-                
-                if (json_last_error() !== JSON_ERROR_NONE) {
-                    throw new \Exception('Erreur de parsing JSON: ' . json_last_error_msg());
-                }
-
-                // Stocker l'analyse AI
-                $this->aiAnalysis = $aiResult['analysis'] ?? null;
-                $this->extractedData = $aiResult['extracted_criteria'] ?? null;
-
-                // Récupérer les produits correspondants
-                if (!empty($aiResult['matching_product_ids'])) {
-                    $matchingIds = $aiResult['matching_product_ids'];
-                    
-                    $this->matchingProducts = Product::with(['website', 'scraped_reference'])
-                        ->whereIn('id', $matchingIds)
-                        ->get()
-                        ->sortBy(function($product) use ($matchingIds) {
-                            return array_search($product->id, $matchingIds);
-                        })
-                        ->values()
-                        ->toArray();
-
-                    $this->bestMatch = $this->matchingProducts[0] ?? null;
-                } else {
-                    $this->matchingProducts = [];
-                    $this->bestMatch = null;
-                }
-
-                session()->flash('success', 'Analyse IA terminée avec succès !');
-                
-            } else {
-                throw new \Exception('Erreur API OpenAI: ' . $response->body());
-            }
+            session()->flash('success', 'Analyse IA terminée avec succès !');
             
         } catch (\Exception $e) {
             \Log::error('Erreur extraction AI', [
                 'message' => $e->getMessage(),
-                'product_name' => $this->productName
+                'product_name' => $this->productName,
+                'trace' => $e->getTraceAsString()
             ]);
             
             session()->flash('error', 'Erreur lors de l\'analyse: ' . $e->getMessage());
@@ -139,74 +63,204 @@ new class extends Component {
         }
     }
 
-    private function buildAIPrompt($allProducts): string
+    private function extractProductCriteria(): ?array
     {
-        $productsJson = json_encode($allProducts, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        $response = Http::timeout(30)->withHeaders([
+            'Content-Type' => 'application/json',
+            'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
+        ])->post('https://api.openai.com/v1/chat/completions', [
+            'model' => 'gpt-4o-mini',
+            'messages' => [
+                [
+                    'role' => 'system',
+                    'content' => 'Tu es un expert en extraction de données de produits cosmétiques. Extrait vendor, name, variation et type. Réponds UNIQUEMENT en JSON.'
+                ],
+                [
+                    'role' => 'user',
+                    'content' => "Extrait les informations de ce produit au format JSON :
+
+Produit : {$this->productName}
+
+Format attendu :
+{
+  \"vendor\": \"marque\",
+  \"name\": \"nom du produit\",
+  \"variation\": \"contenance (ml, g, etc.)\",
+  \"type\": \"type de produit\"
+}"
+                ]
+            ],
+            'temperature' => 0.2,
+            'max_tokens' => 300
+        ]);
+
+        if (!$response->successful()) {
+            throw new \Exception('Erreur lors de l\'extraction des critères: ' . $response->body());
+        }
+
+        $data = $response->json();
+        $content = $data['choices'][0]['message']['content'];
+        $content = preg_replace('/```json\s*|\s*```/', '', $content);
+        $content = trim($content);
         
+        return json_decode($content, true);
+    }
+
+    private function preFilterProducts(array $criteria): \Illuminate\Database\Eloquent\Collection
+    {
+        $vendor = $criteria['vendor'] ?? '';
+        $name = $criteria['name'] ?? '';
+        $type = $criteria['type'] ?? '';
+
+        // Récupérer les IDs des derniers produits par site
+        $latestProductIds = DB::table('scraped_product as sp')
+            ->select('sp.id')
+            ->join(DB::raw('(
+                SELECT web_site_id, MAX(scrap_reference_id) as max_ref_id 
+                FROM scraped_product 
+                GROUP BY web_site_id
+            ) as latest'), function($join) {
+                $join->on('sp.web_site_id', '=', 'latest.web_site_id')
+                     ->on('sp.scrap_reference_id', '=', 'latest.max_ref_id');
+            })
+            ->pluck('id')
+            ->toArray();
+
+        // Recherche flexible pour réduire le nombre de candidats
+        return Product::with(['website', 'scraped_reference'])
+            ->whereIn('id', $latestProductIds)
+            ->where(function($query) use ($vendor, $name, $type) {
+                // Recherche sur vendor
+                if ($vendor) {
+                    $query->where('vendor', 'LIKE', "%{$vendor}%");
+                }
+                
+                // OU recherche sur name
+                if ($name) {
+                    $query->orWhere('name', 'LIKE', "%{$name}%");
+                }
+                
+                // OU recherche sur type
+                if ($type) {
+                    $query->orWhere('type', 'LIKE', "%{$type}%");
+                }
+            })
+            ->limit(30) // Limiter à 30 candidats max
+            ->get();
+    }
+
+    private function compareWithAI(array $criteria, $candidateProducts)
+    {
+        // Préparer les données des produits candidats (format compact)
+        $productsData = $candidateProducts->map(function($product) {
+            return [
+                'id' => $product->id,
+                'v' => $product->vendor, // v pour vendor (compact)
+                'n' => $product->name,   // n pour name
+                't' => $product->type,   // t pour type
+                'var' => $product->variation,
+                'p' => $product->prix_ht,
+                's' => $product->website->name ?? 'Unknown',
+                'ref' => $product->scrap_reference_id,
+            ];
+        })->toArray();
+
+        $productsJson = json_encode($productsData, JSON_UNESCAPED_UNICODE);
+
+        $response = Http::timeout(60)->withHeaders([
+            'Content-Type' => 'application/json',
+            'Authorization' => 'Bearer ' . config('services.openai.api_key'),
+        ])->post('https://api.openai.com/v1/chat/completions', [
+            'model' => 'gpt-4o-mini', // Utiliser mini au lieu de gpt-4o
+            'messages' => [
+                [
+                    'role' => 'system',
+                    'content' => 'Expert en comparaison de produits. Compare et score les produits. Réponds en JSON uniquement.'
+                ],
+                [
+                    'role' => 'user',
+                    'content' => $this->buildComparisonPrompt($criteria, $productsJson, count($productsData))
+                ]
+            ],
+            'temperature' => 0.2,
+            'max_tokens' => 1500
+        ]);
+
+        if (!$response->successful()) {
+            throw new \Exception('Erreur API OpenAI comparaison: ' . $response->body());
+        }
+
+        $data = $response->json();
+        $content = $data['choices'][0]['message']['content'];
+        $content = preg_replace('/```json\s*|\s*```/', '', $content);
+        $content = trim($content);
+        
+        $aiResult = json_decode($content, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new \Exception('Erreur de parsing JSON: ' . json_last_error_msg());
+        }
+
+        // Stocker l'analyse
+        $this->aiAnalysis = $aiResult['analysis'] ?? null;
+
+        // Récupérer les produits correspondants
+        if (!empty($aiResult['matching_product_ids'])) {
+            $matchingIds = $aiResult['matching_product_ids'];
+            
+            $this->matchingProducts = Product::with(['website', 'scraped_reference'])
+                ->whereIn('id', $matchingIds)
+                ->get()
+                ->sortBy(function($product) use ($matchingIds) {
+                    return array_search($product->id, $matchingIds);
+                })
+                ->values()
+                ->toArray();
+
+            $this->bestMatch = $this->matchingProducts[0] ?? null;
+        } else {
+            $this->matchingProducts = [];
+            $this->bestMatch = null;
+        }
+    }
+
+    private function buildComparisonPrompt(array $criteria, string $productsJson, int $count): string
+    {
         return <<<PROMPT
-# MISSION
-Analyse le produit recherché et trouve les meilleurs correspondances parmi les produits disponibles.
-
 # PRODUIT RECHERCHÉ
-"{$this->productName}"
-Prix: {$this->productPrice}
+Vendor: {$criteria['vendor']}
+Name: {$criteria['name']}
+Type: {$criteria['type']}
+Variation: {$criteria['variation']}
 
-# PRODUITS DISPONIBLES (derniers de chaque site)
+# CANDIDATS ({$count} produits)
+Format: id, v=vendor, n=name, t=type, var=variation, p=prix, s=site, ref=reference
 {$productsJson}
 
 # INSTRUCTIONS
-1. **Extraire les critères** du produit recherché :
-   - vendor (marque)
-   - name (nom de la gamme/ligne)
-   - variation (contenance: ml, g, etc.)
-   - type (type de produit: Crème, Sérum, etc.)
+1. Score chaque produit de 0-100 :
+   - 100: match parfait (4/4 critères)
+   - 80-99: excellent (3/4 critères)
+   - 60-79: bon (2/4 critères)
+   - <60: insuffisant
 
-2. **Comparer intelligemment** avec chaque produit disponible :
-   - Tolère les variations d'orthographe (ex: "Anti-Age" = "Anti Age" = "Antiage")
-   - Tolère les abréviations (ex: "Conc." = "Concentré")
-   - Ignore les différences de casse
-   - Tolère les accents manquants
-   - Compare les variations de taille (20ml = 20 ml)
-   - Considère les synonymes (ex: "Soin" = "Crème")
+2. Tolère: variations orthographe, abréviations, accents, casse
 
-3. **Scorer chaque produit** de 0 à 100 :
-   - 100 = correspondance parfaite (même vendor, name, variation, type)
-   - 80-99 = très bonne correspondance (3 critères identiques)
-   - 60-79 = bonne correspondance (2 critères identiques)
-   - 40-59 = correspondance moyenne (1 critère identique)
-   - 0-39 = faible correspondance
-
-4. **Retourner UNIQUEMENT** un JSON avec cette structure exacte :
+3. Retourne UNIQUEMENT ce JSON :
 {
-  "extracted_criteria": {
-    "vendor": "...",
-    "name": "...",
-    "variation": "...",
-    "type": "..."
-  },
   "matching_product_ids": [id1, id2, id3],
   "analysis": {
-    "total_products_analyzed": 0,
+    "total_products_analyzed": {$count},
     "matches_found": 0,
     "confidence_level": "high|medium|low",
-    "reasoning": "Explication brève de pourquoi ces produits correspondent",
+    "reasoning": "explication courte",
     "product_scores": [
-      {
-        "id": 123,
-        "score": 95,
-        "site": "Site Name",
-        "match_details": "Vendor: ✓, Name: ✓, Variation: ✓, Type: ~"
-      }
+      {"id": 123, "score": 95, "site": "Site", "match_details": "v:✓ n:✓ t:✓ var:~"}
     ]
   }
 }
 
-# RÈGLES IMPORTANTES
-- Retourne UNIQUEMENT les produits avec un score >= 60
-- Trie les IDs par score décroissant (meilleur en premier)
-- Maximum 10 produits dans matching_product_ids
-- Ne retourne QUE du JSON, aucun texte additionnel
-- Si aucune correspondance >= 60, retourne matching_product_ids vide []
+Retourne max 10 produits avec score >= 60, triés par score DESC.
 PROMPT;
     }
 
@@ -417,7 +471,7 @@ PROMPT;
                 <h3 class="font-bold text-lg text-gray-800">
                     📦 Tous les résultats ({{ count($matchingProducts) }} produit{{ count($matchingProducts) > 1 ? 's' : '' }})
                 </h3>
-                <span class="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">Un par site • Triés par pertinence IA</span>
+                <span class="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">Triés par pertinence IA</span>
             </div>
             <div class="space-y-3 max-h-[600px] overflow-y-auto pr-2">
                 @foreach($matchingProducts as $index => $product)
