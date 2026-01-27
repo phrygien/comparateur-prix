@@ -169,7 +169,7 @@ Format attendu :
 
         $response = Http::timeout(60)->withHeaders([
             'Content-Type' => 'application/json',
-            'Authorization' => 'Bearer ' . config('services.openai.api_key'),
+            'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
         ])->post('https://api.openai.com/v1/chat/completions', [
             'model' => 'gpt-4o-mini', // Utiliser mini au lieu de gpt-4o
             'messages' => [
