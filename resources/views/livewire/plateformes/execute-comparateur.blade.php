@@ -282,8 +282,28 @@ Maintenant, traite ce produit en suivant ces règles exactement."
                 ->limit(20)
                 ->get();
 
-            $scoredResults = $vendorAndName->map(function($product) use ($type, $variation, $isCoffret) {
+            $scoredResults = $vendorAndName->map(function($product) use ($name, $type, $variation, $isCoffret) {
                 $score = 70;
+
+                // STRICT: Vérifier la correspondance du NAME
+                $productName = strtolower($product->name ?? '');
+                $searchName = strtolower($name);
+                
+                // Le name doit être présent dans le produit (déjà garanti par le WHERE LIKE ci-dessus)
+                // Mais on vérifie la qualité de la correspondance
+                if (stripos($productName, $searchName) !== false) {
+                    // Bonus si correspondance exacte ou très proche
+                    if ($productName === $searchName || str_replace(' ', '', $productName) === str_replace(' ', '', $searchName)) {
+                        $score += 20; // Correspondance exacte
+                    } else {
+                        $score += 10; // Correspondance partielle
+                    }
+                } else if (stripos($searchName, $productName) !== false) {
+                    $score += 10; // Le name du produit est contenu dans la recherche
+                } else {
+                    // Ne devrait pas arriver vu le WHERE LIKE, mais au cas où
+                    $score -= 50; // Grosse pénalité si le name ne correspond vraiment pas
+                }
 
                 // STRICT: Bonus pour type similaire, GROSSE PÉNALITÉ si type totalement différent
                 if ($type) {
@@ -336,6 +356,9 @@ Maintenant, traite ce produit en suivant ces règles exactement."
         }
 
         // 4. Recherche flexible MAIS TOUJOURS avec le vendor extrait (obligatoire)
+        // CETTE ÉTAPE EST DÉSACTIVÉE CAR ELLE RAMÈNE TROP DE RÉSULTATS NON PERTINENTS
+        // Si on arrive ici sans résultats, c'est qu'il n'y a vraiment pas de correspondance
+        /*
         if ($allResults->isEmpty()) {
             // Le vendor est OBLIGATOIRE dans cette recherche
             $flexible = Product::where('vendor', 'LIKE', "%{$vendor}%")
@@ -390,6 +413,7 @@ Maintenant, traite ce produit en suivant ces règles exactement."
 
             $allResults = $allResults->merge($scoredResults);
         }
+        */
 
         // Trier par score et éliminer les doublons
         $sortedResults = $allResults
