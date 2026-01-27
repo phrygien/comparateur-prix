@@ -188,7 +188,6 @@ Exemple de format attendu :
 
         $vendor = $extractedData['vendor'] ?? '';
         $name = $extractedData['name'] ?? '';
-        $variation = $extractedData['variation'] ?? '';
         $type = $extractedData['type'] ?? '';
         $isCoffretSource = $extractedData['is_coffret'] ?? false;
 
@@ -198,6 +197,7 @@ Exemple de format attendu :
         $typeWords = $this->extractKeywords($type);
 
         // Stratégie de recherche en cascade AVEC FILTRE VENDOR ET SITES
+        // NOTE: On ne recherche plus par variation
         $query = Product::query()
             ->when(!empty($vendor), function ($q) use ($vendor) {
                 $q->where('vendor', 'LIKE', "%{$vendor}%");
@@ -208,13 +208,10 @@ Exemple de format attendu :
             ->orderByDesc('scrap_reference_id') // Trier par scrap_reference_id décroissant
             ->orderByDesc('id'); // Ensuite par ID décroissant
 
-        // 1. Recherche exacte (tous les critères AVEC variation)
+        // 1. Recherche exacte (vendor + name + type) - SANS variation
         if (!empty($name)) {
             $exactMatch = (clone $query)
                 ->where('name', 'LIKE', "%{$name}%")
-                ->when(!empty($variation), function ($q) use ($variation) {
-                    $q->where('variation', 'LIKE', "%{$variation}%");
-                })
                 ->when(!empty($type), function ($q) use ($type) {
                     $q->where('type', 'LIKE', "%{$type}%");
                 })
@@ -230,26 +227,7 @@ Exemple de format attendu :
             }
         }
 
-        // 2. Recherche SANS variation (vendor + name + type)
-        if (!empty($name)) {
-            $withoutVariation = (clone $query)
-                ->where('name', 'LIKE', "%{$name}%")
-                ->when(!empty($type), function ($q) use ($type) {
-                    $q->where('type', 'LIKE', "%{$type}%");
-                })
-                ->get();
-
-            if ($withoutVariation->isNotEmpty()) {
-                $filtered = $this->filterByCoffretStatus($withoutVariation, $isCoffretSource);
-                if (!empty($filtered)) {
-                    $this->groupResultsBySiteAndProduct($filtered);
-                    $this->validateBestMatchWithAI();
-                    return;
-                }
-            }
-        }
-
-        // 3. Recherche vendor + name seulement (SANS variation et type)
+        // 2. Recherche vendor + name seulement
         if (!empty($name)) {
             $vendorAndName = (clone $query)
                 ->where('name', 'LIKE', "%{$name}%")
@@ -265,7 +243,7 @@ Exemple de format attendu :
             }
         }
 
-        // 4. Recherche flexible par mots-clés (SANS variation)
+        // 3. Recherche flexible par mots-clés (name seulement)
         if (!empty($nameWords)) {
             $keywordSearch = (clone $query)
                 ->where(function ($q) use ($nameWords) {
@@ -293,7 +271,7 @@ Exemple de format attendu :
             }
         }
 
-        // 5. Recherche très large : vendor + n'importe quel mot du name
+        // 4. Recherche très large : vendor + n'importe quel mot du name
         if (!empty($nameWords)) {
             $broadSearch = (clone $query)
                 ->where(function ($q) use ($nameWords) {
@@ -314,7 +292,7 @@ Exemple de format attendu :
             }
         }
 
-        // 6. Dernière tentative : vendor + type uniquement
+        // 5. Dernière tentative : vendor + type uniquement
         if (!empty($typeWords)) {
             $typeOnly = (clone $query)
                 ->where(function ($q) use ($typeWords) {
@@ -761,7 +739,7 @@ Score de confiance entre 0 et 1."
                             <span
                                 class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                 {{ $siteInfo['name'] ?? '' }}
-                                @if($isLatestForReference)
+                                @if($isLatestForSite)
                                     <span class="ml-1">• Dernier scrap ({{ $totalProductsOnSite }} produits trouvés)</span>
                                 @endif
                             </span>
