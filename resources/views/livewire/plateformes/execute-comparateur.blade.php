@@ -124,14 +124,30 @@ Exemple de format attendu :
             ->where('name', 'LIKE', "%{$name}%")
             ->where('variation', 'LIKE', "%{$variation}%")
             ->when($type, fn($q) => $q->where('type', 'LIKE', "%{$type}%"))
-            ->get()
-            ->filter(function($product) use ($isCoffret, $isCoffretProduct) {
-                $productIsCoffret = $isCoffretProduct($product->name, $product->type);
-                return $productIsCoffret === $isCoffret;
-            });
+            ->when($isCoffret, function($q) {
+                // Si c'est un coffret, ajouter une condition pour chercher le mot "coffret"
+                $q->where(function($subQ) {
+                    $subQ->where('name', 'LIKE', '%coffret%')
+                         ->orWhere('type', 'LIKE', '%coffret%')
+                         ->orWhere('name', 'LIKE', '%kit%')
+                         ->orWhere('type', 'LIKE', '%kit%')
+                         ->orWhere('name', 'LIKE', '%set%')
+                         ->orWhere('type', 'LIKE', '%set%');
+                });
+            })
+            ->when(!$isCoffret, function($q) {
+                // Si ce n'est PAS un coffret, exclure les produits avec ces mots
+                $q->where('name', 'NOT LIKE', '%coffret%')
+                  ->where('type', 'NOT LIKE', '%coffret%')
+                  ->where('name', 'NOT LIKE', '%kit%')
+                  ->where('type', 'NOT LIKE', '%kit%')
+                  ->where('name', 'NOT LIKE', '%set%')
+                  ->where('type', 'NOT LIKE', '%set%');
+            })
+            ->get();
 
         if ($exactMatch->isNotEmpty()) {
-            $this->matchingProducts = $exactMatch->values()->toArray();
+            $this->matchingProducts = $exactMatch->toArray();
             $this->bestMatch = $exactMatch->first();
             return;
         }
@@ -141,14 +157,28 @@ Exemple de format attendu :
             ->where('vendor', 'LIKE', "%{$vendor}%")
             ->where('name', 'LIKE', "%{$name}%")
             ->when($type, fn($q) => $q->where('type', 'LIKE', "%{$type}%"))
-            ->get()
-            ->filter(function($product) use ($isCoffret, $isCoffretProduct) {
-                $productIsCoffret = $isCoffretProduct($product->name, $product->type);
-                return $productIsCoffret === $isCoffret;
-            });
+            ->when($isCoffret, function($q) {
+                $q->where(function($subQ) {
+                    $subQ->where('name', 'LIKE', '%coffret%')
+                         ->orWhere('type', 'LIKE', '%coffret%')
+                         ->orWhere('name', 'LIKE', '%kit%')
+                         ->orWhere('type', 'LIKE', '%kit%')
+                         ->orWhere('name', 'LIKE', '%set%')
+                         ->orWhere('type', 'LIKE', '%set%');
+                });
+            })
+            ->when(!$isCoffret, function($q) {
+                $q->where('name', 'NOT LIKE', '%coffret%')
+                  ->where('type', 'NOT LIKE', '%coffret%')
+                  ->where('name', 'NOT LIKE', '%kit%')
+                  ->where('type', 'NOT LIKE', '%kit%')
+                  ->where('name', 'NOT LIKE', '%set%')
+                  ->where('type', 'NOT LIKE', '%set%');
+            })
+            ->get();
 
         if ($withoutVariation->isNotEmpty()) {
-            $this->matchingProducts = $withoutVariation->values()->toArray();
+            $this->matchingProducts = $withoutVariation->toArray();
             $this->bestMatch = $withoutVariation->first();
             return;
         }
@@ -157,23 +187,41 @@ Exemple de format attendu :
         $vendorAndName = (clone $query)
             ->where('vendor', 'LIKE', "%{$vendor}%")
             ->where('name', 'LIKE', "%{$name}%")
-            ->get()
-            ->filter(function($product) use ($isCoffret, $isCoffretProduct) {
-                $productIsCoffret = $isCoffretProduct($product->name, $product->type);
-                return $productIsCoffret === $isCoffret;
-            });
+            ->when($isCoffret, function($q) {
+                $q->where(function($subQ) {
+                    $subQ->where('name', 'LIKE', '%coffret%')
+                         ->orWhere('type', 'LIKE', '%coffret%')
+                         ->orWhere('name', 'LIKE', '%kit%')
+                         ->orWhere('type', 'LIKE', '%kit%')
+                         ->orWhere('name', 'LIKE', '%set%')
+                         ->orWhere('type', 'LIKE', '%set%');
+                });
+            })
+            ->when(!$isCoffret, function($q) {
+                $q->where('name', 'NOT LIKE', '%coffret%')
+                  ->where('type', 'NOT LIKE', '%coffret%')
+                  ->where('name', 'NOT LIKE', '%kit%')
+                  ->where('type', 'NOT LIKE', '%kit%')
+                  ->where('name', 'NOT LIKE', '%set%')
+                  ->where('type', 'NOT LIKE', '%set%');
+            })
+            ->get();
 
         if ($vendorAndName->isNotEmpty()) {
-            $this->matchingProducts = $vendorAndName->values()->toArray();
+            $this->matchingProducts = $vendorAndName->toArray();
             $this->bestMatch = $vendorAndName->first();
             return;
         }
 
-        // 4. Recherche avec type coffret explicite si c'est un coffret
+        // 4. Recherche spécifique coffret si is_coffret = true
         if ($isCoffret) {
             $coffretSearch = (clone $query)
                 ->where('vendor', 'LIKE', "%{$vendor}%")
-                ->where('name', 'LIKE', "%{$name}%")
+                ->where(function($q) use ($name) {
+                    $q->where('name', 'LIKE', "%{$name}%")
+                      ->orWhere('name', 'LIKE', "%{$name}%coffret%")
+                      ->orWhere('name', 'LIKE', "%coffret%{$name}%");
+                })
                 ->where(function($q) {
                     $q->where('name', 'LIKE', '%coffret%')
                       ->orWhere('type', 'LIKE', '%coffret%')
@@ -193,7 +241,12 @@ Exemple de format attendu :
 
         // 5. Full-text search avec filtre coffret
         if (method_exists(Product::class, 'scopeFullTextSearch')) {
+            // Ajouter "coffret" au terme de recherche si c'est un coffret
             $searchQuery = trim("{$vendor} {$name} {$type} {$variation}");
+            if ($isCoffret) {
+                $searchQuery .= " coffret";
+            }
+            
             $fullTextResults = Product::fullTextSearch($searchQuery)
                 ->get()
                 ->filter(function($product) use ($isCoffret, $isCoffretProduct) {
@@ -213,15 +266,28 @@ Exemple de format attendu :
             $q->where('vendor', 'LIKE', "%{$vendor}%")
               ->orWhere('name', 'LIKE', "%{$name}%");
         })
-        ->limit(20)
-        ->get()
-        ->filter(function($product) use ($isCoffret, $isCoffretProduct) {
-            $productIsCoffret = $isCoffretProduct($product->name, $product->type);
-            return $productIsCoffret === $isCoffret;
+        ->when($isCoffret, function($q) {
+            $q->where(function($subQ) {
+                $subQ->where('name', 'LIKE', '%coffret%')
+                     ->orWhere('type', 'LIKE', '%coffret%')
+                     ->orWhere('name', 'LIKE', '%kit%')
+                     ->orWhere('type', 'LIKE', '%kit%')
+                     ->orWhere('name', 'LIKE', '%set%')
+                     ->orWhere('type', 'LIKE', '%set%');
+            });
         })
-        ->take(10);
+        ->when(!$isCoffret, function($q) {
+            $q->where('name', 'NOT LIKE', '%coffret%')
+              ->where('type', 'NOT LIKE', '%coffret%')
+              ->where('name', 'NOT LIKE', '%kit%')
+              ->where('type', 'NOT LIKE', '%kit%')
+              ->where('name', 'NOT LIKE', '%set%')
+              ->where('type', 'NOT LIKE', '%set%');
+        })
+        ->limit(10)
+        ->get();
 
-        $this->matchingProducts = $flexible->values()->toArray();
+        $this->matchingProducts = $flexible->toArray();
         $this->bestMatch = $flexible->first();
     }
 
