@@ -466,124 +466,107 @@ Pour un coffret :
         </div>
     @endif
 
-    @if(!empty($matchingProducts))
-        <div class="mt-6">
-            <h3 class="font-bold mb-3 text-gray-700 flex items-center gap-2">
+    @if($bestMatch)
+        <div class="mt-6 p-4 bg-green-50 border-2 border-green-500 rounded-lg">
+            <h3 class="font-bold text-green-700 mb-3 flex items-center gap-2">
                 <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                     <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
                 </svg>
-                Résultats trouvés ({{ count($matchingProducts) }})
+                Meilleur résultat trouvé
+                @php
+                    $isBestMatchCoffret = stripos($bestMatch['name'], 'coffret') !== false || 
+                                          stripos($bestMatch['name'], 'set') !== false || 
+                                          stripos($bestMatch['name'], 'kit') !== false ||
+                                          stripos($bestMatch['type'], 'coffret') !== false ||
+                                          stripos($bestMatch['type'], 'set') !== false ||
+                                          stripos($bestMatch['type'], 'kit') !== false;
+                @endphp
+                @if($isBestMatchCoffret)
+                    <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                        Coffret
+                    </span>
+                @endif
             </h3>
-            
-            <div class="overflow-x-auto">
-                <table class="table table-xs">
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Image</th>
-                            <th>Vendor</th>
-                            <th>Nom du produit</th>
-                            <th>Type</th>
-                            <th>Variation</th>
-                            <th>Prix HT</th>
-                            <th>Site</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach($matchingProducts as $index => $product)
-                            @php
-                                $isProductCoffret = stripos($product['name'], 'coffret') !== false || 
-                                                  stripos($product['name'], 'set') !== false || 
-                                                  stripos($product['name'], 'kit') !== false ||
-                                                  stripos($product['type'], 'coffret') !== false ||
-                                                  stripos($product['type'], 'set') !== false ||
-                                                  stripos($product['type'], 'kit') !== false;
-                                $isBestMatch = $bestMatch && $bestMatch['id'] === $product['id'];
-                            @endphp
-                            <tr class="{{ $isBestMatch ? 'bg-green-50' : '' }} hover:bg-blue-50 cursor-pointer" wire:click="selectProduct({{ $product['id'] }})">
-                                <th>
-                                    {{ $index + 1 }}
-                                    @if($isBestMatch)
-                                        <span class="badge badge-success badge-xs ml-1">Meilleur</span>
-                                    @endif
-                                </th>
-                                <td>
-                                    @if($product['image_url'])
-                                        <div class="avatar">
-                                            <div class="w-12 h-12 rounded">
-                                                <img src="{{ $product['image_url'] }}" alt="{{ $product['name'] }}" />
-                                            </div>
-                                        </div>
-                                    @else
-                                        <div class="w-12 h-12 bg-gray-200 rounded flex items-center justify-center">
-                                            <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-                                            </svg>
-                                        </div>
-                                    @endif
-                                </td>
-                                <td>
-                                    <div class="font-bold">{{ $product['vendor'] }}</div>
-                                    @if($isProductCoffret)
-                                        <span class="badge badge-secondary badge-xs">Coffret</span>
-                                    @endif
-                                </td>
-                                <td>
-                                    <div class="max-w-xs truncate" title="{{ $product['name'] }}">
-                                        {{ $product['name'] }}
+            <div class="flex items-start gap-4">
+                @if($bestMatch['image_url'])
+                    <img src="{{ $bestMatch['image_url'] }}" alt="{{ $bestMatch['name'] }}" class="w-24 h-24 object-cover rounded-lg shadow">
+                @else
+                    <div class="w-24 h-24 bg-gray-200 rounded-lg flex items-center justify-center">
+                        <svg class="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                        </svg>
+                    </div>
+                @endif
+                <div class="flex-1">
+                    <p class="font-bold text-lg">{{ $bestMatch['vendor'] }} - {{ $bestMatch['name'] }}</p>
+                    <p class="text-sm text-gray-600 mt-1">
+                        <span class="font-medium">{{ $bestMatch['type'] }}</span> | 
+                        <span>{{ $bestMatch['variation'] }}</span>
+                    </p>
+                    <p class="text-lg font-bold text-green-600 mt-2">{{ number_format((float)$bestMatch['prix_ht'], 2) }} {{ $bestMatch['currency'] }}</p>
+                    @if($bestMatch['url'])
+                        <a href="{{ $bestMatch['url'] }}" target="_blank" class="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 hover:underline mt-2">
+                            Voir le produit
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                            </svg>
+                        </a>
+                    @endif
+                    <p class="text-xs text-gray-400 mt-1">ID: {{ $bestMatch['id'] }}</p>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    @if(!empty($matchingProducts) && count($matchingProducts) > 1)
+        <div class="mt-6">
+            <h3 class="font-bold mb-3 text-gray-700">
+                Autres résultats trouvés ({{ count($matchingProducts) }}) :
+            </h3>
+            <div class="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded-lg p-2">
+                @foreach($matchingProducts as $product)
+                    @if($bestMatch && $bestMatch['id'] !== $product['id'])
+                        @php
+                            $isProductCoffret = stripos($product['name'], 'coffret') !== false || 
+                                              stripos($product['name'], 'set') !== false || 
+                                              stripos($product['name'], 'kit') !== false ||
+                                              stripos($product['type'], 'coffret') !== false ||
+                                              stripos($product['type'], 'set') !== false ||
+                                              stripos($product['type'], 'kit') !== false;
+                        @endphp
+                        <div 
+                            wire:click="selectProduct({{ $product['id'] }})"
+                            class="p-3 border rounded-lg hover:bg-blue-50 hover:border-blue-300 cursor-pointer transition bg-white"
+                        >
+                            <div class="flex items-center gap-3">
+                                @if($product['image_url'])
+                                    <img src="{{ $product['image_url'] }}" alt="{{ $product['name'] }}" class="w-16 h-16 object-cover rounded shadow-sm">
+                                @else
+                                    <div class="w-16 h-16 bg-gray-100 rounded flex items-center justify-center">
+                                        <svg class="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                        </svg>
                                     </div>
-                                    <div class="text-xs text-gray-500">ID: {{ $product['id'] }}</div>
-                                </td>
-                                <td>{{ $product['type'] }}</td>
-                                <td>{{ $product['variation'] }}</td>
-                                <td>
-                                    <span class="font-bold text-success">
-                                        {{ number_format((float)$product['prix_ht'], 2) }} {{ $product['currency'] }}
-                                    </span>
-                                </td>
-                                <td>
-                                    @if($product['url'])
-                                        @php
-                                            $urlParts = parse_url($product['url']);
-                                            $domain = $urlParts['host'] ?? 'Site';
-                                            $domain = str_replace('www.', '', $domain);
-                                        @endphp
-                                        <a href="{{ $product['url'] }}" 
-                                           target="_blank" 
-                                           class="link link-primary text-xs"
-                                           onclick="event.stopPropagation()">
-                                            {{ $domain }}
-                                            <svg class="w-3 h-3 inline ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-                                            </svg>
-                                        </a>
-                                    @else
-                                        <span class="text-gray-400 text-xs">N/A</span>
-                                    @endif
-                                </td>
-                                <td>
-                                    <button class="btn btn-xs btn-outline btn-primary" onclick="event.stopPropagation()">
-                                        Sélectionner
-                                    </button>
-                                </td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                    <tfoot>
-                        <tr>
-                            <th>#</th>
-                            <th>Image</th>
-                            <th>Vendor</th>
-                            <th>Nom du produit</th>
-                            <th>Type</th>
-                            <th>Variation</th>
-                            <th>Prix HT</th>
-                            <th>Site</th>
-                            <th>Action</th>
-                        </tr>
-                    </tfoot>
-                </table>
+                                @endif
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <p class="font-medium text-sm truncate">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
+                                        @if($isProductCoffret)
+                                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 flex-shrink-0">
+                                                Coffret
+                                            </span>
+                                        @endif
+                                    </div>
+                                    <p class="text-xs text-gray-500 truncate">{{ $product['type'] }} | {{ $product['variation'] }}</p>
+                                </div>
+                                <div class="text-right flex-shrink-0">
+                                    <p class="font-bold text-sm whitespace-nowrap">{{ number_format((float)$product['prix_ht'], 2) }} {{ $product['currency'] }}</p>
+                                    <p class="text-xs text-gray-400">ID: {{ $product['id'] }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    @endif
+                @endforeach
             </div>
         </div>
     @endif
