@@ -33,26 +33,24 @@ new class extends Component {
                 'messages' => [
                     [
                         'role' => 'system',
-                        'content' => 'Tu es un expert en extraction de données de produits cosmétiques. Tu dois extraire vendor, name, variation, type et is_coffret du nom de produit fourni. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
+                        'content' => 'Tu es un expert en extraction de données de produits cosmétiques. Tu dois extraire vendor, name, variation et type du nom de produit fourni. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
                     ],
                     [
                         'role' => 'user',
                         'content' => "Extrait les informations suivantes du nom de produit et retourne-les au format JSON strict :
 - vendor : la marque du produit
-- name : le nom de la gamme/ligne de produit (SANS le mot coffret)
+- name : le nom de la gamme/ligne de produit
 - variation : la contenance/taille (ml, g, etc.)
-- type : le type de produit (Crème, Sérum, Concentré, Eau de Toilette, etc.) (SANS le mot coffret)
-- is_coffret : true si le produit est un coffret/kit/set, false sinon
+- type : le type de produit (Crème, Sérum, Concentré, etc.)
 
 Nom du produit : {$this->productName}
 
 Exemple de format attendu :
 {
-  \"vendor\": \"Azzaro\",
-  \"name\": \"Wanted\",
-  \"variation\": \"100 ml\",
-  \"type\": \"Eau de Toilette\",
-  \"is_coffret\": true
+  \"vendor\": \"Shiseido\",
+  \"name\": \"Vital Perfection\",
+  \"variation\": \"20 ml\",
+  \"type\": \"Concentré Correcteur Rides\"
 }"
                     ]
                 ],
@@ -64,6 +62,7 @@ Exemple de format attendu :
                 $data = $response->json();
                 $content = $data['choices'][0]['message']['content'];
                 
+                // Nettoyer le contenu
                 $content = preg_replace('/```json\s*|\s*```/', '', $content);
                 $content = trim($content);
                 
@@ -73,6 +72,7 @@ Exemple de format attendu :
                     throw new \Exception('Erreur de parsing JSON: ' . json_last_error_msg());
                 }
                 
+                // Rechercher les produits correspondants
                 $this->searchMatchingProducts();
                 
             } else {
@@ -101,49 +101,16 @@ Exemple de format attendu :
         $name = $this->extractedData['name'] ?? '';
         $variation = $this->extractedData['variation'] ?? '';
         $type = $this->extractedData['type'] ?? '';
-        $isCoffret = $this->extractedData['is_coffret'] ?? false;
 
+        // Stratégie de recherche en cascade
         $query = Product::query();
 
-        // Fonction helper pour vérifier si un produit est un coffret
-        $isCoffretProduct = function($productName, $productType) {
-            $coffretKeywords = ['coffret', 'kit', 'set', 'box', 'trousse'];
-            $searchText = strtolower($productName . ' ' . $productType);
-            
-            foreach ($coffretKeywords as $keyword) {
-                if (str_contains($searchText, $keyword)) {
-                    return true;
-                }
-            }
-            return false;
-        };
-
-        // 1. Recherche exacte avec critère coffret
+        // 1. Recherche exacte (tous les critères)
         $exactMatch = (clone $query)
             ->where('vendor', 'LIKE', "%{$vendor}%")
             ->where('name', 'LIKE', "%{$name}%")
             ->where('variation', 'LIKE', "%{$variation}%")
             ->when($type, fn($q) => $q->where('type', 'LIKE', "%{$type}%"))
-            ->when($isCoffret, function($q) {
-                // Si c'est un coffret, ajouter une condition pour chercher le mot "coffret"
-                $q->where(function($subQ) {
-                    $subQ->where('name', 'LIKE', '%coffret%')
-                         ->orWhere('type', 'LIKE', '%coffret%')
-                         ->orWhere('name', 'LIKE', '%kit%')
-                         ->orWhere('type', 'LIKE', '%kit%')
-                         ->orWhere('name', 'LIKE', '%set%')
-                         ->orWhere('type', 'LIKE', '%set%');
-                });
-            })
-            ->when(!$isCoffret, function($q) {
-                // Si ce n'est PAS un coffret, exclure les produits avec ces mots
-                $q->where('name', 'NOT LIKE', '%coffret%')
-                  ->where('type', 'NOT LIKE', '%coffret%')
-                  ->where('name', 'NOT LIKE', '%kit%')
-                  ->where('type', 'NOT LIKE', '%kit%')
-                  ->where('name', 'NOT LIKE', '%set%')
-                  ->where('type', 'NOT LIKE', '%set%');
-            })
             ->get();
 
         if ($exactMatch->isNotEmpty()) {
@@ -152,29 +119,11 @@ Exemple de format attendu :
             return;
         }
 
-        // 2. Recherche sans variation mais avec critère coffret
+        // 2. Recherche sans variation
         $withoutVariation = (clone $query)
             ->where('vendor', 'LIKE', "%{$vendor}%")
             ->where('name', 'LIKE', "%{$name}%")
             ->when($type, fn($q) => $q->where('type', 'LIKE', "%{$type}%"))
-            ->when($isCoffret, function($q) {
-                $q->where(function($subQ) {
-                    $subQ->where('name', 'LIKE', '%coffret%')
-                         ->orWhere('type', 'LIKE', '%coffret%')
-                         ->orWhere('name', 'LIKE', '%kit%')
-                         ->orWhere('type', 'LIKE', '%kit%')
-                         ->orWhere('name', 'LIKE', '%set%')
-                         ->orWhere('type', 'LIKE', '%set%');
-                });
-            })
-            ->when(!$isCoffret, function($q) {
-                $q->where('name', 'NOT LIKE', '%coffret%')
-                  ->where('type', 'NOT LIKE', '%coffret%')
-                  ->where('name', 'NOT LIKE', '%kit%')
-                  ->where('type', 'NOT LIKE', '%kit%')
-                  ->where('name', 'NOT LIKE', '%set%')
-                  ->where('type', 'NOT LIKE', '%set%');
-            })
             ->get();
 
         if ($withoutVariation->isNotEmpty()) {
@@ -183,28 +132,10 @@ Exemple de format attendu :
             return;
         }
 
-        // 3. Recherche vendor + name avec critère coffret
+        // 3. Recherche vendor + name seulement
         $vendorAndName = (clone $query)
             ->where('vendor', 'LIKE', "%{$vendor}%")
             ->where('name', 'LIKE', "%{$name}%")
-            ->when($isCoffret, function($q) {
-                $q->where(function($subQ) {
-                    $subQ->where('name', 'LIKE', '%coffret%')
-                         ->orWhere('type', 'LIKE', '%coffret%')
-                         ->orWhere('name', 'LIKE', '%kit%')
-                         ->orWhere('type', 'LIKE', '%kit%')
-                         ->orWhere('name', 'LIKE', '%set%')
-                         ->orWhere('type', 'LIKE', '%set%');
-                });
-            })
-            ->when(!$isCoffret, function($q) {
-                $q->where('name', 'NOT LIKE', '%coffret%')
-                  ->where('type', 'NOT LIKE', '%coffret%')
-                  ->where('name', 'NOT LIKE', '%kit%')
-                  ->where('type', 'NOT LIKE', '%kit%')
-                  ->where('name', 'NOT LIKE', '%set%')
-                  ->where('type', 'NOT LIKE', '%set%');
-            })
             ->get();
 
         if ($vendorAndName->isNotEmpty()) {
@@ -213,76 +144,22 @@ Exemple de format attendu :
             return;
         }
 
-        // 4. Recherche spécifique coffret si is_coffret = true
-        if ($isCoffret) {
-            $coffretSearch = (clone $query)
-                ->where('vendor', 'LIKE', "%{$vendor}%")
-                ->where(function($q) use ($name) {
-                    $q->where('name', 'LIKE', "%{$name}%")
-                      ->orWhere('name', 'LIKE', "%{$name}%coffret%")
-                      ->orWhere('name', 'LIKE', "%coffret%{$name}%");
-                })
-                ->where(function($q) {
-                    $q->where('name', 'LIKE', '%coffret%')
-                      ->orWhere('type', 'LIKE', '%coffret%')
-                      ->orWhere('name', 'LIKE', '%kit%')
-                      ->orWhere('type', 'LIKE', '%kit%')
-                      ->orWhere('name', 'LIKE', '%set%')
-                      ->orWhere('type', 'LIKE', '%set%');
-                })
-                ->get();
-
-            if ($coffretSearch->isNotEmpty()) {
-                $this->matchingProducts = $coffretSearch->toArray();
-                $this->bestMatch = $coffretSearch->first();
-                return;
-            }
-        }
-
-        // 5. Full-text search avec filtre coffret
+        // 4. Full-text search si disponible
         if (method_exists(Product::class, 'scopeFullTextSearch')) {
-            // Ajouter "coffret" au terme de recherche si c'est un coffret
             $searchQuery = trim("{$vendor} {$name} {$type} {$variation}");
-            if ($isCoffret) {
-                $searchQuery .= " coffret";
-            }
-            
-            $fullTextResults = Product::fullTextSearch($searchQuery)
-                ->get()
-                ->filter(function($product) use ($isCoffret, $isCoffretProduct) {
-                    $productIsCoffret = $isCoffretProduct($product->name, $product->type);
-                    return $productIsCoffret === $isCoffret;
-                });
+            $fullTextResults = Product::fullTextSearch($searchQuery)->get();
 
             if ($fullTextResults->isNotEmpty()) {
-                $this->matchingProducts = $fullTextResults->values()->toArray();
+                $this->matchingProducts = $fullTextResults->toArray();
                 $this->bestMatch = $fullTextResults->first();
                 return;
             }
         }
 
-        // 6. Recherche flexible avec critère coffret
+        // 5. Recherche flexible (au moins vendor OU name)
         $flexible = Product::where(function($q) use ($vendor, $name) {
             $q->where('vendor', 'LIKE', "%{$vendor}%")
               ->orWhere('name', 'LIKE', "%{$name}%");
-        })
-        ->when($isCoffret, function($q) {
-            $q->where(function($subQ) {
-                $subQ->where('name', 'LIKE', '%coffret%')
-                     ->orWhere('type', 'LIKE', '%coffret%')
-                     ->orWhere('name', 'LIKE', '%kit%')
-                     ->orWhere('type', 'LIKE', '%kit%')
-                     ->orWhere('name', 'LIKE', '%set%')
-                     ->orWhere('type', 'LIKE', '%set%');
-            });
-        })
-        ->when(!$isCoffret, function($q) {
-            $q->where('name', 'NOT LIKE', '%coffret%')
-              ->where('type', 'NOT LIKE', '%coffret%')
-              ->where('name', 'NOT LIKE', '%kit%')
-              ->where('type', 'NOT LIKE', '%kit%')
-              ->where('name', 'NOT LIKE', '%set%')
-              ->where('type', 'NOT LIKE', '%set%');
         })
         ->limit(10)
         ->get();
@@ -296,41 +173,13 @@ Exemple de format attendu :
         $product = Product::find($productId);
         
         if ($product) {
+            // Vous pouvez faire ce que vous voulez avec le produit sélectionné
             session()->flash('success', 'Produit sélectionné : ' . $product->name);
             $this->bestMatch = $product;
+            
+            // Émettre un événement si besoin
             $this->dispatch('product-selected', productId: $productId);
         }
-    }
-
-    public function getProductsForList()
-    {
-        return collect($this->matchingProducts)->map(function($product) {
-            // Détection si c'est un coffret pour l'affichage
-            $isCoffret = false;
-            $coffretKeywords = ['coffret', 'kit', 'set', 'box', 'trousse'];
-            $searchText = strtolower($product['name'] . ' ' . $product['type']);
-            
-            foreach ($coffretKeywords as $keyword) {
-                if (str_contains($searchText, $keyword)) {
-                    $isCoffret = true;
-                    break;
-                }
-            }
-            
-            $displayType = $product['type'] . ' | ' . $product['variation'];
-            if ($isCoffret) {
-                $displayType = '📦 ' . $displayType;
-            }
-            
-            return (object)[
-                'id' => $product['id'],
-                'title' => $product['vendor'] . ' - ' . $product['name'],
-                'username' => $displayType,
-                'subtitle' => $product['prix_ht'] . ' ' . $product['currency'],
-                'avatar' => $product['image_url'] ?? null,
-                'url' => $product['url'] ?? null,
-            ];
-        });
     }
 
 }; ?>
@@ -378,14 +227,6 @@ Exemple de format attendu :
                 <div>
                     <span class="font-semibold">Type:</span> {{ $extractedData['type'] ?? 'N/A' }}
                 </div>
-                <div class="col-span-2">
-                    <span class="font-semibold">Coffret:</span> 
-                    @if($extractedData['is_coffret'] ?? false)
-                        <span class="px-2 py-1 bg-purple-100 text-purple-700 rounded text-sm">📦 Oui</span>
-                    @else
-                        <span class="px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm">Non</span>
-                    @endif
-                </div>
             </div>
         </div>
     @endif
@@ -393,37 +234,17 @@ Exemple de format attendu :
     @if($bestMatch)
         <div class="mt-6 p-4 bg-green-50 border-2 border-green-500 rounded">
             <h3 class="font-bold text-green-700 mb-3">✓ Meilleur résultat :</h3>
-            @php
-                $isCoffret = false;
-                $coffretKeywords = ['coffret', 'kit', 'set', 'box', 'trousse'];
-                $searchText = strtolower($bestMatch['name'] . ' ' . $bestMatch['type']);
-                
-                foreach ($coffretKeywords as $keyword) {
-                    if (str_contains($searchText, $keyword)) {
-                        $isCoffret = true;
-                        break;
-                    }
-                }
-                
-                $displayType = $bestMatch['type'] . ' | ' . $bestMatch['variation'];
-                if ($isCoffret) {
-                    $displayType = '📦 ' . $displayType;
-                }
-                
-                $bestMatchObj = (object)[
-                    'id' => $bestMatch['id'],
-                    'title' => $bestMatch['vendor'] . ' - ' . $bestMatch['name'],
-                    'username' => $displayType,
-                    'subtitle' => $bestMatch['prix_ht'] . ' ' . $bestMatch['currency'],
-                    'avatar' => $bestMatch['image_url'] ?? null,
-                ];
-            @endphp
-            <x-list-item 
-                :item="$bestMatchObj" 
-                value="title"
-                sub-value="username" 
-                :link="$bestMatch['url'] ?? '#'" 
-            />
+            <div class="flex items-start gap-4">
+                @if($bestMatch['image_url'])
+                    <img src="{{ $bestMatch['image_url'] }}" alt="{{ $bestMatch['name'] }}" class="w-20 h-20 object-cover rounded">
+                @endif
+                <div class="flex-1">
+                    <p class="font-semibold">{{ $bestMatch['vendor'] }} - {{ $bestMatch['name'] }}</p>
+                    <p class="text-sm text-gray-600">{{ $bestMatch['type'] }} | {{ $bestMatch['variation'] }}</p>
+                    <p class="text-sm font-bold text-green-600 mt-1">{{ $bestMatch['prix_ht'] }} {{ $bestMatch['currency'] }}</p>
+                    <a href="{{ $bestMatch['url'] }}" target="_blank" class="text-xs text-blue-500 hover:underline">Voir le produit</a>
+                </div>
+            </div>
         </div>
     @endif
 
@@ -431,14 +252,24 @@ Exemple de format attendu :
         <div class="mt-6">
             <h3 class="font-bold mb-3">Autres résultats trouvés ({{ count($matchingProducts) }}) :</h3>
             <div class="space-y-2 max-h-96 overflow-y-auto">
-                @foreach($this->getProductsForList() as $product)
-                    <div wire:click="selectProduct({{ $product->id }})" class="cursor-pointer">
-                        <x-list-item 
-                            :item="$product" 
-                            value="title"
-                            sub-value="username" 
-                            :link="$product->url ?? '#'" 
-                        />
+                @foreach($matchingProducts as $product)
+                    <div 
+                        wire:click="selectProduct({{ $product['id'] }})"
+                        class="p-3 border rounded hover:bg-blue-50 cursor-pointer transition {{ $bestMatch && $bestMatch['id'] === $product['id'] ? 'bg-blue-100 border-blue-500' : 'bg-white' }}"
+                    >
+                        <div class="flex items-center gap-3">
+                            @if($product['image_url'])
+                                <img src="{{ $product['image_url'] }}" alt="{{ $product['name'] }}" class="w-12 h-12 object-cover rounded">
+                            @endif
+                            <div class="flex-1">
+                                <p class="font-medium text-sm">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
+                                <p class="text-xs text-gray-500">{{ $product['type'] }} | {{ $product['variation'] }}</p>
+                            </div>
+                            <div class="text-right">
+                                <p class="font-bold text-sm">{{ $product['prix_ht'] }} {{ $product['currency'] }}</p>
+                                <p class="text-xs text-gray-500">ID: {{ $product['id'] }}</p>
+                            </div>
+                        </div>
                     </div>
                 @endforeach
             </div>
