@@ -24,7 +24,7 @@ new class extends Component {
         try {
             $response = Http::withHeaders([
                 'Content-Type' => 'application/json',
-                'Authorization' => 'Bearer ' . config('services.openai.api_key'),
+                'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
             ])->post('https://api.openai.com/v1/chat/completions', [
                         'model' => 'gpt-4o-mini',
                         'messages' => [
