@@ -3,6 +3,7 @@
 use Livewire\Volt\Component;
 use App\Models\Product;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 
 new class extends Component {
     
@@ -28,413 +29,318 @@ new class extends Component {
         $this->matchingProducts = [];
         $this->bestMatch = null;
         $this->aiCorrection = null;
-        session()->forget(['error', 'warning', 'success']);
+        session()->forget(['error', 'warning', 'success', 'info']);
         
         try {
-            // Étape 1: Extraction des données
+            // ───────────────────────────────────────────────────────────────
+            // ÉTAPE 1 : Extraction structurée avec GPT-4o-mini
+            // ───────────────────────────────────────────────────────────────
             $extractionResponse = Http::withHeaders([
-                'Content-Type' => 'application/json',
                 'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
             ])->post('https://api.openai.com/v1/chat/completions', [
                 'model' => 'gpt-4o-mini',
                 'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' => 'Tu es un expert en extraction de données de produits cosmétiques. Tu dois extraire vendor, name, variation et type du nom de produit fourni. IMPORTANT: Pour les parfums, si le vendor et le nom semblent identiques (ex: "Azzaro Chrome"), traite "Chrome" comme le nom et "Azzaro" comme le vendor. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
-                    ],
-                    [
-                        'role' => 'user',
-                        'content' => "Extrait les informations suivantes du nom de produit et retourne-les au format JSON strict :
-- vendor : la marque du produit
-- name : le nom de la gamme/ligne de produit (pour les parfums, c'est souvent le nom du parfum)
-- variation : la contenance/taille (ml, g, etc.)
-- type : le type de produit (Crème, Sérum, Concentré, Déodorant, Eau de Toilette, etc.)
-
-Nom du produit : {$this->productName}
-
-Exemple de format attendu :
-{
-  \"vendor\": \"Azzaro\",
-  \"name\": \"Chrome\",
-  \"variation\": \"150 ml\",
-  \"type\": \"Déodorant Vaporisateur\"
-}
-
-Exemple 2 (parfum avec nom composé) :
-{
-  \"vendor\": \"Dior\",
-  \"name\": \"Sauvage\",
-  \"variation\": \"100 ml\",
-  \"type\": \"Eau de Toilette\"
-}
-
-Exemple 3 (produit de soin) :
-{
-  \"vendor\": \"Shiseido\",
-  \"name\": \"Vital Perfection\",
-  \"variation\": \"20 ml\",
-  \"type\": \"Concentré Correcteur Rides\"
-}"
-                    ]
-                ],
-                'temperature' => 0.3,
-                'max_tokens' => 500
-            ]);
-
-            if (!$extractionResponse->successful()) {
-                throw new \Exception('Erreur API OpenAI: ' . $extractionResponse->body());
-            }
-
-            $extractionData = $extractionResponse->json();
-            $content = $extractionData['choices'][0]['message']['content'];
-            
-            // Nettoyer le contenu
-            $content = preg_replace('/```json\s*|\s*```/', '', $content);
-            $content = trim($content);
-            
-            $this->extractedData = json_decode($content, true);
-            
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                throw new \Exception('Erreur de parsing JSON: ' . json_last_error_msg());
-            }
-
-            // Étape 2: Vérification de la correspondance avec OpenAI
-            $verificationResponse = Http::withHeaders([
-                'Content-Type' => 'application/json',
-                'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
-            ])->post('https://api.openai.com/v1/chat/completions', [
-                'model' => 'gpt-4o-mini',
-                'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' => 'Tu es un expert en produits cosmétiques et parfumerie. Tu dois analyser si le nom et le type de produit correspondent logiquement. Pour les parfums, si le nom ressemble à un nom de parfum (ex: "Chrome", "Sauvage", "J\'adore") et le type est "Déodorant", cela peut être correct. Réponds UNIQUEMENT avec un objet JSON valide contenant "is_correct" (booléen) et "correction" (objet avec vendor, name, type si correction nécessaire).'
-                    ],
-                    [
-                        'role' => 'user',
-                        'content' => "Analyse cette combinaison nom/type de produit et vérifie si elle est cohérente :
-                        
-Nom du produit original: {$this->productName}
-Vendor extrait: {$this->extractedData['vendor']}
-Name extrait: {$this->extractedData['name']}
-Type extrait: {$this->extractedData['type']}
-
-Questions à considérer:
-1. Est-ce que le 'name' ressemble à un nom de gamme/produit valide pour ce 'type'?
-2. Pour les parfums: 'Chrome', 'Sauvage', 'J\'adore' sont des noms de parfums valides pour des déodorants
-3. Pour les soins: 'Vital Perfection' est valide pour un 'Concentré Correcteur Rides'
-4. Y a-t-il des incohérences évidentes?
-
-Si la combinaison semble incorrecte, suggère une correction probable.
-
-Format de réponse attendu:
-{
-  \"is_correct\": true/false,
-  \"confidence\": \"high/medium/low\",
-  \"explanation\": \"Explication courte\",
-  \"correction\": {
-    \"vendor\": \"Vendor corrigé si nécessaire\",
-    \"name\": \"Name corrigé si nécessaire\",
-    \"type\": \"Type corrigé si nécessaire\"
-  }
-}
-
-Exemple de réponse pour 'Azzaro Chrome Déodorant':
-{
-  \"is_correct\": true,
-  \"confidence\": \"high\",
-  \"explanation\": \"Chrome est un nom de parfum Azzaro, compatible avec un déodorant\",
-  \"correction\": {}
-}
-
-Exemple de réponse pour incohérence:
-{
-  \"is_correct\": false,
-  \"confidence\": \"high\",
-  \"explanation\": \"Le nom 'Nettoyant Visage' ne correspond pas au type 'Parfum'\",
-  \"correction\": {
-    \"vendor\": \"Azzaro\",
-    \"name\": \"Chrome\",
-    \"type\": \"Déodorant\"
-  }
-}"
-                    ]
+                    ['role' => 'system', 'content' => $this->getExtractionPrompt()],
+                    ['role' => 'user',   'content' => "Nom du produit : {$this->productName}"]
                 ],
                 'temperature' => 0.2,
-                'max_tokens' => 500
+                'max_tokens' => 300,
+            ]);
+
+            $extractionResponse->throw();
+
+            $content = trim($extractionResponse->json()['choices'][0]['message']['content'] ?? '');
+            $content = preg_replace('/^```json\s*|\s*```$/', '', $content);
+
+            $this->extractedData = json_decode($content, true);
+
+            if (json_last_error() !== JSON_ERROR_NONE || !is_array($this->extractedData)) {
+                throw new \Exception('Réponse JSON invalide de l\'extraction');
+            }
+
+            // ───────────────────────────────────────────────────────────────
+            // ÉTAPE 2 : Vérification / correction intelligente
+            // ───────────────────────────────────────────────────────────────
+            $verificationResponse = Http::withHeaders([
+                'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
+            ])->post('https://api.openai.com/v1/chat/completions', [
+                'model' => 'gpt-4o-mini',
+                'messages' => [
+                    ['role' => 'system', 'content' => $this->getVerificationPrompt()],
+                    ['role' => 'user',   'content' => $this->buildVerificationUserMessage()]
+                ],
+                'temperature' => 0.1,
+                'max_tokens' => 400,
             ]);
 
             if ($verificationResponse->successful()) {
-                $verificationData = $verificationResponse->json();
-                $verificationContent = $verificationData['choices'][0]['message']['content'];
-                
-                // Nettoyer le contenu
-                $verificationContent = preg_replace('/```json\s*|\s*```/', '', $verificationContent);
-                $verificationContent = trim($verificationContent);
-                
-                $this->aiCorrection = json_decode($verificationContent, true);
-                
-                if (json_last_error() !== JSON_ERROR_NONE) {
-                    throw new \Exception('Erreur de parsing JSON pour la vérification: ' . json_last_error_msg());
-                }
+                $verifContent = trim($verificationResponse->json()['choices'][0]['message']['content'] ?? '');
+                $verifContent = preg_replace('/^```json\s*|\s*```$/', '', $verifContent);
 
-                // Appliquer les corrections si nécessaire
-                if (!$this->aiCorrection['is_correct'] && !empty($this->aiCorrection['correction'])) {
-                    $correction = $this->aiCorrection['correction'];
-                    
-                    if (!empty($correction['vendor'])) {
-                        $this->extractedData['vendor'] = $correction['vendor'];
+                $this->aiCorrection = json_decode($verifContent, true);
+
+                if (json_last_error() === JSON_ERROR_NONE && isset($this->aiCorrection['is_correct'])) {
+                    if (!$this->aiCorrection['is_correct'] && !empty($this->aiCorrection['correction'])) {
+                        $this->extractedData = array_merge($this->extractedData, array_filter($this->aiCorrection['correction']));
+                        session()->flash('info', 'Correction appliquée : ' . ($this->aiCorrection['explanation'] ?? ''));
                     }
-                    if (!empty($correction['name'])) {
-                        $this->extractedData['name'] = $correction['name'];
-                    }
-                    if (!empty($correction['type'])) {
-                        $this->extractedData['type'] = $correction['type'];
-                    }
-                    
-                    session()->flash('info', '⚠️ OpenAI a suggéré une correction: ' . ($this->aiCorrection['explanation'] ?? ''));
                 }
             }
-            
-            // Rechercher les produits correspondants
+
+            // ───────────────────────────────────────────────────────────────
+            // ÉTAPE 3 : Recherche dans la base
+            // ───────────────────────────────────────────────────────────────
             $this->searchMatchingProducts();
-            
+
         } catch (\Exception $e) {
-            \Log::error('Erreur extraction', [
+            \Log::error('Erreur extraction/matching', [
                 'message' => $e->getMessage(),
                 'product_name' => $this->productName
             ]);
-            
-            session()->flash('error', 'Erreur lors de l\'extraction: ' . $e->getMessage());
+            session()->flash('error', 'Erreur : ' . $e->getMessage());
         } finally {
             $this->isLoading = false;
         }
     }
 
+    // ───────────────────────────────────────────────────────────────
+    // Recherche principale (améliorée)
+    // ───────────────────────────────────────────────────────────────
     private function searchMatchingProducts()
     {
-        if (!$this->extractedData) {
+        if (!$this->extractedData) return;
+
+        $vendor   = trim($this->extractedData['vendor']   ?? '');
+        $name     = trim($this->extractedData['name']     ?? '');
+        $type     = trim($this->extractedData['type']     ?? '');
+        $variation = trim($this->extractedData['variation'] ?? '');
+
+        if (empty($vendor) || empty($name)) {
+            session()->flash('warning', 'Impossible de chercher : vendor et/ou name manquant(s).');
             return;
         }
 
-        $vendor = $this->extractedData['vendor'] ?? '';
-        $name = $this->extractedData['name'] ?? '';
-        $type = $this->extractedData['type'] ?? '';
+        $vendorNorm   = Str::lower(Str::ascii($vendor));
+        $nameNorm     = Str::lower(Str::ascii($name));
+        $typeNorm     = Str::lower(Str::ascii($type));
 
-        // Vérifier que les trois critères sont présents
-        if (empty($vendor) || empty($name) || empty($type)) {
-            $missingFields = [];
-            if (empty($vendor)) $missingFields[] = 'vendor';
-            if (empty($name)) $missingFields[] = 'name';
-            if (empty($type)) $missingFields[] = 'type';
-            
-            session()->flash('warning', 'Critères insuffisants pour la recherche. Champs manquants: ' . implode(', ', $missingFields));
-            return;
+        // ─── Stratégies de recherche (par ordre de priorité) ───
+        $queries = [];
+
+        // 1. Recherche la plus stricte : vendor + name + type
+        $queries[] = [
+            'vendor' => ['value' => $vendorNorm, 'strict' => true],
+            'name'   => ['value' => $nameNorm,   'strict' => true],
+            'type'   => ['value' => $typeNorm,   'strict' => true],
+            'weight' => 100
+        ];
+
+        // 2. vendor + name (type approximatif)
+        $queries[] = [
+            'vendor' => ['value' => $vendorNorm, 'strict' => true],
+            'name'   => ['value' => $nameNorm,   'strict' => true],
+            'type'   => ['value' => $typeNorm,   'strict' => false],
+            'weight' => 85
+        ];
+
+        // 3. name seul + type (cas où vendor est implicite ou mal extrait)
+        $queries[] = [
+            'vendor' => ['value' => null],
+            'name'   => ['value' => $nameNorm, 'strict' => true],
+            'type'   => ['value' => $typeNorm, 'strict' => true],
+            'weight' => 70
+        ];
+
+        // 4. vendor + type (cas parfums où le nom dans la base est différent)
+        if ($this->isPerfumeRelated($typeNorm)) {
+            $queries[] = [
+                'vendor' => ['value' => $vendorNorm, 'strict' => true],
+                'name'   => ['value' => null],
+                'type'   => ['value' => $typeNorm,   'strict' => true],
+                'weight' => 60
+            ];
         }
 
-        // Nettoyer le type extrait
-        $cleanType = $this->cleanType($type);
-        
-        // Pour les parfums, ajuster la recherche du nom
-        // Certains parfums ont le nom identique au vendor dans la base
-        $nameVariations = $this->getNameVariations($vendor, $name, $cleanType);
+        $candidates = collect();
 
-        // Stratégie de recherche STRICTE - les trois critères doivent correspondre
-        
-        // 1. Recherche avec variations de nom
-        foreach ($nameVariations as $nameToSearch) {
-            $exactMatch = Product::where(function($query) use ($vendor) {
-                    $query->where('vendor', 'LIKE', "%{$vendor}%")
-                          ->orWhereRaw('LOWER(vendor) = LOWER(?)', [$vendor]);
-                })
-                ->where(function($query) use ($nameToSearch) {
-                    $query->where('name', 'LIKE', "%{$nameToSearch}%")
-                          ->orWhereRaw('LOWER(name) = LOWER(?)', [$nameToSearch]);
-                })
-                ->where(function($query) use ($cleanType) {
-                    $query->where('type', 'LIKE', "%{$cleanType}%")
-                          ->orWhereRaw('LOWER(type) LIKE ?', ['%' . strtolower($cleanType) . '%']);
-                })
-                ->get();
+        foreach ($queries as $q) {
+            $query = Product::query();
 
-            if ($exactMatch->isNotEmpty()) {
-                $this->matchingProducts = $exactMatch->toArray();
-                $this->bestMatch = $exactMatch->first();
-                return;
-            }
-        }
-
-        // 2. Recherche plus flexible sur le type (le type de la BDD contient le type nettoyé)
-        foreach ($nameVariations as $nameToSearch) {
-            $typeContains = Product::where(function($query) use ($vendor) {
-                    $query->where('vendor', 'LIKE', "%{$vendor}%")
-                          ->orWhereRaw('LOWER(vendor) = LOWER(?)', [$vendor]);
-                })
-                ->where(function($query) use ($nameToSearch) {
-                    $query->where('name', 'LIKE', "%{$nameToSearch}%")
-                          ->orWhereRaw('LOWER(name) = LOWER(?)', [$nameToSearch]);
-                })
-                ->where(function($query) use ($cleanType) {
-                    // Recherche plus flexible sur le type
-                    $keywords = explode(' ', $cleanType);
-                    foreach ($keywords as $keyword) {
-                        if (strlen($keyword) > 2) {
-                            $query->orWhere('type', 'LIKE', "%{$keyword}%");
-                        }
-                    }
-                })
-                ->get();
-
-            if ($typeContains->isNotEmpty()) {
-                $this->matchingProducts = $typeContains->toArray();
-                $this->bestMatch = $typeContains->first();
-                session()->flash('warning', 'Résultats trouvés avec correspondance flexible sur le type.');
-                return;
-            }
-        }
-
-        // 3. Recherche par type seulement si c'est un type spécifique comme "Déodorant"
-        // Pour les cas comme AZZARO où le nom dans la base est "AZZARO Pour Homme"
-        $isSpecificType = $this->isSpecificProductType($cleanType);
-        
-        if ($isSpecificType) {
-            foreach ($nameVariations as $nameToSearch) {
-                $typeOnlyMatch = Product::where(function($query) use ($vendor) {
-                        $query->where('vendor', 'LIKE', "%{$vendor}%")
-                              ->orWhereRaw('LOWER(vendor) = LOWER(?)', [$vendor]);
-                    })
-                    ->where('type', 'LIKE', "%{$cleanType}%")
-                    ->get();
-
-                if ($typeOnlyMatch->isNotEmpty()) {
-                    $this->matchingProducts = $typeOnlyMatch->toArray();
-                    $this->bestMatch = $typeOnlyMatch->first();
-                    session()->flash('warning', 'Résultats trouvés pour le vendor et type seulement (nom différent).');
-                    return;
+            // Vendor
+            if ($q['vendor']['value']) {
+                if ($q['vendor']['strict']) {
+                    $query->whereRaw('LOWER(vendor) = ?', [$q['vendor']['value']]);
+                } else {
+                    $query->whereRaw('LOWER(vendor) LIKE ?', ["%{$q['vendor']['value']}%"]);
                 }
             }
+
+            // Name
+            if ($q['name']['value']) {
+                $nameValue = $q['name']['value'];
+                if ($q['name']['strict']) {
+                    $query->where(function($qry) use ($nameValue) {
+                        $qry->whereRaw('LOWER(name) = ?', [$nameValue])
+                            ->orWhereRaw('LOWER(name) = ?', [Str::replace(' ', '', $nameValue)]);
+                    });
+                } else {
+                    $query->whereRaw('LOWER(name) LIKE ?', ["%{$nameValue}%"]);
+                }
+            }
+
+            // Type
+            if ($q['type']['value']) {
+                $typeValue = $q['type']['value'];
+                if ($q['type']['strict']) {
+                    $query->where(function($qry) use ($typeValue) {
+                        $qry->whereRaw('LOWER(type) = ?', [$typeValue])
+                            ->orWhereRaw('LOWER(type) LIKE ?', ["{$typeValue}%"])
+                            ->orWhereRaw('LOWER(type) LIKE ?', ["%{$typeValue}"]);
+                    });
+                } else {
+                    $query->whereRaw('LOWER(type) LIKE ?', ["%{$typeValue}%"]);
+                }
+            }
+
+            $results = $query->get();
+
+            foreach ($results as $product) {
+                $score = $this->calculateMatchScore($product, $vendorNorm, $nameNorm, $typeNorm);
+                $candidates->push([
+                    'product' => $product,
+                    'score'   => $score + $q['weight']
+                ]);
+            }
         }
 
-        // 4. Aucun résultat avec les trois critères
-        session()->flash('error', '❌ Aucun produit trouvé avec la combinaison vendor + name + type.');
-        $this->matchingProducts = [];
-        $this->bestMatch = null;
+        // Trier par score descendant
+        $sorted = $candidates
+            ->sortByDesc('score')
+            ->unique('product.id');
+
+        $this->matchingProducts = $sorted->pluck('product')->toArray();
+        
+        if ($sorted->isNotEmpty()) {
+            $this->bestMatch = $sorted->first()['product'];
+        } else {
+            session()->flash('error', 'Aucun produit correspondant trouvé.');
+        }
     }
 
-    /**
-     * Générer des variations de nom pour la recherche
-     */
-    private function getNameVariations(string $vendor, string $name, string $type): array
+    // ───────────────────────────────────────────────────────────────
+    // Calcul d’un score de pertinence (0-100)
+    // ───────────────────────────────────────────────────────────────
+    private function calculateMatchScore($product, string $vendorNorm, string $nameNorm, string $typeNorm): int
     {
-        $variations = [];
-        
-        // 1. Le nom tel quel
-        $variations[] = $name;
-        
-        // 2. Pour les parfums, ajouter "Pour Homme" ou "Pour Femme" si c'est un parfum
-        if ($this->isPerfumeType($type)) {
-            $variations[] = $name . ' Pour Homme';
-            $variations[] = $name . ' Pour Femme';
-            $variations[] = $vendor . ' ' . $name;
-            $variations[] = $vendor; // Dans certains cas, le nom dans la base est juste le vendor
-            
-            // Ajouter des variantes courantes de parfums
-            if (str_contains(strtolower($name), 'chrome')) {
-                $variations[] = 'Chrome Azzaro';
-            }
-            if (str_contains(strtolower($name), 'sauvage')) {
-                $variations[] = 'Sauvage Dior';
-            }
+        $score = 0;
+
+        $dbVendor = Str::lower(Str::ascii($product->vendor ?? ''));
+        $dbName   = Str::lower(Str::ascii($product->name ?? ''));
+        $dbType   = Str::lower(Str::ascii($product->type ?? ''));
+
+        // Vendor exact
+        if ($dbVendor === $vendorNorm) {
+            $score += 40;
+        } elseif (str_contains($dbVendor, $vendorNorm) || str_contains($vendorNorm, $dbVendor)) {
+            $score += 25;
         }
-        
-        // 3. Nom sans articles ou prépositions
-        $cleanName = preg_replace('/\b(le|la|les|un|une|des|du|de|d\'|pour|and|the)\b/i', '', $name);
-        $cleanName = preg_replace('/\s+/', ' ', trim($cleanName));
-        if ($cleanName !== $name) {
-            $variations[] = $cleanName;
+
+        // Name
+        $nameSimilarity = similar_text($dbName, $nameNorm, $percent);
+        if ($percent > 85) {
+            $score += 45;
+        } elseif ($percent > 65 || str_contains($dbName, $nameNorm) || str_contains($nameNorm, $dbName)) {
+            $score += 30;
         }
-        
-        return array_unique(array_filter($variations));
-    }
-    
-    /**
-     * Vérifier si c'est un type de parfum
-     */
-    private function isPerfumeType(string $type): bool
-    {
-        $perfumeTypes = ['déodorant', 'deodorant', 'parfum', 'eau de toilette', 'eau de parfum', 'after shave', 'lotion', 'baume'];
-        $cleanType = strtolower($type);
-        
-        foreach ($perfumeTypes as $perfumeType) {
-            if (str_contains($cleanType, $perfumeType)) {
-                return true;
+
+        // Type
+        if ($dbType === $typeNorm || str_starts_with($dbType, $typeNorm)) {
+            $score += 25;
+        } elseif (str_contains($dbType, $typeNorm)) {
+            $score += 15;
+        }
+
+        // Bonus petite variation contenance
+        if ($product->variation && $this->extractedData['variation']) {
+            if (str_contains($product->variation, $this->extractedData['variation'])) {
+                $score += 10;
             }
         }
-        
-        return false;
-    }
-    
-    /**
-     * Vérifier si c'est un type spécifique qui peut être recherché seul
-     */
-    private function isSpecificProductType(string $type): bool
-    {
-        $specificTypes = ['déodorant', 'deodorant', 'shampooing', 'shampoing', 'après-shampooing', 'gel douche', 'savon', 'lait corporel'];
-        $cleanType = strtolower($type);
-        
-        foreach ($specificTypes as $specificType) {
-            if (str_contains($cleanType, $specificType)) {
-                return true;
-            }
-        }
-        
-        return false;
+
+        return min(100, $score);
     }
 
-    /**
-     * Nettoyer le type en enlevant les conditionnements et formats
-     */
-    private function cleanType(string $type): string
+    private function isPerfumeRelated(string $type): bool
     {
-        // Mots à supprimer (conditionnements, formats, unités)
-        $stopWords = [
-            'vaporisateur', 'spray', 'pompe', 'tube', 'pot', 'flacon', 
-            'roll-on', 'rollon', 'stick', 'roll', 'on', 'atomiseur',
-            'ml', 'mg', 'gr', 'g', 'l', 'unité', 'unités',
-            'sans', 'avec', 'pour', 'et', 'ou', 'le', 'la', 'les',
-            'en', 'par', 'à', 'de', 'des', 'du', 'd\''
-        ];
-        
-        $cleanedType = strtolower($type);
-        
-        // Supprimer chaque mot de la liste
-        foreach ($stopWords as $word) {
-            $cleanedType = preg_replace('/\b' . preg_quote($word, '/') . '\b/i', '', $cleanedType);
-        }
-        
-        // Supprimer les caractères spéciaux
-        $cleanedType = preg_replace('/[\(\)\[\]\-\+\=\*]/', ' ', $cleanedType);
-        
-        // Nettoyer les espaces multiples et trim
-        $cleanedType = preg_replace('/\s+/', ' ', $cleanedType);
-        $cleanedType = trim($cleanedType);
-        
-        return $cleanedType;
+        return Str::contains($type, ['parfum', 'eau de', 'deodorant', 'déodorant', 'after shave', 'lotion']);
+    }
+
+    // ───────────────────────────────────────────────────────────────
+    // Prompts (plus clairs et robustes)
+    // ───────────────────────────────────────────────────────────────
+    private function getExtractionPrompt(): string
+    {
+        return <<<'PROMPT'
+Tu es un expert en extraction de produits cosmétiques / parfumerie.
+Retourne UNIQUEMENT un objet JSON valide avec les clés suivantes :
+
+- vendor: marque principale (ex: Dior, Chanel, Azzaro, Lancôme...)
+- name: nom du parfum / gamme / produit (ex: Sauvage, J'adore, Chrome, Ultra Facial...)
+- variation: contenance / poids (ex: "100 ml", "50 g", "200 ml") — ou vide
+- type: type précis du produit (ex: "Eau de Parfum", "Déodorant", "Crème Visage", "Sérum", "Gel Douche"...)
+
+Règles importantes pour les parfums :
+- Si le nom ressemble à "Azzaro Chrome", → vendor: "Azzaro", name: "Chrome"
+- Si "Dior Sauvage" → vendor: "Dior", name: "Sauvage"
+- Ne jamais mettre la contenance dans le name
+
+Exemple de réponse attendue :
+{"vendor":"Azzaro","name":"Chrome","variation":"100 ml","type":"Eau de Toilette"}
+PROMPT;
+    }
+
+    private function getVerificationPrompt(): string
+    {
+        return <<<'PROMPT'
+Tu es un expert parfumerie/cosmétiques.
+Analyse la cohérence entre vendor, name et type.
+
+Retourne UNIQUEMENT un JSON avec :
+{
+  "is_correct": boolean,
+  "confidence": "high"|"medium"|"low",
+  "explanation": "courte explication",
+  "correction": { "vendor": "...", "name": "...", "type": "..." }  // uniquement les champs à corriger
+}
+PROMPT;
+    }
+
+    private function buildVerificationUserMessage(): string
+    {
+        return <<<MSG
+Produit original : {$this->productName}
+
+Extrait actuellement :
+- vendor : {$this->extractedData['vendor'] ?? '—'}
+- name   : {$this->extractedData['name'] ?? '—'}
+- type   : {$this->extractedData['type'] ?? '—'}
+
+Est-ce cohérent ? Si non, propose une correction.
+MSG;
     }
 
     public function selectProduct($productId)
     {
         $product = Product::find($productId);
-        
         if ($product) {
-            session()->flash('success', 'Produit sélectionné : ' . $product->name);
-            $this->bestMatch = $product;
-            
-            // Émettre un événement si besoin
+            $this->bestMatch = $product->toArray();
+            session()->flash('success', "Produit sélectionné : {$product->name}");
             $this->dispatch('product-selected', productId: $productId);
         }
     }
-
 }; ?>
+
+<!-- La vue reste presque identique, vous pouvez la conserver -->
 
 <div class="p-6 bg-white rounded-lg shadow">
     <div class="mb-4">
