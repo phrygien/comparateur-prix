@@ -13,7 +13,6 @@ new class extends Component {
     public $isLoading = false;
     public $matchingProducts = [];
     public $bestMatch = null;
-    public $bestMatchScore = null;
 
     public function mount($name, $id, $price): void
     {
@@ -25,9 +24,6 @@ new class extends Component {
     public function extractSearchTerme()
     {
         $this->isLoading = true;
-        $this->matchingProducts = [];
-        $this->bestMatch = null;
-        $this->bestMatchScore = null;
         
         try {
             $response = Http::withHeaders([
@@ -127,54 +123,8 @@ Maintenant, traite ce produit en suivant ces règles exactement."
             ]);
             
             session()->flash('error', 'Erreur lors de l\'extraction: ' . $e->getMessage());
-            
-            // Essayer une recherche directe même si l'extraction échoue
-            $this->fallbackSearch();
         } finally {
             $this->isLoading = false;
-        }
-    }
-
-    public function findMoreMatches()
-    {
-        if ($this->extractedData) {
-            $this->searchMatchingProducts(true); // Force une recherche plus large
-        }
-    }
-
-    private function fallbackSearch()
-    {
-        \Log::info('Fallback search pour:', ['product_name' => $this->productName]);
-        
-        // Recherche directe par mots-clés dans le nom
-        $keywords = $this->extractKeywords($this->productName);
-        
-        if (empty($keywords)) {
-            return;
-        }
-        
-        $query = Product::query();
-        foreach ($keywords as $keyword) {
-            if (strlen($keyword) > 2) {
-                $query->orWhere(function($q) use ($keyword) {
-                    $q->whereRaw('LOWER(vendor) LIKE ?', ['%' . strtolower($keyword) . '%'])
-                      ->orWhereRaw('LOWER(name) LIKE ?', ['%' . strtolower($keyword) . '%'])
-                      ->orWhereRaw('LOWER(type) LIKE ?', ['%' . strtolower($keyword) . '%']);
-                });
-            }
-        }
-        
-        $candidates = $query->limit(30)->get();
-        
-        if ($candidates->isNotEmpty()) {
-            $this->matchingProducts = $candidates->take(10)->map(function($product) {
-                return $product->toArray();
-            })->toArray();
-            
-            $this->bestMatch = $this->matchingProducts[0] ?? null;
-            $this->bestMatchScore = 'Modérée (fallback)';
-            
-            session()->flash('info', 'Recherche de fallback exécutée avec ' . count($this->matchingProducts) . ' résultats');
         }
     }
 
@@ -221,7 +171,7 @@ Maintenant, traite ce produit en suivant ces règles exactement."
         return false;
     }
 
-    private function searchMatchingProducts($forceBroadSearch = false)
+    private function searchMatchingProducts()
     {
         if (!$this->extractedData) {
             return;
@@ -233,65 +183,79 @@ Maintenant, traite ce produit en suivant ces règles exactement."
         $type = $this->extractedData['type'] ?? '';
         $isCoffret = $this->extractedData['is_coffret'] ?? false;
 
-        \Log::info('Recherche de produits avec critères:', [
+        // IMPORTANT: Si vendor est vide, on ne peut pas faire de recherche fiable
+        if (empty($vendor)) {
+            \Log::warning('Vendor vide lors de la recherche', [
+                'product_name' => $this->productName,
+                'extracted_data' => $this->extractedData
+            ]);
+            $this->matchingProducts = [];
+            $this->bestMatch = null;
+            return;
+        }
+
+        // Niveau 1: Recherche vendor + name (insensible à la casse)
+        $candidates = Product::query()
+            ->whereRaw('LOWER(vendor) LIKE ?', ['%' . strtolower($vendor) . '%'])
+            ->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($name) . '%'])
+            ->limit(50)
+            ->get();
+
+        \Log::info('Recherche niveau 1 (vendor + name)', [
             'vendor' => $vendor,
             'name' => $name,
-            'type' => $type,
-            'is_coffret' => $isCoffret,
-            'force_broad' => $forceBroadSearch
+            'results' => $candidates->count()
         ]);
 
-        // Si vendor vide, essayer d'extraire du name
-        if (empty($vendor) && !empty($name)) {
-            $vendor = $this->extractVendorFromName($name);
-            \Log::info('Vendor extrait du name:', ['extracted_vendor' => $vendor]);
-        }
-
-        // Recherche large par mots-clés
-        $keywords = $this->extractKeywords($vendor . ' ' . $name);
-        
-        $query = Product::query();
-        
-        if (!empty($keywords)) {
-            foreach ($keywords as $keyword) {
-                if (strlen($keyword) > 2) { // Ignorer les mots trop courts
-                    $query->orWhere(function($q) use ($keyword) {
-                        $q->whereRaw('LOWER(vendor) LIKE ?', ['%' . strtolower($keyword) . '%'])
-                          ->orWhereRaw('LOWER(name) LIKE ?', ['%' . strtolower($keyword) . '%'])
-                          ->orWhereRaw('LOWER(type) LIKE ?', ['%' . strtolower($keyword) . '%']);
-                    });
-                }
-            }
-        }
-        
-        $candidates = $query->limit($forceBroadSearch ? 150 : 100)->get();
-
-        \Log::info('Candidats trouvés', [
-            'keywords' => $keywords,
-            'count' => $candidates->count(),
-            'first_3' => $candidates->take(3)->pluck('name')
-        ]);
-
-        if ($candidates->isEmpty() || $forceBroadSearch) {
-            // Recherche de dernier recours : tous les produits similaires
-            $fallbackCandidates = Product::where(function($q) use ($vendor, $name) {
-                if (!empty($vendor)) {
-                    $q->orWhere('vendor', 'like', '%' . substr($vendor, 0, 3) . '%');
-                }
-                if (!empty($name)) {
-                    $words = explode(' ', $name);
-                    foreach ($words as $word) {
-                        if (strlen($word) > 3) {
-                            $q->orWhere('name', 'like', '%' . $word . '%');
-                        }
-                    }
-                }
-            })->limit(50)->get();
+        // Niveau 2: Si pas de résultats, chercher seulement avec vendor + mots-clés du name
+        if ($candidates->isEmpty() && !empty($name)) {
+            // Extraire les mots significatifs du name (ignorer les mots courts)
+            $nameWords = array_filter(
+                explode(' ', strtolower($name)), 
+                fn($word) => strlen($word) > 2
+            );
             
-            if (!$fallbackCandidates->isEmpty()) {
-                $candidates = $candidates->isEmpty() ? $fallbackCandidates : $candidates->merge($fallbackCandidates)->unique('id');
-                \Log::info('Candidats après fallback:', ['count' => $candidates->count()]);
+            if (!empty($nameWords)) {
+                $query = Product::whereRaw('LOWER(vendor) LIKE ?', ['%' . strtolower($vendor) . '%']);
+                
+                foreach ($nameWords as $word) {
+                    $query->whereRaw('LOWER(name) LIKE ?', ['%' . $word . '%']);
+                }
+                
+                $candidates = $query->limit(50)->get();
+                
+                \Log::info('Recherche niveau 2 (vendor + mots du name)', [
+                    'vendor' => $vendor,
+                    'name_words' => $nameWords,
+                    'results' => $candidates->count()
+                ]);
             }
+        }
+
+        // Niveau 3: Si toujours pas de résultats, chercher seulement avec vendor
+        if ($candidates->isEmpty()) {
+            $candidates = Product::whereRaw('LOWER(vendor) LIKE ?', ['%' . strtolower($vendor) . '%'])
+                ->limit(50)
+                ->get();
+            
+            \Log::info('Recherche niveau 3 (vendor seulement)', [
+                'vendor' => $vendor,
+                'results' => $candidates->count()
+            ]);
+        }
+
+        // Niveau 4: Si vraiment aucun résultat, chercher avec une tolérance sur le vendor
+        if ($candidates->isEmpty()) {
+            // Chercher avec seulement les 4 premières lettres du vendor
+            $vendorPrefix = substr(strtolower($vendor), 0, 4);
+            $candidates = Product::whereRaw('LOWER(vendor) LIKE ?', [$vendorPrefix . '%'])
+                ->limit(50)
+                ->get();
+            
+            \Log::info('Recherche niveau 4 (vendor partiel)', [
+                'vendor_prefix' => $vendorPrefix,
+                'results' => $candidates->count()
+            ]);
         }
 
         if ($candidates->isEmpty()) {
@@ -299,23 +263,8 @@ Maintenant, traite ce produit en suivant ces règles exactement."
                 'vendor' => $vendor,
                 'name' => $name
             ]);
-            
-            // Dernière tentative: chercher n'importe quel produit avec le premier mot du nom
-            if (!empty($name)) {
-                $firstWord = explode(' ', trim($name))[0];
-                if (strlen($firstWord) > 2) {
-                    $candidates = Product::where('name', 'like', '%' . $firstWord . '%')
-                        ->orWhere('vendor', 'like', '%' . $firstWord . '%')
-                        ->limit(20)->get();
-                }
-            }
-        }
-
-        if ($candidates->isEmpty()) {
             $this->matchingProducts = [];
             $this->bestMatch = null;
-            $this->bestMatchScore = null;
-            session()->flash('warning', 'Aucun produit trouvé dans la base de données.');
             return;
         }
 
@@ -325,76 +274,17 @@ Maintenant, traite ce produit en suivant ces règles exactement."
         if (!empty($scoredProducts)) {
             $this->matchingProducts = array_column($scoredProducts, 'product');
             $this->bestMatch = $scoredProducts[0]['product'] ?? null;
-            $this->bestMatchScore = $this->calculateConfidenceLevel($scoredProducts[0]['score'] ?? 0);
             
             \Log::info('Matching réussi', [
-                'matches' => count($scoredProducts),
-                'best_match_score' => $scoredProducts[0]['score'] ?? 0,
-                'confidence' => $this->bestMatchScore
+                'matches' => count($scoredProducts)
             ]);
         } else {
             \Log::warning('Aucun match après AI', [
                 'candidates_count' => $candidates->count()
             ]);
-            
-            // Fallback: prendre les premiers candidats
-            $this->matchingProducts = $candidates->take(5)->map(function($product) {
-                return $product->toArray();
-            })->toArray();
-            
-            if (!empty($this->matchingProducts)) {
-                $this->bestMatch = $this->matchingProducts[0];
-                $this->bestMatchScore = 'Faible (fallback)';
-                session()->flash('info', 'Aucun match exact trouvé. Affichage des produits les plus proches.');
-            }
+            $this->matchingProducts = [];
+            $this->bestMatch = null;
         }
-    }
-
-    private function calculateConfidenceLevel($score)
-    {
-        if ($score >= 80) return 'Élevée';
-        if ($score >= 60) return 'Modérée';
-        if ($score >= 40) return 'Faible';
-        return 'Très faible';
-    }
-
-    private function extractKeywords($text)
-    {
-        $text = strtolower($text);
-        
-        // Mots à exclure
-        $stopWords = ['de', 'la', 'le', 'et', 'à', 'pour', 'avec', 'sur', 'par', 'dans', 'un', 'une', 'des', 'du', 'au'];
-        
-        $words = preg_split('/\s+|-/', $text);
-        $keywords = array_filter($words, function($word) use ($stopWords) {
-            return strlen($word) > 2 && !in_array($word, $stopWords);
-        });
-        
-        return array_values(array_unique($keywords));
-    }
-
-    private function extractVendorFromName($name)
-    {
-        // Liste de marques courantes à reconnaître
-        $knownBrands = [
-            'Dior', 'Chanel', 'Guerlain', 'Yves Saint Laurent', 'YSL', 'Lancôme', 
-            'Givenchy', 'Hermès', 'Prada', 'Armani', 'Versace', 'Dolce Gabbana',
-            'Bulgari', 'Cartier', 'Montblanc', 'Paco Rabanne', 'Jean Paul Gaultier',
-            'Azzaro', 'Caron', 'Nina Ricci', 'Thierry Mugler', 'Van Cleef Arpels',
-            'Boucheron', 'Chloé', 'Diesel', 'Burberry', 'Calvin Klein', 'Hugo Boss',
-            'Estée Lauder', 'Clinique', 'La Roche-Posay', 'Vichy', 'Bioderma',
-            'Nivea', 'L\'Oréal', 'Maybelline', 'Rimmel', 'MAC', 'Sephora',
-            'Nuxe', 'Caudalie', 'Clarins', 'Shiseido', 'SK-II', 'Kiehl\'s'
-        ];
-        
-        $nameLower = strtolower($name);
-        foreach ($knownBrands as $brand) {
-            if (stripos($nameLower, strtolower($brand)) !== false) {
-                return $brand;
-            }
-        }
-        
-        return '';
     }
 
     private function matchProductsWithAI($candidates, $vendor, $name, $type, $variation, $isCoffret)
@@ -407,8 +297,7 @@ Maintenant, traite ce produit en suivant ces règles exactement."
                 'name' => $product->name,
                 'type' => $product->type,
                 'variation' => $product->variation,
-                'product_id' => $product->id,
-                'full_name' => $product->vendor . ' - ' . $product->name . ' - ' . $product->type . ' ' . $product->variation
+                'product_id' => $product->id
             ];
         })->toArray();
 
@@ -433,7 +322,7 @@ Maintenant, traite ce produit en suivant ces règles exactement."
                 'messages' => [
                     [
                         'role' => 'system',
-                        'content' => 'Tu es un expert en matching de produits cosmétiques. Ton rôle est de trouver les produits les plus similaires, même si la correspondance n\'est pas parfaite. Sois TRÈS FLEXIBLE et inclusif. Réponds UNIQUEMENT avec un tableau JSON des IDs des produits qui pourraient correspondre, sans explication.'
+                        'content' => 'Tu es un expert en matching de produits cosmétiques. Tu dois analyser une liste de produits et retourner ceux qui correspondent au produit recherché. Sois FLEXIBLE sur le name et la casse, mais STRICT sur le type de produit. Réponds UNIQUEMENT avec un tableau JSON des IDs correspondants, sans markdown.'
                     ],
                     [
                         'role' => 'user',
@@ -444,58 +333,63 @@ Type: {$type}
 Variation: {$variation}
 Est un coffret: " . ($isCoffret ? 'OUI' : 'NON') . "
 
-Liste des produits candidats à analyser:
+Produits candidats:
 " . json_encode($productsList, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "
 
-**IMPORTANT: RÈGLES TRÈS FLEXIBLES:**
+RÈGLES DE MATCHING (PAR ORDRE DE PRIORITÉ):
 
-1. **VENDOR - FLEXIBLE:**
-   - Ignorer totalement la casse
-   - Accepter les variantes: \"Dior\" = \"DIOR\" = \"Christian Dior\" ✅
-   - Accepter les abréviations
-   - Si le vendor contient des mots similaires, c'est OK
+1. VENDOR - TRÈS FLEXIBLE:
+   - \"AZZARO\" = \"Azzaro\" = \"azzaro\" ✅
+   - \"CARON\" = \"Caron\" = \"caron\" ✅
+   - Ignorer complètement les majuscules/minuscules
+   - Une petite différence dans le vendor est acceptable si le reste correspond bien
 
-2. **NAME - EXTRÊMEMENT FLEXIBLE:**
-   - Ignorer la casse complètement
-   - Si le nom contient des mots-clés similaires → MATCH
-   - Ex: \"Sauvage\" ≈ \"Sauvage Elixir\" ≈ \"Sauvage Eau de Parfum\" ✅
-   - Ex: \"J'adore\" ≈ \"J'adore L'Or\" ≈ \"J'adore Absolu\" ✅
-   - Rechercher par mots-clés principaux
+2. NAME - FLEXIBLE avec tolérance:
+   - Ignorer COMPLÈTEMENT les différences de casse
+   - \"Pour Un Homme de Caron\" = \"Pour Un Homme de CARON\" = \"POUR UN HOMME DE CARON\" ✅
+   - \"Chrome\" = \"CHROME\" = \"chrome\" ✅
+   - Si les mots PRINCIPAUX sont présents, c'est OK même si ordre légèrement différent
+   - Exemples de MATCH acceptables:
+     * \"Pour Un Homme de Caron\" ≈ \"Pour Un Homme de CARON\" ✅
+     * \"Pour Un Homme\" ≈ \"Pour Un Homme de Caron\" ✅ (version courte acceptable)
+     * \"J'adore\" = \"J'ADORE\" ✅
+   - Exemples de NON-MATCH:
+     * \"Bogart Homme\" ≠ \"One Man Show\" ❌ (noms complètement différents)
+     * \"Chrome\" ≠ \"Wanted\" ❌
 
-3. **TYPE - MODÉRÉMENT FLEXIBLE:**
-   - Ignorer la casse
-   - Groupes acceptables ensemble:
-     - Parfums: \"Eau de Toilette\", \"Eau de Parfum\", \"Parfum\", \"Extrait\"
-     - Soins: \"Crème\", \"Sérum\", \"Lotion\", \"Gel\"
-   - Ne pas être trop strict
+3. TYPE - STRICT sur la CATÉGORIE:
+   - Ignorer la casse: \"Eau de Toilette\" = \"EAU DE TOILETTE\" ✅
+   - Tolérer les variantes: \"Eau de Toilette\" ≈ \"Eau de Toilette Vaporisateur\" ✅
+   - MAIS catégories différentes = REJET:
+     * Parfums (EDT/EDP/Parfum) ≠ Déodorant ❌
+     * Parfums ≠ Gel douche ❌
+     * Déodorant ≠ Gel douche ❌
+     * Baume/Crème ≠ Parfum ❌
+     * Après-rasage ≠ Eau de Toilette ❌
 
-4. **COFFRET - LOGIQUE:**
-   - Si recherche coffret → priorité aux coffrets mais accepter aussi produits unitaires
-   - Si recherche produit unitaire → priorité aux unitaires mais accepter aussi coffrets
+4. VARIATION - IGNORER:
+   - 50ml, 100ml, 500ml, etc. → tous acceptables
+   - La contenance N'EST PAS un critère de rejet
 
-5. **VARIATION - IGNORER:**
-   - La contenance n'est pas un critère de sélection
+5. COFFRET - Vérifier:
+   - Si coffret recherché → produit doit être coffret
+   - Si produit unitaire → exclure les coffrets
 
-**STRATÉGIE DE MATCHING:**
-1. Chercher d'abord les similitudes fortes (même vendor + mots-clés du name)
-2. Si peu de résultats, élargir les critères
-3. **Inclure TOUS les produits qui ont une ressemblance, même partielle**
-4. Mieux vaut avoir trop de résultats que pas assez
-5. Si un produit semble être une variante du même produit → INCLURE
+STRATÉGIE:
+1. Commence par chercher des matchs parfaits (vendor + name + type)
+2. Si peu de résultats, sois plus flexible sur le name (mots-clés seulement)
+3. Ne rejette PAS pour des différences mineures de formatting ou de casse
+4. Rejette SEULEMENT si type de produit vraiment incompatible
 
-**CRITÈRES D'INCLUSION (au moins 1 suffit):**
-- Vendor similaire à 70% OU
-- Nom contient au moins 1 mot-clé important OU
-- Type dans la même catégorie générale
+IMPORTANT: Si tu trouves au moins UN produit qui correspond raisonnablement bien, retourne-le !
+Ne retourne un tableau vide QUE si vraiment AUCUN produit ne correspond.
 
-Retourne un tableau d'IDs des produits qui pourraient correspondre, classés du plus au moins pertinent.
-
-Format de réponse: [id1, id2, id3, ...]
-Minimum 3 produits si possible, maximum 10."
+Format de réponse: [id1, id2, id3]
+Si aucun match: []"
                     ]
                 ],
-                'temperature' => 0.3,
-                'max_tokens' => 1000
+                'temperature' => 0.2,
+                'max_tokens' => 500
             ]);
 
             if (!$response->successful()) {
@@ -503,7 +397,7 @@ Minimum 3 produits si possible, maximum 10."
                     'status' => $response->status(),
                     'body' => $response->body()
                 ]);
-                return $this->manualMatching($candidates, $vendor, $name);
+                return [];
             }
 
             $data = $response->json();
@@ -524,28 +418,23 @@ Minimum 3 produits si possible, maximum 10."
                     'content' => $content,
                     'error' => json_last_error_msg()
                 ]);
-                return $this->manualMatching($candidates, $vendor, $name);
+                return [];
             }
 
             \Log::info('IDs matchés par OpenAI', [
-                'matched_ids' => $matchedIds,
-                'count' => count($matchedIds)
+                'matched_ids' => $matchedIds
             ]);
 
-            // Récupérer les produits correspondants avec score
+            // Récupérer les produits correspondants
             $scoredProducts = [];
-            $baseScore = 100;
+            $score = 100;
             
             foreach ($matchedIds as $id) {
                 if (isset($candidates[$id])) {
                     $product = $candidates[$id];
-                    
-                    // Calculer un score de correspondance
-                    $matchScore = $this->calculateMatchScore($product, $vendor, $name, $type);
-                    
                     $scoredProducts[] = [
                         'product' => $product->toArray(),
-                        'score' => $matchScore
+                        'score' => $score
                     ];
                     
                     \Log::info('Produit matché', [
@@ -553,15 +442,12 @@ Minimum 3 produits si possible, maximum 10."
                         'vendor' => $product->vendor,
                         'name' => $product->name,
                         'type' => $product->type,
-                        'score' => $matchScore
+                        'score' => $score
                     ]);
+                    
+                    $score -= 5; // Décrémenter le score pour les suivants
                 }
             }
-
-            // Trier par score décroissant
-            usort($scoredProducts, function($a, $b) {
-                return $b['score'] <=> $a['score'];
-            });
 
             return $scoredProducts;
 
@@ -570,100 +456,27 @@ Minimum 3 produits si possible, maximum 10."
                 'message' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            return $this->manualMatching($candidates, $vendor, $name);
+            return [];
         }
     }
 
-    private function manualMatching($candidates, $vendor, $name)
+    /**
+     * Vérifie si un produit est un coffret en analysant son name et type
+     */
+    private function isProductCoffret($product): bool
     {
-        \Log::info('Fallback manuel après échec OpenAI');
+        $coffretKeywords = ['coffret', 'set', 'kit', 'duo', 'trio', 'pack', 'bundle'];
         
-        $scoredProducts = [];
-        $vendorLower = strtolower($vendor);
-        $nameLower = strtolower($name);
-        
-        foreach ($candidates as $product) {
-            $score = 0;
-            $productVendorLower = strtolower($product->vendor);
-            $productNameLower = strtolower($product->name);
-            
-            // Score par similarité du vendor
-            similar_text($vendorLower, $productVendorLower, $vendorSimilarity);
-            if ($vendorSimilarity > 40) { // Seuil bas
-                $score += $vendorSimilarity;
-            }
-            
-            // Score par similarité du name
-            similar_text($nameLower, $productNameLower, $nameSimilarity);
-            if ($nameSimilarity > 30) {
-                $score += $nameSimilarity * 0.8;
-            }
-            
-            // Score par mots-clés du name
-            $nameWords = explode(' ', $nameLower);
-            foreach ($nameWords as $word) {
-                if (strlen($word) > 3 && strpos($productNameLower, $word) !== false) {
-                    $score += 20;
-                }
-            }
-            
-            if ($score > 30) { // Seuil très bas
-                $scoredProducts[] = [
-                    'product' => $product->toArray(),
-                    'score' => $score
-                ];
-            }
-        }
-        
-        // Trier par score
-        usort($scoredProducts, function($a, $b) {
-            return $b['score'] <=> $a['score'];
-        });
-        
-        // Prendre les meilleurs
-        $scoredProducts = array_slice($scoredProducts, 0, 8);
-        
-        \Log::info('Résultats matching manuel', [
-            'count' => count($scoredProducts),
-            'scores' => array_column($scoredProducts, 'score')
-        ]);
-        
-        return $scoredProducts;
-    }
+        // Combiner name et type pour la recherche
+        $searchText = strtolower(($product->name ?? '') . ' ' . ($product->type ?? ''));
 
-    private function calculateMatchScore($product, $vendor, $name, $type)
-    {
-        $score = 0;
-        
-        // Vendor match (40% du score)
-        similar_text(strtolower($vendor), strtolower($product->vendor), $vendorSimilarity);
-        $score += $vendorSimilarity * 0.4;
-        
-        // Name match (40% du score)
-        similar_text(strtolower($name), strtolower($product->name), $nameSimilarity);
-        $score += $nameSimilarity * 0.4;
-        
-        // Type match (20% du score)
-        if (!empty($type) && !empty($product->type)) {
-            similar_text(strtolower($type), strtolower($product->type), $typeSimilarity);
-            $score += $typeSimilarity * 0.2;
+        foreach ($coffretKeywords as $keyword) {
+            if (strpos($searchText, $keyword) !== false) {
+                return true;
+            }
         }
-        
-        // Bonus pour les mots-clés communs
-        $searchWords = array_merge(
-            explode(' ', strtolower($vendor)),
-            explode(' ', strtolower($name))
-        );
-        
-        $productWords = array_merge(
-            explode(' ', strtolower($product->vendor)),
-            explode(' ', strtolower($product->name))
-        );
-        
-        $commonWords = array_intersect($searchWords, $productWords);
-        $score += count($commonWords) * 5;
-        
-        return min(100, $score); // Limiter à 100
+
+        return false;
     }
 
     public function selectProduct($productId)
@@ -672,7 +485,7 @@ Minimum 3 produits si possible, maximum 10."
         
         if ($product) {
             session()->flash('success', 'Produit sélectionné : ' . $product->name);
-            $this->bestMatch = $product->toArray();
+            $this->bestMatch = $product;
             
             // Émettre un événement si besoin
             $this->dispatch('product-selected', productId: $productId);
@@ -684,25 +497,17 @@ Minimum 3 produits si possible, maximum 10."
 <div class="p-6 bg-white rounded-lg shadow">
     <div class="mb-4">
         <h2 class="text-xl font-bold mb-2">Extraction et recherche de produit</h2>
-        <div class="bg-gray-50 p-3 rounded border">
-            <p class="text-gray-800 font-medium">{{ $productName }}</p>
-            @if($productPrice)
-                <p class="text-sm text-gray-600 mt-1">Prix: {{ $productPrice }}</p>
-            @endif
-            @if($productId)
-                <p class="text-xs text-gray-400 mt-1">ID: {{ $productId }}</p>
-            @endif
-        </div>
+        <p class="text-gray-600">Produit: {{ $productName }}</p>
+        @if($productPrice)
+            <p class="text-sm text-gray-500">Prix: {{ $productPrice }}</p>
+        @endif
     </div>
 
     <button 
         wire:click="extractSearchTerme"
         wire:loading.attr="disabled"
-        class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 transition flex items-center gap-2"
+        class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 transition"
     >
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-        </svg>
         <span wire:loading.remove wire:target="extractSearchTerme">Extraire et rechercher</span>
         <span wire:loading wire:target="extractSearchTerme">
             <svg class="inline animate-spin h-4 w-4 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -721,59 +526,47 @@ Minimum 3 produits si possible, maximum 10."
 
     @if(session('success'))
         <div class="mt-4 p-4 bg-green-100 text-green-700 rounded border border-green-300">
-            <strong>Succès:</strong> {{ session('success') }}
-        </div>
-    @endif
-
-    @if(session('warning'))
-        <div class="mt-4 p-4 bg-yellow-100 text-yellow-700 rounded border border-yellow-300">
-            <strong>Attention:</strong> {{ session('warning') }}
-        </div>
-    @endif
-
-    @if(session('info'))
-        <div class="mt-4 p-4 bg-blue-100 text-blue-700 rounded border border-blue-300">
-            <strong>Info:</strong> {{ session('info') }}
+            {{ session('success') }}
         </div>
     @endif
 
     @if($extractedData)
         <div class="mt-6 p-4 bg-gray-50 rounded border border-gray-200">
-            <h3 class="font-bold mb-3 flex items-center gap-2 text-gray-700">
+            <h3 class="font-bold mb-3 flex items-center gap-2">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
                 </svg>
                 Critères extraits :
             </h3>
-            <div class="grid grid-cols-2 gap-3">
-                <div class="p-2 bg-white rounded border">
-                    <span class="font-semibold text-gray-700 block text-sm">Vendor:</span> 
+            <div class="grid grid-cols-2 gap-4">
+                <div class="p-2 bg-white rounded">
+                    <span class="font-semibold text-gray-700">Vendor:</span> 
                     <span class="text-gray-900">{{ $extractedData['vendor'] ?? 'N/A' }}</span>
                 </div>
-                <div class="p-2 bg-white rounded border">
-                    <span class="font-semibold text-gray-700 block text-sm">Name:</span> 
+                <div class="p-2 bg-white rounded">
+                    <span class="font-semibold text-gray-700">Name:</span> 
                     <span class="text-gray-900">{{ $extractedData['name'] ?? 'N/A' }}</span>
                 </div>
-                <div class="p-2 bg-white rounded border">
-                    <span class="font-semibold text-gray-700 block text-sm">Variation:</span> 
+                <div class="p-2 bg-white rounded">
+                    <span class="font-semibold text-gray-700">Variation:</span> 
                     <span class="text-gray-900">{{ $extractedData['variation'] ?? 'N/A' }}</span>
                 </div>
-                <div class="p-2 bg-white rounded border">
-                    <span class="font-semibold text-gray-700 block text-sm">Type:</span> 
+                <div class="p-2 bg-white rounded">
+                    <span class="font-semibold text-gray-700">Type:</span> 
                     <span class="text-gray-900">{{ $extractedData['type'] ?? 'N/A' }}</span>
                 </div>
-                <div class="p-2 bg-white rounded border col-span-2">
-                    <span class="font-semibold text-gray-700 block text-sm">Coffret:</span> 
+                <div class="p-2 bg-white rounded col-span-2">
+                    <span class="font-semibold text-gray-700">Coffret:</span> 
                     @if($extractedData['is_coffret'] ?? false)
                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                            <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
                                 <path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM11 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path>
                             </svg>
                             Oui, c'est un coffret
                         </span>
                     @else
                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                            <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
                                 <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM7 9a1 1 0 100-2 1 1 0 000 2zm7-1a1 1 0 11-2 0 1 1 0 012 0zm-.464 5.535a1 1 0 10-1.415-1.414 3 3 0 01-4.242 0 1 1 0 00-1.415 1.414 5 5 0 007.072 0z" clip-rule="evenodd"></path>
                             </svg>
                             Non, produit unitaire
@@ -787,40 +580,28 @@ Minimum 3 produits si possible, maximum 10."
 
     @if($bestMatch)
         <div class="mt-6 p-4 bg-green-50 border-2 border-green-500 rounded-lg">
-            <div class="flex justify-between items-center mb-3">
-                <h3 class="font-bold text-green-700 flex items-center gap-2">
-                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
-                    </svg>
-                    Meilleur résultat trouvé
-                </h3>
-                <div class="flex items-center gap-2">
-                    <span class="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded-full font-medium">
-                        Confiance: {{ $bestMatchScore }}
+            <h3 class="font-bold text-green-700 mb-3 flex items-center gap-2">
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                </svg>
+                Meilleur résultat trouvé
+                @php
+                    $isBestMatchCoffret = stripos($bestMatch['name'], 'coffret') !== false || 
+                                          stripos($bestMatch['name'], 'set') !== false || 
+                                          stripos($bestMatch['name'], 'kit') !== false ||
+                                          stripos($bestMatch['type'], 'coffret') !== false ||
+                                          stripos($bestMatch['type'], 'set') !== false ||
+                                          stripos($bestMatch['type'], 'kit') !== false;
+                @endphp
+                @if($isBestMatchCoffret)
+                    <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                        Coffret
                     </span>
-                    <button 
-                        wire:click="findMoreMatches"
-                        class="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded border border-gray-300 transition"
-                    >
-                        Voir plus
-                    </button>
-                </div>
-            </div>
-            
-            @php
-                $isBestMatchCoffret = isset($bestMatch['name']) && isset($bestMatch['type']) && (
-                    stripos($bestMatch['name'], 'coffret') !== false || 
-                    stripos($bestMatch['name'], 'set') !== false || 
-                    stripos($bestMatch['name'], 'kit') !== false ||
-                    stripos($bestMatch['type'], 'coffret') !== false ||
-                    stripos($bestMatch['type'], 'set') !== false ||
-                    stripos($bestMatch['type'], 'kit') !== false
-                );
-            @endphp
-            
+                @endif
+            </h3>
             <div class="flex items-start gap-4">
-                @if(isset($bestMatch['image_url']) && $bestMatch['image_url'])
-                    <img src="{{ $bestMatch['image_url'] }}" alt="{{ $bestMatch['name'] ?? '' }}" class="w-24 h-24 object-cover rounded-lg shadow">
+                @if($bestMatch['image_url'])
+                    <img src="{{ $bestMatch['image_url'] }}" alt="{{ $bestMatch['name'] }}" class="w-24 h-24 object-cover rounded-lg shadow">
                 @else
                     <div class="w-24 h-24 bg-gray-200 rounded-lg flex items-center justify-center">
                         <svg class="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -829,26 +610,13 @@ Minimum 3 produits si possible, maximum 10."
                     </div>
                 @endif
                 <div class="flex-1">
-                    <div class="flex items-center gap-2 mb-1">
-                        <p class="font-bold text-lg text-gray-800">
-                            {{ $bestMatch['vendor'] ?? 'N/A' }} - {{ $bestMatch['name'] ?? 'N/A' }}
-                        </p>
-                        @if($isBestMatchCoffret)
-                            <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                                Coffret
-                            </span>
-                        @endif
-                    </div>
+                    <p class="font-bold text-lg">{{ $bestMatch['vendor'] }} - {{ $bestMatch['name'] }}</p>
                     <p class="text-sm text-gray-600 mt-1">
-                        <span class="font-medium">{{ $bestMatch['type'] ?? 'N/A' }}</span> | 
-                        <span>{{ $bestMatch['variation'] ?? 'N/A' }}</span>
+                        <span class="font-medium">{{ $bestMatch['type'] }}</span> | 
+                        <span>{{ $bestMatch['variation'] }}</span>
                     </p>
-                    @if(isset($bestMatch['prix_ht']))
-                        <p class="text-lg font-bold text-green-600 mt-2">
-                            {{ number_format((float)$bestMatch['prix_ht'], 2) }} {{ $bestMatch['currency'] ?? 'EUR' }}
-                        </p>
-                    @endif
-                    @if(isset($bestMatch['url']) && $bestMatch['url'])
+                    <p class="text-lg font-bold text-green-600 mt-2">{{ number_format((float)$bestMatch['prix_ht'], 2) }} {{ $bestMatch['currency'] }}</p>
+                    @if($bestMatch['url'])
                         <a href="{{ $bestMatch['url'] }}" target="_blank" class="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 hover:underline mt-2">
                             Voir le produit
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -856,14 +624,7 @@ Minimum 3 produits si possible, maximum 10."
                             </svg>
                         </a>
                     @endif
-                    <p class="text-xs text-gray-400 mt-1">ID: {{ $bestMatch['id'] ?? 'N/A' }}</p>
-                    
-                    <button 
-                        wire:click="selectProduct({{ $bestMatch['id'] ?? 0 }})"
-                        class="mt-3 px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white text-sm rounded transition"
-                    >
-                        Sélectionner ce produit
-                    </button>
+                    <p class="text-xs text-gray-400 mt-1">ID: {{ $bestMatch['id'] }}</p>
                 </div>
             </div>
         </div>
@@ -876,24 +637,22 @@ Minimum 3 produits si possible, maximum 10."
             </h3>
             <div class="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded-lg p-2">
                 @foreach($matchingProducts as $product)
-                    @if($bestMatch && isset($bestMatch['id']) && $bestMatch['id'] !== $product['id'])
+                    @if($bestMatch && $bestMatch['id'] !== $product['id'])
                         @php
-                            $isProductCoffret = isset($product['name']) && isset($product['type']) && (
-                                stripos($product['name'], 'coffret') !== false || 
-                                stripos($product['name'], 'set') !== false || 
-                                stripos($product['name'], 'kit') !== false ||
-                                stripos($product['type'], 'coffret') !== false ||
-                                stripos($product['type'], 'set') !== false ||
-                                stripos($product['type'], 'kit') !== false
-                            );
+                            $isProductCoffret = stripos($product['name'], 'coffret') !== false || 
+                                              stripos($product['name'], 'set') !== false || 
+                                              stripos($product['name'], 'kit') !== false ||
+                                              stripos($product['type'], 'coffret') !== false ||
+                                              stripos($product['type'], 'set') !== false ||
+                                              stripos($product['type'], 'kit') !== false;
                         @endphp
                         <div 
-                            wire:click="selectProduct({{ $product['id'] ?? 0 }})"
+                            wire:click="selectProduct({{ $product['id'] }})"
                             class="p-3 border rounded-lg hover:bg-blue-50 hover:border-blue-300 cursor-pointer transition bg-white"
                         >
                             <div class="flex items-center gap-3">
-                                @if(isset($product['image_url']) && $product['image_url'])
-                                    <img src="{{ $product['image_url'] }}" alt="{{ $product['name'] ?? '' }}" class="w-16 h-16 object-cover rounded shadow-sm">
+                                @if($product['image_url'])
+                                    <img src="{{ $product['image_url'] }}" alt="{{ $product['name'] }}" class="w-16 h-16 object-cover rounded shadow-sm">
                                 @else
                                     <div class="w-16 h-16 bg-gray-100 rounded flex items-center justify-center">
                                         <svg class="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -903,26 +662,18 @@ Minimum 3 produits si possible, maximum 10."
                                 @endif
                                 <div class="flex-1 min-w-0">
                                     <div class="flex items-center gap-2">
-                                        <p class="font-medium text-sm truncate text-gray-800">
-                                            {{ $product['vendor'] ?? 'N/A' }} - {{ $product['name'] ?? 'N/A' }}
-                                        </p>
+                                        <p class="font-medium text-sm truncate">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
                                         @if($isProductCoffret)
                                             <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 flex-shrink-0">
                                                 Coffret
                                             </span>
                                         @endif
                                     </div>
-                                    <p class="text-xs text-gray-500 truncate">
-                                        {{ $product['type'] ?? 'N/A' }} | {{ $product['variation'] ?? 'N/A' }}
-                                    </p>
+                                    <p class="text-xs text-gray-500 truncate">{{ $product['type'] }} | {{ $product['variation'] }}</p>
                                 </div>
                                 <div class="text-right flex-shrink-0">
-                                    @if(isset($product['prix_ht']))
-                                        <p class="font-bold text-sm whitespace-nowrap text-gray-900">
-                                            {{ number_format((float)$product['prix_ht'], 2) }} {{ $product['currency'] ?? 'EUR' }}
-                                        </p>
-                                    @endif
-                                    <p class="text-xs text-gray-400">ID: {{ $product['id'] ?? 'N/A' }}</p>
+                                    <p class="font-bold text-sm whitespace-nowrap">{{ number_format((float)$product['prix_ht'], 2) }} {{ $product['currency'] }}</p>
+                                    <p class="text-xs text-gray-400">ID: {{ $product['id'] }}</p>
                                 </div>
                             </div>
                         </div>
@@ -940,28 +691,8 @@ Minimum 3 produits si possible, maximum 10."
                 </svg>
                 <div>
                     <p class="font-semibold text-yellow-800">Aucun produit trouvé</p>
-                    <p class="text-sm text-yellow-700 mt-1">
-                        Aucun produit ne correspond aux critères extraits. 
-                        <button 
-                            wire:click="findMoreMatches"
-                            class="text-yellow-800 underline hover:text-yellow-900"
-                        >
-                            Cliquez ici pour une recherche plus large
-                        </button>
-                    </p>
+                    <p class="text-sm text-yellow-700 mt-1">Aucun produit ne correspond aux critères extraits. Vérifiez les données ou essayez une recherche manuelle.</p>
                 </div>
-            </div>
-        </div>
-    @endif
-
-    @if($isLoading)
-        <div class="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <div class="flex items-center gap-3">
-                <svg class="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <p class="text-blue-700">Recherche en cours... Analyse des produits similaires</p>
             </div>
         </div>
     @endif
