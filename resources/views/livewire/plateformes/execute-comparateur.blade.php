@@ -37,19 +37,35 @@ new class extends Component {
                 'messages' => [
                     [
                         'role' => 'system',
-                        'content' => 'Tu es un expert en extraction de données de produits cosmétiques. Tu dois extraire vendor, name, variation et type du nom de produit fourni. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
+                        'content' => 'Tu es un expert en extraction de données de produits cosmétiques. Tu dois extraire vendor, name, variation et type du nom de produit fourni. IMPORTANT: Pour les parfums, si le vendor et le nom semblent identiques (ex: "Azzaro Chrome"), traite "Chrome" comme le nom et "Azzaro" comme le vendor. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
                     ],
                     [
                         'role' => 'user',
                         'content' => "Extrait les informations suivantes du nom de produit et retourne-les au format JSON strict :
 - vendor : la marque du produit
-- name : le nom de la gamme/ligne de produit
+- name : le nom de la gamme/ligne de produit (pour les parfums, c'est souvent le nom du parfum)
 - variation : la contenance/taille (ml, g, etc.)
 - type : le type de produit (Crème, Sérum, Concentré, Déodorant, Eau de Toilette, etc.)
 
 Nom du produit : {$this->productName}
 
 Exemple de format attendu :
+{
+  \"vendor\": \"Azzaro\",
+  \"name\": \"Chrome\",
+  \"variation\": \"150 ml\",
+  \"type\": \"Déodorant Vaporisateur\"
+}
+
+Exemple 2 (parfum avec nom composé) :
+{
+  \"vendor\": \"Dior\",
+  \"name\": \"Sauvage\",
+  \"variation\": \"100 ml\",
+  \"type\": \"Eau de Toilette\"
+}
+
+Exemple 3 (produit de soin) :
 {
   \"vendor\": \"Shiseido\",
   \"name\": \"Vital Perfection\",
@@ -118,58 +134,84 @@ Exemple de format attendu :
 
         // Nettoyer le type extrait
         $cleanType = $this->cleanType($type);
+        
+        // Pour les parfums, ajuster la recherche du nom
+        // Certains parfums ont le nom identique au vendor dans la base
+        $nameVariations = $this->getNameVariations($vendor, $name, $cleanType);
 
         // Stratégie de recherche STRICTE - les trois critères doivent correspondre
         
-        // 1. Recherche exacte : vendor + name + type complet
-        $exactMatch = Product::where('vendor', 'LIKE', "%{$vendor}%")
-            ->where('name', 'LIKE', "%{$name}%")
-            ->where('type', 'LIKE', "%{$cleanType}%")
-            ->get();
+        // 1. Recherche avec variations de nom
+        foreach ($nameVariations as $nameToSearch) {
+            $exactMatch = Product::where(function($query) use ($vendor) {
+                    $query->where('vendor', 'LIKE', "%{$vendor}%")
+                          ->orWhereRaw('LOWER(vendor) = LOWER(?)', [$vendor]);
+                })
+                ->where(function($query) use ($nameToSearch) {
+                    $query->where('name', 'LIKE', "%{$nameToSearch}%")
+                          ->orWhereRaw('LOWER(name) = LOWER(?)', [$nameToSearch]);
+                })
+                ->where(function($query) use ($cleanType) {
+                    $query->where('type', 'LIKE', "%{$cleanType}%")
+                          ->orWhereRaw('LOWER(type) LIKE ?', ['%' . strtolower($cleanType) . '%']);
+                })
+                ->get();
 
-        if ($exactMatch->isNotEmpty()) {
-            $this->matchingProducts = $exactMatch->toArray();
-            $this->bestMatch = $exactMatch->first();
-            return;
+            if ($exactMatch->isNotEmpty()) {
+                $this->matchingProducts = $exactMatch->toArray();
+                $this->bestMatch = $exactMatch->first();
+                return;
+            }
         }
 
         // 2. Recherche plus flexible sur le type (le type de la BDD contient le type nettoyé)
-        $typeContains = Product::where('vendor', 'LIKE', "%{$vendor}%")
-            ->where('name', 'LIKE', "%{$name}%")
-            ->where(function($query) use ($cleanType) {
-                $query->whereRaw('LOWER(type) LIKE ?', ['%' . strtolower($cleanType) . '%'])
-                      ->orWhere('type', 'LIKE', "%{$cleanType}%");
-            })
-            ->get();
-
-        if ($typeContains->isNotEmpty()) {
-            $this->matchingProducts = $typeContains->toArray();
-            $this->bestMatch = $typeContains->first();
-            session()->flash('warning', 'Résultats trouvés avec correspondance flexible sur le type.');
-            return;
-        }
-
-        // 3. Recherche vendor + name + type partiel (mot-clé dans le type)
-        $keywords = explode(' ', $cleanType);
-        $keywords = array_filter($keywords, function($word) {
-            return strlen($word) > 2; // Ignorer les mots trop courts
-        });
-
-        if (!empty($keywords)) {
-            $typeKeywordMatch = Product::where('vendor', 'LIKE', "%{$vendor}%")
-                ->where('name', 'LIKE', "%{$name}%")
-                ->where(function($query) use ($keywords) {
+        foreach ($nameVariations as $nameToSearch) {
+            $typeContains = Product::where(function($query) use ($vendor) {
+                    $query->where('vendor', 'LIKE', "%{$vendor}%")
+                          ->orWhereRaw('LOWER(vendor) = LOWER(?)', [$vendor]);
+                })
+                ->where(function($query) use ($nameToSearch) {
+                    $query->where('name', 'LIKE', "%{$nameToSearch}%")
+                          ->orWhereRaw('LOWER(name) = LOWER(?)', [$nameToSearch]);
+                })
+                ->where(function($query) use ($cleanType) {
+                    // Recherche plus flexible sur le type
+                    $keywords = explode(' ', $cleanType);
                     foreach ($keywords as $keyword) {
-                        $query->orWhere('type', 'LIKE', "%{$keyword}%");
+                        if (strlen($keyword) > 2) {
+                            $query->orWhere('type', 'LIKE', "%{$keyword}%");
+                        }
                     }
                 })
                 ->get();
 
-            if ($typeKeywordMatch->isNotEmpty()) {
-                $this->matchingProducts = $typeKeywordMatch->toArray();
-                $this->bestMatch = $typeKeywordMatch->first();
-                session()->flash('warning', 'Résultats trouvés avec correspondance partielle sur le type.');
+            if ($typeContains->isNotEmpty()) {
+                $this->matchingProducts = $typeContains->toArray();
+                $this->bestMatch = $typeContains->first();
+                session()->flash('warning', 'Résultats trouvés avec correspondance flexible sur le type.');
                 return;
+            }
+        }
+
+        // 3. Recherche par type seulement si c'est un type spécifique comme "Déodorant"
+        // Pour les cas comme AZZARO où le nom dans la base est "AZZARO Pour Homme"
+        $isSpecificType = $this->isSpecificProductType($cleanType);
+        
+        if ($isSpecificType) {
+            foreach ($nameVariations as $nameToSearch) {
+                $typeOnlyMatch = Product::where(function($query) use ($vendor) {
+                        $query->where('vendor', 'LIKE', "%{$vendor}%")
+                              ->orWhereRaw('LOWER(vendor) = LOWER(?)', [$vendor]);
+                    })
+                    ->where('type', 'LIKE', "%{$cleanType}%")
+                    ->get();
+
+                if ($typeOnlyMatch->isNotEmpty()) {
+                    $this->matchingProducts = $typeOnlyMatch->toArray();
+                    $this->bestMatch = $typeOnlyMatch->first();
+                    session()->flash('warning', 'Résultats trouvés pour le vendor et type seulement (nom différent).');
+                    return;
+                }
             }
         }
 
@@ -180,6 +222,68 @@ Exemple de format attendu :
     }
 
     /**
+     * Générer des variations de nom pour la recherche
+     */
+    private function getNameVariations(string $vendor, string $name, string $type): array
+    {
+        $variations = [];
+        
+        // 1. Le nom tel quel
+        $variations[] = $name;
+        
+        // 2. Pour les parfums, ajouter "Pour Homme" ou "Pour Femme" si c'est un parfum
+        if ($this->isPerfumeType($type)) {
+            $variations[] = $name . ' Pour Homme';
+            $variations[] = $name . ' Pour Femme';
+            $variations[] = $vendor . ' ' . $name;
+            $variations[] = $vendor; // Dans certains cas, le nom dans la base est juste le vendor
+        }
+        
+        // 3. Nom sans articles ou prépositions
+        $cleanName = preg_replace('/\b(le|la|les|un|une|des|du|de|d\'|pour|and|the)\b/i', '', $name);
+        $cleanName = preg_replace('/\s+/', ' ', trim($cleanName));
+        if ($cleanName !== $name) {
+            $variations[] = $cleanName;
+        }
+        
+        return array_unique(array_filter($variations));
+    }
+    
+    /**
+     * Vérifier si c'est un type de parfum
+     */
+    private function isPerfumeType(string $type): bool
+    {
+        $perfumeTypes = ['déodorant', 'deodorant', 'parfum', 'eau de toilette', 'eau de parfum', 'after shave', 'lotion'];
+        $cleanType = strtolower($type);
+        
+        foreach ($perfumeTypes as $perfumeType) {
+            if (str_contains($cleanType, $perfumeType)) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Vérifier si c'est un type spécifique qui peut être recherché seul
+     */
+    private function isSpecificProductType(string $type): bool
+    {
+        $specificTypes = ['déodorant', 'deodorant', 'shampooing', 'shampoing', 'après-shampooing', 'gel douche', 'savon'];
+        $cleanType = strtolower($type);
+        
+        foreach ($specificTypes as $specificType) {
+            if (str_contains($cleanType, $specificType)) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
+    /**
      * Nettoyer le type en enlevant les conditionnements et formats
      */
     private function cleanType(string $type): string
@@ -187,10 +291,10 @@ Exemple de format attendu :
         // Mots à supprimer (conditionnements, formats, unités)
         $stopWords = [
             'vaporisateur', 'spray', 'pompe', 'tube', 'pot', 'flacon', 
-            'roll-on', 'rollon', 'stick', 'roll', 'on',
+            'roll-on', 'rollon', 'stick', 'roll', 'on', 'atomiseur',
             'ml', 'mg', 'gr', 'g', 'l', 'unité', 'unités',
             'sans', 'avec', 'pour', 'et', 'ou', 'le', 'la', 'les',
-            'en', 'par', 'à', 'de', 'des', 'du'
+            'en', 'par', 'à', 'de', 'des', 'du', 'd\''
         ];
         
         $cleanedType = strtolower($type);
@@ -287,7 +391,7 @@ Exemple de format attendu :
 
     @if($bestMatch)
         <div class="mt-6 p-4 bg-green-50 border-2 border-green-500 rounded">
-            <h3 class="font-bold text-green-700 mb-3">✓ Produit trouvé (vendor + name + type) :</h3>
+            <h3 class="font-bold text-green-700 mb-3">✓ Produit trouvé :</h3>
             <div class="flex items-start gap-4">
                 @if($bestMatch['image_url'])
                     <img src="{{ $bestMatch['image_url'] }}" alt="{{ $bestMatch['name'] }}" class="w-20 h-20 object-cover rounded">
@@ -320,7 +424,7 @@ Exemple de format attendu :
                                 <p class="font-medium text-sm">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
                                 <p class="text-xs text-gray-500">{{ $product['type'] }} | {{ $product['variation'] }}</p>
                                 <div class="text-xs text-blue-600 mt-1">
-                                    ✓ Correspondance complète
+                                    ✓ Correspondance trouvée
                                 </div>
                             </div>
                             <div class="text-right">
