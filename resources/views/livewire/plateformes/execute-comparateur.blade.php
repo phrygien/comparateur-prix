@@ -30,22 +30,28 @@ new class extends Component {
         session()->forget(['error', 'warning', 'success', 'info']);
         
         try {
-            // Étape 1 : Extraction AI (simplifiée ici pour brevité)
+            // Étape 1 : Extraction AI
             $extractionResponse = Http::withHeaders([
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
             ])->post('https://api.openai.com/v1/chat/completions', [
                 'model' => 'gpt-4o-mini',
                 'messages' => [
-                    ['role' => 'system', 'content' => 'Expert extraction produits. Extrait vendor, name, variation, type. JSON uniquement.'],
-                    ['role' => 'user', 'content' => "Extrait: {$this->productName}"]
+                    [
+                        'role' => 'system',
+                        'content' => 'Tu es un expert en extraction produits cosmétiques. Retourne UNIQUEMENT un JSON valide avec : vendor (marque), name (nom principal court, 1-4 mots), variation (taille), type (type principal).'
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => "Extrait du nom: {$this->productName}\n\nExemple: {\"vendor\":\"Dior\",\"name\":\"Capture Crème Nuit\",\"variation\":\"50 ml\",\"type\":\"Crème Nuit\"}"
+                    ]
                 ],
                 'temperature' => 0.1,
                 'max_tokens' => 300
             ]);
 
             if (!$extractionResponse->successful()) {
-                throw new \Exception('Erreur API');
+                throw new \Exception('Erreur API OpenAI extraction');
             }
 
             $content = trim(preg_replace('/```json\s*|\s*```/', '', $extractionResponse->json()['choices'][0]['message']['content']));
@@ -53,13 +59,45 @@ new class extends Component {
 
             if (json_last_error() !== JSON_ERROR_NONE || empty($this->extractedData['vendor']) || empty($this->extractedData['name'])) {
                 $this->extractedData = $this->basicExtractionFallback($this->productName);
+                \Log::warning('Fallback extraction utilisée', ['product' => $this->productName]);
             }
 
+            // Étape 2 : Vérification et correction AI (prompt amélioré)
+            $verificationResponse = Http::withHeaders([
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
+            ])->post('https://api.openai.com/v1/chat/completions', [
+                'model' => 'gpt-4o-mini',
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => 'Expert cosmétiques. Vérifie cohérence vendor/name/type. Réponds JSON: {"is_correct": bool, "confidence": "high/medium/low", "explanation": "court", "correction": {vendor/name/type si besoin, sinon {}}}.'
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => "Vérifie: Original: {$this->productName} Extrait: vendor={$this->extractedData['vendor']}, name={$this->extractedData['name']}, type={$this->extractedData['type']}"
+                    ]
+                ],
+                'temperature' => 0.1,
+                'max_tokens' => 400
+            ]);
+
+            if ($verificationResponse->successful()) {
+                $verificationContent = trim(preg_replace('/```json\s*|\s*```/', '', $verificationResponse->json()['choices'][0]['message']['content']));
+                $this->aiCorrection = json_decode($verificationContent, true);
+                
+                if (!$this->aiCorrection['is_correct'] && !empty($this->aiCorrection['correction'])) {
+                    $this->extractedData = array_merge($this->extractedData, array_filter($this->aiCorrection['correction']));
+                    session()->flash('info', 'Correction appliquée: ' . $this->aiCorrection['explanation']);
+                }
+            }
+
+            // Recherche
             $this->searchMatchingProducts();
             
         } catch (\Exception $e) {
-            \Log::error('Erreur', ['msg' => $e->getMessage()]);
-            session()->flash('error', 'Erreur lors de l\'extraction');
+            \Log::error('Erreur extraction globale', ['message' => $e->getMessage()]);
+            session()->flash('error', 'Erreur extraction: ' . $e->getMessage());
         } finally {
             $this->isLoading = false;
         }
@@ -67,10 +105,15 @@ new class extends Component {
 
     private function basicExtractionFallback(string $productName): array
     {
-        $known = ['Azzaro', 'Dior', 'Guerlain', 'Chanel', 'Yves Saint Laurent'];
-        foreach ($known as $v) {
-            if (stripos($productName, $v) !== false) {
-                return ['vendor' => $v, 'name' => trim(str_ireplace($v, '', $productName)), 'variation' => '', 'type' => ''];
+        $knownVendors = ['Azzaro', 'Dior', 'Shiseido', 'Guerlain'];
+        foreach ($knownVendors as $vendor) {
+            if (Str::contains(strtoupper($productName), strtoupper($vendor))) {
+                return [
+                    'vendor' => $vendor,
+                    'name' => trim(str_replace($vendor, '', $productName)),
+                    'variation' => '',
+                    'type' => ''
+                ];
             }
         }
         return ['vendor' => '', 'name' => $productName, 'variation' => '', 'type' => ''];
@@ -79,75 +122,66 @@ new class extends Component {
     public function searchMatchingProducts()
     {
         if (!$this->extractedData || empty($this->extractedData['vendor']) || empty($this->extractedData['name'])) {
-            session()->flash('warning', 'Marque et nom du produit requis');
+            session()->flash('warning', 'Champs manquants pour recherche.');
             return;
         }
 
-        $vendor    = trim($this->extractedData['vendor']);
-        $name      = trim($this->extractedData['name']);
+        $vendor = trim($this->extractedData['vendor']);
+        $name = trim($this->extractedData['name']);
+        $type = trim($this->extractedData['type'] ?? '');
         $variation = trim($this->extractedData['variation'] ?? '');
 
-        $vendor_clean = preg_replace('/[^a-zA-Z0-9\s]/', '', $vendor);
-        $name_clean   = preg_replace('/[^a-zA-Z0-9\s]/', '', $name);
+        $vendor_clean = preg_replace('/[^a-zA-Z0-9\s]/', '', strtolower($vendor));
+        $name_clean = preg_replace('/[^a-zA-Z0-9\s]/', '', strtolower($name));
 
-        // FULLTEXT en mode BOOLEAN : on force vendor + name
-        $fulltext_query = "+{$vendor_clean} +{$name_clean}";
+        // FULLTEXT plus tolérant : vendor + mots clés du name (premiers 3)
+        $name_words = explode(' ', $name_clean);
+        $fulltext_terms = ['+' . $vendor_clean];
+        foreach (array_slice($name_words, 0, 3) as $word) {
+            if (strlen($word) > 2) $fulltext_terms[] = '+' . $word;
+        }
+        $fulltext_query = implode(' ', $fulltext_terms);
 
-        // Pour la variation (optionnel)
         $variation_number = preg_replace('/[^0-9]/', '', $variation);
-        $variation_like   = $variation_number ?: $variation;
+        $variation_like = $variation_number ? $variation_number . '%' : '%';
 
-        $query = "
-            SELECT 
-                id, vendor, name, type, variation, prix_ht, url, image_url
+        $results = DB::select("
+            SELECT id, vendor, name, type, variation, prix_ht, url, image_url
             FROM last_price_scraped_product
-            WHERE 
-                MATCH(name, vendor, type, variation) AGAINST (? IN BOOLEAN MODE)
-                OR (
-                    LOWER(vendor) LIKE ? 
-                    AND LOWER(name) LIKE ?
-                )
-        ";
-
-        $bindings = [
+            WHERE MATCH(name, vendor, type, variation) AGAINST (? IN BOOLEAN MODE)
+                OR (LOWER(vendor) LIKE ? AND LOWER(name) LIKE ?)
+                " . ($variation_number ? "AND (variation LIKE ? OR name LIKE ? OR type LIKE ?)" : "") . "
+            ORDER BY prix_ht ASC
+            LIMIT 20
+        ", array_filter([
             $fulltext_query,
             "%$vendor_clean%",
-            "%$name_clean%"
-        ];
+            "%" . implode('% %', array_slice($name_words, 0, 3)) . "%",
+            $variation_number ? "%$variation_like" : null,
+            $variation_number ? "%$variation_like" : null,
+            $variation_number ? "%$variation_like" : null,
+        ]));
 
-        // Ajout filtre variation si présent
-        if ($variation_number || $variation_like) {
-            $query .= " AND (
-                variation REGEXP ? 
-                OR variation LIKE ? 
-                OR name LIKE ? 
-                OR type LIKE ?
-            )";
-            $bindings[] = "[[:<:]]$variation_number";
-            $bindings[] = "%$variation_like%";
-            $bindings[] = "%$variation_like%";
-            $bindings[] = "%$variation_like%";
-        }
+        // Filtre PHP assoupli : vendor ET au moins un mot du name
+        $this->matchingProducts = array_filter(array_map(fn($r) => (array)$r, $results), function ($product) use ($vendor_clean, $name_words) {
+            $pVendor = strtolower($product['vendor'] ?? '');
+            $pName = strtolower($product['name'] ?? '');
+            $pType = strtolower($product['type'] ?? '');
 
-        $query .= " ORDER BY prix_ht ASC LIMIT 20";
+            $vendorMatch = str_contains($pVendor, $vendor_clean) || str_contains($vendor_clean, $pVendor);
+            $nameMatch = false;
+            foreach ($name_words as $word) {
+                if (str_contains($pName, $word) || str_contains($pType, $word)) {
+                    $nameMatch = true;
+                    break;
+                }
+            }
 
-        $results = DB::select($query, $bindings);
-
-        // Filtrage supplémentaire côté PHP pour être très strict sur vendor + name
-        $this->matchingProducts = array_filter($results, function ($row) use ($vendor_clean, $name_clean) {
-            $rowVendor = strtolower($row->vendor ?? '');
-            $rowName   = strtolower($row->name ?? '');
-
-            // Doit contenir au minimum une partie du vendor ET du name
-            return 
-                (str_contains($rowVendor, strtolower($vendor_clean)) || str_contains(strtolower($vendor_clean), $rowVendor)) &&
-                (str_contains($rowName, strtolower($name_clean))   || str_contains(strtolower($name_clean), $rowName));
+            return $vendorMatch && $nameMatch;
         });
 
-        $this->matchingProducts = array_map(fn($r) => (array) $r, $this->matchingProducts);
-
         if (empty($this->matchingProducts)) {
-            session()->flash('warning', 'Aucun produit concurrent trouvé avec correspondance sur marque ET nom');
+            session()->flash('error', 'Aucun produit trouvé avec la combinaison vendor + name.');
         }
     }
 
@@ -155,7 +189,7 @@ new class extends Component {
     {
         $product = DB::table('last_price_scraped_product')->find($productId);
         if ($product) {
-            session()->flash('success', 'Produit sélectionné : ' . $product->name);
+            session()->flash('success', 'Produit sélectionné: ' . $product->name);
             $this->dispatch('product-selected', productId: $productId);
         }
     }
@@ -164,8 +198,8 @@ new class extends Component {
 
 <div class="p-6 bg-white rounded-lg shadow">
     <div class="mb-4">
-        <h2 class="text-xl font-bold mb-2">Recherche de concurrents</h2>
-        <p class="text-gray-600">Produit analysé : {{ $productName }}</p>
+        <h2 class="text-xl font-bold mb-2">Extraction et recherche de produit</h2>
+        <p class="text-gray-600">Produit: {{ $productName }}</p>
     </div>
 
     <button 
@@ -173,63 +207,59 @@ new class extends Component {
         wire:loading.attr="disabled"
         class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
     >
-        <span wire:loading.remove>Rechercher concurrents</span>
-        <span wire:loading>Recherche en cours...</span>
+        <span wire:loading.remove>Extraire et rechercher</span>
+        <span wire:loading>En cours...</span>
     </button>
 
-    @foreach(['error' => 'red', 'success' => 'green', 'warning' => 'yellow'] as $key => $color)
+    @foreach(['error' => 'red', 'success' => 'green', 'warning' => 'yellow', 'info' => 'blue'] as $key => $color)
         @if(session($key))
             <div class="mt-4 p-4 bg-{{ $color }}-100 text-{{ $color }}-700 rounded border border-{{ $color }}-200">
-                {{ session($key) }}
+                @if($key === 'warning') ⚠️ @endif {{ $key === 'info' ? 'ℹ️ ' : '' }}{{ session($key) }}
             </div>
         @endif
     @endforeach
 
     @if($extractedData)
         <div class="mt-6 p-4 bg-gray-50 rounded">
-            <h3 class="font-bold mb-3">Critères de recherche :</h3>
-            <div class="grid grid-cols-2 gap-4 text-sm">
-                <div><span class="font-semibold">Marque :</span> {{ $extractedData['vendor'] ?? '—' }}</div>
-                <div><span class="font-semibold">Nom :</span> {{ $extractedData['name'] ?? '—' }}</div>
-                <div><span class="font-semibold">Type :</span> {{ $extractedData['type'] ?? '—' }}</div>
-                <div><span class="font-semibold">Contenance :</span> {{ $extractedData['variation'] ?? '—' }}</div>
+            <h3 class="font-bold mb-3">Critères extraits :</h3>
+            <div class="grid grid-cols-2 gap-4">
+                <div><span class="font-semibold">Vendor:</span> {{ $extractedData['vendor'] ?? 'N/A' }}</div>
+                <div><span class="font-semibold">Name:</span> {{ $extractedData['name'] ?? 'N/A' }}</div>
+                <div><span class="font-semibold">Type:</span> {{ $extractedData['type'] ?? 'N/A' }}</div>
+                <div><span class="font-semibold">Variation:</span> {{ $extractedData['variation'] ?? 'N/A' }}</div>
             </div>
         </div>
     @endif
 
     @if(!empty($matchingProducts))
-        <div class="mt-8">
-            <h3 class="font-bold text-lg mb-4">Produits concurrents trouvés ({{ count($matchingProducts) }})</h3>
-            <div class="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+        <div class="mt-6">
+            <h3 class="font-bold mb-3">Résultats trouvés ({{ count($matchingProducts) }}) :</h3>
+            <div class="space-y-2 max-h-96 overflow-y-auto">
                 @foreach($matchingProducts as $product)
-                    <div wire:click="selectProduct({{ $product['id'] }})"
-                         class="p-4 border rounded-lg hover:bg-blue-50 cursor-pointer transition">
-                        <div class="flex justify-between items-start">
-                            <div class="flex items-center gap-4 flex-1">
-                                @if($product['image_url'] ?? false)
-                                    <img src="{{ $product['image_url'] }}" alt="" class="w-16 h-16 object-cover rounded">
+                    <div 
+                        wire:click="selectProduct({{ $product['id'] }})"
+                        class="p-3 border rounded hover:bg-blue-50 cursor-pointer transition"
+                    >
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                @if($product['image_url'])
+                                    <img src="{{ $product['image_url'] }}" alt="{{ $product['name'] }}" class="w-12 h-12 object-cover rounded">
                                 @endif
-                                <div>
-                                    <p class="font-semibold">{{ $product['vendor'] }} — {{ $product['name'] }}</p>
-                                    <p class="text-sm text-gray-600 mt-1">
-                                        {{ $product['type'] ?? '—' }} • {{ $product['variation'] ?? '—' }}
-                                    </p>
+                                <div class="flex-1">
+                                    <p class="font-medium text-sm">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
+                                    <p class="text-xs text-gray-500">{{ $product['type'] }} | {{ $product['variation'] }}</p>
                                 </div>
                             </div>
                             <div class="text-right">
-                                <p class="font-bold text-lg">{{ number_format($product['prix_ht'] ?? 0, 2) }} €</p>
-                                @if($product['url'] ?? false)
-                                    <a href="{{ $product['url'] }}" target="_blank" class="text-xs text-blue-600 hover:underline">Voir</a>
-                                @endif
+                                <p class="font-bold text-sm">
+                                    {{ is_numeric($product['prix_ht'] ?? null) ? number_format((float) $product['prix_ht'], 2, ',', ' ') : ($product['prix_ht'] ?? 'N/A') }} €
+                                </p>
+                                <p class="text-xs text-gray-500">ID: {{ $product['id'] }}</p>
                             </div>
                         </div>
                     </div>
                 @endforeach
             </div>
-        </div>
-    @elseif($extractedData && !$isLoading)
-        <div class="mt-8 p-6 bg-gray-50 rounded-lg text-center text-gray-600">
-            Aucun concurrent trouvé avec correspondance sur **marque** et **nom** du produit.
         </div>
     @endif
 </div>
