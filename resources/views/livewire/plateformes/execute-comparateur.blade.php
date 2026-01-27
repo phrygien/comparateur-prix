@@ -168,30 +168,35 @@ Pour un coffret :
         // Stratégie de recherche en cascade avec scoring
         $allResults = collect();
 
-        // 1. Recherche exacte (tous les critères + coffret)
+        // 1. Recherche exacte (tous les critères + vérification coffret dans name/type)
         $exactMatch = Product::query()
             ->where('vendor', 'LIKE', "%{$vendor}%")
             ->where('name', 'LIKE', "%{$name}%")
             ->where('variation', 'LIKE', "%{$variation}%")
             ->when($type, fn($q) => $q->where('type', 'LIKE', "%{$type}%"))
-            ->when($isCoffret !== null, function($q) use ($isCoffret) {
+            ->where(function($q) use ($isCoffret) {
                 if ($isCoffret) {
-                    return $q->where(function($query) {
-                        $query->where('is_coffret', true)
-                              ->orWhere('type', 'LIKE', '%coffret%')
-                              ->orWhere('name', 'LIKE', '%coffret%')
+                    // Si on cherche un coffret, le name OU type doit contenir un mot-clé coffret
+                    $q->where(function($query) {
+                        $query->where('name', 'LIKE', '%coffret%')
                               ->orWhere('name', 'LIKE', '%set%')
-                              ->orWhere('name', 'LIKE', '%kit%');
+                              ->orWhere('name', 'LIKE', '%kit%')
+                              ->orWhere('name', 'LIKE', '%duo%')
+                              ->orWhere('name', 'LIKE', '%trio%')
+                              ->orWhere('type', 'LIKE', '%coffret%')
+                              ->orWhere('type', 'LIKE', '%set%')
+                              ->orWhere('type', 'LIKE', '%kit%');
                     });
                 } else {
-                    return $q->where(function($query) {
-                        $query->where('is_coffret', false)
-                              ->orWhereNull('is_coffret');
-                    })
-                    ->where('type', 'NOT LIKE', '%coffret%')
-                    ->where('name', 'NOT LIKE', '%coffret%')
-                    ->where('name', 'NOT LIKE', '%set%')
-                    ->where('name', 'NOT LIKE', '%kit%');
+                    // Si on cherche un produit unitaire, exclure les coffrets
+                    $q->where('name', 'NOT LIKE', '%coffret%')
+                      ->where('name', 'NOT LIKE', '%set%')
+                      ->where('name', 'NOT LIKE', '%kit%')
+                      ->where('name', 'NOT LIKE', '%duo%')
+                      ->where('name', 'NOT LIKE', '%trio%')
+                      ->where('type', 'NOT LIKE', '%coffret%')
+                      ->where('type', 'NOT LIKE', '%set%')
+                      ->where('type', 'NOT LIKE', '%kit%');
                 }
             })
             ->get();
@@ -203,26 +208,33 @@ Pour un coffret :
             ]));
         }
 
-        // 2. Recherche sans variation mais avec coffret check
+        // 2. Recherche sans variation mais avec vérification coffret
         if ($allResults->isEmpty()) {
             $withoutVariation = Product::query()
                 ->where('vendor', 'LIKE', "%{$vendor}%")
                 ->where('name', 'LIKE', "%{$name}%")
                 ->when($type, fn($q) => $q->where('type', 'LIKE', "%{$type}%"))
-                ->when($isCoffret !== null, function($q) use ($isCoffret) {
+                ->where(function($q) use ($isCoffret) {
                     if ($isCoffret) {
-                        return $q->where(function($query) {
-                            $query->where('is_coffret', true)
+                        $q->where(function($query) {
+                            $query->where('name', 'LIKE', '%coffret%')
+                                  ->orWhere('name', 'LIKE', '%set%')
+                                  ->orWhere('name', 'LIKE', '%kit%')
+                                  ->orWhere('name', 'LIKE', '%duo%')
+                                  ->orWhere('name', 'LIKE', '%trio%')
                                   ->orWhere('type', 'LIKE', '%coffret%')
-                                  ->orWhere('name', 'LIKE', '%coffret%');
+                                  ->orWhere('type', 'LIKE', '%set%')
+                                  ->orWhere('type', 'LIKE', '%kit%');
                         });
                     } else {
-                        return $q->where(function($query) {
-                            $query->where('is_coffret', false)
-                                  ->orWhereNull('is_coffret');
-                        })
-                        ->where('type', 'NOT LIKE', '%coffret%')
-                        ->where('name', 'NOT LIKE', '%coffret%');
+                        $q->where('name', 'NOT LIKE', '%coffret%')
+                          ->where('name', 'NOT LIKE', '%set%')
+                          ->where('name', 'NOT LIKE', '%kit%')
+                          ->where('name', 'NOT LIKE', '%duo%')
+                          ->where('name', 'NOT LIKE', '%trio%')
+                          ->where('type', 'NOT LIKE', '%coffret%')
+                          ->where('type', 'NOT LIKE', '%set%')
+                          ->where('type', 'NOT LIKE', '%kit%');
                     }
                 })
                 ->get();
@@ -233,7 +245,7 @@ Pour un coffret :
             ]));
         }
 
-        // 3. Recherche vendor + name avec similarité
+        // 3. Recherche vendor + name avec scoring (sans filtre strict coffret)
         if ($allResults->isEmpty() || $allResults->count() < 5) {
             $vendorAndName = Product::query()
                 ->where('vendor', 'LIKE', "%{$vendor}%")
@@ -327,15 +339,15 @@ Pour un coffret :
         }
     }
 
+    /**
+     * Vérifie si un produit est un coffret en analysant son name et type
+     */
     private function isProductCoffret($product): bool
     {
-        // Vérifier si le produit est un coffret
-        if (isset($product->is_coffret) && $product->is_coffret) {
-            return true;
-        }
-
-        $coffretKeywords = ['coffret', 'set', 'kit', 'duo', 'trio'];
-        $searchText = strtolower($product->name . ' ' . $product->type);
+        $coffretKeywords = ['coffret', 'set', 'kit', 'duo', 'trio', 'pack', 'bundle'];
+        
+        // Combiner name et type pour la recherche
+        $searchText = strtolower(($product->name ?? '') . ' ' . ($product->type ?? ''));
 
         foreach ($coffretKeywords as $keyword) {
             if (strpos($searchText, $keyword) !== false) {
@@ -439,6 +451,7 @@ Pour un coffret :
                             Non, produit unitaire
                         </span>
                     @endif
+                    <span class="text-xs text-gray-500 ml-2">(détecté via name/type)</span>
                 </div>
             </div>
         </div>
@@ -451,6 +464,19 @@ Pour un coffret :
                     <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
                 </svg>
                 Meilleur résultat trouvé
+                @php
+                    $isBestMatchCoffret = stripos($bestMatch['name'], 'coffret') !== false || 
+                                          stripos($bestMatch['name'], 'set') !== false || 
+                                          stripos($bestMatch['name'], 'kit') !== false ||
+                                          stripos($bestMatch['type'], 'coffret') !== false ||
+                                          stripos($bestMatch['type'], 'set') !== false ||
+                                          stripos($bestMatch['type'], 'kit') !== false;
+                @endphp
+                @if($isBestMatchCoffret)
+                    <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                        Coffret
+                    </span>
+                @endif
             </h3>
             <div class="flex items-start gap-4">
                 @if($bestMatch['image_url'])
@@ -491,6 +517,14 @@ Pour un coffret :
             <div class="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded-lg p-2">
                 @foreach($matchingProducts as $product)
                     @if($bestMatch && $bestMatch['id'] !== $product['id'])
+                        @php
+                            $isProductCoffret = stripos($product['name'], 'coffret') !== false || 
+                                              stripos($product['name'], 'set') !== false || 
+                                              stripos($product['name'], 'kit') !== false ||
+                                              stripos($product['type'], 'coffret') !== false ||
+                                              stripos($product['type'], 'set') !== false ||
+                                              stripos($product['type'], 'kit') !== false;
+                        @endphp
                         <div 
                             wire:click="selectProduct({{ $product['id'] }})"
                             class="p-3 border rounded-lg hover:bg-blue-50 hover:border-blue-300 cursor-pointer transition bg-white"
@@ -506,7 +540,14 @@ Pour un coffret :
                                     </div>
                                 @endif
                                 <div class="flex-1 min-w-0">
-                                    <p class="font-medium text-sm truncate">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
+                                    <div class="flex items-center gap-2">
+                                        <p class="font-medium text-sm truncate">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
+                                        @if($isProductCoffret)
+                                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 flex-shrink-0">
+                                                Coffret
+                                            </span>
+                                        @endif
+                                    </div>
                                     <p class="text-xs text-gray-500 truncate">{{ $product['type'] }} | {{ $product['variation'] }}</p>
                                 </div>
                                 <div class="text-right flex-shrink-0">
