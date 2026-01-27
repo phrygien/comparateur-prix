@@ -41,15 +41,15 @@ new class extends Component {
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
             ])->post('https://api.openai.com/v1/chat/completions', [
-                'model' => 'gpt-4o-mini',
-                'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' => 'Tu es un expert en extraction de données de produits cosmétiques. Tu dois extraire vendor, name, variation, type et détecter si c\'est un coffret. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
-                    ],
-                    [
-                        'role' => 'user',
-                        'content' => "Extrait les informations suivantes du nom de produit et retourne-les au format JSON strict :
+                        'model' => 'gpt-4o-mini',
+                        'messages' => [
+                            [
+                                'role' => 'system',
+                                'content' => 'Tu es un expert en extraction de données de produits cosmétiques. Tu dois extraire vendor, name, variation, type et détecter si c\'est un coffret. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
+                            ],
+                            [
+                                'role' => 'user',
+                                'content' => "Extrait les informations suivantes du nom de produit et retourne-les au format JSON strict :
 - vendor : la marque du produit
 - name : le nom de la gamme/ligne de produit
 - variation : la contenance/taille (ml, g, etc.)
@@ -66,11 +66,11 @@ Exemple de format attendu :
   \"type\": \"Concentré Correcteur Rides\",
   \"is_coffret\": false
 }"
-                    ]
-                ],
-                'temperature' => 0.3,
-                'max_tokens' => 500
-            ]);
+                            ]
+                        ],
+                        'temperature' => 0.3,
+                        'max_tokens' => 500
+                    ]);
 
             if ($response->successful()) {
                 $data = $response->json();
@@ -152,169 +152,174 @@ Exemple de format attendu :
         $type = $this->extractedData['type'] ?? '';
         $isCoffretSource = $this->extractedData['is_coffret'] ?? false;
 
-        // Construire la requête de recherche en mode boolean
-        $searchTerms = [];
-        
-        // Ajouter le vendor (obligatoire avec +)
-        if (!empty($vendor)) {
-            $vendorWords = $this->extractKeywords($vendor);
-            foreach ($vendorWords as $word) {
-                $searchTerms[] = "+{$word}";
-            }
-        }
+        // Extraire les mots clés
+        $vendorWords = $this->extractKeywords($vendor);
+        $nameWords = $this->extractKeywords($name);
+        $typeWords = $this->extractKeywords($type);
 
-        // Ajouter le name
-        if (!empty($name)) {
-            $nameWords = $this->extractKeywords($name);
-            foreach ($nameWords as $word) {
-                $searchTerms[] = "{$word}";
-            }
-        }
-
-        // Ajouter le type
-        if (!empty($type)) {
-            $typeWords = $this->extractKeywords($type);
-            foreach ($typeWords as $word) {
-                $searchTerms[] = "{$word}";
-            }
-        }
-
-        $searchQuery = implode(' ', $searchTerms);
-
-        // Construction de la requête SQL avec FULLTEXT SEARCH
-        $sql = "SELECT 
-                lp.*, 
-                ws.name as site_name, 
-                lp.url as product_url, 
-                lp.image_url as image
-            FROM last_price_scraped_product lp
-            LEFT JOIN web_site ws ON lp.web_site_id = ws.id
-            WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
-                AGAINST (? IN BOOLEAN MODE)
-            AND (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')";
-
-        $params = [$searchQuery];
-
-        // Ajouter le filtre par sites si des sites sont sélectionnés
-        if (!empty($this->selectedSites)) {
-            $placeholders = implode(',', array_fill(0, count($this->selectedSites), '?'));
-            $sql .= " AND lp.web_site_id IN ({$placeholders})";
-            $params = array_merge($params, $this->selectedSites);
-        }
-
-        // Limiter les résultats
-        $sql .= " ORDER BY lp.id DESC LIMIT 200";
-
-        try {
-            $results = \DB::select($sql, $params);
-            
-            if (!empty($results)) {
-                // Convertir les résultats en array
-                $products = array_map(function($item) {
-                    return (array) $item;
-                }, $results);
-
-                // Filtrer par statut coffret
-                $filtered = $this->filterByCoffretStatusFromArray($products, $isCoffretSource);
-                
-                if (!empty($filtered)) {
-                    $this->groupResultsBySite($filtered);
-                    $this->validateBestMatchWithAI();
-                    return;
-                }
-            }
-
-            // Si aucun résultat avec FULLTEXT, essayer une recherche par vendor exact
-            $this->fallbackSearchByVendor($vendor, $name, $type, $isCoffretSource);
-
-        } catch (\Exception $e) {
-            \Log::error('Erreur recherche FULLTEXT', [
-                'message' => $e->getMessage(),
-                'search_query' => $searchQuery
-            ]);
-
-            // Fallback sur recherche classique
-            $this->fallbackSearchByVendor($vendor, $name, $type, $isCoffretSource);
-        }
-    }
-
-    /**
-     * Recherche de secours avec LIKE si FULLTEXT échoue
-     */
-    private function fallbackSearchByVendor($vendor, $name, $type, $isCoffretSource)
-    {
+        // Stratégie de recherche en cascade AVEC FILTRE VENDOR ET SITES
         $query = Product::query()
-            ->select('last_price_scraped_product.*', 'web_site.name as site_name', 
-                     'last_price_scraped_product.url as product_url',
-                     'last_price_scraped_product.image_url as image')
-            ->from('last_price_scraped_product')
-            ->leftJoin('web_site', 'last_price_scraped_product.web_site_id', '=', 'web_site.id')
-            ->where('last_price_scraped_product.vendor', 'LIKE', "%{$vendor}%")
-            ->where(function($q) {
-                $q->where('last_price_scraped_product.variation', '!=', 'Standard')
-                  ->orWhereNull('last_price_scraped_product.variation')
-                  ->orWhere('last_price_scraped_product.variation', '=', '');
-            })
+            ->where('vendor', 'LIKE', "%{$vendor}%")
             ->when(!empty($this->selectedSites), function ($q) {
-                $q->whereIn('last_price_scraped_product.web_site_id', $this->selectedSites);
+                $q->whereIn('web_site_id', $this->selectedSites);
             })
-            ->orderBy('last_price_scraped_product.id', 'DESC');
+            ->orderByDesc('id'); // Trier par le plus récent d'abord
 
-        // Recherche avec name
-        if (!empty($name)) {
-            $results = (clone $query)
-                ->where('last_price_scraped_product.name', 'LIKE', "%{$name}%")
-                ->limit(200)
-                ->get()
-                ->toArray();
+        // 1. Recherche exacte (tous les critères AVEC variation)
+        $exactMatch = (clone $query)
+            ->where('name', 'LIKE', "%{$name}%")
+            ->where('variation', 'LIKE', "%{$variation}%")
+            ->when($type, fn($q) => $q->where('type', 'LIKE', "%{$type}%"))
+            ->get();
 
-            if (!empty($results)) {
-                $filtered = $this->filterByCoffretStatusFromArray($results, $isCoffretSource);
-                if (!empty($filtered)) {
-                    $this->groupResultsBySite($filtered);
-                    $this->validateBestMatchWithAI();
-                    return;
-                }
+        if ($exactMatch->isNotEmpty()) {
+            $filtered = $this->filterByCoffretStatus($exactMatch, $isCoffretSource);
+            if (!empty($filtered)) {
+                $this->groupResultsByScrapeReference($filtered);
+                $this->validateBestMatchWithAI();
+                return;
             }
         }
 
-        // Recherche large sur vendor uniquement
-        $results = $query->limit(200)->get()->toArray();
-        
-        if (!empty($results)) {
-            $filtered = $this->filterByCoffretStatusFromArray($results, $isCoffretSource);
+        // 2. Recherche SANS variation (vendor + name + type)
+        $withoutVariation = (clone $query)
+            ->where('name', 'LIKE', "%{$name}%")
+            ->when($type, fn($q) => $q->where('type', 'LIKE', "%{$type}%"))
+            ->get();
+
+        if ($withoutVariation->isNotEmpty()) {
+            $filtered = $this->filterByCoffretStatus($withoutVariation, $isCoffretSource);
             if (!empty($filtered)) {
-                $this->groupResultsBySite($filtered);
+                $this->groupResultsByScrapeReference($filtered);
+                $this->validateBestMatchWithAI();
+                return;
+            }
+        }
+
+        // 3. Recherche vendor + name seulement (SANS variation et type)
+        $vendorAndName = (clone $query)
+            ->where('name', 'LIKE', "%{$name}%")
+            ->get();
+
+        if ($vendorAndName->isNotEmpty()) {
+            $filtered = $this->filterByCoffretStatus($vendorAndName, $isCoffretSource);
+            if (!empty($filtered)) {
+                $this->groupResultsByScrapeReference($filtered);
+                $this->validateBestMatchWithAI();
+                return;
+            }
+        }
+
+        // 4. Recherche flexible par mots-clés (SANS variation)
+        $keywordSearch = (clone $query)
+            ->where(function ($q) use ($nameWords, $typeWords) {
+                foreach ($nameWords as $word) {
+                    $q->orWhere('name', 'LIKE', "%{$word}%");
+                }
+            })
+            ->when(!empty($typeWords), function ($q) use ($typeWords) {
+                $q->where(function ($subQ) use ($typeWords) {
+                    foreach ($typeWords as $word) {
+                        $subQ->orWhere('type', 'LIKE', "%{$word}%");
+                    }
+                });
+            })
+            ->limit(100)
+            ->get();
+
+        if ($keywordSearch->isNotEmpty()) {
+            $filtered = $this->filterByCoffretStatus($keywordSearch, $isCoffretSource);
+            if (!empty($filtered)) {
+                $this->groupResultsByScrapeReference($filtered);
+                $this->validateBestMatchWithAI();
+                return;
+            }
+        }
+
+        // 5. Recherche très large : vendor + n'importe quel mot du name
+        $broadSearch = (clone $query)
+            ->where(function ($q) use ($nameWords) {
+                foreach ($nameWords as $word) {
+                    $q->orWhere('name', 'LIKE', "%{$word}%");
+                }
+            })
+            ->limit(100)
+            ->get();
+
+        if ($broadSearch->isNotEmpty()) {
+            $filtered = $this->filterByCoffretStatus($broadSearch, $isCoffretSource);
+            if (!empty($filtered)) {
+                $this->groupResultsByScrapeReference($filtered);
+                $this->validateBestMatchWithAI();
+                return;
+            }
+        }
+
+        // 6. Dernière tentative : vendor + type uniquement
+        if (!empty($typeWords)) {
+            $typeOnly = (clone $query)
+                ->where(function ($q) use ($typeWords) {
+                    foreach ($typeWords as $word) {
+                        $q->orWhere('type', 'LIKE', "%{$word}%");
+                    }
+                })
+                ->limit(100)
+                ->get();
+
+            $filtered = $this->filterByCoffretStatus($typeOnly, $isCoffretSource);
+            if (!empty($filtered)) {
+                $this->groupResultsByScrapeReference($filtered);
                 $this->validateBestMatchWithAI();
             }
         }
     }
 
     /**
-     * Groupe les résultats par web_site_id en ne gardant que le dernier produit inséré par site
-     * Priorité : le produit le plus récent (id le plus élevé)
+     * Groupe les résultats par scrape_reference en ne gardant qu'un produit par site
+     * Priorité : le produit le plus récent (par ID ou date de création)
      */
-    private function groupResultsBySite(array $products)
+    private function groupResultsByScrapeReference(array $products)
     {
-        $grouped = collect($products)->groupBy('web_site_id');
+        $grouped = collect($products)->groupBy('scrape_reference');
 
-        // Pour chaque site, garder le produit avec l'ID le plus élevé (le plus récent)
-        $uniqueProducts = $grouped->map(function ($group) {
-            return $group->sortByDesc('id')->first();
-        })->values();
+        // Pour chaque référence, groupe par site et garde le produit le plus récent par site
+        $uniqueProducts = $grouped->flatMap(function ($group) {
+            // Groupe par site web
+            return $group->groupBy('web_site_id')->map(function ($siteProducts) {
+                // Pour chaque site, garde le produit le plus récent (par ID décroissant)
+                return $siteProducts->sortByDesc('id')->first();
+            })->values();
+        });
 
         // Limiter à 50 résultats maximum
         $this->matchingProducts = $uniqueProducts->take(50)->toArray();
 
         // Stocker les résultats groupés pour l'affichage
-        $this->groupedResults = $grouped->map(function ($group, $siteId) {
+        $this->groupedResults = $grouped->map(function ($group, $reference) {
+            // Groupe par site pour les statistiques
+            $bySite = $group->groupBy('web_site_id')->map(function ($siteProducts) {
+                return [
+                    'count' => $siteProducts->count(),
+                    'latest_product' => $siteProducts->sortByDesc('id')->first(),
+                    'lowest_price' => $siteProducts->min('prix_ht'),
+                    'highest_price' => $siteProducts->max('prix_ht'),
+                ];
+            });
+
             return [
-                'site_id' => $siteId,
-                'count' => $group->count(),
-                'products' => $group->sortByDesc('id')->values()->toArray(),
-                'latest_id' => $group->max('id'),
+                'reference' => $reference,
+                'total_count' => $group->count(),
+                'sites_count' => $bySite->count(),
+                'sites' => $bySite->map(function ($siteData, $siteId) {
+                    return [
+                        'site_id' => $siteId,
+                        'product_id' => $siteData['latest_product']['id'] ?? null,
+                        'price' => $siteData['latest_product']['prix_ht'] ?? null,
+                        'variations_count' => $siteData['count']
+                    ];
+                })->values()->toArray(),
                 'best_price' => $group->min('prix_ht'),
-                'scrape_references' => $group->pluck('scrape_reference')->unique()->values()->toArray()
+                'site_ids' => $group->pluck('web_site_id')->unique()->values()->toArray()
             ];
         })->toArray();
     }
@@ -344,7 +349,7 @@ Exemple de format attendu :
     }
 
     /**
-     * Filtre les produits selon leur statut coffret (pour Collection)
+     * Filtre les produits selon leur statut coffret
      */
     private function filterByCoffretStatus($products, bool $sourceisCoffret): array
     {
@@ -355,20 +360,6 @@ Exemple de format attendu :
             // Si la source n'est pas un coffret, exclure les coffrets
             return $sourceisCoffret ? $productIsCoffret : !$productIsCoffret;
         })->values()->toArray();
-    }
-
-    /**
-     * Filtre les produits selon leur statut coffret (pour Array simple)
-     */
-    private function filterByCoffretStatusFromArray(array $products, bool $sourceisCoffret): array
-    {
-        return array_values(array_filter($products, function ($product) use ($sourceisCoffret) {
-            $productIsCoffret = $this->isCoffret($product);
-            
-            // Si la source est un coffret, garder seulement les coffrets
-            // Si la source n'est pas un coffret, exclure les coffrets
-            return $sourceisCoffret ? $productIsCoffret : !$productIsCoffret;
-        }));
     }
 
     /**
@@ -390,8 +381,7 @@ Exemple de format attendu :
                 'name' => $product['name'],
                 'type' => $product['type'],
                 'variation' => $product['variation'],
-                'prix_ht' => $product['prix_ht'],
-                'site' => $product['site_name'] ?? 'N/A'
+                'prix_ht' => $product['prix_ht']
             ];
         }, $candidateProducts);
 
@@ -400,15 +390,15 @@ Exemple de format attendu :
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
             ])->timeout(15)->post('https://api.openai.com/v1/chat/completions', [
-                'model' => 'gpt-4o-mini',
-                'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' => 'Tu es un expert en matching de produits cosmétiques. Tu dois analyser la correspondance entre un produit source et une liste de candidats, puis retourner l\'ID du meilleur match avec un score de confiance. Réponds UNIQUEMENT avec un objet JSON.'
-                    ],
-                    [
-                        'role' => 'user',
-                        'content' => "Produit source : {$this->productName}
+                        'model' => 'gpt-4o-mini',
+                        'messages' => [
+                            [
+                                'role' => 'system',
+                                'content' => 'Tu es un expert en matching de produits cosmétiques. Tu dois analyser la correspondance entre un produit source et une liste de candidats, puis retourner l\'ID du meilleur match avec un score de confiance. Réponds UNIQUEMENT avec un objet JSON.'
+                            ],
+                            [
+                                'role' => 'user',
+                                'content' => "Produit source : {$this->productName}
 
 Critères extraits :
 - Vendor: {$this->extractedData['vendor']}
@@ -436,11 +426,11 @@ Critères de scoring :
 - Type identique = +20 points
 - Variation identique = +10 points
 Score de confiance entre 0 et 1."
-                    ]
-                ],
-                'temperature' => 0.2,
-                'max_tokens' => 800
-            ]);
+                            ]
+                        ],
+                        'temperature' => 0.2,
+                        'max_tokens' => 800
+                    ]);
 
             if ($response->successful()) {
                 $data = $response->json();
@@ -460,12 +450,12 @@ Score de confiance entre 0 et 1."
                     if ($found) {
                         $this->bestMatch = $found;
                     } else {
-                        // Fallback sur le premier résultat
-                        $this->bestMatch = $this->matchingProducts[0];
+                        // Fallback sur le premier résultat (le plus récent)
+                        $this->bestMatch = $this->matchingProducts[0] ?? null;
                     }
                 } else {
-                    // Fallback sur le premier résultat
-                    $this->bestMatch = $this->matchingProducts[0];
+                    // Fallback sur le premier résultat (le plus récent)
+                    $this->bestMatch = $this->matchingProducts[0] ?? null;
                 }
             }
 
@@ -475,8 +465,8 @@ Score de confiance entre 0 et 1."
                 'product_name' => $this->productName
             ]);
 
-            // Fallback sur le premier résultat en cas d'erreur
-            $this->bestMatch = $this->matchingProducts[0];
+            // Fallback sur le premier résultat en cas d'erreur (le plus récent)
+            $this->bestMatch = $this->matchingProducts[0] ?? null;
         }
     }
 
@@ -519,25 +509,15 @@ Score de confiance entre 0 et 1."
         }
     }
 
-    /**
-     * Voir tous les produits d'un site
-     */
-    public function viewSiteProducts($siteId)
-    {
-        if (isset($this->groupedResults[$siteId])) {
-            $this->dispatch('show-site-products', [
-                'site_id' => $siteId,
-                'products' => $this->groupedResults[$siteId]['products']
-            ]);
-        }
-    }
-
 }; ?>
 
 <div class="p-6 bg-white rounded-lg shadow">
     <div class="mb-4">
         <h2 class="text-xl font-bold mb-2">Extraction et recherche de produit</h2>
         <p class="text-gray-600">Produit: {{ $productName }}</p>
+        <p class="text-sm text-gray-500 mt-1">
+            <span class="font-semibold">Affichage :</span> Dernier produit par site pour chaque référence
+        </p>
     </div>
 
     <!-- Filtres par site -->
@@ -612,8 +592,17 @@ Score de confiance entre 0 et 1."
     @if(!empty($groupedResults))
         <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
             <p class="text-sm text-blue-800">
-                <span class="font-semibold">{{ count($groupedResults) }}</span> site(s) avec résultats
-                <span class="text-xs ml-2">(dernier produit inséré par site affiché)</span>
+                <span class="font-semibold">{{ count($groupedResults) }}</span> référence(s) unique(s) trouvée(s)
+                <span class="text-xs ml-2">(dernier produit par site pour chaque référence)</span>
+            </p>
+            @php
+                $totalSitesDisplayed = 0;
+                foreach($groupedResults as $result) {
+                    $totalSitesDisplayed += count($result['sites']);
+                }
+            @endphp
+            <p class="text-xs text-blue-600 mt-1">
+                Total produits affichés : {{ count($matchingProducts) }} ({{ $totalSitesDisplayed }} site/produit combinaisons)
             </p>
         </div>
     @endif
@@ -638,63 +627,109 @@ Score de confiance entre 0 et 1."
         <div class="mt-6 p-4 bg-green-50 border-2 border-green-500 rounded">
             <h3 class="font-bold text-green-700 mb-3">✓ Meilleur résultat :</h3>
             <div class="flex items-start gap-4">
-                @if($bestMatch['image'] ?? $bestMatch['image_url'] ?? false)
-                    <img src="{{ $bestMatch['image'] ?? $bestMatch['image_url'] }}" alt="{{ $bestMatch['name'] }}"
+                @if($bestMatch['image_url'] ?? false)
+                    <img src="{{ $bestMatch['image_url'] }}" alt="{{ $bestMatch['name'] }}"
                         class="w-20 h-20 object-cover rounded">
                 @endif
                 <div class="flex-1">
                     <p class="font-semibold">{{ $bestMatch['vendor'] }} - {{ $bestMatch['name'] }}</p>
                     <p class="text-sm text-gray-600">{{ $bestMatch['type'] }} | {{ $bestMatch['variation'] }}</p>
-                    <p class="text-xs text-gray-500 mt-1">
-                        Ref: {{ $bestMatch['scrape_reference'] ?? 'N/A' }} | 
-                        Site: {{ $bestMatch['site_name'] ?? 'N/A' }} |
-                        ID: {{ $bestMatch['id'] }}
-                    </p>
-                    <p class="text-sm font-bold text-green-600 mt-1">{{ $bestMatch['prix_ht'] }}
+                    <p class="text-xs text-gray-500 mt-1">Ref: {{ $bestMatch['scrape_reference'] ?? 'N/A' }}</p>
+                    
+                    <!-- Indicateur du site -->
+                    @php
+                        $siteInfo = collect($availableSites)->firstWhere('id', $bestMatch['web_site_id']);
+                        $isLatestForSite = isset($groupedResults[$bestMatch['scrape_reference']]['sites']) && 
+                            collect($groupedResults[$bestMatch['scrape_reference']]['sites'])
+                                ->where('site_id', $bestMatch['web_site_id'])
+                                ->where('product_id', $bestMatch['id'])
+                                ->isNotEmpty();
+                    @endphp
+                    @if($siteInfo)
+                        <div class="mt-2">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                {{ $siteInfo['name'] }}
+                                @if($isLatestForSite)
+                                    <span class="ml-1">• Dernier du site</span>
+                                @endif
+                            </span>
+                        </div>
+                    @endif
+                    
+                    <p class="text-sm font-bold text-green-600 mt-2">{{ $bestMatch['prix_ht'] }}
                         {{ $bestMatch['currency'] }}</p>
-                    @if($bestMatch['product_url'] ?? $bestMatch['url'] ?? false)
-                        <a href="{{ $bestMatch['product_url'] ?? $bestMatch['url'] }}" target="_blank" 
-                           class="text-xs text-blue-500 hover:underline">Voir le produit</a>
+                    @if($bestMatch['url'] ?? false)
+                        <a href="{{ $bestMatch['url'] }}" target="_blank" class="text-xs text-blue-500 hover:underline">Voir le
+                            produit</a>
                     @endif
                 </div>
             </div>
         </div>
     @endif
 
-    @if(!empty($matchingProducts))
+    @if(!empty($matchingProducts) && count($matchingProducts) > 0)
         <div class="mt-6">
             <h3 class="font-bold mb-3">
-                Résultats par site ({{ count($matchingProducts) }}) :
-                <span class="text-sm font-normal text-gray-600">1 produit par site (le plus récent)</span>
+                Résultats par site ({{ count($matchingProducts) }} produits) :
+                <span class="text-sm font-normal text-gray-600">(Cliquez pour sélectionner)</span>
             </h3>
-            <div class="space-y-2 max-h-96 overflow-y-auto">
+            <div class="space-y-3 max-h-96 overflow-y-auto">
                 @foreach($matchingProducts as $product)
                     @php
-                        $siteGroup = collect($groupedResults)->firstWhere('site_id', $product['web_site_id']);
-                        $hasMultiple = $siteGroup && $siteGroup['count'] > 1;
+                        $siteInfo = collect($availableSites)->firstWhere('id', $product['web_site_id']);
+                        $isLatestForSite = isset($groupedResults[$product['scrape_reference']]['sites']) && 
+                            collect($groupedResults[$product['scrape_reference']]['sites'])
+                                ->where('site_id', $product['web_site_id'])
+                                ->where('product_id', $product['id'])
+                                ->isNotEmpty();
+                        $variationsCount = $groupedResults[$product['scrape_reference']]['sites'][$product['web_site_id']]['variations_count'] ?? 1;
                     @endphp
                     <div wire:click="selectProduct({{ $product['id'] }})"
                         class="p-3 border rounded hover:bg-blue-50 cursor-pointer transition {{ $bestMatch && $bestMatch['id'] === $product['id'] ? 'bg-blue-100 border-blue-500' : 'bg-white' }}">
-                        <div class="flex items-center gap-3">
-                            @if($product['image'] ?? $product['image_url'] ?? false)
-                                <img src="{{ $product['image'] ?? $product['image_url'] }}" alt="{{ $product['name'] }}"
+                        <div class="flex items-start gap-3">
+                            @if($product['image_url'] ?? false)
+                                <img src="{{ $product['image_url'] }}" alt="{{ $product['name'] }}"
                                     class="w-12 h-12 object-cover rounded">
                             @endif
                             <div class="flex-1">
-                                <p class="font-medium text-sm">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
+                                <div class="flex justify-between">
+                                    <p class="font-medium text-sm">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
+                                    <p class="font-bold text-sm">{{ $product['prix_ht'] }} {{ $product['currency'] }}</p>
+                                </div>
                                 <p class="text-xs text-gray-500">{{ $product['type'] }} | {{ $product['variation'] }}</p>
-                                <p class="text-xs text-gray-400 mt-1">
-                                    Ref: {{ $product['scrape_reference'] ?? 'N/A' }} | ID: {{ $product['id'] }}
-                                </p>
-                                @if($hasMultiple)
-                                    <p class="text-xs text-orange-600 font-medium mt-1">
-                                        ⚠️ {{ $siteGroup['count'] }} produits trouvés sur ce site
-                                    </p>
-                                @endif
-                            </div>
-                            <div class="text-right">
-                                <p class="font-bold text-sm">{{ $product['prix_ht'] }} {{ $product['currency'] }}</p>
-                                <p class="text-xs text-blue-600 font-medium">{{ $product['site_name'] ?? 'Site N/A' }}</p>
+                                
+                                <!-- Informations site et référence -->
+                                <div class="flex items-center justify-between mt-2">
+                                    <div class="flex items-center gap-2">
+                                        @if($siteInfo)
+                                            <span class="text-xs px-2 py-1 rounded {{ $isLatestForSite ? 'bg-green-100 text-green-800 border border-green-200' : 'bg-gray-100 text-gray-800' }}">
+                                                {{ $siteInfo['name'] }}
+                                                @if($isLatestForSite && $variationsCount > 1)
+                                                    <span class="ml-1 text-xs">(Dernier • {{ $variationsCount }} versions)</span>
+                                                @elseif($isLatestForSite)
+                                                    <span class="ml-1 text-xs">(Dernier)</span>
+                                                @endif
+                                            </span>
+                                        @endif
+                                        
+                                        @if($product['scrape_reference'] ?? false)
+                                            <span class="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded">
+                                                Ref: {{ $product['scrape_reference'] }}
+                                            </span>
+                                        @endif
+                                    </div>
+                                    
+                                    <div class="text-right">
+                                        <p class="text-xs text-gray-500">ID: {{ $product['id'] }}</p>
+                                        @if($product['url'] ?? false)
+                                            <a href="{{ $product['url'] }}" target="_blank" 
+                                                class="text-xs text-blue-500 hover:text-blue-700 hover:underline"
+                                                onclick="event.stopPropagation();">
+                                                Voir
+                                            </a>
+                                        @endif
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
