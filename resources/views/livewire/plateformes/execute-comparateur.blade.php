@@ -102,20 +102,16 @@ Exemple de format attendu :
         $name = $this->extractedData['name'] ?? '';
         $type = $this->extractedData['type'] ?? '';
 
-        // Extraire les mots clés importants du type (ignorer les articles, prépositions, etc.)
-        $typeKeywords = $this->extractTypeKeywords($type);
+        // Nettoyer le type extrait (enlever les conditionnements)
+        $cleanType = $this->cleanType($type);
 
         // Stratégie de recherche en cascade - SANS LA VARIATION
         
-        // 1. Recherche exacte : vendor + name + tous les mots-clés du type
-        if (!empty($typeKeywords)) {
+        // 1. Recherche exacte : vendor + name + type complet
+        if (!empty($cleanType)) {
             $exactMatch = Product::where('vendor', 'LIKE', "%{$vendor}%")
                 ->where('name', 'LIKE', "%{$name}%")
-                ->where(function($q) use ($typeKeywords) {
-                    foreach ($typeKeywords as $keyword) {
-                        $q->where('type', 'LIKE', "%{$keyword}%");
-                    }
-                })
+                ->where('type', 'LIKE', "%{$cleanType}%")
                 ->get();
 
             if ($exactMatch->isNotEmpty()) {
@@ -125,30 +121,21 @@ Exemple de format attendu :
             }
         }
 
-        // 2. Recherche avec au moins UN mot-clé du type
-        if (!empty($typeKeywords)) {
-            $partialTypeMatch = Product::where('vendor', 'LIKE', "%{$vendor}%")
+        // 2. Recherche où le type de la BDD contient le type nettoyé
+        if (!empty($cleanType)) {
+            $typeContains = Product::where('vendor', 'LIKE', "%{$vendor}%")
                 ->where('name', 'LIKE', "%{$name}%")
-                ->where(function($q) use ($typeKeywords) {
-                    foreach ($typeKeywords as $keyword) {
-                        $q->orWhere('type', 'LIKE', "%{$keyword}%");
-                    }
-                })
+                ->whereRaw('LOWER(type) LIKE ?', ['%' . strtolower($cleanType) . '%'])
                 ->get();
 
-            if ($partialTypeMatch->isNotEmpty()) {
-                // Scorer les résultats en fonction du nombre de mots-clés matchés
-                $scored = $this->scoreProductsByTypeMatch($partialTypeMatch, $typeKeywords);
-                
-                if ($scored->isNotEmpty()) {
-                    $this->matchingProducts = $scored->toArray();
-                    $this->bestMatch = $scored->first();
-                    return;
-                }
+            if ($typeContains->isNotEmpty()) {
+                $this->matchingProducts = $typeContains->toArray();
+                $this->bestMatch = $typeContains->first();
+                return;
             }
         }
 
-        // 3. Recherche vendor + name seulement (fallback)
+        // 3. Recherche vendor + name seulement (fallback avec avertissement)
         $vendorAndName = Product::where('vendor', 'LIKE', "%{$vendor}%")
             ->where('name', 'LIKE', "%{$name}%")
             ->get();
@@ -157,78 +144,40 @@ Exemple de format attendu :
             $this->matchingProducts = $vendorAndName->toArray();
             $this->bestMatch = $vendorAndName->first();
             
-            // Avertir l'utilisateur que le type ne correspond pas exactement
-            session()->flash('warning', 'Produits trouvés mais le type peut différer. Vérifiez les résultats.');
+            // Avertir l'utilisateur que le type ne correspond pas
+            session()->flash('warning', 'Produits trouvés mais le type ne correspond pas exactement. Vérifiez les résultats.');
             return;
         }
 
-        // 4. Recherche flexible (au moins vendor OU name avec type similaire)
-        $flexible = Product::where(function($q) use ($vendor, $name) {
-            $q->where('vendor', 'LIKE', "%{$vendor}%")
-              ->orWhere('name', 'LIKE', "%{$name}%");
-        })
-        ->when(!empty($typeKeywords), function($q) use ($typeKeywords) {
-            $q->where(function($subQ) use ($typeKeywords) {
-                foreach ($typeKeywords as $keyword) {
-                    $subQ->orWhere('type', 'LIKE', "%{$keyword}%");
-                }
-            });
-        })
-        ->limit(10)
-        ->get();
-
-        $this->matchingProducts = $flexible->toArray();
-        $this->bestMatch = $flexible->first();
+        // 4. Aucun résultat
+        $this->matchingProducts = [];
+        $this->bestMatch = null;
     }
 
     /**
-     * Extraire les mots-clés significatifs du type de produit
+     * Nettoyer le type en enlevant les conditionnements et formats
      */
-    private function extractTypeKeywords(string $type): array
+    private function cleanType(string $type): string
     {
-        // Mots à ignorer (articles, prépositions, conditionnements, formats)
+        // Mots à supprimer (conditionnements, formats, unités)
         $stopWords = [
-            // Articles et prépositions
-            'de', 'du', 'des', 'le', 'la', 'les', 'un', 'une', 'pour', 'avec', 'sans', 'et', 'ou',
-            // Formats et conditionnements
-            'vaporisateur', 'spray', 'pompe', 'tube', 'pot', 'flacon', 'roll-on', 'stick',
-            // Unités et tailles
-            'ml', 'mg', 'gr', 'grand', 'petit', 'mini', 'maxi'
+            'vaporisateur', 'spray', 'pompe', 'tube', 'pot', 'flacon', 
+            'roll-on', 'rollon', 'stick', 'roll', 'on',
+            'ml', 'mg', 'gr', 'g', 'l'
         ];
         
-        // Nettoyer et séparer
-        $words = preg_split('/[\s\-\/]+/', strtolower($type));
+        $cleanedType = strtolower($type);
         
-        // Filtrer les mots vides et les mots trop courts
-        $keywords = array_filter($words, function($word) use ($stopWords) {
-            return strlen($word) > 2 && !in_array($word, $stopWords);
-        });
-
-        return array_values($keywords);
-    }
-
-    /**
-     * Scorer les produits selon le nombre de mots-clés du type qui matchent
-     */
-    private function scoreProductsByTypeMatch($products, array $typeKeywords)
-    {
-        return $products->map(function($product) use ($typeKeywords) {
-            $productType = strtolower($product->type ?? '');
-            $matchCount = 0;
-
-            foreach ($typeKeywords as $keyword) {
-                if (str_contains($productType, strtolower($keyword))) {
-                    $matchCount++;
-                }
-            }
-
-            $product->match_score = $matchCount;
-            return $product;
-        })
-        ->sortByDesc('match_score')
-        ->filter(function($product) {
-            return $product->match_score > 0; // Garder uniquement ceux avec au moins 1 match
-        });
+        // Supprimer chaque mot de la liste
+        foreach ($stopWords as $word) {
+            $cleanedType = preg_replace('/\b' . preg_quote($word, '/') . '\b/i', '', $cleanedType);
+        }
+        
+        // Nettoyer les espaces multiples et trim
+        $cleanedType = preg_replace('/\s+/', ' ', $cleanedType);
+        $cleanedType = trim($cleanedType);
+        
+        return $cleanedType;
     }
 
     public function selectProduct($productId)
