@@ -186,8 +186,15 @@ Exemple de format attendu :
      */
     private function extractTypeKeywords(string $type): array
     {
-        // Mots à ignorer (articles, prépositions, etc.)
-        $stopWords = ['de', 'du', 'des', 'le', 'la', 'les', 'un', 'une', 'pour', 'avec', 'sans', 'et', 'ou'];
+        // Mots à ignorer (articles, prépositions, conditionnements, formats)
+        $stopWords = [
+            // Articles et prépositions
+            'de', 'du', 'des', 'le', 'la', 'les', 'un', 'une', 'pour', 'avec', 'sans', 'et', 'ou',
+            // Formats et conditionnements
+            'vaporisateur', 'spray', 'pompe', 'tube', 'pot', 'flacon', 'roll-on', 'stick',
+            // Unités et tailles
+            'ml', 'mg', 'gr', 'grand', 'petit', 'mini', 'maxi'
+        ];
         
         // Nettoyer et séparer
         $words = preg_split('/[\s\-\/]+/', strtolower($type));
