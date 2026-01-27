@@ -62,7 +62,6 @@ Exemple de format attendu :
                 $data = $response->json();
                 $content = $data['choices'][0]['message']['content'];
                 
-                // Nettoyer le contenu
                 $content = preg_replace('/```json\s*|\s*```/', '', $content);
                 $content = trim($content);
                 
@@ -72,7 +71,6 @@ Exemple de format attendu :
                     throw new \Exception('Erreur de parsing JSON: ' . json_last_error_msg());
                 }
                 
-                // Rechercher les produits correspondants
                 $this->searchMatchingProducts();
                 
             } else {
@@ -102,10 +100,9 @@ Exemple de format attendu :
         $variation = $this->extractedData['variation'] ?? '';
         $type = $this->extractedData['type'] ?? '';
 
-        // Stratégie de recherche en cascade
         $query = Product::query();
 
-        // 1. Recherche exacte (tous les critères)
+        // 1. Recherche exacte
         $exactMatch = (clone $query)
             ->where('vendor', 'LIKE', "%{$vendor}%")
             ->where('name', 'LIKE', "%{$name}%")
@@ -132,7 +129,7 @@ Exemple de format attendu :
             return;
         }
 
-        // 3. Recherche vendor + name seulement
+        // 3. Recherche vendor + name
         $vendorAndName = (clone $query)
             ->where('vendor', 'LIKE', "%{$vendor}%")
             ->where('name', 'LIKE', "%{$name}%")
@@ -144,7 +141,7 @@ Exemple de format attendu :
             return;
         }
 
-        // 4. Full-text search si disponible
+        // 4. Full-text search
         if (method_exists(Product::class, 'scopeFullTextSearch')) {
             $searchQuery = trim("{$vendor} {$name} {$type} {$variation}");
             $fullTextResults = Product::fullTextSearch($searchQuery)->get();
@@ -156,7 +153,7 @@ Exemple de format attendu :
             }
         }
 
-        // 5. Recherche flexible (au moins vendor OU name)
+        // 5. Recherche flexible
         $flexible = Product::where(function($q) use ($vendor, $name) {
             $q->where('vendor', 'LIKE', "%{$vendor}%")
               ->orWhere('name', 'LIKE', "%{$name}%");
@@ -173,13 +170,25 @@ Exemple de format attendu :
         $product = Product::find($productId);
         
         if ($product) {
-            // Vous pouvez faire ce que vous voulez avec le produit sélectionné
             session()->flash('success', 'Produit sélectionné : ' . $product->name);
             $this->bestMatch = $product;
-            
-            // Émettre un événement si besoin
             $this->dispatch('product-selected', productId: $productId);
         }
+    }
+
+    // Préparer les produits pour le composant x-list-item
+    public function getProductsForList()
+    {
+        return collect($this->matchingProducts)->map(function($product) {
+            return (object)[
+                'id' => $product['id'],
+                'title' => $product['vendor'] . ' - ' . $product['name'],
+                'username' => $product['type'] . ' | ' . $product['variation'],
+                'subtitle' => $product['prix_ht'] . ' ' . $product['currency'],
+                'avatar' => $product['image_url'] ?? null,
+                'url' => $product['url'] ?? null,
+            ];
+        });
     }
 
 }; ?>
@@ -234,17 +243,21 @@ Exemple de format attendu :
     @if($bestMatch)
         <div class="mt-6 p-4 bg-green-50 border-2 border-green-500 rounded">
             <h3 class="font-bold text-green-700 mb-3">✓ Meilleur résultat :</h3>
-            <div class="flex items-start gap-4">
-                @if($bestMatch['image_url'])
-                    <img src="{{ $bestMatch['image_url'] }}" alt="{{ $bestMatch['name'] }}" class="w-20 h-20 object-cover rounded">
-                @endif
-                <div class="flex-1">
-                    <p class="font-semibold">{{ $bestMatch['vendor'] }} - {{ $bestMatch['name'] }}</p>
-                    <p class="text-sm text-gray-600">{{ $bestMatch['type'] }} | {{ $bestMatch['variation'] }}</p>
-                    <p class="text-sm font-bold text-green-600 mt-1">{{ $bestMatch['prix_ht'] }} {{ $bestMatch['currency'] }}</p>
-                    <a href="{{ $bestMatch['url'] }}" target="_blank" class="text-xs text-blue-500 hover:underline">Voir le produit</a>
-                </div>
-            </div>
+            @php
+                $bestMatchObj = (object)[
+                    'id' => $bestMatch['id'],
+                    'title' => $bestMatch['vendor'] . ' - ' . $bestMatch['name'],
+                    'username' => $bestMatch['type'] . ' | ' . $bestMatch['variation'],
+                    'subtitle' => $bestMatch['prix_ht'] . ' ' . $bestMatch['currency'],
+                    'avatar' => $bestMatch['image_url'] ?? null,
+                ];
+            @endphp
+            <x-list-item 
+                :item="$bestMatchObj" 
+                value="title"
+                sub-value="username" 
+                :link="$bestMatch['url'] ?? '#'" 
+            />
         </div>
     @endif
 
@@ -252,24 +265,14 @@ Exemple de format attendu :
         <div class="mt-6">
             <h3 class="font-bold mb-3">Autres résultats trouvés ({{ count($matchingProducts) }}) :</h3>
             <div class="space-y-2 max-h-96 overflow-y-auto">
-                @foreach($matchingProducts as $product)
-                    <div 
-                        wire:click="selectProduct({{ $product['id'] }})"
-                        class="p-3 border rounded hover:bg-blue-50 cursor-pointer transition {{ $bestMatch && $bestMatch['id'] === $product['id'] ? 'bg-blue-100 border-blue-500' : 'bg-white' }}"
-                    >
-                        <div class="flex items-center gap-3">
-                            @if($product['image_url'])
-                                <img src="{{ $product['image_url'] }}" alt="{{ $product['name'] }}" class="w-12 h-12 object-cover rounded">
-                            @endif
-                            <div class="flex-1">
-                                <p class="font-medium text-sm">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
-                                <p class="text-xs text-gray-500">{{ $product['type'] }} | {{ $product['variation'] }}</p>
-                            </div>
-                            <div class="text-right">
-                                <p class="font-bold text-sm">{{ $product['prix_ht'] }} {{ $product['currency'] }}</p>
-                                <p class="text-xs text-gray-500">ID: {{ $product['id'] }}</p>
-                            </div>
-                        </div>
+                @foreach($this->getProductsForList() as $product)
+                    <div wire:click="selectProduct({{ $product->id }})" class="cursor-pointer">
+                        <x-list-item 
+                            :item="$product" 
+                            value="title"
+                            sub-value="username" 
+                            :link="$product->url ?? '#'" 
+                        />
                     </div>
                 @endforeach
             </div>
