@@ -2,6 +2,7 @@
 
 use Livewire\Volt\Component;
 use App\Models\Product;
+use Illuminate\Support\Facades\Http;
 
 new class extends Component {
     
@@ -41,7 +42,7 @@ new class extends Component {
 - vendor : la marque du produit
 - name : le nom de la gamme/ligne de produit
 - variation : la contenance/taille (ml, g, etc.)
-- type : le type de produit (Crème, Sérum, Concentré, etc.)
+- type : le type de produit (Crème, Sérum, Concentré, Déodorant, Eau de Toilette, etc.)
 
 Nom du produit : {$this->productName}
 
@@ -99,67 +100,79 @@ Exemple de format attendu :
 
         $vendor = $this->extractedData['vendor'] ?? '';
         $name = $this->extractedData['name'] ?? '';
-        $variation = $this->extractedData['variation'] ?? '';
         $type = $this->extractedData['type'] ?? '';
 
-        // Stratégie de recherche en cascade
-        $query = Product::query();
+        // Extraire les mots clés importants du type (ignorer les articles, prépositions, etc.)
+        $typeKeywords = $this->extractTypeKeywords($type);
 
-        // 1. Recherche exacte (tous les critères)
-        $exactMatch = (clone $query)
-            ->where('vendor', 'LIKE', "%{$vendor}%")
-            ->where('name', 'LIKE', "%{$name}%")
-            ->where('variation', 'LIKE', "%{$variation}%")
-            ->when($type, fn($q) => $q->where('type', 'LIKE', "%{$type}%"))
-            ->get();
+        // Stratégie de recherche en cascade - SANS LA VARIATION
+        
+        // 1. Recherche exacte : vendor + name + tous les mots-clés du type
+        if (!empty($typeKeywords)) {
+            $exactMatch = Product::where('vendor', 'LIKE', "%{$vendor}%")
+                ->where('name', 'LIKE', "%{$name}%")
+                ->where(function($q) use ($typeKeywords) {
+                    foreach ($typeKeywords as $keyword) {
+                        $q->where('type', 'LIKE', "%{$keyword}%");
+                    }
+                })
+                ->get();
 
-        if ($exactMatch->isNotEmpty()) {
-            $this->matchingProducts = $exactMatch->toArray();
-            $this->bestMatch = $exactMatch->first();
-            return;
+            if ($exactMatch->isNotEmpty()) {
+                $this->matchingProducts = $exactMatch->toArray();
+                $this->bestMatch = $exactMatch->first();
+                return;
+            }
         }
 
-        // 2. Recherche sans variation
-        $withoutVariation = (clone $query)
-            ->where('vendor', 'LIKE', "%{$vendor}%")
-            ->where('name', 'LIKE', "%{$name}%")
-            ->when($type, fn($q) => $q->where('type', 'LIKE', "%{$type}%"))
-            ->get();
+        // 2. Recherche avec au moins UN mot-clé du type
+        if (!empty($typeKeywords)) {
+            $partialTypeMatch = Product::where('vendor', 'LIKE', "%{$vendor}%")
+                ->where('name', 'LIKE', "%{$name}%")
+                ->where(function($q) use ($typeKeywords) {
+                    foreach ($typeKeywords as $keyword) {
+                        $q->orWhere('type', 'LIKE', "%{$keyword}%");
+                    }
+                })
+                ->get();
 
-        if ($withoutVariation->isNotEmpty()) {
-            $this->matchingProducts = $withoutVariation->toArray();
-            $this->bestMatch = $withoutVariation->first();
-            return;
+            if ($partialTypeMatch->isNotEmpty()) {
+                // Scorer les résultats en fonction du nombre de mots-clés matchés
+                $scored = $this->scoreProductsByTypeMatch($partialTypeMatch, $typeKeywords);
+                
+                if ($scored->isNotEmpty()) {
+                    $this->matchingProducts = $scored->toArray();
+                    $this->bestMatch = $scored->first();
+                    return;
+                }
+            }
         }
 
-        // 3. Recherche vendor + name seulement
-        $vendorAndName = (clone $query)
-            ->where('vendor', 'LIKE', "%{$vendor}%")
+        // 3. Recherche vendor + name seulement (fallback)
+        $vendorAndName = Product::where('vendor', 'LIKE', "%{$vendor}%")
             ->where('name', 'LIKE', "%{$name}%")
             ->get();
 
         if ($vendorAndName->isNotEmpty()) {
             $this->matchingProducts = $vendorAndName->toArray();
             $this->bestMatch = $vendorAndName->first();
+            
+            // Avertir l'utilisateur que le type ne correspond pas exactement
+            session()->flash('warning', 'Produits trouvés mais le type peut différer. Vérifiez les résultats.');
             return;
         }
 
-        // 4. Full-text search si disponible
-        if (method_exists(Product::class, 'scopeFullTextSearch')) {
-            $searchQuery = trim("{$vendor} {$name} {$type} {$variation}");
-            $fullTextResults = Product::fullTextSearch($searchQuery)->get();
-
-            if ($fullTextResults->isNotEmpty()) {
-                $this->matchingProducts = $fullTextResults->toArray();
-                $this->bestMatch = $fullTextResults->first();
-                return;
-            }
-        }
-
-        // 5. Recherche flexible (au moins vendor OU name)
+        // 4. Recherche flexible (au moins vendor OU name avec type similaire)
         $flexible = Product::where(function($q) use ($vendor, $name) {
             $q->where('vendor', 'LIKE', "%{$vendor}%")
               ->orWhere('name', 'LIKE', "%{$name}%");
+        })
+        ->when(!empty($typeKeywords), function($q) use ($typeKeywords) {
+            $q->where(function($subQ) use ($typeKeywords) {
+                foreach ($typeKeywords as $keyword) {
+                    $subQ->orWhere('type', 'LIKE', "%{$keyword}%");
+                }
+            });
         })
         ->limit(10)
         ->get();
@@ -168,12 +181,54 @@ Exemple de format attendu :
         $this->bestMatch = $flexible->first();
     }
 
+    /**
+     * Extraire les mots-clés significatifs du type de produit
+     */
+    private function extractTypeKeywords(string $type): array
+    {
+        // Mots à ignorer (articles, prépositions, etc.)
+        $stopWords = ['de', 'du', 'des', 'le', 'la', 'les', 'un', 'une', 'pour', 'avec', 'sans', 'et', 'ou'];
+        
+        // Nettoyer et séparer
+        $words = preg_split('/[\s\-\/]+/', strtolower($type));
+        
+        // Filtrer les mots vides et les mots trop courts
+        $keywords = array_filter($words, function($word) use ($stopWords) {
+            return strlen($word) > 2 && !in_array($word, $stopWords);
+        });
+
+        return array_values($keywords);
+    }
+
+    /**
+     * Scorer les produits selon le nombre de mots-clés du type qui matchent
+     */
+    private function scoreProductsByTypeMatch($products, array $typeKeywords)
+    {
+        return $products->map(function($product) use ($typeKeywords) {
+            $productType = strtolower($product->type ?? '');
+            $matchCount = 0;
+
+            foreach ($typeKeywords as $keyword) {
+                if (str_contains($productType, strtolower($keyword))) {
+                    $matchCount++;
+                }
+            }
+
+            $product->match_score = $matchCount;
+            return $product;
+        })
+        ->sortByDesc('match_score')
+        ->filter(function($product) {
+            return $product->match_score > 0; // Garder uniquement ceux avec au moins 1 match
+        });
+    }
+
     public function selectProduct($productId)
     {
         $product = Product::find($productId);
         
         if ($product) {
-            // Vous pouvez faire ce que vous voulez avec le produit sélectionné
             session()->flash('success', 'Produit sélectionné : ' . $product->name);
             $this->bestMatch = $product;
             
@@ -211,6 +266,12 @@ Exemple de format attendu :
         </div>
     @endif
 
+    @if(session('warning'))
+        <div class="mt-4 p-4 bg-yellow-100 text-yellow-700 rounded">
+            ⚠️ {{ session('warning') }}
+        </div>
+    @endif
+
     @if($extractedData)
         <div class="mt-6 p-4 bg-gray-50 rounded">
             <h3 class="font-bold mb-3">Critères extraits :</h3>
@@ -222,10 +283,11 @@ Exemple de format attendu :
                     <span class="font-semibold">Name:</span> {{ $extractedData['name'] ?? 'N/A' }}
                 </div>
                 <div>
-                    <span class="font-semibold">Variation:</span> {{ $extractedData['variation'] ?? 'N/A' }}
+                    <span class="font-semibold">Type:</span> {{ $extractedData['type'] ?? 'N/A' }}
                 </div>
                 <div>
-                    <span class="font-semibold">Type:</span> {{ $extractedData['type'] ?? 'N/A' }}
+                    <span class="font-semibold text-gray-500">Variation (non utilisée):</span> 
+                    <span class="text-gray-400">{{ $extractedData['variation'] ?? 'N/A' }}</span>
                 </div>
             </div>
         </div>
