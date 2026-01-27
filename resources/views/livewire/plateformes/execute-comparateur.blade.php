@@ -231,10 +231,50 @@ Maintenant, traite ce produit en suivant ces règles exactement."
             ->get();
 
         if ($exactMatch->isNotEmpty()) {
-            $allResults = $allResults->merge($exactMatch->map(fn($p) => [
-                'product' => $p,
-                'score' => 100
-            ]));
+            // Filtrer les résultats pour vérifier la compatibilité des types
+            $filteredExactMatch = $exactMatch->filter(function($product) use ($type) {
+                if (!$type) {
+                    return true; // Si pas de type spécifié, accepter tous
+                }
+                
+                $productType = strtolower($product->type ?? '');
+                $searchType = strtolower($type);
+                
+                // Vérifier si les types sont compatibles
+                $parfumKeywords = ['parfum', 'eau de toilette', 'eau de cologne', 'edt', 'edp'];
+                $soinsKeywords = ['baume', 'crème', 'gel', 'lotion', 'sérum', 'soin'];
+                $deoKeywords = ['déodorant', 'deodorant', 'deo'];
+                $gelKeywords = ['gel douche', 'gel moussant', 'savon'];
+                
+                $isProductParfum = $this->containsAnyKeyword($productType, $parfumKeywords);
+                $isSearchParfum = $this->containsAnyKeyword($searchType, $parfumKeywords);
+                $isProductSoin = $this->containsAnyKeyword($productType, $soinsKeywords);
+                $isSearchSoin = $this->containsAnyKeyword($searchType, $soinsKeywords);
+                $isProductDeo = $this->containsAnyKeyword($productType, $deoKeywords);
+                $isSearchDeo = $this->containsAnyKeyword($searchType, $deoKeywords);
+                $isProductGel = $this->containsAnyKeyword($productType, $gelKeywords);
+                $isSearchGel = $this->containsAnyKeyword($searchType, $gelKeywords);
+                
+                // Rejeter si catégories incompatibles
+                if (($isSearchDeo && !$isProductDeo) || (!$isSearchDeo && $isProductDeo)) {
+                    return false; // Déodorant vs autre chose
+                }
+                if (($isSearchGel && !$isProductGel) || (!$isSearchGel && $isProductGel)) {
+                    return false; // Gel douche vs autre chose
+                }
+                if (($isSearchSoin && $isProductParfum) || ($isSearchParfum && $isProductSoin)) {
+                    return false; // Soin vs Parfum
+                }
+                
+                return true; // Types compatibles
+            });
+            
+            if ($filteredExactMatch->isNotEmpty()) {
+                $allResults = $allResults->merge($filteredExactMatch->map(fn($p) => [
+                    'product' => $p,
+                    'score' => 100
+                ]));
+            }
         }
 
         // 2. Recherche sans variation mais avec vérification coffret
@@ -268,10 +308,49 @@ Maintenant, traite ce produit en suivant ces règles exactement."
                 })
                 ->get();
 
-            $allResults = $allResults->merge($withoutVariation->map(fn($p) => [
-                'product' => $p,
-                'score' => 85
-            ]));
+            // Filtrer les résultats pour vérifier la compatibilité des types
+            $filteredWithoutVariation = $withoutVariation->filter(function($product) use ($type) {
+                if (!$type) {
+                    return true;
+                }
+                
+                $productType = strtolower($product->type ?? '');
+                $searchType = strtolower($type);
+                
+                $parfumKeywords = ['parfum', 'eau de toilette', 'eau de cologne', 'edt', 'edp'];
+                $soinsKeywords = ['baume', 'crème', 'gel', 'lotion', 'sérum', 'soin'];
+                $deoKeywords = ['déodorant', 'deodorant', 'deo'];
+                $gelKeywords = ['gel douche', 'gel moussant', 'savon'];
+                
+                $isProductParfum = $this->containsAnyKeyword($productType, $parfumKeywords);
+                $isSearchParfum = $this->containsAnyKeyword($searchType, $parfumKeywords);
+                $isProductSoin = $this->containsAnyKeyword($productType, $soinsKeywords);
+                $isSearchSoin = $this->containsAnyKeyword($searchType, $soinsKeywords);
+                $isProductDeo = $this->containsAnyKeyword($productType, $deoKeywords);
+                $isSearchDeo = $this->containsAnyKeyword($searchType, $deoKeywords);
+                $isProductGel = $this->containsAnyKeyword($productType, $gelKeywords);
+                $isSearchGel = $this->containsAnyKeyword($searchType, $gelKeywords);
+                
+                // Rejeter si catégories incompatibles
+                if (($isSearchDeo && !$isProductDeo) || (!$isSearchDeo && $isProductDeo)) {
+                    return false;
+                }
+                if (($isSearchGel && !$isProductGel) || (!$isSearchGel && $isProductGel)) {
+                    return false;
+                }
+                if (($isSearchSoin && $isProductParfum) || ($isSearchParfum && $isProductSoin)) {
+                    return false;
+                }
+                
+                return true;
+            });
+
+            if ($filteredWithoutVariation->isNotEmpty()) {
+                $allResults = $allResults->merge($filteredWithoutVariation->map(fn($p) => [
+                    'product' => $p,
+                    'score' => 85
+                ]));
+            }
         }
 
         // 3. Recherche vendor + name avec scoring (sans filtre strict coffret)
@@ -314,18 +393,28 @@ Maintenant, traite ce produit en suivant ces règles exactement."
                     if (stripos($productType, $searchType) !== false || stripos($searchType, $productType) !== false) {
                         $score += 20; // Bonus augmenté
                     } else {
-                        // Types complètement différents (ex: Parfum vs Baume)
+                        // Types complètement différents
                         // Vérifier si ce sont des catégories incompatibles
                         $parfumKeywords = ['parfum', 'eau de toilette', 'eau de cologne', 'edt', 'edp'];
-                        $soinsKeywords = ['baume', 'crème', 'gel', 'lotion', 'sérum', 'soin'];
+                        $soinsKeywords = ['baume', 'crème', 'lotion', 'sérum', 'soin'];
+                        $deoKeywords = ['déodorant', 'deodorant', 'deo'];
+                        $gelKeywords = ['gel douche', 'gel moussant', 'savon', 'gel'];
                         
                         $isProductParfum = $this->containsAnyKeyword($productType, $parfumKeywords);
                         $isSearchParfum = $this->containsAnyKeyword($searchType, $parfumKeywords);
                         $isProductSoin = $this->containsAnyKeyword($productType, $soinsKeywords);
                         $isSearchSoin = $this->containsAnyKeyword($searchType, $soinsKeywords);
+                        $isProductDeo = $this->containsAnyKeyword($productType, $deoKeywords);
+                        $isSearchDeo = $this->containsAnyKeyword($searchType, $deoKeywords);
+                        $isProductGel = $this->containsAnyKeyword($productType, $gelKeywords);
+                        $isSearchGel = $this->containsAnyKeyword($searchType, $gelKeywords);
                         
-                        // Si on cherche un soin mais qu'on trouve un parfum (ou inversement)
-                        if (($isSearchSoin && $isProductParfum) || ($isSearchParfum && $isProductSoin)) {
+                        // Catégories incompatibles = grosse pénalité
+                        if (($isSearchDeo && !$isProductDeo) || (!$isSearchDeo && $isProductDeo)) {
+                            $score -= 40; // Déodorant vs autre
+                        } else if (($isSearchGel && !$isProductGel) || (!$isSearchGel && $isProductGel)) {
+                            $score -= 40; // Gel douche vs autre
+                        } else if (($isSearchSoin && $isProductParfum) || ($isSearchParfum && $isProductSoin)) {
                             $score -= 40; // Grosse pénalité pour catégories incompatibles
                         } else {
                             $score -= 10; // Petite pénalité pour types différents mais potentiellement compatibles
