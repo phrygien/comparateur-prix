@@ -162,8 +162,7 @@ Exemple de format attendu :
             ->where('vendor', 'LIKE', "%{$vendor}%")
             ->when(!empty($this->selectedSites), function ($q) {
                 $q->whereIn('web_site_id', $this->selectedSites);
-            })
-            ->orderByDesc('id'); // Trier par le plus récent d'abord
+            });
 
         // 1. Recherche exacte (tous les critères AVEC variation)
         $exactMatch = (clone $query)
@@ -275,51 +274,29 @@ Exemple de format attendu :
     }
 
     /**
-     * Groupe les résultats par scrape_reference en ne gardant qu'un produit par site
-     * Priorité : le produit le plus récent (par ID ou date de création)
+     * Groupe les résultats par scrape_reference en ne gardant qu'un produit par référence
+     * Priorité : le produit avec le prix le plus bas
      */
     private function groupResultsByScrapeReference(array $products)
     {
         $grouped = collect($products)->groupBy('scrape_reference');
 
-        // Pour chaque référence, groupe par site et garde le produit le plus récent par site
-        $uniqueProducts = $grouped->flatMap(function ($group) {
-            // Groupe par site web
-            return $group->groupBy('web_site_id')->map(function ($siteProducts) {
-                // Pour chaque site, garde le produit le plus récent (par ID décroissant)
-                return $siteProducts->sortByDesc('id')->first();
-            })->values();
-        });
+        // Pour chaque référence, garder le produit avec le prix le plus bas
+        $uniqueProducts = $grouped->map(function ($group) {
+            return $group->sortBy('prix_ht')->first();
+        })->values();
 
         // Limiter à 50 résultats maximum
         $this->matchingProducts = $uniqueProducts->take(50)->toArray();
 
         // Stocker les résultats groupés pour l'affichage
         $this->groupedResults = $grouped->map(function ($group, $reference) {
-            // Groupe par site pour les statistiques
-            $bySite = $group->groupBy('web_site_id')->map(function ($siteProducts) {
-                return [
-                    'count' => $siteProducts->count(),
-                    'latest_product' => $siteProducts->sortByDesc('id')->first(),
-                    'lowest_price' => $siteProducts->min('prix_ht'),
-                    'highest_price' => $siteProducts->max('prix_ht'),
-                ];
-            });
-
             return [
                 'reference' => $reference,
-                'total_count' => $group->count(),
-                'sites_count' => $bySite->count(),
-                'sites' => $bySite->map(function ($siteData, $siteId) {
-                    return [
-                        'site_id' => $siteId,
-                        'product_id' => $siteData['latest_product']['id'] ?? null,
-                        'price' => $siteData['latest_product']['prix_ht'] ?? null,
-                        'variations_count' => $siteData['count']
-                    ];
-                })->values()->toArray(),
+                'count' => $group->count(),
+                'products' => $group->toArray(),
                 'best_price' => $group->min('prix_ht'),
-                'site_ids' => $group->pluck('web_site_id')->unique()->values()->toArray()
+                'sites' => $group->pluck('web_site_id')->unique()->values()->toArray()
             ];
         })->toArray();
     }
@@ -450,12 +427,12 @@ Score de confiance entre 0 et 1."
                     if ($found) {
                         $this->bestMatch = $found;
                     } else {
-                        // Fallback sur le premier résultat (le plus récent)
-                        $this->bestMatch = $this->matchingProducts[0] ?? null;
+                        // Fallback sur le premier résultat
+                        $this->bestMatch = $this->matchingProducts[0];
                     }
                 } else {
-                    // Fallback sur le premier résultat (le plus récent)
-                    $this->bestMatch = $this->matchingProducts[0] ?? null;
+                    // Fallback sur le premier résultat
+                    $this->bestMatch = $this->matchingProducts[0];
                 }
             }
 
@@ -465,8 +442,8 @@ Score de confiance entre 0 et 1."
                 'product_name' => $this->productName
             ]);
 
-            // Fallback sur le premier résultat en cas d'erreur (le plus récent)
-            $this->bestMatch = $this->matchingProducts[0] ?? null;
+            // Fallback sur le premier résultat en cas d'erreur
+            $this->bestMatch = $this->matchingProducts[0];
         }
     }
 
@@ -515,9 +492,6 @@ Score de confiance entre 0 et 1."
     <div class="mb-4">
         <h2 class="text-xl font-bold mb-2">Extraction et recherche de produit</h2>
         <p class="text-gray-600">Produit: {{ $productName }}</p>
-        <p class="text-sm text-gray-500 mt-1">
-            <span class="font-semibold">Affichage :</span> Dernier produit par site pour chaque référence
-        </p>
     </div>
 
     <!-- Filtres par site -->
@@ -593,16 +567,7 @@ Score de confiance entre 0 et 1."
         <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
             <p class="text-sm text-blue-800">
                 <span class="font-semibold">{{ count($groupedResults) }}</span> référence(s) unique(s) trouvée(s)
-                <span class="text-xs ml-2">(dernier produit par site pour chaque référence)</span>
-            </p>
-            @php
-                $totalSitesDisplayed = 0;
-                foreach($groupedResults as $result) {
-                    $totalSitesDisplayed += count($result['sites']);
-                }
-            @endphp
-            <p class="text-xs text-blue-600 mt-1">
-                Total produits affichés : {{ count($matchingProducts) }} ({{ $totalSitesDisplayed }} site/produit combinaisons)
+                <span class="text-xs ml-2">(max 1 produit par référence affichée)</span>
             </p>
         </div>
     @endif
@@ -635,28 +600,7 @@ Score de confiance entre 0 et 1."
                     <p class="font-semibold">{{ $bestMatch['vendor'] }} - {{ $bestMatch['name'] }}</p>
                     <p class="text-sm text-gray-600">{{ $bestMatch['type'] }} | {{ $bestMatch['variation'] }}</p>
                     <p class="text-xs text-gray-500 mt-1">Ref: {{ $bestMatch['scrape_reference'] ?? 'N/A' }}</p>
-                    
-                    <!-- Indicateur du site -->
-                    @php
-                        $siteInfo = collect($availableSites)->firstWhere('id', $bestMatch['web_site_id']);
-                        $isLatestForSite = isset($groupedResults[$bestMatch['scrape_reference']]['sites']) && 
-                            collect($groupedResults[$bestMatch['scrape_reference']]['sites'])
-                                ->where('site_id', $bestMatch['web_site_id'])
-                                ->where('product_id', $bestMatch['id'])
-                                ->isNotEmpty();
-                    @endphp
-                    @if($siteInfo)
-                        <div class="mt-2">
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                {{ $siteInfo['name'] }}
-                                @if($isLatestForSite)
-                                    <span class="ml-1">• Dernier du site</span>
-                                @endif
-                            </span>
-                        </div>
-                    @endif
-                    
-                    <p class="text-sm font-bold text-green-600 mt-2">{{ $bestMatch['prix_ht'] }}
+                    <p class="text-sm font-bold text-green-600 mt-1">{{ $bestMatch['prix_ht'] }}
                         {{ $bestMatch['currency'] }}</p>
                     @if($bestMatch['url'] ?? false)
                         <a href="{{ $bestMatch['url'] }}" target="_blank" class="text-xs text-blue-500 hover:underline">Voir le
@@ -667,69 +611,32 @@ Score de confiance entre 0 et 1."
         </div>
     @endif
 
-    @if(!empty($matchingProducts) && count($matchingProducts) > 0)
+    @if(!empty($matchingProducts) && count($matchingProducts) > 1)
         <div class="mt-6">
-            <h3 class="font-bold mb-3">
-                Résultats par site ({{ count($matchingProducts) }} produits) :
-                <span class="text-sm font-normal text-gray-600">(Cliquez pour sélectionner)</span>
-            </h3>
-            <div class="space-y-3 max-h-96 overflow-y-auto">
+            <h3 class="font-bold mb-3">Autres résultats trouvés ({{ count($matchingProducts) }}) :</h3>
+            <div class="space-y-2 max-h-96 overflow-y-auto">
                 @foreach($matchingProducts as $product)
-                    @php
-                        $siteInfo = collect($availableSites)->firstWhere('id', $product['web_site_id']);
-                        $isLatestForSite = isset($groupedResults[$product['scrape_reference']]['sites']) && 
-                            collect($groupedResults[$product['scrape_reference']]['sites'])
-                                ->where('site_id', $product['web_site_id'])
-                                ->where('product_id', $product['id'])
-                                ->isNotEmpty();
-                        $variationsCount = $groupedResults[$product['scrape_reference']]['sites'][$product['web_site_id']]['variations_count'] ?? 1;
-                    @endphp
                     <div wire:click="selectProduct({{ $product['id'] }})"
                         class="p-3 border rounded hover:bg-blue-50 cursor-pointer transition {{ $bestMatch && $bestMatch['id'] === $product['id'] ? 'bg-blue-100 border-blue-500' : 'bg-white' }}">
-                        <div class="flex items-start gap-3">
+                        <div class="flex items-center gap-3">
                             @if($product['image_url'] ?? false)
                                 <img src="{{ $product['image_url'] }}" alt="{{ $product['name'] }}"
                                     class="w-12 h-12 object-cover rounded">
                             @endif
                             <div class="flex-1">
-                                <div class="flex justify-between">
-                                    <p class="font-medium text-sm">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
-                                    <p class="font-bold text-sm">{{ $product['prix_ht'] }} {{ $product['currency'] }}</p>
-                                </div>
+                                <p class="font-medium text-sm">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
                                 <p class="text-xs text-gray-500">{{ $product['type'] }} | {{ $product['variation'] }}</p>
-                                
-                                <!-- Informations site et référence -->
-                                <div class="flex items-center justify-between mt-2">
-                                    <div class="flex items-center gap-2">
-                                        @if($siteInfo)
-                                            <span class="text-xs px-2 py-1 rounded {{ $isLatestForSite ? 'bg-green-100 text-green-800 border border-green-200' : 'bg-gray-100 text-gray-800' }}">
-                                                {{ $siteInfo['name'] }}
-                                                @if($isLatestForSite && $variationsCount > 1)
-                                                    <span class="ml-1 text-xs">(Dernier • {{ $variationsCount }} versions)</span>
-                                                @elseif($isLatestForSite)
-                                                    <span class="ml-1 text-xs">(Dernier)</span>
-                                                @endif
-                                            </span>
-                                        @endif
-                                        
-                                        @if($product['scrape_reference'] ?? false)
-                                            <span class="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded">
-                                                Ref: {{ $product['scrape_reference'] }}
-                                            </span>
-                                        @endif
-                                    </div>
-                                    
-                                    <div class="text-right">
-                                        <p class="text-xs text-gray-500">ID: {{ $product['id'] }}</p>
-                                        @if($product['url'] ?? false)
-                                            <a href="{{ $product['url'] }}" target="_blank" 
-                                                class="text-xs text-blue-500 hover:text-blue-700 hover:underline"
-                                                onclick="event.stopPropagation();">
-                                                Voir
-                                            </a>
-                                        @endif
-                                    </div>
-                                </div>
+                                <p class="text-xs text-gray-400 mt-1">Ref: {{ $product['scrape_reference'] ?? 'N/A' }}</p>
+                            </div>
+                            <div class="text-right">
+                                <p class="font-bold text-sm">{{ $product['prix_ht'] }} {{ $product['currency'] }}</p>
+                                <p class="text-xs text-gray-500">ID: {{ $product['id'] }}</p>
+                                @php
+                                    $siteInfo = collect($availableSites)->firstWhere('id', $product['web_site_id']);
+                                @endphp
+                                @if($siteInfo)
+                                    <p class="text-xs text-blue-600 font-medium">{{ $siteInfo['name'] }}</p>
+                                @endif
                             </div>
                         </div>
                     </div>
