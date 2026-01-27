@@ -194,21 +194,75 @@ Maintenant, traite ce produit en suivant ces règles exactement."
             return;
         }
 
-        // Recherche large par vendor et name (insensible à la casse)
+        // Niveau 1: Recherche vendor + name (insensible à la casse)
         $candidates = Product::query()
             ->whereRaw('LOWER(vendor) LIKE ?', ['%' . strtolower($vendor) . '%'])
             ->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($name) . '%'])
-            ->limit(30)
+            ->limit(50)
             ->get();
 
+        \Log::info('Recherche niveau 1 (vendor + name)', [
+            'vendor' => $vendor,
+            'name' => $name,
+            'results' => $candidates->count()
+        ]);
+
+        // Niveau 2: Si pas de résultats, chercher seulement avec vendor + mots-clés du name
+        if ($candidates->isEmpty() && !empty($name)) {
+            // Extraire les mots significatifs du name (ignorer les mots courts)
+            $nameWords = array_filter(
+                explode(' ', strtolower($name)), 
+                fn($word) => strlen($word) > 2
+            );
+            
+            if (!empty($nameWords)) {
+                $query = Product::whereRaw('LOWER(vendor) LIKE ?', ['%' . strtolower($vendor) . '%']);
+                
+                foreach ($nameWords as $word) {
+                    $query->whereRaw('LOWER(name) LIKE ?', ['%' . $word . '%']);
+                }
+                
+                $candidates = $query->limit(50)->get();
+                
+                \Log::info('Recherche niveau 2 (vendor + mots du name)', [
+                    'vendor' => $vendor,
+                    'name_words' => $nameWords,
+                    'results' => $candidates->count()
+                ]);
+            }
+        }
+
+        // Niveau 3: Si toujours pas de résultats, chercher seulement avec vendor
         if ($candidates->isEmpty()) {
-            // Si aucun résultat, essayer juste avec vendor (insensible à la casse)
             $candidates = Product::whereRaw('LOWER(vendor) LIKE ?', ['%' . strtolower($vendor) . '%'])
-                ->limit(30)
+                ->limit(50)
                 ->get();
+            
+            \Log::info('Recherche niveau 3 (vendor seulement)', [
+                'vendor' => $vendor,
+                'results' => $candidates->count()
+            ]);
+        }
+
+        // Niveau 4: Si vraiment aucun résultat, chercher avec une tolérance sur le vendor
+        if ($candidates->isEmpty()) {
+            // Chercher avec seulement les 4 premières lettres du vendor
+            $vendorPrefix = substr(strtolower($vendor), 0, 4);
+            $candidates = Product::whereRaw('LOWER(vendor) LIKE ?', [$vendorPrefix . '%'])
+                ->limit(50)
+                ->get();
+            
+            \Log::info('Recherche niveau 4 (vendor partiel)', [
+                'vendor_prefix' => $vendorPrefix,
+                'results' => $candidates->count()
+            ]);
         }
 
         if ($candidates->isEmpty()) {
+            \Log::warning('Aucun candidat trouvé', [
+                'vendor' => $vendor,
+                'name' => $name
+            ]);
             $this->matchingProducts = [];
             $this->bestMatch = null;
             return;
@@ -220,7 +274,14 @@ Maintenant, traite ce produit en suivant ces règles exactement."
         if (!empty($scoredProducts)) {
             $this->matchingProducts = array_column($scoredProducts, 'product');
             $this->bestMatch = $scoredProducts[0]['product'] ?? null;
+            
+            \Log::info('Matching réussi', [
+                'matches' => count($scoredProducts)
+            ]);
         } else {
+            \Log::warning('Aucun match après AI', [
+                'candidates_count' => $candidates->count()
+            ]);
             $this->matchingProducts = [];
             $this->bestMatch = null;
         }
@@ -240,6 +301,18 @@ Maintenant, traite ce produit en suivant ces règles exactement."
             ];
         })->toArray();
 
+        \Log::info('Envoi à OpenAI pour matching', [
+            'search' => [
+                'vendor' => $vendor,
+                'name' => $name,
+                'type' => $type,
+                'variation' => $variation,
+                'is_coffret' => $isCoffret
+            ],
+            'candidates_count' => count($productsList),
+            'first_candidates' => array_slice($productsList, 0, 3)
+        ]);
+
         try {
             $response = Http::withHeaders([
                 'Content-Type' => 'application/json',
@@ -249,7 +322,7 @@ Maintenant, traite ce produit en suivant ces règles exactement."
                 'messages' => [
                     [
                         'role' => 'system',
-                        'content' => 'Tu es un expert en matching de produits cosmétiques. Tu dois analyser une liste de produits et retourner UNIQUEMENT ceux qui correspondent EXACTEMENT au produit recherché. Sois TRÈS STRICT sur le type de produit. Réponds UNIQUEMENT avec un tableau JSON des IDs correspondants, sans markdown.'
+                        'content' => 'Tu es un expert en matching de produits cosmétiques. Tu dois analyser une liste de produits et retourner ceux qui correspondent au produit recherché. Sois FLEXIBLE sur le name et la casse, mais STRICT sur le type de produit. Réponds UNIQUEMENT avec un tableau JSON des IDs correspondants, sans markdown.'
                     ],
                     [
                         'role' => 'user',
@@ -263,86 +336,59 @@ Est un coffret: " . ($isCoffret ? 'OUI' : 'NON') . "
 Produits candidats:
 " . json_encode($productsList, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "
 
-RÈGLES STRICTES DE MATCHING:
+RÈGLES DE MATCHING (PAR ORDRE DE PRIORITÉ):
 
-1. VENDOR - Comparaison insensible à la casse et flexible:
+1. VENDOR - TRÈS FLEXIBLE:
    - \"AZZARO\" = \"Azzaro\" = \"azzaro\" ✅
    - \"CARON\" = \"Caron\" = \"caron\" ✅
    - Ignorer complètement les majuscules/minuscules
+   - Une petite différence dans le vendor est acceptable si le reste correspond bien
 
-2. NAME - Comparaison TRÈS FLEXIBLE sur la casse et le formatting:
+2. NAME - FLEXIBLE avec tolérance:
+   - Ignorer COMPLÈTEMENT les différences de casse
    - \"Pour Un Homme de Caron\" = \"Pour Un Homme de CARON\" = \"POUR UN HOMME DE CARON\" ✅
    - \"Chrome\" = \"CHROME\" = \"chrome\" ✅
-   - \"Bogart Homme\" = \"BOGART HOMME\" = \"bogart homme\" ✅
-   - MAIS \"Bogart Homme\" ≠ \"One Man Show\" ❌ (nom différent)
-   - MAIS \"Pour Un Homme\" ≠ \"Pour Une Femme\" ❌ (nom différent)
-   
-   IMPORTANT pour le NAME:
-   - Ignorer TOTALEMENT les différences de casse (majuscules/minuscules)
-   - Le contenu/mots doivent être les mêmes
-   - L'ordre des mots doit être similaire
-   - Les petites variations de formatting sont OK
-   - Exemples:
+   - Si les mots PRINCIPAUX sont présents, c'est OK même si ordre légèrement différent
+   - Exemples de MATCH acceptables:
      * \"Pour Un Homme de Caron\" ≈ \"Pour Un Homme de CARON\" ✅
-     * \"J'adore\" = \"J'ADORE\" = \"jadore\" ✅
+     * \"Pour Un Homme\" ≈ \"Pour Un Homme de Caron\" ✅ (version courte acceptable)
+     * \"J'adore\" = \"J'ADORE\" ✅
+   - Exemples de NON-MATCH:
+     * \"Bogart Homme\" ≠ \"One Man Show\" ❌ (noms complètement différents)
+     * \"Chrome\" ≠ \"Wanted\" ❌
 
-3. TYPE - Comparaison stricte sur le contenu (pas la casse):
-   - \"Eau de Toilette\" = \"eau de toilette\" = \"EAU DE TOILETTE\" ✅
-   - \"Déodorant\" = \"déodorant\" = \"DÉODORANT\" ✅
-   - MAIS attention aux catégories TOTALEMENT incompatibles:
-     * Parfum/EDT/EDP/Eau de Toilette/Eau de Parfum ≠ Déodorant ≠ Gel douche ≠ Baume ≠ Après-rasage
-     * \"Déodorant\" ≠ \"Gel Moussant\" ❌
-     * \"Baume après-rasage\" ≠ \"Eau de Toilette\" ❌
-     * \"Gel douche\" ≠ \"Déodorant\" ❌
-   
-   TOLÉRANCE pour le TYPE:
-   - \"Eau de Toilette\" ≈ \"Eau de Toilette Vaporisateur\" ✅
-   - \"Parfum\" ≈ \"Eau de Parfum\" ✅
-   - Mais PAS entre catégories différentes
+3. TYPE - STRICT sur la CATÉGORIE:
+   - Ignorer la casse: \"Eau de Toilette\" = \"EAU DE TOILETTE\" ✅
+   - Tolérer les variantes: \"Eau de Toilette\" ≈ \"Eau de Toilette Vaporisateur\" ✅
+   - MAIS catégories différentes = REJET:
+     * Parfums (EDT/EDP/Parfum) ≠ Déodorant ❌
+     * Parfums ≠ Gel douche ❌
+     * Déodorant ≠ Gel douche ❌
+     * Baume/Crème ≠ Parfum ❌
+     * Après-rasage ≠ Eau de Toilette ❌
 
-4. VARIATION - Très flexible:
-   - 50ml, 100ml, 150ml, 200ml, 500ml sont tous acceptables
-   - La contenance peut être totalement différente
-   - \"Flacon 500 ml\" = \"500ml\" = \"500 ml\" ✅
+4. VARIATION - IGNORER:
+   - 50ml, 100ml, 500ml, etc. → tous acceptables
+   - La contenance N'EST PAS un critère de rejet
 
-5. COFFRET:
-   - Si coffret recherché → produit doit être un coffret
-   - Si produit unitaire recherché → ne pas retourner de coffrets
+5. COFFRET - Vérifier:
+   - Si coffret recherché → produit doit être coffret
+   - Si produit unitaire → exclure les coffrets
 
-EXEMPLES CONCRETS:
+STRATÉGIE:
+1. Commence par chercher des matchs parfaits (vendor + name + type)
+2. Si peu de résultats, sois plus flexible sur le name (mots-clés seulement)
+3. Ne rejette PAS pour des différences mineures de formatting ou de casse
+4. Rejette SEULEMENT si type de produit vraiment incompatible
 
-EXEMPLE 1:
-Recherché: Vendor=\"Caron\", Name=\"Pour Un Homme de Caron\", Type=\"Eau de Toilette\"
-Candidat: vendor=\"CARON\", name=\"Pour Un Homme de CARON\", type=\"Eau de Toilette\"
-→ MATCH ✅ (même contenu, juste différence de casse)
+IMPORTANT: Si tu trouves au moins UN produit qui correspond raisonnablement bien, retourne-le !
+Ne retourne un tableau vide QUE si vraiment AUCUN produit ne correspond.
 
-EXEMPLE 2:
-Recherché: Vendor=\"AZZARO\", Name=\"CHROME\", Type=\"Déodorant\"
-Candidat: vendor=\"Azzaro\", name=\"Chrome\", type=\"Déodorant Vaporisateur\"
-→ MATCH ✅ (casse différente mais contenu identique, type compatible)
-
-EXEMPLE 3:
-Recherché: Vendor=\"AZZARO\", Name=\"CHROME\", Type=\"Déodorant\"
-Candidat: vendor=\"Azzaro\", name=\"Chrome\", type=\"Gel Moussant\"
-→ NO MATCH ❌ (type incompatible: Déodorant ≠ Gel)
-
-EXEMPLE 4:
-Recherché: Vendor=\"Bogart\", Name=\"Bogart Homme\", Type=\"Eau de Toilette\"
-Candidat: vendor=\"BOGART\", name=\"ONE MAN SHOW\", type=\"Eau de Toilette\"
-→ NO MATCH ❌ (name complètement différent même si vendor et type OK)
-
-STRATÉGIE DE MATCHING:
-1. Convertir vendor, name, type en minuscules pour comparer
-2. Vérifier que le CONTENU est le même (pas juste la casse)
-3. Pour le NAME: tous les mots principaux doivent être présents
-4. Pour le TYPE: doit être de la même catégorie de produit
-
-Retourne un tableau JSON avec UNIQUEMENT les IDs des produits qui correspondent:
-Format: [id1, id2, id3] (triés du meilleur au moins bon)
-Si AUCUN produit ne correspond: []"
+Format de réponse: [id1, id2, id3]
+Si aucun match: []"
                     ]
                 ],
-                'temperature' => 0.1,
+                'temperature' => 0.2,
                 'max_tokens' => 500
             ]);
 
@@ -356,6 +402,10 @@ Si AUCUN produit ne correspond: []"
 
             $data = $response->json();
             $content = $data['choices'][0]['message']['content'] ?? '';
+            
+            \Log::info('Réponse OpenAI matching', [
+                'raw_content' => $content
+            ]);
             
             // Nettoyer le contenu
             $content = preg_replace('/```json\s*|\s*```/', '', $content);
@@ -371,16 +421,30 @@ Si AUCUN produit ne correspond: []"
                 return [];
             }
 
+            \Log::info('IDs matchés par OpenAI', [
+                'matched_ids' => $matchedIds
+            ]);
+
             // Récupérer les produits correspondants
             $scoredProducts = [];
             $score = 100;
             
             foreach ($matchedIds as $id) {
                 if (isset($candidates[$id])) {
+                    $product = $candidates[$id];
                     $scoredProducts[] = [
-                        'product' => $candidates[$id]->toArray(),
+                        'product' => $product->toArray(),
                         'score' => $score
                     ];
+                    
+                    \Log::info('Produit matché', [
+                        'id' => $product->id,
+                        'vendor' => $product->vendor,
+                        'name' => $product->name,
+                        'type' => $product->type,
+                        'score' => $score
+                    ]);
+                    
                     $score -= 5; // Décrémenter le score pour les suivants
                 }
             }
@@ -389,7 +453,8 @@ Si AUCUN produit ne correspond: []"
 
         } catch (\Exception $e) {
             \Log::error('Erreur lors du matching AI', [
-                'message' => $e->getMessage()
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             return [];
         }
