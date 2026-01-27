@@ -265,51 +265,81 @@ Produits candidats:
 
 RÈGLES STRICTES DE MATCHING:
 
-1. VENDOR - Comparaison insensible à la casse (MAJUSCULES = minuscules):
+1. VENDOR - Comparaison insensible à la casse et flexible:
    - \"AZZARO\" = \"Azzaro\" = \"azzaro\" ✅
-   - \"BOGART\" = \"Bogart\" = \"bogart\" ✅
-   - Le vendor doit correspondre EXACTEMENT (ignorer casse)
+   - \"CARON\" = \"Caron\" = \"caron\" ✅
+   - Ignorer complètement les majuscules/minuscules
 
-2. NAME - Comparaison insensible à la casse:
-   - \"CHROME\" = \"Chrome\" = \"chrome\" ✅
-   - \"BOGART HOMME\" = \"Bogart Homme\" = \"bogart homme\" ✅
-   - \"One Man Show\" ≠ \"Bogart Homme\" ❌
-   - Le name doit correspondre EXACTEMENT ou être quasi-identique
+2. NAME - Comparaison TRÈS FLEXIBLE sur la casse et le formatting:
+   - \"Pour Un Homme de Caron\" = \"Pour Un Homme de CARON\" = \"POUR UN HOMME DE CARON\" ✅
+   - \"Chrome\" = \"CHROME\" = \"chrome\" ✅
+   - \"Bogart Homme\" = \"BOGART HOMME\" = \"bogart homme\" ✅
+   - MAIS \"Bogart Homme\" ≠ \"One Man Show\" ❌ (nom différent)
+   - MAIS \"Pour Un Homme\" ≠ \"Pour Une Femme\" ❌ (nom différent)
+   
+   IMPORTANT pour le NAME:
+   - Ignorer TOTALEMENT les différences de casse (majuscules/minuscules)
+   - Le contenu/mots doivent être les mêmes
+   - L'ordre des mots doit être similaire
+   - Les petites variations de formatting sont OK
+   - Exemples:
+     * \"Pour Un Homme de Caron\" ≈ \"Pour Un Homme de CARON\" ✅
+     * \"J'adore\" = \"J'ADORE\" = \"jadore\" ✅
 
-3. TYPE - Comparaison stricte (même en ignorant la casse):
-   - \"Déodorant\" = \"déodorant\" = \"DÉODORANT\" ✅
+3. TYPE - Comparaison stricte sur le contenu (pas la casse):
    - \"Eau de Toilette\" = \"eau de toilette\" = \"EAU DE TOILETTE\" ✅
-   - MAIS attention aux catégories incompatibles:
-     * Parfum/EDT/EDP ≠ Déodorant ≠ Gel douche ≠ Baume/Crème ≠ Après-rasage
+   - \"Déodorant\" = \"déodorant\" = \"DÉODORANT\" ✅
+   - MAIS attention aux catégories TOTALEMENT incompatibles:
+     * Parfum/EDT/EDP/Eau de Toilette/Eau de Parfum ≠ Déodorant ≠ Gel douche ≠ Baume ≠ Après-rasage
      * \"Déodorant\" ≠ \"Gel Moussant\" ❌
      * \"Baume après-rasage\" ≠ \"Eau de Toilette\" ❌
      * \"Gel douche\" ≠ \"Déodorant\" ❌
+   
+   TOLÉRANCE pour le TYPE:
+   - \"Eau de Toilette\" ≈ \"Eau de Toilette Vaporisateur\" ✅
+   - \"Parfum\" ≈ \"Eau de Parfum\" ✅
+   - Mais PAS entre catégories différentes
 
-4. VARIATION - Flexible:
-   - 50ml, 100ml, 150ml, 200ml sont tous acceptables
-   - La contenance peut différer
+4. VARIATION - Très flexible:
+   - 50ml, 100ml, 150ml, 200ml, 500ml sont tous acceptables
+   - La contenance peut être totalement différente
+   - \"Flacon 500 ml\" = \"500ml\" = \"500 ml\" ✅
 
 5. COFFRET:
    - Si coffret recherché → produit doit être un coffret
    - Si produit unitaire recherché → ne pas retourner de coffrets
 
-EXEMPLES DE MATCHING:
+EXEMPLES CONCRETS:
 
+EXEMPLE 1:
+Recherché: Vendor=\"Caron\", Name=\"Pour Un Homme de Caron\", Type=\"Eau de Toilette\"
+Candidat: vendor=\"CARON\", name=\"Pour Un Homme de CARON\", type=\"Eau de Toilette\"
+→ MATCH ✅ (même contenu, juste différence de casse)
+
+EXEMPLE 2:
 Recherché: Vendor=\"AZZARO\", Name=\"CHROME\", Type=\"Déodorant\"
 Candidat: vendor=\"Azzaro\", name=\"Chrome\", type=\"Déodorant Vaporisateur\"
-→ MATCH ✅ (casse différente mais contenu identique)
+→ MATCH ✅ (casse différente mais contenu identique, type compatible)
 
+EXEMPLE 3:
 Recherché: Vendor=\"AZZARO\", Name=\"CHROME\", Type=\"Déodorant\"
 Candidat: vendor=\"Azzaro\", name=\"Chrome\", type=\"Gel Moussant\"
 → NO MATCH ❌ (type incompatible: Déodorant ≠ Gel)
 
+EXEMPLE 4:
 Recherché: Vendor=\"Bogart\", Name=\"Bogart Homme\", Type=\"Eau de Toilette\"
 Candidat: vendor=\"BOGART\", name=\"ONE MAN SHOW\", type=\"Eau de Toilette\"
-→ NO MATCH ❌ (name différent même si type identique)
+→ NO MATCH ❌ (name complètement différent même si vendor et type OK)
+
+STRATÉGIE DE MATCHING:
+1. Convertir vendor, name, type en minuscules pour comparer
+2. Vérifier que le CONTENU est le même (pas juste la casse)
+3. Pour le NAME: tous les mots principaux doivent être présents
+4. Pour le TYPE: doit être de la même catégorie de produit
 
 Retourne un tableau JSON avec UNIQUEMENT les IDs des produits qui correspondent:
 Format: [id1, id2, id3] (triés du meilleur au moins bon)
-Si AUCUN produit ne correspond EXACTEMENT: []"
+Si AUCUN produit ne correspond: []"
                     ]
                 ],
                 'temperature' => 0.1,
