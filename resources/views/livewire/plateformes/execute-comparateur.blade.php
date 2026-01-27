@@ -3,6 +3,7 @@
 use Livewire\Volt\Component;
 use App\Models\Product;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\DB;
 
 new class extends Component {
     
@@ -34,69 +35,64 @@ new class extends Component {
                 'messages' => [
                     [
                         'role' => 'system',
-                        'content' => 'Tu es un expert en extraction de données de produits cosmétiques. Tu dois extraire vendor, name, variation et type de manière FLEXIBLE. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
+                        'content' => 'Tu es un expert en extraction de données de produits cosmétiques. Tu dois extraire vendor, name, variation et type de manière FLEXIBLE pour une recherche FULLTEXT efficace. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown.'
                     ],
                     [
                         'role' => 'user',
-                        'content' => "Analyse ce nom de produit et extrait les informations au format JSON strict :
+                        'content' => "Analyse ce nom de produit et extrait les informations pour une recherche FULLTEXT MySQL optimale :
 
 Nom du produit : {$this->productName}
 
-RÈGLES D'EXTRACTION FLEXIBLES :
+OBJECTIF : Créer des termes de recherche FLEXIBLES pour MySQL FULLTEXT BOOLEAN MODE
 
-1. **VENDOR** - Extraction intelligente :
-   - Peut être le nom complet : \"Jean Paul Gaultier\"
-   - Peut être partiel : \"Jean Paul\" ou \"Gaultier\"
-   - Si le vendor est composé, extraire la partie la plus distinctive
-   - Exemples :
-     * \"Jean Paul Gaultier\" → vendor peut être \"Jean Paul Gaultier\", \"Jean Paul\", ou \"Gaultier\"
-     * \"Yves Saint Laurent\" → vendor peut être \"Yves Saint Laurent\" ou \"YSL\"
+RÈGLES D'EXTRACTION :
 
-2. **NAME** - Extraction flexible du nom principal :
-   - Peut contenir une partie du vendor (ex: \"Gaultier Divine\")
-   - Peut être juste le nom distinctif (ex: \"Divine\")
-   - Peut inclure \"Coffret\" si c'est un coffret
-   - Exemples :
-     * \"Coffret Gaultier Divine\" → \"Coffret Gaultier Divine\" OU \"Coffret Divine\" OU \"Divine\"
-     * \"Chrome\" → \"Chrome\"
-     * \"Pour Un Homme de Caron\" → \"Pour Un Homme de Caron\" OU \"Pour Un Homme\"
+1. **VENDOR** - Extraire toutes les variations possibles :
+   - Nom complet : \"Jean Paul Gaultier\"
+   - Variations : [\"Jean Paul Gaultier\", \"Jean Paul\", \"Gaultier\", \"JPG\"]
+   - Pour acronymes connus : YSL, JPG, etc.
 
-3. **TYPE** - Extraction flexible de la catégorie :
-   - Peut être le type complet : \"Eau de Parfum\"
-   - Peut être abrégé : \"Parfum\", \"EDT\", \"EDP\"
-   - Peut inclure des variantes : \"Eau de Parfum Vaporisateur\", \"Lait pour le corps\", \"Lait corps\"
-   - Pour les coffrets, extraire le type principal du produit principal
-   - Exemples :
-     * \"Eau de Parfum 50ml + Lait pour le corps 75ml\" → type: \"Eau de Parfum\" OU \"Parfum\"
-     * \"Lait pour le corps\" → \"Lait pour le corps\" OU \"Lait corps\"
+2. **NAME** - Extraire le nom principal + variations :
+   - Sans le vendor : \"Divine\", \"Coffret Divine\"
+   - Mots-clés principaux seulement
+   - Variations : [\"Divine\", \"Coffret Divine\", \"Gaultier Divine\"]
+
+3. **TYPE** - Catégorie produit avec synonymes :
+   - \"Eau de Parfum\" → [\"Eau de Parfum\", \"Parfum\", \"EDP\"]
+   - \"Eau de Toilette\" → [\"Eau de Toilette\", \"EDT\", \"Toilette\"]
+   - \"Lait pour le corps\" → [\"Lait corps\", \"Lait pour le corps\", \"Body Lotion\"]
 
 4. **VARIATION** - Contenance :
-   - Extraire toutes les contenances trouvées
-   - Format : \"50ml\", \"100ml\", \"75ml + 50ml\" pour les coffrets
+   - Extraire : \"50ml\", \"100ml\", etc.
+   - Pour coffrets : \"50ml + 75ml\" ou juste \"50ml\"
+
+5. **SEARCH_TERMS** - Mots-clés pour recherche FULLTEXT :
+   - Combiner les termes les plus importants
+   - Format BOOLEAN : \"+vendor +name type\"
    - Exemples :
-     * \"50ml + Lait pour le corps 75ml\" → \"50ml + 75ml\" OU \"50ml\"
+     * \"+Gaultier +Divine Parfum\"
+     * \"+Dior +Sauvage Toilette\"
+     * \"+Azzaro +Chrome EDT\"
 
-5. **IS_COFFRET** - Détection :
-   - true si contient : Coffret, Set, Kit, Duo, Trio, Routine, Pack, Bundle, etc.
-   - true si plusieurs produits sont mentionnés (ex: \"50ml + Lait 75ml\")
-
-EXEMPLES D'EXTRACTION :
+EXEMPLES :
 
 EXEMPLE 1 (Coffret) :
 Input: \"Jean Paul Gaultier - Coffret Gaultier Divine - Eau de Parfum 50ml + Lait pour le corps 75ml\"
 Output:
 {
   \"vendor\": \"Jean Paul Gaultier\",
-  \"vendor_variations\": [\"Jean Paul Gaultier\", \"Jean Paul\", \"Gaultier\"],
-  \"name\": \"Coffret Divine\",
-  \"name_variations\": [\"Coffret Gaultier Divine\", \"Coffret Divine\", \"Divine\", \"Gaultier Divine\"],
+  \"vendor_variations\": [\"Jean Paul Gaultier\", \"Gaultier\", \"Jean Paul\", \"JPG\"],
+  \"name\": \"Divine\",
+  \"name_variations\": [\"Divine\", \"Coffret Divine\", \"Gaultier Divine\"],
   \"type\": \"Eau de Parfum\",
   \"type_variations\": [\"Eau de Parfum\", \"Parfum\", \"EDP\"],
-  \"variation\": \"50ml + 75ml\",
-  \"is_coffret\": true
+  \"variation\": \"50ml\",
+  \"is_coffret\": true,
+  \"search_terms\": \"+Gaultier +Divine Parfum coffret\",
+  \"keywords\": [\"Gaultier\", \"Divine\", \"Parfum\", \"coffret\"]
 }
 
-EXEMPLE 2 (Produit simple) :
+EXEMPLE 2 :
 Input: \"AZZARO - CHROME - Eau de Toilette Vaporisateur 100ml\"
 Output:
 {
@@ -105,9 +101,11 @@ Output:
   \"name\": \"CHROME\",
   \"name_variations\": [\"CHROME\", \"Chrome\"],
   \"type\": \"Eau de Toilette\",
-  \"type_variations\": [\"Eau de Toilette\", \"Eau de Toilette Vaporisateur\", \"EDT\"],
+  \"type_variations\": [\"Eau de Toilette\", \"EDT\", \"Toilette\"],
   \"variation\": \"100ml\",
-  \"is_coffret\": false
+  \"is_coffret\": false,
+  \"search_terms\": \"+Azzaro +Chrome Toilette\",
+  \"keywords\": [\"Azzaro\", \"Chrome\", \"Toilette\"]
 }
 
 EXEMPLE 3 :
@@ -121,10 +119,16 @@ Output:
   \"type\": \"Eau de Parfum\",
   \"type_variations\": [\"Eau de Parfum\", \"Parfum\", \"EDP\"],
   \"variation\": \"50ml\",
-  \"is_coffret\": false
+  \"is_coffret\": false,
+  \"search_terms\": \"+Dior +Jadore Parfum\",
+  \"keywords\": [\"Dior\", \"Jadore\", \"Parfum\"]
 }
 
-IMPORTANT : Fournis TOUJOURS les variations possibles pour vendor, name et type pour augmenter les chances de matching.
+IMPORTANT :
+- search_terms doit être optimisé pour MySQL FULLTEXT BOOLEAN MODE
+- Utiliser + pour les termes obligatoires (vendor et name principalement)
+- keywords = liste des mots-clés les plus importants pour le matching
+- Toujours fournir des variations pour augmenter les chances de match
 
 Maintenant, traite ce produit :"
                     ]
@@ -137,7 +141,6 @@ Maintenant, traite ce produit :"
                 $data = $response->json();
                 $content = $data['choices'][0]['message']['content'];
                 
-                // Nettoyer le contenu
                 $content = preg_replace('/```json\s*|\s*```/', '', $content);
                 $content = trim($content);
                 
@@ -147,10 +150,7 @@ Maintenant, traite ce produit :"
                     throw new \Exception('Erreur de parsing JSON: ' . json_last_error_msg());
                 }
                 
-                // Normaliser les données extraites
                 $this->normalizeExtractedData();
-                
-                // Rechercher les produits correspondants
                 $this->searchMatchingProducts();
                 
             } else {
@@ -188,10 +188,89 @@ Maintenant, traite ce produit :"
             $this->extractedData['type_variations'] = [$this->extractedData['type'] ?? ''];
         }
 
-        // S'assurer que is_coffret est un booléen
         if (!isset($this->extractedData['is_coffret'])) {
             $this->extractedData['is_coffret'] = $this->detectCoffret($this->productName);
         }
+
+        // Générer search_terms si absent
+        if (!isset($this->extractedData['search_terms'])) {
+            $this->extractedData['search_terms'] = $this->generateSearchTerms();
+        }
+
+        // Générer keywords si absent
+        if (!isset($this->extractedData['keywords'])) {
+            $this->extractedData['keywords'] = $this->extractKeywords();
+        }
+    }
+
+    private function generateSearchTerms(): string
+    {
+        $vendor = $this->extractedData['vendor'] ?? '';
+        $name = $this->extractedData['name'] ?? '';
+        $type = $this->extractedData['type'] ?? '';
+        
+        // Nettoyer et simplifier
+        $vendor = trim($vendor);
+        $name = trim($name);
+        $type = $this->simplifyType($type);
+        
+        // Format BOOLEAN : +vendor +name type
+        $terms = [];
+        if (!empty($vendor)) {
+            $terms[] = "+{$vendor}";
+        }
+        if (!empty($name)) {
+            $terms[] = "+{$name}";
+        }
+        if (!empty($type)) {
+            $terms[] = $type;
+        }
+        
+        return implode(' ', $terms);
+    }
+
+    private function simplifyType(string $type): string
+    {
+        $type = strtolower($type);
+        
+        $simplifications = [
+            'eau de parfum' => 'Parfum',
+            'eau de toilette' => 'Toilette',
+            'lait pour le corps' => 'Lait',
+            'gel douche' => 'Gel',
+            'déodorant' => 'Deo',
+        ];
+        
+        foreach ($simplifications as $original => $simplified) {
+            if (strpos($type, $original) !== false) {
+                return $simplified;
+            }
+        }
+        
+        return $type;
+    }
+
+    private function extractKeywords(): array
+    {
+        $keywords = [];
+        
+        if (isset($this->extractedData['vendor'])) {
+            $keywords[] = $this->extractedData['vendor'];
+        }
+        
+        if (isset($this->extractedData['name'])) {
+            $keywords[] = $this->extractedData['name'];
+        }
+        
+        if (isset($this->extractedData['type'])) {
+            $keywords[] = $this->simplifyType($this->extractedData['type']);
+        }
+        
+        if ($this->extractedData['is_coffret'] ?? false) {
+            $keywords[] = 'coffret';
+        }
+        
+        return array_filter($keywords);
     }
 
     private function detectCoffret(string $text): bool
@@ -219,14 +298,13 @@ Maintenant, traite ce produit :"
             return;
         }
 
+        $searchTerms = $this->extractedData['search_terms'] ?? '';
         $vendorVariations = $this->extractedData['vendor_variations'] ?? [];
         $nameVariations = $this->extractedData['name_variations'] ?? [];
         $typeVariations = $this->extractedData['type_variations'] ?? [];
-        $isCoffret = $this->extractedData['is_coffret'] ?? false;
 
-        if (empty($vendorVariations)) {
-            \Log::warning('Aucune variation de vendor', [
-                'product_name' => $this->productName,
+        if (empty($searchTerms) && empty($vendorVariations)) {
+            \Log::warning('Aucun terme de recherche disponible', [
                 'extracted_data' => $this->extractedData
             ]);
             $this->matchingProducts = [];
@@ -234,111 +312,97 @@ Maintenant, traite ce produit :"
             return;
         }
 
-        \Log::info('Recherche avec variations', [
+        \Log::info('Recherche FULLTEXT', [
+            'search_terms' => $searchTerms,
             'vendor_variations' => $vendorVariations,
             'name_variations' => $nameVariations,
-            'type_variations' => $typeVariations,
-            'is_coffret' => $isCoffret
+            'type_variations' => $typeVariations
         ]);
 
-        // Recherche progressive avec les variations
+        // Stratégie de recherche progressive avec FULLTEXT
         $candidates = collect();
 
-        // Niveau 1: Essayer chaque combinaison vendor + name
-        foreach ($vendorVariations as $vendor) {
-            foreach ($nameVariations as $name) {
-                $results = Product::query()
-                    ->whereRaw('LOWER(vendor) LIKE ?', ['%' . strtolower($vendor) . '%'])
-                    ->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($name) . '%'])
-                    ->limit(100)
-                    ->get();
-                
-                $candidates = $candidates->merge($results);
-                
-                if ($results->count() > 0) {
-                    \Log::info('Résultats niveau 1', [
-                        'vendor' => $vendor,
-                        'name' => $name,
-                        'count' => $results->count()
-                    ]);
-                }
-            }
+        // NIVEAU 1: Recherche FULLTEXT avec les termes optimisés
+        if (!empty($searchTerms)) {
+            $results = $this->executeFulltextSearch($searchTerms);
+            $candidates = $candidates->merge($results);
+            
+            \Log::info('Résultats FULLTEXT niveau 1', [
+                'search_terms' => $searchTerms,
+                'count' => count($results)
+            ]);
         }
 
-        // Niveau 2: Si peu de résultats, chercher avec vendor + mots-clés du name
-        if ($candidates->count() < 5) {
+        // NIVEAU 2: Si peu de résultats, essayer avec chaque variation de vendor + name
+        if ($candidates->count() < 10) {
             foreach ($vendorVariations as $vendor) {
                 foreach ($nameVariations as $name) {
-                    $nameWords = array_filter(
-                        explode(' ', strtolower($name)), 
-                        fn($word) => strlen($word) > 2 && !in_array($word, ['pour', 'les', 'des', 'une', 'coffret', 'set'])
-                    );
+                    $terms = "+{$vendor} +{$name}";
+                    $results = $this->executeFulltextSearch($terms);
+                    $candidates = $candidates->merge($results);
                     
-                    if (!empty($nameWords)) {
-                        $query = Product::whereRaw('LOWER(vendor) LIKE ?', ['%' . strtolower($vendor) . '%']);
-                        
-                        foreach ($nameWords as $word) {
-                            $query->where(function($q) use ($word) {
-                                $q->whereRaw('LOWER(name) LIKE ?', ['%' . $word . '%'])
-                                  ->orWhereRaw('LOWER(type) LIKE ?', ['%' . $word . '%']);
-                            });
-                        }
-                        
-                        $results = $query->limit(100)->get();
-                        $candidates = $candidates->merge($results);
-                        
-                        if ($results->count() > 0) {
-                            \Log::info('Résultats niveau 2', [
-                                'vendor' => $vendor,
-                                'name_words' => $nameWords,
-                                'count' => $results->count()
-                            ]);
-                        }
+                    if (count($results) > 0) {
+                        \Log::info('Résultats FULLTEXT niveau 2', [
+                            'terms' => $terms,
+                            'count' => count($results)
+                        ]);
                     }
                 }
             }
         }
 
-        // Niveau 3: Si toujours peu de résultats, chercher seulement avec vendor
+        // NIVEAU 3: Si toujours peu de résultats, chercher seulement avec vendor
         if ($candidates->count() < 10) {
             foreach ($vendorVariations as $vendor) {
-                $results = Product::whereRaw('LOWER(vendor) LIKE ?', ['%' . strtolower($vendor) . '%'])
-                    ->limit(100)
-                    ->get();
-                
+                $terms = "+{$vendor}";
+                $results = $this->executeFulltextSearch($terms);
                 $candidates = $candidates->merge($results);
                 
-                if ($results->count() > 0) {
-                    \Log::info('Résultats niveau 3', [
-                        'vendor' => $vendor,
-                        'count' => $results->count()
+                if (count($results) > 0) {
+                    \Log::info('Résultats FULLTEXT niveau 3', [
+                        'terms' => $terms,
+                        'count' => count($results)
                     ]);
                 }
             }
         }
 
-        // Dédupliquer les candidats
-        $candidates = $candidates->unique('id');
+        // NIVEAU 4: Recherche de secours avec LIKE si FULLTEXT ne donne rien
+        if ($candidates->isEmpty() && !empty($vendorVariations)) {
+            $vendor = $vendorVariations[0];
+            $results = $this->executeLikeSearch($vendor);
+            $candidates = $candidates->merge($results);
+            
+            \Log::info('Résultats LIKE (secours)', [
+                'vendor' => $vendor,
+                'count' => count($results)
+            ]);
+        }
 
-        \Log::info('Total candidats après recherche', [
-            'count' => $candidates->count()
+        // Dédupliquer par ID
+        $uniqueCandidates = $candidates->unique(function($item) {
+            return $item->id ?? $item['id'] ?? null;
+        })->values();
+
+        \Log::info('Total candidats après déduplication', [
+            'count' => $uniqueCandidates->count()
         ]);
 
-        if ($candidates->isEmpty()) {
-            \Log::warning('Aucun candidat trouvé');
+        if ($uniqueCandidates->isEmpty()) {
+            \Log::warning('Aucun candidat trouvé après toutes les recherches');
             $this->matchingProducts = [];
             $this->bestMatch = null;
             return;
         }
 
-        // Utiliser OpenAI pour matcher les produits avec les variations
+        // Utiliser OpenAI pour matcher et scorer les produits
         $scoredProducts = $this->matchProductsWithAI(
-            $candidates, 
-            $vendorVariations, 
-            $nameVariations, 
-            $typeVariations, 
+            $uniqueCandidates,
+            $vendorVariations,
+            $nameVariations,
+            $typeVariations,
             $this->extractedData['variation'] ?? '',
-            $isCoffret
+            $this->extractedData['is_coffret'] ?? false
         );
 
         if (!empty($scoredProducts)) {
@@ -346,7 +410,8 @@ Maintenant, traite ce produit :"
             $this->bestMatch = $scoredProducts[0]['product'] ?? null;
             
             \Log::info('Matching réussi', [
-                'matches' => count($scoredProducts)
+                'matches' => count($scoredProducts),
+                'best_match' => $this->bestMatch['name'] ?? 'N/A'
             ]);
         } else {
             \Log::warning('Aucun match après AI');
@@ -355,20 +420,112 @@ Maintenant, traite ce produit :"
         }
     }
 
+    private function executeFulltextSearch(string $searchTerms): array
+    {
+        try {
+            $query = "
+                SELECT 
+                    lp.*,
+                    ws.name as site_name,
+                    lp.image_url as image_url,
+                    lp.url as product_url,
+                    MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
+                        AGAINST (? IN BOOLEAN MODE) as relevance
+                FROM last_price_scraped_product lp
+                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+                WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
+                    AGAINST (? IN BOOLEAN MODE)
+                AND (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
+                ORDER BY relevance DESC, lp.prix_ht ASC
+                LIMIT 50
+            ";
+
+            $results = DB::select($query, [$searchTerms, $searchTerms]);
+            
+            return collect($results)->map(function($item) {
+                return (object)[
+                    'id' => $item->id,
+                    'vendor' => $item->vendor,
+                    'name' => $item->name,
+                    'type' => $item->type,
+                    'variation' => $item->variation,
+                    'prix_ht' => $item->prix_ht,
+                    'currency' => $item->currency ?? 'EUR',
+                    'image_url' => $item->image_url,
+                    'url' => $item->product_url,
+                    'site_name' => $item->site_name,
+                    'relevance' => $item->relevance ?? 0
+                ];
+            })->toArray();
+            
+        } catch (\Exception $e) {
+            \Log::error('Erreur recherche FULLTEXT', [
+                'message' => $e->getMessage(),
+                'search_terms' => $searchTerms
+            ]);
+            return [];
+        }
+    }
+
+    private function executeLikeSearch(string $vendor): array
+    {
+        try {
+            $query = "
+                SELECT 
+                    lp.*,
+                    ws.name as site_name,
+                    lp.image_url as image_url,
+                    lp.url as product_url
+                FROM last_price_scraped_product lp
+                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+                WHERE LOWER(lp.vendor) LIKE ?
+                AND (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
+                ORDER BY lp.prix_ht ASC
+                LIMIT 50
+            ";
+
+            $results = DB::select($query, ['%' . strtolower($vendor) . '%']);
+            
+            return collect($results)->map(function($item) {
+                return (object)[
+                    'id' => $item->id,
+                    'vendor' => $item->vendor,
+                    'name' => $item->name,
+                    'type' => $item->type,
+                    'variation' => $item->variation,
+                    'prix_ht' => $item->prix_ht,
+                    'currency' => $item->currency ?? 'EUR',
+                    'image_url' => $item->image_url,
+                    'url' => $item->product_url,
+                    'site_name' => $item->site_name,
+                    'relevance' => 0
+                ];
+            })->toArray();
+            
+        } catch (\Exception $e) {
+            \Log::error('Erreur recherche LIKE', [
+                'message' => $e->getMessage(),
+                'vendor' => $vendor
+            ]);
+            return [];
+        }
+    }
+
     private function matchProductsWithAI($candidates, $vendorVariations, $nameVariations, $typeVariations, $variation, $isCoffret)
     {
-        $productsList = $candidates->map(function($product, $index) {
+        $productsList = collect($candidates)->map(function($product, $index) {
             return [
                 'id' => $index,
-                'vendor' => $product->vendor,
-                'name' => $product->name,
-                'type' => $product->type,
-                'variation' => $product->variation,
-                'product_id' => $product->id
+                'vendor' => $product->vendor ?? '',
+                'name' => $product->name ?? '',
+                'type' => $product->type ?? '',
+                'variation' => $product->variation ?? '',
+                'product_id' => $product->id ?? 0,
+                'relevance' => $product->relevance ?? 0
             ];
         })->toArray();
 
-        \Log::info('Envoi à OpenAI pour matching avec variations', [
+        \Log::info('Envoi à OpenAI pour matching', [
             'vendor_variations' => $vendorVariations,
             'name_variations' => $nameVariations,
             'type_variations' => $typeVariations,
@@ -384,88 +541,68 @@ Maintenant, traite ce produit :"
                 'messages' => [
                     [
                         'role' => 'system',
-                        'content' => 'Tu es un expert en matching de produits cosmétiques. Tu dois analyser les produits candidats et retourner ceux qui correspondent aux variations fournies. Sois TRÈS FLEXIBLE sur les variations de vendor, name et type. Réponds UNIQUEMENT avec un tableau JSON des IDs correspondants, sans markdown.'
+                        'content' => 'Tu es un expert en matching de produits cosmétiques. Analyse les produits candidats et retourne les IDs de ceux qui correspondent le mieux aux variations fournies. Sois FLEXIBLE mais INTELLIGENT. Réponds avec un tableau JSON des IDs, sans markdown.'
                     ],
                     [
                         'role' => 'user',
-                        'content' => "Produit recherché avec VARIATIONS:
+                        'content' => "Produit recherché (VARIATIONS MULTIPLES):
 
-**VENDOR** (accepter N'IMPORTE LAQUELLE de ces variations):
+**VENDOR** (accepter N'IMPORTE LAQUELLE):
 " . json_encode($vendorVariations, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "
 
-**NAME** (accepter N'IMPORTE LAQUELLE de ces variations ou une partie):
+**NAME** (accepter si contient des mots-clés):
 " . json_encode($nameVariations, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "
 
-**TYPE** (accepter N'IMPORTE LAQUELLE de ces variations ou similaire):
+**TYPE** (accepter si catégorie compatible):
 " . json_encode($typeVariations, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "
 
 Variation: {$variation}
-Est un coffret: " . ($isCoffret ? 'OUI' : 'NON') . "
+Coffret: " . ($isCoffret ? 'OUI' : 'NON') . "
 
-Produits candidats:
-" . json_encode($productsList, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "
+Produits candidats (déjà filtrés par FULLTEXT, donc pertinents):
+" . json_encode(array_slice($productsList, 0, 30), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "
 
-RÈGLES DE MATCHING FLEXIBLES:
+RÈGLES DE MATCHING:
 
 1. **VENDOR** - TRÈS FLEXIBLE:
-   - Le vendor du produit peut correspondre à N'IMPORTE QUELLE variation fournie
-   - \"Jean Paul Gaultier\" match \"Jean Paul\" ✅
-   - \"Jean Paul Gaultier\" match \"Gaultier\" ✅
-   - \"AZZARO\" match \"Azzaro\" ✅
+   - Le vendor du candidat doit correspondre à UNE variation
    - Ignorer totalement la casse
-   - Une correspondance partielle suffit
+   - \"Gaultier\" match \"Jean Paul Gaultier\" ✅
+   - \"Jean Paul\" match \"Jean Paul Gaultier\" ✅
 
-2. **NAME** - ULTRA FLEXIBLE:
-   - Le name du produit peut contenir UNE PARTIE de n'importe quelle variation
-   - \"Divine\" peut matcher \"Coffret Divine\" ✅
-   - \"Gaultier Divine\" peut matcher \"Divine\" ✅
-   - \"Chrome Intense\" peut matcher \"Chrome\" ✅
-   - Les mots principaux doivent être présents (ignorer mots-outils)
-   - Ignorer totalement la casse
-   - Si le name du produit contient AU MOINS 50% des mots significatifs d'une variation, c'est OK
+2. **NAME** - FLEXIBLE INTELLIGENT:
+   - Le name du candidat doit contenir AU MOINS 50% des mots significatifs d'UNE variation
+   - Ignorer: articles (le, la, de), mots courts (<3 lettres)
+   - \"Divine\" peut être dans \"Coffret Divine\" ✅
+   - \"Chrome Intense\" contient \"Chrome\" ✅
+   - Ordre des mots pas important
 
-3. **TYPE** - FLEXIBLE sur la catégorie:
-   - Le type peut correspondre à UNE variation ou être similaire
-   - \"Eau de Parfum\" match \"Parfum\" ✅
-   - \"Eau de Toilette Vaporisateur\" match \"Eau de Toilette\" ✅
-   - \"Lait pour le corps\" match \"Lait corps\" ✅
-   - Ignorer la casse et les articles (le, la, pour, de)
-   - MAIS attention aux catégories incompatibles:
-     * Parfum ≠ Déodorant ❌
-     * Parfum ≠ Gel douche ❌
-     * Soin visage ≠ Parfum ❌
+3. **TYPE** - FLEXIBLE CATÉGORIE:
+   - Le type doit être de la MÊME CATÉGORIE qu'une variation
+   - \"Eau de Parfum\" ≈ \"Parfum\" ✅
+   - \"Lait pour le corps\" ≈ \"Lait corps\" ✅
+   - MAIS: Parfum ≠ Déodorant ❌
 
-4. **VARIATION** - IGNORER:
-   - Ne pas rejeter pour différence de contenance
-   - 50ml = 100ml = 200ml pour le matching
+4. **SCORING**:
+   - Match parfait (vendor + name + type exact): 100
+   - Match vendor + 80%+ name + type compatible: 90
+   - Match vendor + 60%+ name + type compatible: 75
+   - Match vendor + mots-clés name + type: 60
+   - Match vendor + type seulement: 40
 
-5. **COFFRET**:
-   - Si coffret recherché, privilégier les coffrets
-   - Mais ne pas rejeter complètement les produits unitaires si bon match
+5. **PRIORITÉ**:
+   - Utilise le champ 'relevance' comme indicateur (FULLTEXT score)
+   - En cas d'égalité, privilégie relevance plus élevée
 
-STRATÉGIE DE MATCHING:
+STRATÉGIE:
+1. Évalue chaque candidat avec les variations
+2. Calcule un score de matching
+3. Retourne les IDs avec score ≥ 60
+4. Trie par score décroissant
+5. Limite à 20 meilleurs résultats
 
-1. Pour chaque produit candidat, vérifier:
-   - Son vendor correspond-il à UNE des variations vendor? (flexible)
-   - Son name contient-il des mots d'UNE des variations name? (très flexible)
-   - Son type est-il compatible avec UNE des variations type? (flexible)
-
-2. Scoring:
-   - Match parfait (vendor + name + type) → score 100
-   - Match vendor + name partiel + type → score 85
-   - Match vendor + mots-clés name + type similaire → score 70
-   - Match vendor + type compatible → score 50
-
-3. Retourner les produits avec score ≥ 50, triés par score décroissant
-
-IMPORTANT:
-- Sois GÉNÉREUX dans l'acceptation des matchs
-- Une correspondance partielle INTELLIGENTE vaut mieux qu'aucun résultat
-- Privilégie les produits où le maximum d'éléments correspondent
-- En cas de doute entre 2 produits, retourne les deux
-
-Format de réponse: [id1, id2, id3, ...]
-Si vraiment aucun match raisonnable: []"
+Format réponse: [id1, id2, id3, ...]
+Si aucun match valide: []"
                     ]
                 ],
                 'temperature' => 0.2,
@@ -473,7 +610,7 @@ Si vraiment aucun match raisonnable: []"
             ]);
 
             if (!$response->successful()) {
-                \Log::error('Erreur API OpenAI lors du matching', [
+                \Log::error('Erreur API OpenAI matching', [
                     'status' => $response->status(),
                     'body' => $response->body()
                 ]);
@@ -483,22 +620,23 @@ Si vraiment aucun match raisonnable: []"
             $data = $response->json();
             $content = $data['choices'][0]['message']['content'] ?? '';
             
-            \Log::info('Réponse OpenAI matching', [
-                'raw_content' => $content
-            ]);
-            
             $content = preg_replace('/```json\s*|\s*```/', '', $content);
             $content = trim($content);
             
             $matchedIds = json_decode($content, true);
             
             if (json_last_error() !== JSON_ERROR_NONE || !is_array($matchedIds)) {
-                \Log::error('Erreur parsing JSON du matching', [
+                \Log::error('Erreur parsing JSON matching', [
                     'content' => $content,
                     'error' => json_last_error_msg()
                 ]);
                 return [];
             }
+
+            \Log::info('IDs matchés par OpenAI', [
+                'matched_ids' => $matchedIds,
+                'count' => count($matchedIds)
+            ]);
 
             $scoredProducts = [];
             $score = 100;
@@ -506,27 +644,31 @@ Si vraiment aucun match raisonnable: []"
             foreach ($matchedIds as $id) {
                 if (isset($candidates[$id])) {
                     $product = $candidates[$id];
+                    
+                    // Convertir en array si c'est un objet
+                    $productArray = is_array($product) ? $product : (array)$product;
+                    
                     $scoredProducts[] = [
-                        'product' => $product->toArray(),
+                        'product' => $productArray,
                         'score' => $score
                     ];
                     
                     \Log::info('Produit matché', [
-                        'id' => $product->id,
-                        'vendor' => $product->vendor,
-                        'name' => $product->name,
-                        'type' => $product->type,
-                        'score' => $score
+                        'id' => $productArray['id'],
+                        'vendor' => $productArray['vendor'],
+                        'name' => $productArray['name'],
+                        'score' => $score,
+                        'relevance' => $productArray['relevance'] ?? 0
                     ]);
                     
-                    $score -= 5;
+                    $score -= 3;
                 }
             }
 
             return $scoredProducts;
 
         } catch (\Exception $e) {
-            \Log::error('Erreur lors du matching AI', [
+            \Log::error('Erreur matching AI', [
                 'message' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
@@ -536,11 +678,12 @@ Si vraiment aucun match raisonnable: []"
 
     public function selectProduct($productId)
     {
-        $product = Product::find($productId);
+        // Chercher dans last_price_scraped_product
+        $product = DB::table('last_price_scraped_product')->where('id', $productId)->first();
         
         if ($product) {
             session()->flash('success', 'Produit sélectionné : ' . $product->name);
-            $this->bestMatch = $product;
+            $this->bestMatch = (array)$product;
             
             $this->dispatch('product-selected', productId: $productId);
         }
@@ -588,15 +731,20 @@ Si vraiment aucun match raisonnable: []"
         <div class="mt-6 p-4 bg-gray-50 rounded border border-gray-200">
             <h3 class="font-bold mb-3 flex items-center gap-2">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
                 </svg>
-                Critères extraits avec variations :
+                Termes de recherche FULLTEXT :
             </h3>
             
+            <div class="mb-4 p-3 bg-indigo-50 rounded border border-indigo-200">
+                <span class="font-semibold text-indigo-700">Query BOOLEAN:</span>
+                <code class="block mt-1 text-sm bg-white p-2 rounded border">{{ $extractedData['search_terms'] ?? 'N/A' }}</code>
+            </div>
+
             <div class="space-y-3">
-                <!-- Vendor -->
+                <!-- Vendor Variations -->
                 <div class="p-3 bg-white rounded border border-blue-200">
-                    <span class="font-semibold text-blue-700">Vendor:</span>
+                    <span class="font-semibold text-blue-700">Vendor Variations:</span>
                     <div class="mt-1 flex flex-wrap gap-2">
                         @foreach(($extractedData['vendor_variations'] ?? []) as $variation)
                             <span class="px-2 py-1 bg-blue-50 text-blue-800 text-sm rounded border border-blue-300">
@@ -606,9 +754,9 @@ Si vraiment aucun match raisonnable: []"
                     </div>
                 </div>
 
-                <!-- Name -->
+                <!-- Name Variations -->
                 <div class="p-3 bg-white rounded border border-green-200">
-                    <span class="font-semibold text-green-700">Name:</span>
+                    <span class="font-semibold text-green-700">Name Variations:</span>
                     <div class="mt-1 flex flex-wrap gap-2">
                         @foreach(($extractedData['name_variations'] ?? []) as $variation)
                             <span class="px-2 py-1 bg-green-50 text-green-800 text-sm rounded border border-green-300">
@@ -618,9 +766,9 @@ Si vraiment aucun match raisonnable: []"
                     </div>
                 </div>
 
-                <!-- Type -->
+                <!-- Type Variations -->
                 <div class="p-3 bg-white rounded border border-purple-200">
-                    <span class="font-semibold text-purple-700">Type:</span>
+                    <span class="font-semibold text-purple-700">Type Variations:</span>
                     <div class="mt-1 flex flex-wrap gap-2">
                         @foreach(($extractedData['type_variations'] ?? []) as $variation)
                             <span class="px-2 py-1 bg-purple-50 text-purple-800 text-sm rounded border border-purple-300">
@@ -630,7 +778,21 @@ Si vraiment aucun match raisonnable: []"
                     </div>
                 </div>
 
-                <!-- Variation et Coffret -->
+                <!-- Keywords -->
+                @if(isset($extractedData['keywords']))
+                <div class="p-3 bg-white rounded border border-yellow-200">
+                    <span class="font-semibold text-yellow-700">Keywords:</span>
+                    <div class="mt-1 flex flex-wrap gap-2">
+                        @foreach($extractedData['keywords'] as $keyword)
+                            <span class="px-2 py-1 bg-yellow-50 text-yellow-800 text-sm rounded border border-yellow-300">
+                                {{ $keyword }}
+                            </span>
+                        @endforeach
+                    </div>
+                </div>
+                @endif
+
+                <!-- Info supplémentaires -->
                 <div class="grid grid-cols-2 gap-3">
                     <div class="p-2 bg-white rounded">
                         <span class="font-semibold text-gray-700">Variation:</span> 
@@ -659,10 +821,13 @@ Si vraiment aucun match raisonnable: []"
                 <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                     <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
                 </svg>
-                Meilleur résultat trouvé
+                Meilleur résultat
+                @if(isset($bestMatch['relevance']) && $bestMatch['relevance'] > 0)
+                    <span class="text-xs font-normal text-green-600">(Score FULLTEXT: {{ number_format($bestMatch['relevance'], 2) }})</span>
+                @endif
             </h3>
             <div class="flex items-start gap-4">
-                @if($bestMatch['image_url'])
+                @if($bestMatch['image_url'] ?? false)
                     <img src="{{ $bestMatch['image_url'] }}" alt="{{ $bestMatch['name'] }}" class="w-24 h-24 object-cover rounded-lg shadow">
                 @else
                     <div class="w-24 h-24 bg-gray-200 rounded-lg flex items-center justify-center">
@@ -677,8 +842,11 @@ Si vraiment aucun match raisonnable: []"
                         <span class="font-medium">{{ $bestMatch['type'] }}</span> | 
                         <span>{{ $bestMatch['variation'] }}</span>
                     </p>
-                    <p class="text-lg font-bold text-green-600 mt-2">{{ number_format((float)$bestMatch['prix_ht'], 2) }} {{ $bestMatch['currency'] }}</p>
-                    @if($bestMatch['url'])
+                    @if(isset($bestMatch['site_name']))
+                        <p class="text-xs text-gray-500 mt-1">Source: {{ $bestMatch['site_name'] }}</p>
+                    @endif
+                    <p class="text-lg font-bold text-green-600 mt-2">{{ number_format((float)($bestMatch['prix_ht'] ?? 0), 2) }} {{ $bestMatch['currency'] ?? 'EUR' }}</p>
+                    @if($bestMatch['url'] ?? false)
                         <a href="{{ $bestMatch['url'] }}" target="_blank" class="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 hover:underline mt-2">
                             Voir le produit
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -705,7 +873,7 @@ Si vraiment aucun match raisonnable: []"
                             class="p-3 border rounded-lg hover:bg-blue-50 hover:border-blue-300 cursor-pointer transition bg-white"
                         >
                             <div class="flex items-center gap-3">
-                                @if($product['image_url'])
+                                @if($product['image_url'] ?? false)
                                     <img src="{{ $product['image_url'] }}" alt="{{ $product['name'] }}" class="w-16 h-16 object-cover rounded shadow-sm">
                                 @else
                                     <div class="w-16 h-16 bg-gray-100 rounded flex items-center justify-center">
@@ -715,11 +883,19 @@ Si vraiment aucun match raisonnable: []"
                                     </div>
                                 @endif
                                 <div class="flex-1 min-w-0">
-                                    <p class="font-medium text-sm truncate">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
+                                    <div class="flex items-center gap-2">
+                                        <p class="font-medium text-sm truncate">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
+                                        @if(isset($product['relevance']) && $product['relevance'] > 0)
+                                            <span class="text-xs text-gray-500 flex-shrink-0">({{ number_format($product['relevance'], 1) }})</span>
+                                        @endif
+                                    </div>
                                     <p class="text-xs text-gray-500 truncate">{{ $product['type'] }} | {{ $product['variation'] }}</p>
+                                    @if(isset($product['site_name']))
+                                        <p class="text-xs text-gray-400">{{ $product['site_name'] }}</p>
+                                    @endif
                                 </div>
                                 <div class="text-right flex-shrink-0">
-                                    <p class="font-bold text-sm whitespace-nowrap">{{ number_format((float)$product['prix_ht'], 2) }} {{ $product['currency'] }}</p>
+                                    <p class="font-bold text-sm whitespace-nowrap">{{ number_format((float)($product['prix_ht'] ?? 0), 2) }} {{ $product['currency'] ?? 'EUR' }}</p>
                                     <p class="text-xs text-gray-400">ID: {{ $product['id'] }}</p>
                                 </div>
                             </div>
@@ -738,7 +914,7 @@ Si vraiment aucun match raisonnable: []"
                 </svg>
                 <div>
                     <p class="font-semibold text-yellow-800">Aucun produit trouvé</p>
-                    <p class="text-sm text-yellow-700 mt-1">Aucun produit ne correspond aux variations extraites. Vérifiez les données ou essayez une recherche manuelle.</p>
+                    <p class="text-sm text-yellow-700 mt-1">La recherche FULLTEXT n'a retourné aucun résultat correspondant. Vérifiez que les index FULLTEXT sont correctement configurés sur la table.</p>
                 </div>
             </div>
         </div>
