@@ -24,6 +24,9 @@ new class extends Component {
     public function extractSearchTerme()
     {
         $this->isLoading = true;
+        $this->matchingProducts = [];
+        $this->bestMatch = null;
+        session()->forget(['error', 'warning', 'success']);
         
         try {
             $response = Http::withHeaders([
@@ -102,54 +105,76 @@ Exemple de format attendu :
         $name = $this->extractedData['name'] ?? '';
         $type = $this->extractedData['type'] ?? '';
 
-        // Nettoyer le type extrait (enlever les conditionnements)
-        $cleanType = $this->cleanType($type);
-
-        // Stratégie de recherche en cascade - SANS LA VARIATION
-        
-        // 1. Recherche exacte : vendor + name + type complet
-        if (!empty($cleanType)) {
-            $exactMatch = Product::where('vendor', 'LIKE', "%{$vendor}%")
-                ->where('name', 'LIKE', "%{$name}%")
-                ->where('type', 'LIKE', "%{$cleanType}%")
-                ->get();
-
-            if ($exactMatch->isNotEmpty()) {
-                $this->matchingProducts = $exactMatch->toArray();
-                $this->bestMatch = $exactMatch->first();
-                return;
-            }
-        }
-
-        // 2. Recherche où le type de la BDD contient le type nettoyé
-        if (!empty($cleanType)) {
-            $typeContains = Product::where('vendor', 'LIKE', "%{$vendor}%")
-                ->where('name', 'LIKE', "%{$name}%")
-                ->whereRaw('LOWER(type) LIKE ?', ['%' . strtolower($cleanType) . '%'])
-                ->get();
-
-            if ($typeContains->isNotEmpty()) {
-                $this->matchingProducts = $typeContains->toArray();
-                $this->bestMatch = $typeContains->first();
-                return;
-            }
-        }
-
-        // 3. Recherche vendor + name seulement (fallback avec avertissement)
-        $vendorAndName = Product::where('vendor', 'LIKE', "%{$vendor}%")
-            ->where('name', 'LIKE', "%{$name}%")
-            ->get();
-
-        if ($vendorAndName->isNotEmpty()) {
-            $this->matchingProducts = $vendorAndName->toArray();
-            $this->bestMatch = $vendorAndName->first();
+        // Vérifier que les trois critères sont présents
+        if (empty($vendor) || empty($name) || empty($type)) {
+            $missingFields = [];
+            if (empty($vendor)) $missingFields[] = 'vendor';
+            if (empty($name)) $missingFields[] = 'name';
+            if (empty($type)) $missingFields[] = 'type';
             
-            // Avertir l'utilisateur que le type ne correspond pas
-            session()->flash('warning', 'Produits trouvés mais le type ne correspond pas exactement. Vérifiez les résultats.');
+            session()->flash('warning', 'Critères insuffisants pour la recherche. Champs manquants: ' . implode(', ', $missingFields));
             return;
         }
 
-        // 4. Aucun résultat
+        // Nettoyer le type extrait
+        $cleanType = $this->cleanType($type);
+
+        // Stratégie de recherche STRICTE - les trois critères doivent correspondre
+        
+        // 1. Recherche exacte : vendor + name + type complet
+        $exactMatch = Product::where('vendor', 'LIKE', "%{$vendor}%")
+            ->where('name', 'LIKE', "%{$name}%")
+            ->where('type', 'LIKE', "%{$cleanType}%")
+            ->get();
+
+        if ($exactMatch->isNotEmpty()) {
+            $this->matchingProducts = $exactMatch->toArray();
+            $this->bestMatch = $exactMatch->first();
+            return;
+        }
+
+        // 2. Recherche plus flexible sur le type (le type de la BDD contient le type nettoyé)
+        $typeContains = Product::where('vendor', 'LIKE', "%{$vendor}%")
+            ->where('name', 'LIKE', "%{$name}%")
+            ->where(function($query) use ($cleanType) {
+                $query->whereRaw('LOWER(type) LIKE ?', ['%' . strtolower($cleanType) . '%'])
+                      ->orWhere('type', 'LIKE', "%{$cleanType}%");
+            })
+            ->get();
+
+        if ($typeContains->isNotEmpty()) {
+            $this->matchingProducts = $typeContains->toArray();
+            $this->bestMatch = $typeContains->first();
+            session()->flash('warning', 'Résultats trouvés avec correspondance flexible sur le type.');
+            return;
+        }
+
+        // 3. Recherche vendor + name + type partiel (mot-clé dans le type)
+        $keywords = explode(' ', $cleanType);
+        $keywords = array_filter($keywords, function($word) {
+            return strlen($word) > 2; // Ignorer les mots trop courts
+        });
+
+        if (!empty($keywords)) {
+            $typeKeywordMatch = Product::where('vendor', 'LIKE', "%{$vendor}%")
+                ->where('name', 'LIKE', "%{$name}%")
+                ->where(function($query) use ($keywords) {
+                    foreach ($keywords as $keyword) {
+                        $query->orWhere('type', 'LIKE', "%{$keyword}%");
+                    }
+                })
+                ->get();
+
+            if ($typeKeywordMatch->isNotEmpty()) {
+                $this->matchingProducts = $typeKeywordMatch->toArray();
+                $this->bestMatch = $typeKeywordMatch->first();
+                session()->flash('warning', 'Résultats trouvés avec correspondance partielle sur le type.');
+                return;
+            }
+        }
+
+        // 4. Aucun résultat avec les trois critères
+        session()->flash('error', '❌ Aucun produit trouvé avec la combinaison vendor + name + type.');
         $this->matchingProducts = [];
         $this->bestMatch = null;
     }
@@ -163,7 +188,9 @@ Exemple de format attendu :
         $stopWords = [
             'vaporisateur', 'spray', 'pompe', 'tube', 'pot', 'flacon', 
             'roll-on', 'rollon', 'stick', 'roll', 'on',
-            'ml', 'mg', 'gr', 'g', 'l'
+            'ml', 'mg', 'gr', 'g', 'l', 'unité', 'unités',
+            'sans', 'avec', 'pour', 'et', 'ou', 'le', 'la', 'les',
+            'en', 'par', 'à', 'de', 'des', 'du'
         ];
         
         $cleanedType = strtolower($type);
@@ -172,6 +199,9 @@ Exemple de format attendu :
         foreach ($stopWords as $word) {
             $cleanedType = preg_replace('/\b' . preg_quote($word, '/') . '\b/i', '', $cleanedType);
         }
+        
+        // Supprimer les caractères spéciaux
+        $cleanedType = preg_replace('/[\(\)\[\]\-\+\=\*]/', ' ', $cleanedType);
         
         // Nettoyer les espaces multiples et trim
         $cleanedType = preg_replace('/\s+/', ' ', $cleanedType);
@@ -232,17 +262,23 @@ Exemple de format attendu :
         <div class="mt-6 p-4 bg-gray-50 rounded">
             <h3 class="font-bold mb-3">Critères extraits :</h3>
             <div class="grid grid-cols-2 gap-4">
-                <div>
-                    <span class="font-semibold">Vendor:</span> {{ $extractedData['vendor'] ?? 'N/A' }}
+                <div class="{{ empty($extractedData['vendor']) ? 'text-red-600 font-semibold' : '' }}">
+                    <span class="font-semibold">Vendor:</span> 
+                    {{ $extractedData['vendor'] ?? 'N/A' }}
+                    @if(empty($extractedData['vendor'])) <span class="text-xs">(requis)</span> @endif
+                </div>
+                <div class="{{ empty($extractedData['name']) ? 'text-red-600 font-semibold' : '' }}">
+                    <span class="font-semibold">Name:</span> 
+                    {{ $extractedData['name'] ?? 'N/A' }}
+                    @if(empty($extractedData['name'])) <span class="text-xs">(requis)</span> @endif
+                </div>
+                <div class="{{ empty($extractedData['type']) ? 'text-red-600 font-semibold' : '' }}">
+                    <span class="font-semibold">Type:</span> 
+                    {{ $extractedData['type'] ?? 'N/A' }}
+                    @if(empty($extractedData['type'])) <span class="text-xs">(requis)</span> @endif
                 </div>
                 <div>
-                    <span class="font-semibold">Name:</span> {{ $extractedData['name'] ?? 'N/A' }}
-                </div>
-                <div>
-                    <span class="font-semibold">Type:</span> {{ $extractedData['type'] ?? 'N/A' }}
-                </div>
-                <div>
-                    <span class="font-semibold text-gray-500">Variation (non utilisée):</span> 
+                    <span class="font-semibold text-gray-500">Variation:</span> 
                     <span class="text-gray-400">{{ $extractedData['variation'] ?? 'N/A' }}</span>
                 </div>
             </div>
@@ -251,7 +287,7 @@ Exemple de format attendu :
 
     @if($bestMatch)
         <div class="mt-6 p-4 bg-green-50 border-2 border-green-500 rounded">
-            <h3 class="font-bold text-green-700 mb-3">✓ Meilleur résultat :</h3>
+            <h3 class="font-bold text-green-700 mb-3">✓ Produit trouvé (vendor + name + type) :</h3>
             <div class="flex items-start gap-4">
                 @if($bestMatch['image_url'])
                     <img src="{{ $bestMatch['image_url'] }}" alt="{{ $bestMatch['name'] }}" class="w-20 h-20 object-cover rounded">
@@ -269,6 +305,7 @@ Exemple de format attendu :
     @if(!empty($matchingProducts) && count($matchingProducts) > 1)
         <div class="mt-6">
             <h3 class="font-bold mb-3">Autres résultats trouvés ({{ count($matchingProducts) }}) :</h3>
+            <p class="text-sm text-gray-600 mb-2">Critères: vendor + name + type</p>
             <div class="space-y-2 max-h-96 overflow-y-auto">
                 @foreach($matchingProducts as $product)
                     <div 
@@ -282,6 +319,9 @@ Exemple de format attendu :
                             <div class="flex-1">
                                 <p class="font-medium text-sm">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
                                 <p class="text-xs text-gray-500">{{ $product['type'] }} | {{ $product['variation'] }}</p>
+                                <div class="text-xs text-blue-600 mt-1">
+                                    ✓ Correspondance complète
+                                </div>
                             </div>
                             <div class="text-right">
                                 <p class="font-bold text-sm">{{ $product['prix_ht'] }} {{ $product['currency'] }}</p>
@@ -291,12 +331,6 @@ Exemple de format attendu :
                     </div>
                 @endforeach
             </div>
-        </div>
-    @endif
-
-    @if($extractedData && empty($matchingProducts))
-        <div class="mt-6 p-4 bg-yellow-50 border border-yellow-300 rounded">
-            <p class="text-yellow-800">❌ Aucun produit trouvé avec ces critères</p>
         </div>
     @endif
 </div>
