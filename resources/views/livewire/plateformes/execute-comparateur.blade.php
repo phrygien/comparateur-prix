@@ -191,29 +191,51 @@ Exemple de format attendu :
         $type = $extractedData['type'] ?? '';
         $isCoffretSource = $extractedData['is_coffret'] ?? false;
 
+        // Normaliser les chaînes pour la recherche
+        $vendorLower = mb_strtolower($vendor);
+        $nameLower = mb_strtolower($name);
+        $typeLower = mb_strtolower($type);
+
         // Extraire les mots clés
         $vendorWords = $this->extractKeywords($vendor);
         $nameWords = $this->extractKeywords($name);
         $typeWords = $this->extractKeywords($type);
 
         // Stratégie de recherche en cascade AVEC FILTRE VENDOR ET SITES
-        // NOTE: On ne recherche plus par variation
         $query = Product::query()
-            ->when(!empty($vendor), function ($q) use ($vendor) {
-                $q->where('vendor', 'LIKE', "%{$vendor}%");
+            ->when(!empty($vendor), function ($q) use ($vendor, $vendorLower) {
+                // Recherche insensible à la casse avec plusieurs formats
+                $q->where(function ($subQ) use ($vendor, $vendorLower) {
+                    $subQ->where('vendor', 'LIKE', "%{$vendor}%")
+                        ->orWhere('vendor', 'LIKE', "%" . mb_strtoupper($vendor) . "%")
+                        ->orWhere('vendor', 'LIKE', "%" . ucfirst($vendorLower) . "%")
+                        ->orWhereRaw('LOWER(vendor) LIKE ?', ['%' . $vendorLower . '%']);
+                });
             })
             ->when(!empty($this->selectedSites), function ($q) {
                 $q->whereIn('web_site_id', $this->selectedSites);
             })
-            ->orderByDesc('scrap_reference_id') // Trier par scrap_reference_id décroissant
-            ->orderByDesc('id'); // Ensuite par ID décroissant
+            ->orderByDesc('scraped_reference_id')
+            ->orderByDesc('id');
 
         // 1. Recherche exacte (vendor + name + type) - SANS variation
         if (!empty($name)) {
             $exactMatch = (clone $query)
-                ->where('name', 'LIKE', "%{$name}%")
-                ->when(!empty($type), function ($q) use ($type) {
-                    $q->where('type', 'LIKE', "%{$type}%");
+                ->where(function ($q) use ($name, $nameLower) {
+                    // Recherche insensible à la casse pour le name
+                    $q->where('name', 'LIKE', "%{$name}%")
+                        ->orWhere('name', 'LIKE', "%" . mb_strtoupper($name) . "%")
+                        ->orWhere('name', 'LIKE', "%" . ucfirst($nameLower) . "%")
+                        ->orWhereRaw('LOWER(name) LIKE ?', ['%' . $nameLower . '%']);
+                })
+                ->when(!empty($type), function ($q) use ($type, $typeLower) {
+                    $q->where(function ($subQ) use ($type, $typeLower) {
+                        // Recherche insensible à la casse pour le type
+                        $subQ->where('type', 'LIKE', "%{$type}%")
+                            ->orWhere('type', 'LIKE', "%" . mb_strtoupper($type) . "%")
+                            ->orWhere('type', 'LIKE', "%" . ucfirst($typeLower) . "%")
+                            ->orWhereRaw('LOWER(type) LIKE ?', ['%' . $typeLower . '%']);
+                    });
                 })
                 ->get();
 
@@ -230,7 +252,13 @@ Exemple de format attendu :
         // 2. Recherche vendor + name seulement
         if (!empty($name)) {
             $vendorAndName = (clone $query)
-                ->where('name', 'LIKE', "%{$name}%")
+                ->where(function ($q) use ($name, $nameLower) {
+                    // Recherche insensible à la casse pour le name
+                    $q->where('name', 'LIKE', "%{$name}%")
+                        ->orWhere('name', 'LIKE', "%" . mb_strtoupper($name) . "%")
+                        ->orWhere('name', 'LIKE', "%" . ucfirst($nameLower) . "%")
+                        ->orWhereRaw('LOWER(name) LIKE ?', ['%' . $nameLower . '%']);
+                })
                 ->get();
 
             if ($vendorAndName->isNotEmpty()) {
@@ -243,18 +271,26 @@ Exemple de format attendu :
             }
         }
 
-        // 3. Recherche flexible par mots-clés (name seulement)
+        // 3. Recherche par mots-clés du name
         if (!empty($nameWords)) {
             $keywordSearch = (clone $query)
                 ->where(function ($q) use ($nameWords) {
                     foreach ($nameWords as $word) {
-                        $q->orWhere('name', 'LIKE', "%{$word}%");
+                        // Recherche insensible à la casse pour chaque mot-clé
+                        $wordLower = mb_strtolower($word);
+                        $q->orWhere('name', 'LIKE', "%{$word}%")
+                            ->orWhere('name', 'LIKE', "%" . mb_strtoupper($word) . "%")
+                            ->orWhereRaw('LOWER(name) LIKE ?', ['%' . $wordLower . '%']);
                     }
                 })
                 ->when(!empty($typeWords), function ($q) use ($typeWords) {
                     $q->where(function ($subQ) use ($typeWords) {
                         foreach ($typeWords as $word) {
-                            $subQ->orWhere('type', 'LIKE', "%{$word}%");
+                            // Recherche insensible à la casse pour chaque mot-clé du type
+                            $wordLower = mb_strtolower($word);
+                            $subQ->orWhere('type', 'LIKE', "%{$word}%")
+                                ->orWhere('type', 'LIKE', "%" . mb_strtoupper($word) . "%")
+                                ->orWhereRaw('LOWER(type) LIKE ?', ['%' . $wordLower . '%']);
                         }
                     });
                 })
@@ -271,12 +307,15 @@ Exemple de format attendu :
             }
         }
 
-        // 4. Recherche très large : vendor + n'importe quel mot du name
+        // 4. Recherche très large : n'importe quel mot du name
         if (!empty($nameWords)) {
             $broadSearch = (clone $query)
                 ->where(function ($q) use ($nameWords) {
                     foreach ($nameWords as $word) {
-                        $q->orWhere('name', 'LIKE', "%{$word}%");
+                        $wordLower = mb_strtolower($word);
+                        $q->orWhere('name', 'LIKE', "%{$word}%")
+                            ->orWhere('name', 'LIKE', "%" . mb_strtoupper($word) . "%")
+                            ->orWhereRaw('LOWER(name) LIKE ?', ['%' . $wordLower . '%']);
                     }
                 })
                 ->limit(100)
@@ -292,12 +331,15 @@ Exemple de format attendu :
             }
         }
 
-        // 5. Dernière tentative : vendor + type uniquement
+        // 5. Recherche par type uniquement
         if (!empty($typeWords)) {
             $typeOnly = (clone $query)
                 ->where(function ($q) use ($typeWords) {
                     foreach ($typeWords as $word) {
-                        $q->orWhere('type', 'LIKE', "%{$word}%");
+                        $wordLower = mb_strtolower($word);
+                        $q->orWhere('type', 'LIKE', "%{$word}%")
+                            ->orWhere('type', 'LIKE', "%" . mb_strtoupper($word) . "%")
+                            ->orWhereRaw('LOWER(type) LIKE ?', ['%' . $wordLower . '%']);
                     }
                 })
                 ->limit(100)
@@ -307,23 +349,57 @@ Exemple de format attendu :
             if (!empty($filtered)) {
                 $this->groupResultsBySiteAndProduct($filtered);
                 $this->validateBestMatchWithAI();
+                return;
             }
         }
 
-        // Si aucun résultat n'a été trouvé, on peut tenter une recherche large par vendor seulement
+        // 6. Recherche par vendor seulement (dernière tentative)
         if (empty($this->matchingProducts) && !empty($vendor)) {
             $vendorOnly = Product::query()
-                ->where('vendor', 'LIKE', "%{$vendor}%")
+                ->where(function ($q) use ($vendor, $vendorLower) {
+                    $q->where('vendor', 'LIKE', "%{$vendor}%")
+                        ->orWhere('vendor', 'LIKE', "%" . mb_strtoupper($vendor) . "%")
+                        ->orWhere('vendor', 'LIKE', "%" . ucfirst($vendorLower) . "%")
+                        ->orWhereRaw('LOWER(vendor) LIKE ?', ['%' . $vendorLower . '%']);
+                })
                 ->when(!empty($this->selectedSites), function ($q) {
                     $q->whereIn('web_site_id', $this->selectedSites);
                 })
-                ->orderByDesc('scrap_reference_id')
+                ->orderByDesc('scraped_reference_id')
                 ->orderByDesc('id')
                 ->limit(100)
                 ->get();
 
             if ($vendorOnly->isNotEmpty()) {
                 $filtered = $this->filterByCoffretStatus($vendorOnly, $isCoffretSource);
+                if (!empty($filtered)) {
+                    $this->groupResultsBySiteAndProduct($filtered);
+                    $this->validateBestMatchWithAI();
+                }
+            }
+        }
+
+        // 7. Recherche sans vendor si toujours rien trouvé
+        if (empty($this->matchingProducts) && !empty($nameWords)) {
+            $noVendorSearch = Product::query()
+                ->when(!empty($this->selectedSites), function ($q) {
+                    $q->whereIn('web_site_id', $this->selectedSites);
+                })
+                ->where(function ($q) use ($nameWords) {
+                    foreach ($nameWords as $word) {
+                        $wordLower = mb_strtolower($word);
+                        $q->orWhere('name', 'LIKE', "%{$word}%")
+                            ->orWhere('name', 'LIKE', "%" . mb_strtoupper($word) . "%")
+                            ->orWhereRaw('LOWER(name) LIKE ?', ['%' . $wordLower . '%']);
+                    }
+                })
+                ->orderByDesc('scraped_reference_id')
+                ->orderByDesc('id')
+                ->limit(100)
+                ->get();
+
+            if ($noVendorSearch->isNotEmpty()) {
+                $filtered = $this->filterByCoffretStatus($noVendorSearch, $isCoffretSource);
                 if (!empty($filtered)) {
                     $this->groupResultsBySiteAndProduct($filtered);
                     $this->validateBestMatchWithAI();
@@ -409,15 +485,17 @@ Exemple de format attendu :
         }
 
         // Mots à ignorer (stop words)
-        $stopWords = ['de', 'la', 'le', 'les', 'des', 'du', 'un', 'une', 'et', 'ou', 'pour', 'avec', 'sans'];
+        $stopWords = ['de', 'la', 'le', 'les', 'des', 'du', 'un', 'une', 'et', 'ou', 'pour', 'avec', 'sans', 'à'];
 
-        // Nettoyer et découper
+        // Nettoyer et découper (gérer les apostrophes)
         $text = mb_strtolower($text);
+        // Remplacer les apostrophes par des espaces pour séparer les mots
+        $text = str_replace(["'", "’", "-"], " ", $text);
         $words = preg_split('/[\s\-]+/', $text, -1, PREG_SPLIT_NO_EMPTY);
 
         // Filtrer les mots courts et les stop words
         $keywords = array_filter($words, function ($word) use ($stopWords) {
-            return mb_strlen($word) >= 3 && !in_array($word, $stopWords);
+            return mb_strlen($word) >= 2 && !in_array($word, $stopWords);
         });
 
         return array_values($keywords);
