@@ -217,7 +217,7 @@ Retourne UNIQUEMENT le JSON :"
             ->when(!empty($this->selectedSites), function ($q) {
                 $q->whereIn('web_site_id', $this->selectedSites);
             })
-            ->orderByDesc('scraped_reference_id')
+            ->orderByDesc('scrap_reference_id')
             ->orderByDesc('id');
 
         // Stocker tous les produits trouvés
@@ -342,7 +342,7 @@ Retourne UNIQUEMENT le JSON :"
         // Stocker TOUS les produits trouvés
         $this->allFoundProducts = $products;
         
-        // Grouper pour affichage (1 par site, scraped_reference_id le plus élevé)
+        // Grouper pour affichage (1 par site, scrap_reference_id le plus élevé)
         $this->groupResultsBySiteAndProduct($products);
         
         // Validation IA
@@ -350,7 +350,7 @@ Retourne UNIQUEMENT le JSON :"
     }
 
     /**
-     * Groupe les résultats par site et garde le produit avec le scraped_reference_id le plus élevé
+     * Groupe les résultats par site et garde le produit avec le scrap_reference_id le plus élevé
      * Pour éviter les doublons sur le même site
      */
     private function groupResultsBySiteAndProduct(array $products)
@@ -365,7 +365,7 @@ Retourne UNIQUEMENT le JSON :"
         $productsCollection = collect($products)->map(function ($product) {
             return array_merge([
                 'scrape_reference' => 'unknown_' . ($product['id'] ?? uniqid()),
-                'scraped_reference_id' => 0,
+                'scrap_reference_id' => 0,
                 'web_site_id' => 0,
                 'id' => 0,
                 'created_at' => now()->toDateTimeString()
@@ -375,9 +375,9 @@ Retourne UNIQUEMENT le JSON :"
         // 1. Grouper par site
         $groupedBySite = $productsCollection->groupBy('web_site_id');
 
-        // 2. Pour chaque site, garder le produit avec le scraped_reference_id le plus élevé
+        // 2. Pour chaque site, garder le produit avec le scrap_reference_id le plus élevé
         $uniqueProductsBySite = $groupedBySite->map(function ($siteProducts, $siteId) {
-            return $siteProducts->sortByDesc('scraped_reference_id')
+            return $siteProducts->sortByDesc('scrap_reference_id')
                 ->sortByDesc('id')
                 ->first();
         })->filter()->values();
@@ -388,26 +388,26 @@ Retourne UNIQUEMENT le JSON :"
         // 3. Stocker les résultats groupés pour l'affichage
         $this->groupedResults = $groupedBySite->map(function ($siteProducts, $siteId) {
             $totalProducts = $siteProducts->count();
-            $maxScrapedReferenceId = $siteProducts->max('scraped_reference_id');
+            $maxScrapedReferenceId = $siteProducts->max('scrap_reference_id');
             
-            $latestProduct = $siteProducts->sortByDesc('scraped_reference_id')
+            $latestProduct = $siteProducts->sortByDesc('scrap_reference_id')
                 ->sortByDesc('id')
                 ->first();
 
             return [
                 'site_id' => $siteId,
                 'total_products' => $totalProducts,
-                'max_scraped_reference_id' => $maxScrapedReferenceId,
+                'max_scrap_reference_id' => $maxScrapedReferenceId,
                 'latest_product' => $latestProduct,
                 'all_products' => $siteProducts->map(function ($product) {
                     return [
                         'id' => $product['id'] ?? 0,
-                        'scraped_reference_id' => $product['scraped_reference_id'] ?? 0,
+                        'scrap_reference_id' => $product['scrap_reference_id'] ?? 0,
                         'scrape_reference' => $product['scrape_reference'] ?? '',
                         'price' => $product['prix_ht'] ?? 0,
                         'created_at' => $product['created_at'] ?? null
                     ];
-                })->sortByDesc('scraped_reference_id')->values()->toArray()
+                })->sortByDesc('scrap_reference_id')->values()->toArray()
             ];
         })->toArray();
     }
@@ -730,7 +730,7 @@ Score de confiance entre 0 et 1."
                     <p class="text-sm text-gray-600">{{ $bestMatch['type'] ?? '' }} | {{ $bestMatch['variation'] ?? '' }}</p>
                     <p class="text-xs text-gray-500 mt-1">
                         Ref: {{ $bestMatch['scrape_reference'] ?? 'N/A' }} | 
-                        Scraped Ref ID: {{ $bestMatch['scraped_reference_id'] ?? 'N/A' }} | 
+                        Scraped Ref ID: {{ $bestMatch['scrap_reference_id'] ?? 'N/A' }} | 
                         ID: {{ $bestMatch['id'] ?? 'N/A' }}
                     </p>
                     
@@ -875,7 +875,7 @@ Score de confiance entre 0 et 1."
                                         @endif
                                         
                                         <span class="text-xs text-gray-500">
-                                            Ref ID: {{ $product['scraped_reference_id'] ?? 0 }} | ID: {{ $product['id'] ?? 0 }}
+                                            Ref ID: {{ $product['scrap_reference_id'] ?? 0 }} | ID: {{ $product['id'] ?? 0 }}
                                         </span>
                                     </div>
                                 </div>
