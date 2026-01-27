@@ -205,7 +205,7 @@ Exemple de format attendu :
             ->when(!empty($this->selectedSites), function ($q) {
                 $q->whereIn('web_site_id', $this->selectedSites);
             })
-            ->orderByDesc('scraped_reference_id') // Trier par scraped_reference_id décroissant
+            ->orderByDesc('scrap_reference_id') // Trier par scrap_reference_id décroissant
             ->orderByDesc('id'); // Ensuite par ID décroissant
 
         // 1. Recherche exacte (tous les critères AVEC variation)
@@ -339,7 +339,7 @@ Exemple de format attendu :
                 ->when(!empty($this->selectedSites), function ($q) {
                     $q->whereIn('web_site_id', $this->selectedSites);
                 })
-                ->orderByDesc('scraped_reference_id')
+                ->orderByDesc('scrap_reference_id')
                 ->orderByDesc('id')
                 ->limit(100)
                 ->get();
@@ -355,7 +355,7 @@ Exemple de format attendu :
     }
 
     /**
-     * Groupe les résultats par site et garde le produit avec le scraped_reference_id le plus élevé
+     * Groupe les résultats par site et garde le produit avec le scrap_reference_id le plus élevé
      * Pour éviter les doublons sur le même site
      */
     private function groupResultsBySiteAndProduct(array $products)
@@ -370,7 +370,7 @@ Exemple de format attendu :
         $productsCollection = collect($products)->map(function ($product) {
             return array_merge([
                 'scrape_reference' => 'unknown_' . ($product['id'] ?? uniqid()),
-                'scraped_reference_id' => 0, // ID numérique de la référence
+                'scrap_reference_id' => 0, // ID numérique de la référence
                 'web_site_id' => 0,
                 'id' => 0,
                 'created_at' => now()->toDateTimeString()
@@ -380,11 +380,11 @@ Exemple de format attendu :
         // 1. Grouper par site
         $groupedBySite = $productsCollection->groupBy('web_site_id');
 
-        // 2. Pour chaque site, garder le produit avec le scraped_reference_id le plus élevé
-        // Si même scraped_reference_id, prendre le produit avec l'ID le plus élevé
+        // 2. Pour chaque site, garder le produit avec le scrap_reference_id le plus élevé
+        // Si même scrap_reference_id, prendre le produit avec l'ID le plus élevé
         $uniqueProductsBySite = $groupedBySite->map(function ($siteProducts, $siteId) {
-            // Trier d'abord par scraped_reference_id décroissant, puis par ID décroissant
-            return $siteProducts->sortByDesc('scraped_reference_id')
+            // Trier d'abord par scrap_reference_id décroissant, puis par ID décroissant
+            return $siteProducts->sortByDesc('scrap_reference_id')
                 ->sortByDesc('id')
                 ->first();
         })->filter()->values(); // Filtrer les valeurs null et réindexer
@@ -396,27 +396,27 @@ Exemple de format attendu :
         $this->groupedResults = $groupedBySite->map(function ($siteProducts, $siteId) {
             // Pour les statistiques, on garde tous les produits du site
             $totalProducts = $siteProducts->count();
-            $maxScrapedReferenceId = $siteProducts->max('scraped_reference_id');
+            $maxScrapedReferenceId = $siteProducts->max('scrap_reference_id');
 
-            // Trouver le produit avec le scraped_reference_id le plus élevé
-            $latestProduct = $siteProducts->sortByDesc('scraped_reference_id')
+            // Trouver le produit avec le scrap_reference_id le plus élevé
+            $latestProduct = $siteProducts->sortByDesc('scrap_reference_id')
                 ->sortByDesc('id')
                 ->first();
 
             return [
                 'site_id' => $siteId,
                 'total_products' => $totalProducts,
-                'max_scraped_reference_id' => $maxScrapedReferenceId,
+                'max_scrap_reference_id' => $maxScrapedReferenceId,
                 'latest_product' => $latestProduct,
                 'all_products' => $siteProducts->map(function ($product) {
                     return [
                         'id' => $product['id'] ?? 0,
-                        'scraped_reference_id' => $product['scraped_reference_id'] ?? 0,
+                        'scrap_reference_id' => $product['scrap_reference_id'] ?? 0,
                         'scrape_reference' => $product['scrape_reference'] ?? '',
                         'price' => $product['prix_ht'] ?? 0,
                         'created_at' => $product['created_at'] ?? null
                     ];
-                })->sortByDesc('scraped_reference_id')->values()->toArray()
+                })->sortByDesc('scrap_reference_id')->values()->toArray()
             ];
         })->toArray();
     }
@@ -547,11 +547,11 @@ Score de confiance entre 0 et 1."
                     if ($found) {
                         $this->bestMatch = $found;
                     } else {
-                        // Fallback sur le premier résultat (celui avec le scraped_reference_id le plus élevé)
+                        // Fallback sur le premier résultat (celui avec le scrap_reference_id le plus élevé)
                         $this->bestMatch = $this->matchingProducts[0] ?? null;
                     }
                 } else {
-                    // Fallback sur le premier résultat (celui avec le scraped_reference_id le plus élevé)
+                    // Fallback sur le premier résultat (celui avec le scrap_reference_id le plus élevé)
                     $this->bestMatch = $this->matchingProducts[0] ?? null;
                 }
             }
@@ -613,7 +613,7 @@ Score de confiance entre 0 et 1."
         <h2 class="text-xl font-bold mb-2">Extraction et recherche de produit</h2>
         <p class="text-gray-600">Produit: {{ $productName }}</p>
         <p class="text-sm text-gray-500 mt-1">
-            <span class="font-semibold">Affichage :</span> Un seul produit par site (celui avec le scraped_reference_id
+            <span class="font-semibold">Affichage :</span> Un seul produit par site (celui avec le scrap_reference_id
             le plus élevé)
         </p>
     </div>
@@ -691,7 +691,7 @@ Score de confiance entre 0 et 1."
         <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
             <p class="text-sm text-blue-800">
                 <span class="font-semibold">{{ count($matchingProducts) }}</span> produit(s) unique(s) trouvé(s)
-                <span class="text-xs ml-2">(1 par site, scraped_reference_id le plus élevé)</span>
+                <span class="text-xs ml-2">(1 par site, scrap_reference_id le plus élevé)</span>
             </p>
             @php
                 $totalProductsAllSites = 0;
@@ -739,7 +739,7 @@ Score de confiance entre 0 et 1."
                     </p>
                     <p class="text-xs text-gray-500 mt-1">
                         Ref: {{ $bestMatch['scrape_reference'] ?? 'N/A' }} |
-                        Scraped Ref ID: {{ $bestMatch['scraped_reference_id'] ?? 'N/A' }} |
+                        Scraped Ref ID: {{ $bestMatch['scrap_reference_id'] ?? 'N/A' }} |
                         ID: {{ $bestMatch['id'] ?? 'N/A' }}
                     </p>
 
@@ -827,7 +827,7 @@ Score de confiance entre 0 et 1."
                                                 {{ $siteInfo['name'] ?? '' }}
                                                 @if($isLatestForSite)
                                                     <span class="ml-1 text-xs">
-                                                        (Dernier scrap • Ref ID: {{ $product['scraped_reference_id'] ?? 0 }} •
+                                                        (Dernier scrap • Ref ID: {{ $product['scrap_reference_id'] ?? 0 }} •
                                                         {{ $totalProductsOnSite }} produits)
                                                     </span>
                                                 @endif
