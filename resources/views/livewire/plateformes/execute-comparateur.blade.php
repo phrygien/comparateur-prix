@@ -15,6 +15,7 @@ new class extends Component {
     public $matchingProducts = [];
     public $bestMatch = null;
     public $aiCorrection = null;
+    public float $bestMatchScore = 0.0;
 
     public function mount($name, $id, $price): void
     {
@@ -29,6 +30,7 @@ new class extends Component {
         $this->matchingProducts = [];
         $this->bestMatch = null;
         $this->aiCorrection = null;
+        $this->bestMatchScore = 0.0;
         session()->forget(['error', 'warning', 'success', 'info']);
         
         try {
@@ -154,7 +156,7 @@ Exemple faux: {\"is_correct\": false, ... \"correction\": {\"type\": \"Déodoran
         return ['vendor' => '', 'name' => $productName, 'variation' => '', 'type' => ''];
     }
 
-    private function searchMatchingProducts()
+    public function searchMatchingProducts()
     {
         if (!$this->extractedData || empty($this->extractedData['vendor']) || empty($this->extractedData['name']) || empty($this->extractedData['type'])) {
             session()->flash('warning', 'Champs manquants pour recherche.');
@@ -184,8 +186,8 @@ Exemple faux: {\"is_correct\": false, ... \"correction\": {\"type\": \"Déodoran
             })->limit(5)->get(); // Limite pour perf
 
             foreach ($matches as $match) {
-                $score = $this->calculateMatchScore($match, $vendor, $nameVar, $type);
-                $candidates->push(['product' => $match, 'score' => $score]);
+                $score = $this->calculateMatchScore($match->toArray(), $vendor, $nameVar, $type);
+                $candidates->push(['product' => $match->toArray(), 'score' => $score]);
             }
         }
 
@@ -204,8 +206,8 @@ Exemple faux: {\"is_correct\": false, ... \"correction\": {\"type\": \"Déodoran
                 })->limit(5)->get();
 
                 foreach ($matches as $match) {
-                    $score = $this->calculateMatchScore($match, $vendor, $nameVar, $type) * 0.8; // Pénalité flexible
-                    $candidates->push(['product' => $match, 'score' => $score]);
+                    $score = $this->calculateMatchScore($match->toArray(), $vendor, $nameVar, $type) * 0.8; // Pénalité flexible
+                    $candidates->push(['product' => $match->toArray(), 'score' => $score]);
                 }
             }
         }
@@ -220,8 +222,8 @@ Exemple faux: {\"is_correct\": false, ... \"correction\": {\"type\": \"Déodoran
             })->limit(10)->get();
 
             foreach ($matches as $match) {
-                $score = $this->calculateMatchScore($match, $vendor, $name, $type, false); // Sans name
-                $candidates->push(['product' => $match, 'score' => $score * 0.6]);
+                $score = $this->calculateMatchScore($match->toArray(), $vendor, $name, $type, false); // Sans name
+                $candidates->push(['product' => $match->toArray(), 'score' => $score * 0.6]);
             }
         }
 
@@ -232,6 +234,7 @@ Exemple faux: {\"is_correct\": false, ... \"correction\": {\"type\": \"Déodoran
         if ($candidates->isNotEmpty()) {
             $best = $candidates->first();
             $this->bestMatch = $best['product'];
+            $this->bestMatchScore = $best['score'];
             if ($best['score'] < 0.7) {
                 session()->flash('warning', "Meilleur match (score: " . round($best['score'] * 100, 0) . "%). Vérifiez manuellement.");
             }
@@ -246,44 +249,44 @@ Exemple faux: {\"is_correct\": false, ... \"correction\": {\"type\": \"Déodoran
         ]);
     }
 
-private function calculateMatchScore($product, string $vendor, string $name, string $type, bool $requireName = true): float
-{
-    // Use array access instead of object notation
-    $productVendor = $product['vendor'] ?? '';
-    $productName   = $product['name']   ?? '';
-    $productType   = $product['type']   ?? '';
+    private function calculateMatchScore(array $product, string $vendor, string $name, string $type, bool $requireName = true): float
+    {
+        // Use array access instead of object notation
+        $productVendor = $product['vendor'] ?? '';
+        $productName   = $product['name']   ?? '';
+        $productType   = $product['type']   ?? '';
 
-    $score = 0.0;
-    $total = 0;
+        $score = 0.0;
+        $total = 0;
 
-    // Vendor match
-    $vendorMatch = (
-        str_contains(strtolower($productVendor), strtolower($vendor)) ||
-        str_contains(strtolower($vendor), strtolower($productVendor))
-    );
-    $score += $vendorMatch ? 1 : 0;
-    $total += 1;
-
-    // Name match
-    if ($requireName) {
-        $nameMatch = (
-            str_contains(strtolower($productName), strtolower($name)) ||
-            str_contains(strtolower($name), strtolower($productName))
+        // Vendor match
+        $vendorMatch = (
+            str_contains(strtolower($productVendor), strtolower($vendor)) ||
+            str_contains(strtolower($vendor), strtolower($productVendor))
         );
-        $score += $nameMatch ? 1 : 0;
+        $score += $vendorMatch ? 1 : 0;
         $total += 1;
+
+        // Name match
+        if ($requireName) {
+            $nameMatch = (
+                str_contains(strtolower($productName), strtolower($name)) ||
+                str_contains(strtolower($name), strtolower($productName))
+            );
+            $score += $nameMatch ? 1 : 0;
+            $total += 1;
+        }
+
+        // Type match
+        $typeMatch = (
+            str_contains(strtolower($productType), strtolower($type)) ||
+            str_contains(strtolower($type), strtolower($productType))
+        );
+        $score += $typeMatch ? 1 : 0;
+        $total += 1;
+
+        return $total > 0 ? $score / $total : 0;
     }
-
-    // Type match
-    $typeMatch = (
-        str_contains(strtolower($productType), strtolower($type)) ||
-        str_contains(strtolower($type), strtolower($productType))
-    );
-    $score += $typeMatch ? 1 : 0;
-    $total += 1;
-
-    return $total > 0 ? $score / $total : 0;
-}
 
     /**
      * Variations de nom étendues
@@ -356,7 +359,7 @@ private function calculateMatchScore($product, string $vendor, string $name, str
     {
         $product = Product::find($productId);
         if ($product) {
-            $this->bestMatch = $product;
+            $this->bestMatch = $product->toArray();
             session()->flash('success', 'Produit sélectionné: ' . $product->name);
             $this->dispatch('product-selected', productId: $productId);
         }
@@ -434,16 +437,16 @@ private function calculateMatchScore($product, string $vendor, string $name, str
 
     @if($bestMatch)
         <div class="mt-6 p-4 bg-green-50 border-2 border-green-500 rounded">
-            <h3 class="font-bold text-green-700 mb-3">✓ Meilleur match (Score: {{ isset($bestMatch->score) ? round($bestMatch->score * 100) . '%' : 'N/A' }}) :</h3>
+            <h3 class="font-bold text-green-700 mb-3">✓ Meilleur match (Score: {{ round($bestMatchScore * 100) }}%) :</h3>
             <div class="flex items-start gap-4">
-                @if($bestMatch['image_url'] ?? $bestMatch->image_url)
-                    <img src="{{ $bestMatch['image_url'] ?? $bestMatch->image_url }}" alt="{{ $bestMatch['name'] ?? $bestMatch->name }}" class="w-20 h-20 object-cover rounded">
+                @if($bestMatch['image_url'] ?? null)
+                    <img src="{{ $bestMatch['image_url'] }}" alt="{{ $bestMatch['name'] }}" class="w-20 h-20 object-cover rounded">
                 @endif
                 <div class="flex-1">
-                    <p class="font-semibold">{{ ($bestMatch['vendor'] ?? $bestMatch->vendor) }} - {{ ($bestMatch['name'] ?? $bestMatch->name) }}</p>
-                    <p class="text-sm text-gray-600">{{ ($bestMatch['type'] ?? $bestMatch->type) }} | {{ ($bestMatch['variation'] ?? $bestMatch->variation) }}</p>
-                    <p class="text-sm font-bold text-green-600 mt-1">{{ ($bestMatch['prix_ht'] ?? $bestMatch->prix_ht) }} {{ ($bestMatch['currency'] ?? $bestMatch->currency) }}</p>
-                    <a href="{{ $bestMatch['url'] ?? $bestMatch->url }}" target="_blank" class="text-xs text-blue-500 hover:underline">Voir</a>
+                    <p class="font-semibold">{{ $bestMatch['vendor'] ?? 'N/A' }} - {{ $bestMatch['name'] ?? 'N/A' }}</p>
+                    <p class="text-sm text-gray-600">{{ $bestMatch['type'] ?? 'N/A' }} | {{ $bestMatch['variation'] ?? 'N/A' }}</p>
+                    <p class="text-sm font-bold text-green-600 mt-1">{{ $bestMatch['prix_ht'] ?? 'N/A' }} {{ $bestMatch['currency'] ?? '' }}</p>
+                    <a href="{{ $bestMatch['url'] ?? '#' }}" target="_blank" class="text-xs text-blue-500 hover:underline">Voir</a>
                 </div>
             </div>
         </div>
@@ -456,23 +459,23 @@ private function calculateMatchScore($product, string $vendor, string $name, str
                 @foreach($matchingProducts as $product)
                     @php $score = $this->calculateMatchScore($product, $extractedData['vendor'] ?? '', $extractedData['name'] ?? '', $extractedData['type'] ?? ''); @endphp
                     <div 
-                        wire:click="selectProduct({{ $product['id'] ?? $product->id }})"
-                        class="p-3 border rounded hover:bg-blue-50 cursor-pointer transition {{ $bestMatch && ($bestMatch['id'] ?? $bestMatch->id) === ($product['id'] ?? $product->id) ? 'bg-blue-100 border-blue-500' : 'bg-white' }}"
+                        wire:click="selectProduct({{ $product['id'] ?? '' }})"
+                        class="p-3 border rounded hover:bg-blue-50 cursor-pointer transition {{ $bestMatch && ($bestMatch['id'] ?? '') === ($product['id'] ?? '') ? 'bg-blue-100 border-blue-500' : 'bg-white' }}"
                     >
                         <div class="flex items-center justify-between">
                             <div class="flex items-center gap-3">
-                                @if($product['image_url'] ?? $product->image_url)
-                                    <img src="{{ $product['image_url'] ?? $product->image_url }}" alt="{{ $product['name'] ?? $product->name }}" class="w-12 h-12 object-cover rounded">
+                                @if($product['image_url'] ?? null)
+                                    <img src="{{ $product['image_url'] }}" alt="{{ $product['name'] }}" class="w-12 h-12 object-cover rounded">
                                 @endif
                                 <div class="flex-1">
-                                    <p class="font-medium text-sm">{{ ($product['vendor'] ?? $product->vendor) }} - {{ ($product['name'] ?? $product->name) }}</p>
-                                    <p class="text-xs text-gray-500">{{ ($product['type'] ?? $product->type) }} | {{ ($product['variation'] ?? $product->variation) }}</p>
+                                    <p class="font-medium text-sm">{{ $product['vendor'] ?? 'N/A' }} - {{ $product['name'] ?? 'N/A' }}</p>
+                                    <p class="text-xs text-gray-500">{{ $product['type'] ?? 'N/A' }} | {{ $product['variation'] ?? 'N/A' }}</p>
                                     <div class="text-xs text-blue-600">Score: {{ round($score * 100) }}%</div>
                                 </div>
                             </div>
                             <div class="text-right">
-                                <p class="font-bold text-sm">{{ ($product['prix_ht'] ?? $product->prix_ht) }} {{ ($product['currency'] ?? $product->currency) }}</p>
-                                <p class="text-xs text-gray-500">ID: {{ $product['id'] ?? $product->id }}</p>
+                                <p class="font-bold text-sm">{{ $product['prix_ht'] ?? 'N/A' }} {{ $product['currency'] ?? '' }}</p>
+                                <p class="text-xs text-gray-500">ID: {{ $product['id'] ?? 'N/A' }}</p>
                             </div>
                         </div>
                     </div>
