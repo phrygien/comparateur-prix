@@ -38,16 +38,16 @@ new class extends Component {
                     [
                         'role' => 'user',
                         'content' => "Extrait les informations suivantes du nom de produit et retourne-les au format JSON strict :
-- vendor : la marque du produit
-- name : le nom exact de la gamme/ligne de produit (SANS le mot coffret, SANS vaporisateur, SANS spray)
-- variation : la contenance/taille complète (ex: \"105ml\", \"100 ml\", \"50ml\")
-- type : le type exact de produit (ex: \"Eau de Parfum\", \"Eau de Toilette\", \"Crème\") (SANS vaporisateur, SANS spray, SANS coffret)
+- vendor : la marque du produit (exemple: \"Armaf\", \"Azzaro\", \"Dior\")
+- name : le nom exact de la gamme/ligne de produit (exemple: \"Club de Nuit Woman Intense\", \"Wanted\") (SANS coffret, SANS vaporisateur)
+- variation : la contenance/taille (exemple: \"105ml\", \"100 ml\", \"50ml\")
+- type : le type exact de produit (exemple: \"Eau de Parfum\", \"Eau de Toilette\", \"Crème\") (SANS vaporisateur, SANS spray, SANS coffret)
 - is_coffret : true si le produit est un coffret/kit/set, false sinon
 
-IMPORTANT:
+RÈGLES STRICTES:
 - Enlève \"Vaporisateur\", \"Spray\", \"Atomiseur\" du type
-- Le type doit être court et précis (Eau de Parfum, Eau de Toilette, Crème, Sérum, etc.)
-- La variation doit contenir uniquement la contenance avec l'unité
+- Le type doit être court : \"Eau de Parfum\", \"Eau de Toilette\", \"Crème\", \"Sérum\"
+- Le name doit être exact, sans ajouter ni retirer de mots
 
 Nom du produit : {$this->productName}
 
@@ -124,10 +124,8 @@ Output:
         $cleanType = preg_replace('/\b(vaporisateur|spray|atomiseur)\b/i', '', $type);
         $cleanType = trim($cleanType);
 
-        $query = Product::query();
-
-        // 1. PRIORITÉ MAXIMALE : Vendor + Name + Type (exact match)
-        $vendorNameType = (clone $query)
+        // RECHERCHE STRICTE : Vendor + Name + Type OBLIGATOIRES
+        $strictMatch = Product::query()
             ->where('vendor', 'LIKE', "%{$vendor}%")
             ->where('name', 'LIKE', "%{$name}%")
             ->where(function($q) use ($cleanType, $type) {
@@ -137,7 +135,9 @@ Output:
                     $q->orWhere('type', 'LIKE', "%{$type}%");
                 }
             })
+            // Filtre STRICT pour coffret
             ->when($isCoffret, function($q) {
+                // Si c'est un coffret, le produit DOIT contenir un mot-clé coffret
                 $q->where(function($subQ) {
                     $subQ->where('name', 'LIKE', '%coffret%')
                          ->orWhere('type', 'LIKE', '%coffret%')
@@ -148,189 +148,59 @@ Output:
                 });
             })
             ->when(!$isCoffret, function($q) {
+                // Si ce n'est PAS un coffret, exclure TOUS les produits coffret
                 $q->where('name', 'NOT LIKE', '%coffret%')
                   ->where('type', 'NOT LIKE', '%coffret%')
                   ->where('name', 'NOT LIKE', '%kit%')
                   ->where('type', 'NOT LIKE', '%kit%')
                   ->where('name', 'NOT LIKE', '%set%')
-                  ->where('type', 'NOT LIKE', '%set%');
+                  ->where('type', 'NOT LIKE', '%set%')
+                  ->where('name', 'NOT LIKE', '%box%')
+                  ->where('type', 'NOT LIKE', '%box%');
             })
             ->get();
 
-        if ($vendorNameType->isNotEmpty()) {
-            // Si on a plusieurs résultats, prioriser ceux qui matchent aussi la variation
-            if (!empty($variation)) {
-                $withVariation = $vendorNameType->filter(function($product) use ($variation) {
-                    return stripos($product->variation, $variation) !== false;
+        // Si on a des résultats, prioriser ceux qui matchent aussi la variation
+        if ($strictMatch->isNotEmpty() && !empty($variation)) {
+            // Extraire juste le nombre de la variation (ex: "105" de "105ml")
+            preg_match('/(\d+)\s*(ml|g|oz)?/i', $variation, $matches);
+            $variationNumber = $matches[1] ?? '';
+            
+            // Chercher d'abord les matchs exacts de variation
+            $withExactVariation = $strictMatch->filter(function($product) use ($variation) {
+                return stripos($product->variation, $variation) !== false;
+            });
+            
+            if ($withExactVariation->isNotEmpty()) {
+                $this->matchingProducts = $withExactVariation->values()->toArray();
+                $this->bestMatch = $withExactVariation->first();
+                return;
+            }
+            
+            // Sinon, chercher le nombre de variation (plus flexible)
+            if (!empty($variationNumber)) {
+                $withSimilarVariation = $strictMatch->filter(function($product) use ($variationNumber) {
+                    return stripos($product->variation, $variationNumber) !== false;
                 });
                 
-                if ($withVariation->isNotEmpty()) {
-                    $this->matchingProducts = $withVariation->values()->toArray();
-                    $this->bestMatch = $withVariation->first();
+                if ($withSimilarVariation->isNotEmpty()) {
+                    $this->matchingProducts = $withSimilarVariation->values()->toArray();
+                    $this->bestMatch = $withSimilarVariation->first();
                     return;
                 }
             }
-            
-            $this->matchingProducts = $vendorNameType->toArray();
-            $this->bestMatch = $vendorNameType->first();
+        }
+        
+        // Retourner tous les résultats qui matchent vendor + name + type
+        if ($strictMatch->isNotEmpty()) {
+            $this->matchingProducts = $strictMatch->toArray();
+            $this->bestMatch = $strictMatch->first();
             return;
         }
 
-        // 2. Vendor + Name + Type + Variation (tous les critères)
-        if (!empty($variation)) {
-            $exactMatch = (clone $query)
-                ->where('vendor', 'LIKE', "%{$vendor}%")
-                ->where('name', 'LIKE', "%{$name}%")
-                ->where('variation', 'LIKE', "%{$variation}%")
-                ->where(function($q) use ($cleanType, $type) {
-                    $q->where('type', 'LIKE', "%{$cleanType}%");
-                    if ($cleanType !== $type) {
-                        $q->orWhere('type', 'LIKE', "%{$type}%");
-                    }
-                })
-                ->when($isCoffret, function($q) {
-                    $q->where(function($subQ) {
-                        $subQ->where('name', 'LIKE', '%coffret%')
-                             ->orWhere('type', 'LIKE', '%coffret%')
-                             ->orWhere('name', 'LIKE', '%kit%')
-                             ->orWhere('type', 'LIKE', '%kit%')
-                             ->orWhere('name', 'LIKE', '%set%')
-                             ->orWhere('type', 'LIKE', '%set%');
-                    });
-                })
-                ->when(!$isCoffret, function($q) {
-                    $q->where('name', 'NOT LIKE', '%coffret%')
-                      ->where('type', 'NOT LIKE', '%coffret%')
-                      ->where('name', 'NOT LIKE', '%kit%')
-                      ->where('type', 'NOT LIKE', '%kit%')
-                      ->where('name', 'NOT LIKE', '%set%')
-                      ->where('type', 'NOT LIKE', '%set%');
-                })
-                ->get();
-
-            if ($exactMatch->isNotEmpty()) {
-                $this->matchingProducts = $exactMatch->toArray();
-                $this->bestMatch = $exactMatch->first();
-                return;
-            }
-        }
-
-        // 3. Vendor + Name (sans type)
-        $vendorAndName = (clone $query)
-            ->where('vendor', 'LIKE', "%{$vendor}%")
-            ->where('name', 'LIKE', "%{$name}%")
-            ->when($isCoffret, function($q) {
-                $q->where(function($subQ) {
-                    $subQ->where('name', 'LIKE', '%coffret%')
-                         ->orWhere('type', 'LIKE', '%coffret%')
-                         ->orWhere('name', 'LIKE', '%kit%')
-                         ->orWhere('type', 'LIKE', '%kit%')
-                         ->orWhere('name', 'LIKE', '%set%')
-                         ->orWhere('type', 'LIKE', '%set%');
-                });
-            })
-            ->when(!$isCoffret, function($q) {
-                $q->where('name', 'NOT LIKE', '%coffret%')
-                  ->where('type', 'NOT LIKE', '%coffret%')
-                  ->where('name', 'NOT LIKE', '%kit%')
-                  ->where('type', 'NOT LIKE', '%kit%')
-                  ->where('name', 'NOT LIKE', '%set%')
-                  ->where('type', 'NOT LIKE', '%set%');
-            })
-            ->get();
-
-        if ($vendorAndName->isNotEmpty()) {
-            $this->matchingProducts = $vendorAndName->toArray();
-            $this->bestMatch = $vendorAndName->first();
-            return;
-        }
-
-        // 4. Recherche spécifique coffret si is_coffret = true
-        if ($isCoffret) {
-            $coffretSearch = (clone $query)
-                ->where('vendor', 'LIKE', "%{$vendor}%")
-                ->where(function($q) use ($name) {
-                    $q->where('name', 'LIKE', "%{$name}%")
-                      ->orWhere('name', 'LIKE', "%{$name}%coffret%")
-                      ->orWhere('name', 'LIKE', "%coffret%{$name}%");
-                })
-                ->where(function($q) {
-                    $q->where('name', 'LIKE', '%coffret%')
-                      ->orWhere('type', 'LIKE', '%coffret%')
-                      ->orWhere('name', 'LIKE', '%kit%')
-                      ->orWhere('type', 'LIKE', '%kit%')
-                      ->orWhere('name', 'LIKE', '%set%')
-                      ->orWhere('type', 'LIKE', '%set%');
-                })
-                ->get();
-
-            if ($coffretSearch->isNotEmpty()) {
-                $this->matchingProducts = $coffretSearch->toArray();
-                $this->bestMatch = $coffretSearch->first();
-                return;
-            }
-        }
-
-        // 5. Full-text search avec filtre coffret
-        if (method_exists(Product::class, 'scopeFullTextSearch')) {
-            $searchQuery = trim("{$vendor} {$name} {$cleanType} {$variation}");
-            if ($isCoffret) {
-                $searchQuery .= " coffret";
-            }
-            
-            $fullTextResults = Product::fullTextSearch($searchQuery)
-                ->limit(20)
-                ->get()
-                ->filter(function($product) use ($isCoffret) {
-                    $coffretKeywords = ['coffret', 'kit', 'set', 'box', 'trousse'];
-                    $searchText = strtolower($product->name . ' ' . $product->type);
-                    $productIsCoffret = false;
-                    
-                    foreach ($coffretKeywords as $keyword) {
-                        if (str_contains($searchText, $keyword)) {
-                            $productIsCoffret = true;
-                            break;
-                        }
-                    }
-                    
-                    return $productIsCoffret === $isCoffret;
-                });
-
-            if ($fullTextResults->isNotEmpty()) {
-                $this->matchingProducts = $fullTextResults->values()->toArray();
-                $this->bestMatch = $fullTextResults->first();
-                return;
-            }
-        }
-
-        // 6. Recherche très flexible (dernier recours)
-        $flexible = Product::where(function($q) use ($vendor, $name) {
-            $q->where('vendor', 'LIKE', "%{$vendor}%")
-              ->where('name', 'LIKE', "%{$name}%");
-        })
-        ->when($isCoffret, function($q) {
-            $q->where(function($subQ) {
-                $subQ->where('name', 'LIKE', '%coffret%')
-                     ->orWhere('type', 'LIKE', '%coffret%')
-                     ->orWhere('name', 'LIKE', '%kit%')
-                     ->orWhere('type', 'LIKE', '%kit%')
-                     ->orWhere('name', 'LIKE', '%set%')
-                     ->orWhere('type', 'LIKE', '%set%');
-            });
-        })
-        ->when(!$isCoffret, function($q) {
-            $q->where('name', 'NOT LIKE', '%coffret%')
-              ->where('type', 'NOT LIKE', '%coffret%')
-              ->where('name', 'NOT LIKE', '%kit%')
-              ->where('type', 'NOT LIKE', '%kit%')
-              ->where('name', 'NOT LIKE', '%set%')
-              ->where('type', 'NOT LIKE', '%set%');
-        })
-        ->limit(10)
-        ->get();
-
-        $this->matchingProducts = $flexible->toArray();
-        $this->bestMatch = $flexible->first();
+        // SI AUCUN RÉSULTAT : Ne rien retourner (pas de fallback)
+        $this->matchingProducts = [];
+        $this->bestMatch = null;
     }
 
     public function selectProduct($productId)
@@ -409,16 +279,20 @@ Output:
             <h3 class="font-bold mb-3">Critères extraits :</h3>
             <div class="grid grid-cols-2 gap-4">
                 <div>
-                    <span class="font-semibold">Vendor:</span> {{ $extractedData['vendor'] ?? 'N/A' }}
+                    <span class="font-semibold">Vendor:</span> 
+                    <span class="px-2 py-1 bg-blue-50 text-blue-700 rounded text-sm">{{ $extractedData['vendor'] ?? 'N/A' }}</span>
                 </div>
                 <div>
-                    <span class="font-semibold">Name:</span> {{ $extractedData['name'] ?? 'N/A' }}
+                    <span class="font-semibold">Name:</span> 
+                    <span class="px-2 py-1 bg-blue-50 text-blue-700 rounded text-sm">{{ $extractedData['name'] ?? 'N/A' }}</span>
                 </div>
                 <div>
-                    <span class="font-semibold">Variation:</span> {{ $extractedData['variation'] ?? 'N/A' }}
+                    <span class="font-semibold">Type:</span> 
+                    <span class="px-2 py-1 bg-blue-50 text-blue-700 rounded text-sm">{{ $extractedData['type'] ?? 'N/A' }}</span>
                 </div>
                 <div>
-                    <span class="font-semibold">Type:</span> {{ $extractedData['type'] ?? 'N/A' }}
+                    <span class="font-semibold">Variation:</span> 
+                    <span class="px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm">{{ $extractedData['variation'] ?? 'N/A' }}</span>
                 </div>
                 <div class="col-span-2">
                     <span class="font-semibold">Coffret:</span> 
@@ -428,6 +302,11 @@ Output:
                         <span class="px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm">Non</span>
                     @endif
                 </div>
+            </div>
+            
+            <div class="mt-3 p-3 bg-blue-50 border-l-4 border-blue-500 text-sm">
+                <p class="font-semibold text-blue-900">Critères de recherche STRICTS :</p>
+                <p class="text-blue-700">Vendor = "{{ $extractedData['vendor'] }}" ET Name = "{{ $extractedData['name'] }}" ET Type = "{{ $extractedData['type'] }}"</p>
             </div>
         </div>
     @endif
@@ -472,6 +351,7 @@ Output:
     @if(!empty($matchingProducts) && count($matchingProducts) > 1)
         <div class="mt-6">
             <h3 class="font-bold mb-3">Autres résultats trouvés ({{ count($matchingProducts) }}) :</h3>
+            <p class="text-sm text-gray-600 mb-2">Tous ces produits ont le même vendor, name et type</p>
             <div class="space-y-2 max-h-96 overflow-y-auto">
                 @foreach($this->getProductsForList() as $product)
                     <div wire:click="selectProduct({{ $product->id }})" class="cursor-pointer">
@@ -489,7 +369,16 @@ Output:
 
     @if($extractedData && empty($matchingProducts))
         <div class="mt-6 p-4 bg-yellow-50 border border-yellow-300 rounded">
-            <p class="text-yellow-800">❌ Aucun produit trouvé avec ces critères</p>
+            <p class="text-yellow-800 font-semibold">❌ Aucun produit trouvé</p>
+            <p class="text-yellow-700 text-sm mt-2">
+                Aucun produit ne correspond exactement aux critères :
+            </p>
+            <ul class="text-yellow-700 text-sm mt-2 space-y-1">
+                <li>• Vendor : <strong>{{ $extractedData['vendor'] }}</strong></li>
+                <li>• Name : <strong>{{ $extractedData['name'] }}</strong></li>
+                <li>• Type : <strong>{{ $extractedData['type'] }}</strong></li>
+                <li>• Coffret : <strong>{{ $extractedData['is_coffret'] ? 'Oui' : 'Non' }}</strong></li>
+            </ul>
         </div>
     @endif
 </div>
