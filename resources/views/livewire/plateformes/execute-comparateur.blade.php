@@ -91,82 +91,79 @@ Exemple de format attendu :
         }
     }
 
-    private function searchMatchingProducts()
-    {
-        if (!$this->extractedData) {
-            return;
-        }
-
-        $vendor = $this->extractedData['vendor'] ?? '';
-        $name = $this->extractedData['name'] ?? '';
-        $variation = $this->extractedData['variation'] ?? '';
-        $type = $this->extractedData['type'] ?? '';
-
-        // Stratégie de recherche en cascade
-        $query = Product::query();
-
-        // 1. Recherche exacte (tous les critères)
-        $exactMatch = (clone $query)
-            ->where('vendor', 'LIKE', "%{$vendor}%")
-            ->where('name', 'LIKE', "%{$name}%")
-            ->where('variation', 'LIKE', "%{$variation}%")
-            ->when($type, fn($q) => $q->where('type', 'LIKE', "%{$type}%"))
-            ->get();
-
-        if ($exactMatch->isNotEmpty()) {
-            $this->matchingProducts = $exactMatch->toArray();
-            $this->bestMatch = $exactMatch->first();
-            return;
-        }
-
-        // 2. Recherche sans variation
-        $withoutVariation = (clone $query)
-            ->where('vendor', 'LIKE', "%{$vendor}%")
-            ->where('name', 'LIKE', "%{$name}%")
-            ->when($type, fn($q) => $q->where('type', 'LIKE', "%{$type}%"))
-            ->get();
-
-        if ($withoutVariation->isNotEmpty()) {
-            $this->matchingProducts = $withoutVariation->toArray();
-            $this->bestMatch = $withoutVariation->first();
-            return;
-        }
-
-        // 3. Recherche vendor + name seulement
-        $vendorAndName = (clone $query)
-            ->where('vendor', 'LIKE', "%{$vendor}%")
-            ->where('name', 'LIKE', "%{$name}%")
-            ->get();
-
-        if ($vendorAndName->isNotEmpty()) {
-            $this->matchingProducts = $vendorAndName->toArray();
-            $this->bestMatch = $vendorAndName->first();
-            return;
-        }
-
-        // 4. Full-text search si disponible
-        if (method_exists(Product::class, 'scopeFullTextSearch')) {
-            $searchQuery = trim("{$vendor} {$name} {$type} {$variation}");
-            $fullTextResults = Product::fullTextSearch($searchQuery)->get();
-
-            if ($fullTextResults->isNotEmpty()) {
-                $this->matchingProducts = $fullTextResults->toArray();
-                $this->bestMatch = $fullTextResults->first();
-                return;
-            }
-        }
-
-        // 5. Recherche flexible (au moins vendor OU name)
-        $flexible = Product::where(function($q) use ($vendor, $name) {
-            $q->where('vendor', 'LIKE', "%{$vendor}%")
-              ->orWhere('name', 'LIKE', "%{$name}%");
-        })
-        ->limit(10)
-        ->get();
-
-        $this->matchingProducts = $flexible->toArray();
-        $this->bestMatch = $flexible->first();
+private function searchMatchingProducts()
+{
+    if (!$this->extractedData) {
+        return;
     }
+
+    $vendor = $this->extractedData['vendor'] ?? '';
+    $name = $this->extractedData['name'] ?? '';
+    $variation = $this->extractedData['variation'] ?? '';
+    $type = $this->extractedData['type'] ?? '';
+
+    // Construire la requête principale
+    $query = Product::query();
+    
+    // Appliquer les critères de recherche
+    $query->where('vendor', 'LIKE', "%{$vendor}%")
+          ->where('name', 'LIKE', "%{$name}%")
+          ->when($type, fn($q) => $q->where('type', 'LIKE', "%{$type}%"))
+          ->when($variation, function($q) use ($variation) {
+              // Variation est optionnelle, on l'inclut si elle existe
+              $q->where('variation', 'LIKE', "%{$variation}%");
+          }, function($q) {
+              // Si pas de variation, on peut aussi chercher les produits sans variation
+              $q->orWhereNull('variation')
+                ->orWhere('variation', '');
+          });
+
+    // Récupérer tous les produits correspondants
+    $products = $query->get();
+
+    if ($products->isEmpty()) {
+        $this->matchingProducts = [];
+        $this->bestMatch = null;
+        return;
+    }
+
+    // Grouper par site et garder le dernier scraped_reference par site
+    $groupedBySite = $products->groupBy('site_id');
+    $latestProducts = collect();
+    
+    foreach ($groupedBySite as $siteId => $siteProducts) {
+        // Trier par scraped_reference id descendant et prendre le premier
+        $latestProduct = $siteProducts->sortByDesc('scraped_reference_id')->first();
+        $latestProducts->push($latestProduct);
+    }
+    
+    // Maintenant, parmi les derniers produits par site, trouver le meilleur match
+    $scoredProducts = $latestProducts->map(function($product) use ($vendor, $name, $type, $variation) {
+        $score = 0;
+        
+        // Calculer un score de correspondance
+        if (stripos($product->vendor, $vendor) !== false) $score += 3;
+        if (stripos($product->name, $name) !== false) $score += 2;
+        if ($type && stripos($product->type, $type) !== false) $score += 2;
+        if ($variation && stripos($product->variation, $variation) !== false) $score += 1;
+        
+        return [
+            'product' => $product,
+            'score' => $score
+        ];
+    })->sortByDesc('score');
+    
+    // Préparer les résultats
+    $this->matchingProducts = $scoredProducts->map(function($item) {
+        return $item['product']->toArray();
+    })->values()->toArray();
+    
+    $this->bestMatch = $scoredProducts->first()['product'] ?? null;
+    
+    // Alternative plus simple si vous préférez :
+    // $this->matchingProducts = $latestProducts->toArray();
+    // $this->bestMatch = $latestProducts->first();
+}
 
     public function selectProduct($productId)
     {
