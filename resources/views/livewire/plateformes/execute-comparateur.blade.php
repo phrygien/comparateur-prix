@@ -194,16 +194,16 @@ Maintenant, traite ce produit en suivant ces règles exactement."
             return;
         }
 
-        // Recherche large par vendor et name
+        // Recherche large par vendor et name (insensible à la casse)
         $candidates = Product::query()
-            ->where('vendor', 'LIKE', "%{$vendor}%")
-            ->where('name', 'LIKE', "%{$name}%")
+            ->whereRaw('LOWER(vendor) LIKE ?', ['%' . strtolower($vendor) . '%'])
+            ->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($name) . '%'])
             ->limit(30)
             ->get();
 
         if ($candidates->isEmpty()) {
-            // Si aucun résultat, essayer juste avec vendor
-            $candidates = Product::where('vendor', 'LIKE', "%{$vendor}%")
+            // Si aucun résultat, essayer juste avec vendor (insensible à la casse)
+            $candidates = Product::whereRaw('LOWER(vendor) LIKE ?', ['%' . strtolower($vendor) . '%'])
                 ->limit(30)
                 ->get();
         }
@@ -261,23 +261,55 @@ Variation: {$variation}
 Est un coffret: " . ($isCoffret ? 'OUI' : 'NON') . "
 
 Produits candidats:
-" . json_encode($productsList, JSON_PRETTY_PRINT) . "
+" . json_encode($productsList, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "
 
-RÈGLES STRICTES:
-1. Le VENDOR doit correspondre exactement (ignorer majuscules/minuscules)
-2. Le NAME doit correspondre exactement ou être très similaire
-3. Le TYPE doit correspondre EXACTEMENT - NE PAS mélanger:
-   - Parfum/EDT/EDP ≠ Déodorant ≠ Gel douche ≠ Baume/Crème ≠ Après-rasage
-   - Un déodorant N'EST PAS un gel douche
-   - Un baume après-rasage N'EST PAS un parfum
-   - Un gel moussant N'EST PAS un déodorant
-4. Si coffret recherché, le produit doit être un coffret (et inversement)
-5. La variation peut différer (50ml vs 100ml = OK)
+RÈGLES STRICTES DE MATCHING:
 
-Retourne un tableau JSON avec les IDs des produits qui correspondent, triés du meilleur au moins bon:
-Format: [id1, id2, id3]
+1. VENDOR - Comparaison insensible à la casse (MAJUSCULES = minuscules):
+   - \"AZZARO\" = \"Azzaro\" = \"azzaro\" ✅
+   - \"BOGART\" = \"Bogart\" = \"bogart\" ✅
+   - Le vendor doit correspondre EXACTEMENT (ignorer casse)
 
-Si AUCUN produit ne correspond EXACTEMENT, retourne un tableau vide: []"
+2. NAME - Comparaison insensible à la casse:
+   - \"CHROME\" = \"Chrome\" = \"chrome\" ✅
+   - \"BOGART HOMME\" = \"Bogart Homme\" = \"bogart homme\" ✅
+   - \"One Man Show\" ≠ \"Bogart Homme\" ❌
+   - Le name doit correspondre EXACTEMENT ou être quasi-identique
+
+3. TYPE - Comparaison stricte (même en ignorant la casse):
+   - \"Déodorant\" = \"déodorant\" = \"DÉODORANT\" ✅
+   - \"Eau de Toilette\" = \"eau de toilette\" = \"EAU DE TOILETTE\" ✅
+   - MAIS attention aux catégories incompatibles:
+     * Parfum/EDT/EDP ≠ Déodorant ≠ Gel douche ≠ Baume/Crème ≠ Après-rasage
+     * \"Déodorant\" ≠ \"Gel Moussant\" ❌
+     * \"Baume après-rasage\" ≠ \"Eau de Toilette\" ❌
+     * \"Gel douche\" ≠ \"Déodorant\" ❌
+
+4. VARIATION - Flexible:
+   - 50ml, 100ml, 150ml, 200ml sont tous acceptables
+   - La contenance peut différer
+
+5. COFFRET:
+   - Si coffret recherché → produit doit être un coffret
+   - Si produit unitaire recherché → ne pas retourner de coffrets
+
+EXEMPLES DE MATCHING:
+
+Recherché: Vendor=\"AZZARO\", Name=\"CHROME\", Type=\"Déodorant\"
+Candidat: vendor=\"Azzaro\", name=\"Chrome\", type=\"Déodorant Vaporisateur\"
+→ MATCH ✅ (casse différente mais contenu identique)
+
+Recherché: Vendor=\"AZZARO\", Name=\"CHROME\", Type=\"Déodorant\"
+Candidat: vendor=\"Azzaro\", name=\"Chrome\", type=\"Gel Moussant\"
+→ NO MATCH ❌ (type incompatible: Déodorant ≠ Gel)
+
+Recherché: Vendor=\"Bogart\", Name=\"Bogart Homme\", Type=\"Eau de Toilette\"
+Candidat: vendor=\"BOGART\", name=\"ONE MAN SHOW\", type=\"Eau de Toilette\"
+→ NO MATCH ❌ (name différent même si type identique)
+
+Retourne un tableau JSON avec UNIQUEMENT les IDs des produits qui correspondent:
+Format: [id1, id2, id3] (triés du meilleur au moins bon)
+Si AUCUN produit ne correspond EXACTEMENT: []"
                     ]
                 ],
                 'temperature' => 0.1,
