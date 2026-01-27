@@ -13,8 +13,7 @@ new class extends Component {
     public $isLoading = false;
     public $matchingProducts = [];
     public $bestMatch = null;
-    public $useAIMatching = true;
-    public $extractedKeywords = [];
+    public $aiValidation = null;
 
     public function mount($name, $id, $price): void
     {
@@ -26,29 +25,26 @@ new class extends Component {
     public function extractSearchTerme()
     {
         $this->isLoading = true;
-        $this->extractedData = null;
-        $this->matchingProducts = [];
-        $this->bestMatch = null;
-        $this->extractedKeywords = [];
 
         try {
             $response = Http::withHeaders([
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
             ])->post('https://api.openai.com/v1/chat/completions', [
-                        'model' => 'gpt-4o-mini',
-                        'messages' => [
-                            [
-                                'role' => 'system',
-                                'content' => 'Tu es un expert en extraction de données de produits cosmétiques. Tu dois extraire vendor, name, variation et type du nom de produit fourni. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
-                            ],
-                            [
-                                'role' => 'user',
-                                'content' => "Extrait les informations suivantes du nom de produit et retourne-les au format JSON strict :
+                'model' => 'gpt-4o-mini',
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => 'Tu es un expert en extraction de données de produits cosmétiques. Tu dois extraire vendor, name, variation, type et détecter si c\'est un coffret. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => "Extrait les informations suivantes du nom de produit et retourne-les au format JSON strict :
 - vendor : la marque du produit
 - name : le nom de la gamme/ligne de produit
 - variation : la contenance/taille (ml, g, etc.)
 - type : le type de produit (Crème, Sérum, Concentré, etc.)
+- is_coffret : true si c'est un coffret/set/kit, false sinon
 
 Nom du produit : {$this->productName}
 
@@ -57,13 +53,14 @@ Exemple de format attendu :
   \"vendor\": \"Shiseido\",
   \"name\": \"Vital Perfection\",
   \"variation\": \"20 ml\",
-  \"type\": \"Concentré Correcteur Rides\"
+  \"type\": \"Concentré Correcteur Rides\",
+  \"is_coffret\": false
 }"
-                            ]
-                        ],
-                        'temperature' => 0.3,
-                        'max_tokens' => 500
-                    ]);
+                    ]
+                ],
+                'temperature' => 0.3,
+                'max_tokens' => 500
+            ]);
 
             if ($response->successful()) {
                 $data = $response->json();
@@ -82,11 +79,6 @@ Exemple de format attendu :
                 // Rechercher les produits correspondants
                 $this->searchMatchingProducts();
 
-                // Si pas de match ou matching faible, utiliser l'IA pour améliorer
-                if ($this->useAIMatching && (empty($this->matchingProducts) || count($this->matchingProducts) < 3)) {
-                    $this->enhanceMatchingWithAI();
-                }
-
             } else {
                 throw new \Exception('Erreur API OpenAI: ' . $response->body());
             }
@@ -103,6 +95,41 @@ Exemple de format attendu :
         }
     }
 
+    /**
+     * Vérifie si un produit est un coffret
+     */
+    private function isCoffret($product): bool
+    {
+        $cofferKeywords = ['coffret', 'set', 'kit', 'duo', 'trio', 'collection'];
+        
+        $nameCheck = false;
+        $typeCheck = false;
+
+        // Vérifier dans le name
+        if (isset($product['name'])) {
+            $nameLower = mb_strtolower($product['name']);
+            foreach ($cofferKeywords as $keyword) {
+                if (str_contains($nameLower, $keyword)) {
+                    $nameCheck = true;
+                    break;
+                }
+            }
+        }
+
+        // Vérifier dans le type
+        if (isset($product['type'])) {
+            $typeLower = mb_strtolower($product['type']);
+            foreach ($cofferKeywords as $keyword) {
+                if (str_contains($typeLower, $keyword)) {
+                    $typeCheck = true;
+                    break;
+                }
+            }
+        }
+
+        return $nameCheck || $typeCheck;
+    }
+
     private function searchMatchingProducts()
     {
         if (!$this->extractedData) {
@@ -113,311 +140,316 @@ Exemple de format attendu :
         $name = $this->extractedData['name'] ?? '';
         $variation = $this->extractedData['variation'] ?? '';
         $type = $this->extractedData['type'] ?? '';
+        $isCoffretSource = $this->extractedData['is_coffret'] ?? false;
 
-        // Extraire les mots-clés et les stocker pour l'affichage
-        $this->extractedKeywords = [
-            'name' => $this->extractKeywords($name),
-            'type' => $this->extractKeywords($type)
-        ];
+        // Extraire les mots clés
+        $vendorWords = $this->extractKeywords($vendor);
+        $nameWords = $this->extractKeywords($name);
+        $typeWords = $this->extractKeywords($type);
 
-        // Recherche avec matching exact et par mots
-        $this->matchingProducts = $this->performAdvancedSearch(
-            $vendor,
-            $this->extractedKeywords['name'],
-            $this->extractedKeywords['type'],
-            $variation
-        );
+        // Stratégie de recherche en cascade AVEC FILTRE VENDOR OBLIGATOIRE
+        $query = Product::query()->where('vendor', 'LIKE', "%{$vendor}%");
 
-        // Déterminer le meilleur match
-        $this->determineBestMatch();
-    }
+        // 1. Recherche exacte (tous les critères AVEC variation)
+        $exactMatch = (clone $query)
+            ->where('name', 'LIKE', "%{$name}%")
+            ->where('variation', 'LIKE', "%{$variation}%")
+            ->when($type, fn($q) => $q->where('type', 'LIKE', "%{$type}%"))
+            ->get();
 
-    private function extractKeywords($text): array
-    {
-        if (empty($text))
-            return [];
-
-        // Supprimer les caractères spéciaux, garder les lettres et chiffres
-        $cleaned = preg_replace('/[^\p{L}\p{N}\s]/u', ' ', $text);
-
-        // Convertir en minuscules
-        $cleaned = mb_strtolower($cleaned);
-
-        // Diviser en mots
-        $words = preg_split('/\s+/', $cleaned, -1, PREG_SPLIT_NO_EMPTY);
-
-        // Filtrer les mots vides (stop words)
-        $stopWords = ['de', 'la', 'le', 'et', 'à', 'en', 'pour', 'avec', 'sur', 'par', 'du', 'des'];
-        $filteredWords = array_diff($words, $stopWords);
-
-        // Retourner les mots uniques
-        return array_values(array_unique($filteredWords));
-    }
-
-    private function performAdvancedSearch($vendor, $nameWords, $typeWords, $variation): array
-    {
-        $results = collect();
-
-        // 1. Recherche exacte avec matching par mots
-        $exactMatches = Product::where(function ($query) use ($vendor, $nameWords, $typeWords, $variation) {
-            // Matching vendor
-            if (!empty($vendor)) {
-                $query->where('vendor', 'LIKE', "%{$vendor}%");
+        if ($exactMatch->isNotEmpty()) {
+            $this->matchingProducts = $this->filterByCoffretStatus($exactMatch, $isCoffretSource);
+            if (!empty($this->matchingProducts)) {
+                $this->validateBestMatchWithAI();
+                return;
             }
-
-            // Matching par mots dans le name
-            foreach ($nameWords as $word) {
-                $query->where('name', 'LIKE', "%{$word}%");
-            }
-
-            // Matching par mots dans le type
-            foreach ($typeWords as $word) {
-                $query->where('type', 'LIKE', "%{$word}%");
-            }
-
-            // Matching variation si disponible
-            if (!empty($variation)) {
-                $query->where('variation', 'LIKE', "%{$variation}%");
-            }
-        })->get();
-
-        if ($exactMatches->isNotEmpty()) {
-            $results = $results->merge($exactMatches);
         }
 
-        // 2. Recherche partielle avec scoring
-        $partialMatches = Product::all()->map(function ($product) use ($vendor, $nameWords, $typeWords) {
-            $score = 0;
+        // 2. Recherche SANS variation (vendor + name + type)
+        $withoutVariation = (clone $query)
+            ->where('name', 'LIKE', "%{$name}%")
+            ->when($type, fn($q) => $q->where('type', 'LIKE', "%{$type}%"))
+            ->get();
 
-            // Score vendor
-            if (!empty($vendor) && stripos($product->vendor, $vendor) !== false) {
-                $score += 30;
+        if ($withoutVariation->isNotEmpty()) {
+            $this->matchingProducts = $this->filterByCoffretStatus($withoutVariation, $isCoffretSource);
+            if (!empty($this->matchingProducts)) {
+                $this->validateBestMatchWithAI();
+                return;
             }
+        }
 
-            // Score par mots dans name
-            foreach ($nameWords as $word) {
-                if (stripos($product->name, $word) !== false) {
-                    $score += 20;
-                }
+        // 3. Recherche vendor + name seulement (SANS variation et type)
+        $vendorAndName = (clone $query)
+            ->where('name', 'LIKE', "%{$name}%")
+            ->get();
+
+        if ($vendorAndName->isNotEmpty()) {
+            $this->matchingProducts = $this->filterByCoffretStatus($vendorAndName, $isCoffretSource);
+            if (!empty($this->matchingProducts)) {
+                $this->validateBestMatchWithAI();
+                return;
             }
+        }
 
-            // Score par mots dans type
-            foreach ($typeWords as $word) {
-                if (stripos($product->type, $word) !== false) {
-                    $score += 15;
-                }
-            }
-
-            // Score pour les mots partiels (similarité)
-            foreach ($nameWords as $word) {
-                similar_text(strtolower($word), strtolower($product->name), $percent);
-                if ($percent > 70) {
-                    $score += 10;
-                }
-            }
-
-            return ['product' => $product, 'score' => $score];
-        })
-            ->filter(fn($item) => $item['score'] > 20)
-            ->sortByDesc('score')
-            ->take(10)
-            ->pluck('product');
-
-        $results = $results->merge($partialMatches)->unique('id');
-
-        // 3. Recherche flexible si pas assez de résultats
-        if ($results->count() < 3) {
-            $flexibleMatches = Product::where(function ($query) use ($vendor, $nameWords) {
-                if (!empty($vendor)) {
-                    $query->where('vendor', 'LIKE', "%{$vendor}%");
-                }
-
+        // 4. Recherche flexible par mots-clés (SANS variation)
+        // Chercher les produits qui contiennent AU MOINS un mot du name ET un mot du type
+        $keywordSearch = (clone $query)
+            ->where(function ($q) use ($nameWords, $typeWords) {
+                // Au moins un mot du name
                 foreach ($nameWords as $word) {
-                    $query->orWhere('name', 'LIKE', "%{$word}%");
+                    $q->orWhere('name', 'LIKE', "%{$word}%");
                 }
-            })->limit(10)->get();
+            })
+            ->when(!empty($typeWords), function ($q) use ($typeWords) {
+                // ET au moins un mot du type si disponible
+                $q->where(function ($subQ) use ($typeWords) {
+                    foreach ($typeWords as $word) {
+                        $subQ->orWhere('type', 'LIKE', "%{$word}%");
+                    }
+                });
+            })
+            ->limit(20)
+            ->get();
 
-            $results = $results->merge($flexibleMatches)->unique('id');
+        if ($keywordSearch->isNotEmpty()) {
+            // Scorer les résultats par pertinence
+            $scored = $this->scoreProductsByKeywords($keywordSearch, $nameWords, $typeWords, $vendorWords);
+            $this->matchingProducts = $this->filterByCoffretStatus($scored, $isCoffretSource);
+            if (!empty($this->matchingProducts)) {
+                $this->validateBestMatchWithAI();
+                return;
+            }
         }
 
-        return $results->toArray();
+        // 5. Recherche très large : vendor + n'importe quel mot du name
+        $broadSearch = (clone $query)
+            ->where(function ($q) use ($nameWords) {
+                foreach ($nameWords as $word) {
+                    $q->orWhere('name', 'LIKE', "%{$word}%");
+                }
+            })
+            ->limit(20)
+            ->get();
+
+        if ($broadSearch->isNotEmpty()) {
+            $scored = $this->scoreProductsByKeywords($broadSearch, $nameWords, $typeWords, $vendorWords);
+            $this->matchingProducts = $this->filterByCoffretStatus($scored, $isCoffretSource);
+            if (!empty($this->matchingProducts)) {
+                $this->validateBestMatchWithAI();
+                return;
+            }
+        }
+
+        // 6. Dernière tentative : vendor + type uniquement
+        if (!empty($typeWords)) {
+            $typeOnly = (clone $query)
+                ->where(function ($q) use ($typeWords) {
+                    foreach ($typeWords as $word) {
+                        $q->orWhere('type', 'LIKE', "%{$word}%");
+                    }
+                })
+                ->limit(15)
+                ->get();
+
+            $this->matchingProducts = $this->filterByCoffretStatus($typeOnly, $isCoffretSource);
+            if (!empty($this->matchingProducts)) {
+                $this->validateBestMatchWithAI();
+            }
+        }
     }
 
-    private function enhanceMatchingWithAI()
+    /**
+     * Extrait les mots-clés significatifs d'une chaîne
+     */
+    private function extractKeywords(string $text): array
     {
-        try {
-            // Préparer les données existantes pour l'analyse IA
-            $existingMatches = array_slice($this->matchingProducts, 0, 5);
-            $existingData = array_map(function ($product) {
-                return [
-                    'id' => $product['id'],
-                    'vendor' => $product['vendor'],
-                    'name' => $product['name'],
-                    'type' => $product['type'],
-                    'variation' => $product['variation']
-                ];
-            }, $existingMatches);
+        if (empty($text)) {
+            return [];
+        }
 
+        // Mots à ignorer (stop words)
+        $stopWords = ['de', 'la', 'le', 'les', 'des', 'du', 'un', 'une', 'et', 'ou', 'pour', 'avec', 'sans'];
+        
+        // Nettoyer et découper
+        $text = mb_strtolower($text);
+        $words = preg_split('/[\s\-]+/', $text, -1, PREG_SPLIT_NO_EMPTY);
+        
+        // Filtrer les mots courts et les stop words
+        $keywords = array_filter($words, function ($word) use ($stopWords) {
+            return mb_strlen($word) >= 3 && !in_array($word, $stopWords);
+        });
+
+        return array_values($keywords);
+    }
+
+    /**
+     * Score les produits en fonction de la correspondance des mots-clés
+     */
+    private function scoreProductsByKeywords($products, array $nameWords, array $typeWords, array $vendorWords)
+    {
+        return $products->map(function ($product) use ($nameWords, $typeWords, $vendorWords) {
+            $score = 0;
+            
+            $productName = mb_strtolower($product->name ?? '');
+            $productType = mb_strtolower($product->type ?? '');
+            $productVendor = mb_strtolower($product->vendor ?? '');
+
+            // Score pour les mots du name (poids: 3 points par mot)
+            foreach ($nameWords as $word) {
+                if (str_contains($productName, $word)) {
+                    $score += 3;
+                }
+                if (str_contains($productType, $word)) {
+                    $score += 1; // Bonus si le mot du name apparaît aussi dans le type
+                }
+            }
+
+            // Score pour les mots du type (poids: 2 points par mot)
+            foreach ($typeWords as $word) {
+                if (str_contains($productType, $word)) {
+                    $score += 2;
+                }
+                if (str_contains($productName, $word)) {
+                    $score += 1; // Bonus si le mot du type apparaît aussi dans le name
+                }
+            }
+
+            // Score pour les mots du vendor (poids: 1 point par mot)
+            foreach ($vendorWords as $word) {
+                if (str_contains($productVendor, $word)) {
+                    $score += 1;
+                }
+            }
+
+            $product->relevance_score = $score;
+            return $product;
+        })
+        ->sortByDesc('relevance_score')
+        ->values()
+        ->toArray();
+    }
+
+    /**
+     * Filtre les produits selon leur statut coffret
+     */
+    private function filterByCoffretStatus($products, bool $sourceisCoffret): array
+    {
+        return $products->filter(function ($product) use ($sourceisCoffret) {
+            $productIsCoffret = $this->isCoffret($product->toArray());
+            
+            // Si la source est un coffret, garder seulement les coffrets
+            // Si la source n'est pas un coffret, exclure les coffrets
+            return $sourceisCoffret ? $productIsCoffret : !$productIsCoffret;
+        })->values()->toArray();
+    }
+
+    /**
+     * Utilise OpenAI pour valider le meilleur match
+     */
+    private function validateBestMatchWithAI()
+    {
+        if (empty($this->matchingProducts)) {
+            return;
+        }
+
+        // Préparer les données pour l'IA
+        $candidateProducts = array_slice($this->matchingProducts, 0, 5); // Max 5 produits
+        
+        $productsInfo = array_map(function ($product) {
+            return [
+                'id' => $product['id'],
+                'vendor' => $product['vendor'],
+                'name' => $product['name'],
+                'type' => $product['type'],
+                'variation' => $product['variation'],
+                'prix_ht' => $product['prix_ht']
+            ];
+        }, $candidateProducts);
+
+        try {
             $response = Http::withHeaders([
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
-            ])->post('https://api.openai.com/v1/chat/completions', [
-                        'model' => 'gpt-4o-mini',
-                        'messages' => [
-                            [
-                                'role' => 'system',
-                                'content' => 'Tu es un expert en matching de produits cosmétiques. Analyse le produit source et les produits cibles pour trouver le meilleur match.'
-                            ],
-                            [
-                                'role' => 'user',
-                                'content' => "Trouve le meilleur match pour le produit source parmi les produits cibles.
-                        
-PRODUIT SOURCE:
-- Nom original: {$this->productName}
+            ])->timeout(15)->post('https://api.openai.com/v1/chat/completions', [
+                'model' => 'gpt-4o-mini',
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => 'Tu es un expert en matching de produits cosmétiques. Tu dois analyser la correspondance entre un produit source et une liste de candidats, puis retourner l\'ID du meilleur match avec un score de confiance. Réponds UNIQUEMENT avec un objet JSON.'
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => "Produit source : {$this->productName}
+
+Critères extraits :
 - Vendor: {$this->extractedData['vendor']}
 - Name: {$this->extractedData['name']}
 - Type: {$this->extractedData['type']}
 - Variation: {$this->extractedData['variation']}
 
-PRODUITS CIBLES EXISTANTS:
-" . json_encode($existingData, JSON_PRETTY_PRINT) . "
+Produits candidats :
+" . json_encode($productsInfo, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "
 
-Pour chaque produit cible, évalue:
-1. Similarité du vendor (0-30 points)
-2. Similarité du name/line (0-30 points)  
-3. Similarité du type (0-20 points)
-4. Similarité de la variation (0-20 points)
-5. Score total (0-100)
-
-Si aucun produit cible n'est bon (score < 50), suggère des termes de recherche alternatifs.
-
-Réponds au format JSON:
+Analyse chaque candidat et détermine le meilleur match. Retourne au format JSON :
 {
-  \"matches\": [
-    {
-      \"id\": \"id_du_produit\",
-      \"score\": 85,
-      \"reasoning\": \"Explication du matching\"
-    }
-  ],
-  \"alternative_search_terms\": [
-    \"terme1\",
-    \"terme2\"
+  \"best_match_id\": 123,
+  \"confidence_score\": 0.95,
+  \"reasoning\": \"Explication courte du choix\",
+  \"all_scores\": [
+    {\"id\": 123, \"score\": 0.95, \"reason\": \"...\"},
+    {\"id\": 124, \"score\": 0.60, \"reason\": \"...\"}
   ]
-}"
-                            ]
-                        ],
-                        'temperature' => 0.2,
-                        'max_tokens' => 800
-                    ]);
+}
+
+Critères de scoring :
+- Vendor exact = +40 points
+- Name similaire = +30 points
+- Type identique = +20 points
+- Variation identique = +10 points
+Score de confiance entre 0 et 1."
+                    ]
+                ],
+                'temperature' => 0.2,
+                'max_tokens' => 800
+            ]);
 
             if ($response->successful()) {
                 $data = $response->json();
                 $content = $data['choices'][0]['message']['content'];
-
+                
+                // Nettoyer le contenu
                 $content = preg_replace('/```json\s*|\s*```/', '', $content);
                 $content = trim($content);
+                
+                $this->aiValidation = json_decode($content, true);
 
-                $aiAnalysis = json_decode($content, true);
-
-                if ($aiAnalysis && isset($aiAnalysis['matches'])) {
-                    // Mettre à jour les scores des produits existants
-                    foreach ($aiAnalysis['matches'] as $aiMatch) {
-                        foreach ($this->matchingProducts as &$product) {
-                            if ($product['id'] == $aiMatch['id']) {
-                                $product['ai_score'] = $aiMatch['score'];
-                                $product['ai_reasoning'] = $aiMatch['reasoning'] ?? '';
-                                break;
-                            }
-                        }
+                if ($this->aiValidation && isset($this->aiValidation['best_match_id'])) {
+                    // Trouver le produit correspondant à l'ID recommandé par l'IA
+                    $bestMatchId = $this->aiValidation['best_match_id'];
+                    $found = collect($this->matchingProducts)->firstWhere('id', $bestMatchId);
+                    
+                    if ($found) {
+                        $this->bestMatch = $found;
+                    } else {
+                        // Fallback sur le premier résultat
+                        $this->bestMatch = $this->matchingProducts[0];
                     }
-
-                    // Trier par score IA
-                    usort($this->matchingProducts, function ($a, $b) {
-                        $scoreA = $a['ai_score'] ?? 0;
-                        $scoreB = $b['ai_score'] ?? 0;
-                        return $scoreB <=> $scoreA;
-                    });
-
-                    // Mettre à jour le best match
-                    if (!empty($this->matchingProducts)) {
-                        $this->bestMatch = (object) $this->matchingProducts[0];
-                    }
-
-                    // Si des termes alternatifs sont suggérés et pas de bon match
-                    if (empty($this->matchingProducts) && isset($aiAnalysis['alternative_search_terms'])) {
-                        $this->performAlternativeSearch($aiAnalysis['alternative_search_terms']);
-                    }
+                } else {
+                    // Fallback sur le premier résultat
+                    $this->bestMatch = $this->matchingProducts[0];
                 }
             }
+
         } catch (\Exception $e) {
-            \Log::warning('Erreur matching IA', ['error' => $e->getMessage()]);
+            \Log::error('Erreur validation IA', [
+                'message' => $e->getMessage(),
+                'product_name' => $this->productName
+            ]);
+            
+            // Fallback sur le premier résultat en cas d'erreur
+            $this->bestMatch = $this->matchingProducts[0];
         }
-    }
-
-    private function performAlternativeSearch($terms)
-    {
-        if (empty($terms))
-            return;
-
-        $searchQuery = implode(' OR ', array_slice($terms, 0, 3));
-
-        $alternativeResults = Product::where(function ($query) use ($searchQuery) {
-            foreach (explode(' OR ', $searchQuery) as $term) {
-                $query->orWhere('vendor', 'LIKE', "%{$term}%")
-                    ->orWhere('name', 'LIKE', "%{$term}%")
-                    ->orWhere('type', 'LIKE', "%{$term}%");
-            }
-        })->limit(10)->get();
-
-        if ($alternativeResults->isNotEmpty()) {
-            $this->matchingProducts = $alternativeResults->toArray();
-            $this->bestMatch = $alternativeResults->first();
-        }
-    }
-
-    private function determineBestMatch()
-    {
-        if (empty($this->matchingProducts)) {
-            $this->bestMatch = null;
-            return;
-        }
-
-        // Si des scores IA sont disponibles, utiliser ceux-ci
-        if (isset($this->matchingProducts[0]['ai_score'])) {
-            $this->bestMatch = (object) $this->matchingProducts[0];
-            return;
-        }
-
-        // Sinon, calculer un score basique
-        $scoredProducts = array_map(function ($product) {
-            $score = 0;
-
-            // Comparer avec les données extraites
-            if (
-                !empty($this->extractedData['vendor']) &&
-                stripos($product['vendor'], $this->extractedData['vendor']) !== false
-            ) {
-                $score += 30;
-            }
-
-            if (!empty($this->extractedData['name'])) {
-                similar_text(
-                    strtolower($product['name']),
-                    strtolower($this->extractedData['name']),
-                    $percent
-                );
-                $score += $percent * 0.3;
-            }
-
-            return ['product' => $product, 'score' => $score];
-        }, $this->matchingProducts);
-
-        usort($scoredProducts, function ($a, $b) {
-            return $b['score'] <=> $a['score'];
-        });
-
-        $this->bestMatch = (object) ($scoredProducts[0]['product'] ?? null);
     }
 
     public function selectProduct($productId)
@@ -426,48 +458,28 @@ Réponds au format JSON:
 
         if ($product) {
             session()->flash('success', 'Produit sélectionné : ' . $product->name);
-            $this->bestMatch = $product;
+            $this->bestMatch = $product->toArray();
+
+            // Émettre un événement si besoin
             $this->dispatch('product-selected', productId: $productId);
         }
     }
 
-    public function getKeywordsForDisplay()
-    {
-        if (empty($this->extractedKeywords)) {
-            return [
-                'name' => [],
-                'type' => []
-            ];
-        }
-
-        return $this->extractedKeywords;
-    }
-
 }; ?>
+
 <div class="p-6 bg-white rounded-lg shadow">
     <div class="mb-4">
         <h2 class="text-xl font-bold mb-2">Extraction et recherche de produit</h2>
         <p class="text-gray-600">Produit: {{ $productName }}</p>
-
-        <div class="mt-2 flex items-center gap-2">
-            <input type="checkbox" id="useAIMatching" wire:model="useAIMatching" class="rounded">
-            <label for="useAIMatching" class="text-sm">Utiliser le matching IA avancé</label>
-        </div>
     </div>
 
-    <button wire:click="extractSearchTerme" wire:loading.attr="disabled"
-        class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 flex items-center gap-2">
-        <span wire:loading.remove>🔍 Extraire et rechercher</span>
-        <span wire:loading>
-            <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none"
-                viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
-                </path>
-            </svg>
-            Extraction en cours...
-        </span>
+    <button 
+        wire:click="extractSearchTerme"
+        wire:loading.attr="disabled"
+        class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
+    >
+        <span wire:loading.remove>Extraire et rechercher</span>
+        <span wire:loading>Extraction en cours...</span>
     </button>
 
     @if(session('error'))
@@ -487,69 +499,55 @@ Réponds au format JSON:
             <h3 class="font-bold mb-3">Critères extraits :</h3>
             <div class="grid grid-cols-2 gap-4">
                 <div>
-                    <span class="font-semibold">Vendor:</span>
-                    <span class="bg-blue-100 px-2 py-1 rounded text-sm">{{ $extractedData['vendor'] ?? 'N/A' }}</span>
+                    <span class="font-semibold">Vendor:</span> {{ $extractedData['vendor'] ?? 'N/A' }}
                 </div>
                 <div>
-                    <span class="font-semibold">Name:</span>
-                    <span class="bg-green-100 px-2 py-1 rounded text-sm">{{ $extractedData['name'] ?? 'N/A' }}</span>
+                    <span class="font-semibold">Name:</span> {{ $extractedData['name'] ?? 'N/A' }}
                 </div>
                 <div>
-                    <span class="font-semibold">Variation:</span>
-                    <span class="bg-yellow-100 px-2 py-1 rounded text-sm">{{ $extractedData['variation'] ?? 'N/A' }}</span>
+                    <span class="font-semibold">Variation:</span> {{ $extractedData['variation'] ?? 'N/A' }}
                 </div>
                 <div>
-                    <span class="font-semibold">Type:</span>
-                    <span class="bg-purple-100 px-2 py-1 rounded text-sm">{{ $extractedData['type'] ?? 'N/A' }}</span>
+                    <span class="font-semibold">Type:</span> {{ $extractedData['type'] ?? 'N/A' }}
+                </div>
+                <div class="col-span-2">
+                    <span class="font-semibold">Est un coffret:</span> 
+                    <span class="px-2 py-1 rounded text-sm {{ ($extractedData['is_coffret'] ?? false) ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800' }}">
+                        {{ ($extractedData['is_coffret'] ?? false) ? 'Oui' : 'Non' }}
+                    </span>
                 </div>
             </div>
+        </div>
+    @endif
 
-            @php
-                $keywords = $this->getKeywordsForDisplay();
-            @endphp
-
-            @if(!empty($keywords['name']) || !empty($keywords['type']))
-                <div class="mt-3 pt-3 border-t">
-                    <h4 class="font-semibold text-sm mb-2">Mots-clés extraits:</h4>
-                    <div class="flex flex-wrap gap-1">
-                        @foreach($keywords['name'] as $word)
-                            <span class="px-2 py-1 bg-blue-200 text-blue-800 rounded text-xs">{{ $word }}</span>
-                        @endforeach
-                        @foreach($keywords['type'] as $word)
-                            <span class="px-2 py-1 bg-purple-200 text-purple-800 rounded text-xs">{{ $word }}</span>
-                        @endforeach
-                    </div>
-                </div>
-            @endif
+    @if($aiValidation)
+        <div class="mt-4 p-4 bg-blue-50 border border-blue-300 rounded">
+            <h3 class="font-bold text-blue-700 mb-2">🤖 Validation IA :</h3>
+            <p class="text-sm mb-1">
+                <span class="font-semibold">Score de confiance:</span> 
+                <span class="text-lg font-bold {{ $aiValidation['confidence_score'] >= 0.8 ? 'text-green-600' : ($aiValidation['confidence_score'] >= 0.6 ? 'text-yellow-600' : 'text-red-600') }}">
+                    {{ number_format($aiValidation['confidence_score'] * 100, 0) }}%
+                </span>
+            </p>
+            <p class="text-sm text-gray-700">
+                <span class="font-semibold">Analyse:</span> {{ $aiValidation['reasoning'] ?? 'N/A' }}
+            </p>
         </div>
     @endif
 
     @if($bestMatch)
         <div class="mt-6 p-4 bg-green-50 border-2 border-green-500 rounded">
-            <div class="flex justify-between items-start mb-3">
-                <h3 class="font-bold text-green-700">✓ Meilleur résultat :</h3>
-                @if(property_exists($bestMatch, 'ai_score') && $bestMatch->ai_score)
-                    <span class="px-2 py-1 bg-green-200 text-green-800 rounded text-sm">
-                        Score IA: {{ $bestMatch->ai_score }}/100
-                    </span>
-                @endif
-            </div>
+            <h3 class="font-bold text-green-700 mb-3">✓ Meilleur résultat :</h3>
             <div class="flex items-start gap-4">
-                @if($bestMatch->image_url)
-                    <img src="{{ $bestMatch->image_url }}" alt="{{ $bestMatch->name }}" class="w-20 h-20 object-cover rounded">
+                @if($bestMatch['image_url'] ?? false)
+                    <img src="{{ $bestMatch['image_url'] }}" alt="{{ $bestMatch['name'] }}" class="w-20 h-20 object-cover rounded">
                 @endif
                 <div class="flex-1">
-                    <p class="font-semibold">{{ $bestMatch->vendor }} - {{ $bestMatch->name }}</p>
-                    <p class="text-sm text-gray-600">{{ $bestMatch->type }} | {{ $bestMatch->variation }}</p>
-                    <p class="text-sm font-bold text-green-600 mt-1">{{ $bestMatch->prix_ht }} {{ $bestMatch->currency }}
-                    </p>
-                    <a href="{{ $bestMatch->url }}" target="_blank" class="text-xs text-blue-500 hover:underline">Voir le
-                        produit</a>
-
-                    @if(property_exists($bestMatch, 'ai_reasoning') && $bestMatch->ai_reasoning)
-                        <div class="mt-2 p-2 bg-green-100 rounded text-xs text-green-800">
-                            <span class="font-semibold">Analyse IA:</span> {{ $bestMatch->ai_reasoning }}
-                        </div>
+                    <p class="font-semibold">{{ $bestMatch['vendor'] }} - {{ $bestMatch['name'] }}</p>
+                    <p class="text-sm text-gray-600">{{ $bestMatch['type'] }} | {{ $bestMatch['variation'] }}</p>
+                    <p class="text-sm font-bold text-green-600 mt-1">{{ $bestMatch['prix_ht'] }} {{ $bestMatch['currency'] }}</p>
+                    @if($bestMatch['url'] ?? false)
+                        <a href="{{ $bestMatch['url'] }}" target="_blank" class="text-xs text-blue-500 hover:underline">Voir le produit</a>
                     @endif
                 </div>
             </div>
@@ -558,30 +556,32 @@ Réponds au format JSON:
 
     @if(!empty($matchingProducts) && count($matchingProducts) > 1)
         <div class="mt-6">
-            <h3 class="font-bold mb-3">Résultats trouvés ({{ count($matchingProducts) }}) :</h3>
+            <h3 class="font-bold mb-3">Autres résultats trouvés ({{ count($matchingProducts) }}) :</h3>
             <div class="space-y-2 max-h-96 overflow-y-auto">
                 @foreach($matchingProducts as $product)
-                    <div wire:click="selectProduct({{ $product['id'] }})"
-                        class="p-3 border rounded hover:bg-blue-50 cursor-pointer transition {{ $bestMatch && $bestMatch->id === $product['id'] ? 'bg-blue-100 border-blue-500' : 'bg-white' }}">
+                    <div 
+                        wire:click="selectProduct({{ $product['id'] }})"
+                        class="p-3 border rounded hover:bg-blue-50 cursor-pointer transition {{ $bestMatch && $bestMatch['id'] === $product['id'] ? 'bg-blue-100 border-blue-500' : 'bg-white' }}"
+                    >
                         <div class="flex items-center gap-3">
-                            @if($product['image_url'])
-                                <img src="{{ $product['image_url'] }}" alt="{{ $product['name'] }}"
-                                    class="w-12 h-12 object-cover rounded">
+                            @if($product['image_url'] ?? false)
+                                <img src="{{ $product['image_url'] }}" alt="{{ $product['name'] }}" class="w-12 h-12 object-cover rounded">
                             @endif
                             <div class="flex-1">
-                                <div class="flex items-center gap-2">
-                                    <p class="font-medium text-sm">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
-                                    @if(isset($product['ai_score']))
-                                        <span class="px-1 py-0.5 bg-green-100 text-green-700 text-xs rounded">
-                                            {{ $product['ai_score'] }}
-                                        </span>
-                                    @endif
-                                </div>
+                                <p class="font-medium text-sm">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
                                 <p class="text-xs text-gray-500">{{ $product['type'] }} | {{ $product['variation'] }}</p>
                             </div>
                             <div class="text-right">
                                 <p class="font-bold text-sm">{{ $product['prix_ht'] }} {{ $product['currency'] }}</p>
                                 <p class="text-xs text-gray-500">ID: {{ $product['id'] }}</p>
+                                @if($aiValidation && isset($aiValidation['all_scores']))
+                                    @php
+                                        $scoreData = collect($aiValidation['all_scores'])->firstWhere('id', $product['id']);
+                                    @endphp
+                                    @if($scoreData)
+                                        <p class="text-xs font-semibold text-blue-600">Score: {{ number_format($scoreData['score'] * 100, 0) }}%</p>
+                                    @endif
+                                @endif
                             </div>
                         </div>
                     </div>
@@ -592,8 +592,7 @@ Réponds au format JSON:
 
     @if($extractedData && empty($matchingProducts))
         <div class="mt-6 p-4 bg-yellow-50 border border-yellow-300 rounded">
-            <p class="text-yellow-800">❌ Aucun produit trouvé avec ces critères</p>
-            <p class="text-sm mt-2">Essayez de modifier les termes de recherche ou activez le matching IA avancé.</p>
+            <p class="text-yellow-800">❌ Aucun produit trouvé avec ces critères (même vendor: {{ $extractedData['vendor'] }}, même statut coffret)</p>
         </div>
     @endif
 </div>
