@@ -39,18 +39,35 @@ new class extends Component {
                         'role' => 'user',
                         'content' => "Extrait les informations suivantes du nom de produit et retourne-les au format JSON strict :
 - vendor : la marque du produit
-- name : le nom de la gamme/ligne de produit (SANS le mot coffret)
-- variation : la contenance/taille (ml, g, etc.)
-- type : le type de produit (Crème, Sérum, Concentré, Eau de Toilette, etc.) (SANS le mot coffret)
+- name : le nom exact de la gamme/ligne de produit (SANS le mot coffret, SANS vaporisateur, SANS spray)
+- variation : la contenance/taille complète (ex: \"105ml\", \"100 ml\", \"50ml\")
+- type : le type exact de produit (ex: \"Eau de Parfum\", \"Eau de Toilette\", \"Crème\") (SANS vaporisateur, SANS spray, SANS coffret)
 - is_coffret : true si le produit est un coffret/kit/set, false sinon
+
+IMPORTANT:
+- Enlève \"Vaporisateur\", \"Spray\", \"Atomiseur\" du type
+- Le type doit être court et précis (Eau de Parfum, Eau de Toilette, Crème, Sérum, etc.)
+- La variation doit contenir uniquement la contenance avec l'unité
 
 Nom du produit : {$this->productName}
 
-Exemple de format attendu :
+Exemples :
+Input: \"Armaf - Club de Nuit Woman Intense - Eau de Parfum Vaporisateur 105ml\"
+Output:
+{
+  \"vendor\": \"Armaf\",
+  \"name\": \"Club de Nuit Woman Intense\",
+  \"variation\": \"105ml\",
+  \"type\": \"Eau de Parfum\",
+  \"is_coffret\": false
+}
+
+Input: \"Azzaro - Coffret Wanted - Eau de Toilette 100ml + 2 produits\"
+Output:
 {
   \"vendor\": \"Azzaro\",
   \"name\": \"Wanted\",
-  \"variation\": \"100 ml\",
+  \"variation\": \"100ml\",
   \"type\": \"Eau de Toilette\",
   \"is_coffret\": true
 }"
@@ -103,87 +120,102 @@ Exemple de format attendu :
         $type = $this->extractedData['type'] ?? '';
         $isCoffret = $this->extractedData['is_coffret'] ?? false;
 
+        // Nettoyer le type pour enlever les mots comme "Vaporisateur", "Spray"
+        $cleanType = preg_replace('/\b(vaporisateur|spray|atomiseur)\b/i', '', $type);
+        $cleanType = trim($cleanType);
+
         $query = Product::query();
 
-        // Fonction helper pour vérifier si un produit est un coffret
-        $isCoffretProduct = function($productName, $productType) {
-            $coffretKeywords = ['coffret', 'kit', 'set', 'box', 'trousse'];
-            $searchText = strtolower($productName . ' ' . $productType);
-            
-            foreach ($coffretKeywords as $keyword) {
-                if (str_contains($searchText, $keyword)) {
-                    return true;
+        // 1. PRIORITÉ MAXIMALE : Vendor + Name + Type (exact match)
+        $vendorNameType = (clone $query)
+            ->where('vendor', 'LIKE', "%{$vendor}%")
+            ->where('name', 'LIKE', "%{$name}%")
+            ->where(function($q) use ($cleanType, $type) {
+                // Chercher le type nettoyé OU le type original
+                $q->where('type', 'LIKE', "%{$cleanType}%");
+                if ($cleanType !== $type) {
+                    $q->orWhere('type', 'LIKE', "%{$type}%");
+                }
+            })
+            ->when($isCoffret, function($q) {
+                $q->where(function($subQ) {
+                    $subQ->where('name', 'LIKE', '%coffret%')
+                         ->orWhere('type', 'LIKE', '%coffret%')
+                         ->orWhere('name', 'LIKE', '%kit%')
+                         ->orWhere('type', 'LIKE', '%kit%')
+                         ->orWhere('name', 'LIKE', '%set%')
+                         ->orWhere('type', 'LIKE', '%set%');
+                });
+            })
+            ->when(!$isCoffret, function($q) {
+                $q->where('name', 'NOT LIKE', '%coffret%')
+                  ->where('type', 'NOT LIKE', '%coffret%')
+                  ->where('name', 'NOT LIKE', '%kit%')
+                  ->where('type', 'NOT LIKE', '%kit%')
+                  ->where('name', 'NOT LIKE', '%set%')
+                  ->where('type', 'NOT LIKE', '%set%');
+            })
+            ->get();
+
+        if ($vendorNameType->isNotEmpty()) {
+            // Si on a plusieurs résultats, prioriser ceux qui matchent aussi la variation
+            if (!empty($variation)) {
+                $withVariation = $vendorNameType->filter(function($product) use ($variation) {
+                    return stripos($product->variation, $variation) !== false;
+                });
+                
+                if ($withVariation->isNotEmpty()) {
+                    $this->matchingProducts = $withVariation->values()->toArray();
+                    $this->bestMatch = $withVariation->first();
+                    return;
                 }
             }
-            return false;
-        };
-
-        // 1. Recherche exacte avec critère coffret
-        $exactMatch = (clone $query)
-            ->where('vendor', 'LIKE', "%{$vendor}%")
-            ->where('name', 'LIKE', "%{$name}%")
-            ->where('variation', 'LIKE', "%{$variation}%")
-            ->when($type, fn($q) => $q->where('type', 'LIKE', "%{$type}%"))
-            ->when($isCoffret, function($q) {
-                // Si c'est un coffret, ajouter une condition pour chercher le mot "coffret"
-                $q->where(function($subQ) {
-                    $subQ->where('name', 'LIKE', '%coffret%')
-                         ->orWhere('type', 'LIKE', '%coffret%')
-                         ->orWhere('name', 'LIKE', '%kit%')
-                         ->orWhere('type', 'LIKE', '%kit%')
-                         ->orWhere('name', 'LIKE', '%set%')
-                         ->orWhere('type', 'LIKE', '%set%');
-                });
-            })
-            ->when(!$isCoffret, function($q) {
-                // Si ce n'est PAS un coffret, exclure les produits avec ces mots
-                $q->where('name', 'NOT LIKE', '%coffret%')
-                  ->where('type', 'NOT LIKE', '%coffret%')
-                  ->where('name', 'NOT LIKE', '%kit%')
-                  ->where('type', 'NOT LIKE', '%kit%')
-                  ->where('name', 'NOT LIKE', '%set%')
-                  ->where('type', 'NOT LIKE', '%set%');
-            })
-            ->get();
-
-        if ($exactMatch->isNotEmpty()) {
-            $this->matchingProducts = $exactMatch->toArray();
-            $this->bestMatch = $exactMatch->first();
+            
+            $this->matchingProducts = $vendorNameType->toArray();
+            $this->bestMatch = $vendorNameType->first();
             return;
         }
 
-        // 2. Recherche sans variation mais avec critère coffret
-        $withoutVariation = (clone $query)
-            ->where('vendor', 'LIKE', "%{$vendor}%")
-            ->where('name', 'LIKE', "%{$name}%")
-            ->when($type, fn($q) => $q->where('type', 'LIKE', "%{$type}%"))
-            ->when($isCoffret, function($q) {
-                $q->where(function($subQ) {
-                    $subQ->where('name', 'LIKE', '%coffret%')
-                         ->orWhere('type', 'LIKE', '%coffret%')
-                         ->orWhere('name', 'LIKE', '%kit%')
-                         ->orWhere('type', 'LIKE', '%kit%')
-                         ->orWhere('name', 'LIKE', '%set%')
-                         ->orWhere('type', 'LIKE', '%set%');
-                });
-            })
-            ->when(!$isCoffret, function($q) {
-                $q->where('name', 'NOT LIKE', '%coffret%')
-                  ->where('type', 'NOT LIKE', '%coffret%')
-                  ->where('name', 'NOT LIKE', '%kit%')
-                  ->where('type', 'NOT LIKE', '%kit%')
-                  ->where('name', 'NOT LIKE', '%set%')
-                  ->where('type', 'NOT LIKE', '%set%');
-            })
-            ->get();
+        // 2. Vendor + Name + Type + Variation (tous les critères)
+        if (!empty($variation)) {
+            $exactMatch = (clone $query)
+                ->where('vendor', 'LIKE', "%{$vendor}%")
+                ->where('name', 'LIKE', "%{$name}%")
+                ->where('variation', 'LIKE', "%{$variation}%")
+                ->where(function($q) use ($cleanType, $type) {
+                    $q->where('type', 'LIKE', "%{$cleanType}%");
+                    if ($cleanType !== $type) {
+                        $q->orWhere('type', 'LIKE', "%{$type}%");
+                    }
+                })
+                ->when($isCoffret, function($q) {
+                    $q->where(function($subQ) {
+                        $subQ->where('name', 'LIKE', '%coffret%')
+                             ->orWhere('type', 'LIKE', '%coffret%')
+                             ->orWhere('name', 'LIKE', '%kit%')
+                             ->orWhere('type', 'LIKE', '%kit%')
+                             ->orWhere('name', 'LIKE', '%set%')
+                             ->orWhere('type', 'LIKE', '%set%');
+                    });
+                })
+                ->when(!$isCoffret, function($q) {
+                    $q->where('name', 'NOT LIKE', '%coffret%')
+                      ->where('type', 'NOT LIKE', '%coffret%')
+                      ->where('name', 'NOT LIKE', '%kit%')
+                      ->where('type', 'NOT LIKE', '%kit%')
+                      ->where('name', 'NOT LIKE', '%set%')
+                      ->where('type', 'NOT LIKE', '%set%');
+                })
+                ->get();
 
-        if ($withoutVariation->isNotEmpty()) {
-            $this->matchingProducts = $withoutVariation->toArray();
-            $this->bestMatch = $withoutVariation->first();
-            return;
+            if ($exactMatch->isNotEmpty()) {
+                $this->matchingProducts = $exactMatch->toArray();
+                $this->bestMatch = $exactMatch->first();
+                return;
+            }
         }
 
-        // 3. Recherche vendor + name avec critère coffret
+        // 3. Vendor + Name (sans type)
         $vendorAndName = (clone $query)
             ->where('vendor', 'LIKE', "%{$vendor}%")
             ->where('name', 'LIKE', "%{$name}%")
@@ -241,16 +273,26 @@ Exemple de format attendu :
 
         // 5. Full-text search avec filtre coffret
         if (method_exists(Product::class, 'scopeFullTextSearch')) {
-            // Ajouter "coffret" au terme de recherche si c'est un coffret
-            $searchQuery = trim("{$vendor} {$name} {$type} {$variation}");
+            $searchQuery = trim("{$vendor} {$name} {$cleanType} {$variation}");
             if ($isCoffret) {
                 $searchQuery .= " coffret";
             }
             
             $fullTextResults = Product::fullTextSearch($searchQuery)
+                ->limit(20)
                 ->get()
-                ->filter(function($product) use ($isCoffret, $isCoffretProduct) {
-                    $productIsCoffret = $isCoffretProduct($product->name, $product->type);
+                ->filter(function($product) use ($isCoffret) {
+                    $coffretKeywords = ['coffret', 'kit', 'set', 'box', 'trousse'];
+                    $searchText = strtolower($product->name . ' ' . $product->type);
+                    $productIsCoffret = false;
+                    
+                    foreach ($coffretKeywords as $keyword) {
+                        if (str_contains($searchText, $keyword)) {
+                            $productIsCoffret = true;
+                            break;
+                        }
+                    }
+                    
                     return $productIsCoffret === $isCoffret;
                 });
 
@@ -261,10 +303,10 @@ Exemple de format attendu :
             }
         }
 
-        // 6. Recherche flexible avec critère coffret
+        // 6. Recherche très flexible (dernier recours)
         $flexible = Product::where(function($q) use ($vendor, $name) {
             $q->where('vendor', 'LIKE', "%{$vendor}%")
-              ->orWhere('name', 'LIKE', "%{$name}%");
+              ->where('name', 'LIKE', "%{$name}%");
         })
         ->when($isCoffret, function($q) {
             $q->where(function($subQ) {
