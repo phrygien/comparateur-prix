@@ -183,9 +183,6 @@ Maintenant, traite ce produit en suivant ces règles exactement."
         $type = $this->extractedData['type'] ?? '';
         $isCoffret = $this->extractedData['is_coffret'] ?? false;
 
-        // Stratégie de recherche en cascade avec scoring
-        $allResults = collect();
-
         // IMPORTANT: Si vendor est vide, on ne peut pas faire de recherche fiable
         if (empty($vendor)) {
             \Log::warning('Vendor vide lors de la recherche', [
@@ -197,328 +194,142 @@ Maintenant, traite ce produit en suivant ces règles exactement."
             return;
         }
 
-        // 1. Recherche exacte (tous les critères + vérification coffret dans name/type)
-        $exactMatch = Product::query()
+        // Recherche large par vendor et name
+        $candidates = Product::query()
             ->where('vendor', 'LIKE', "%{$vendor}%")
             ->where('name', 'LIKE', "%{$name}%")
-            ->where('variation', 'LIKE', "%{$variation}%")
-            ->when($type, fn($q) => $q->where('type', 'LIKE', "%{$type}%"))
-            ->where(function($q) use ($isCoffret) {
-                if ($isCoffret) {
-                    // Si on cherche un coffret, le name OU type doit contenir un mot-clé coffret
-                    $q->where(function($query) {
-                        $query->where('name', 'LIKE', '%coffret%')
-                              ->orWhere('name', 'LIKE', '%set%')
-                              ->orWhere('name', 'LIKE', '%kit%')
-                              ->orWhere('name', 'LIKE', '%duo%')
-                              ->orWhere('name', 'LIKE', '%trio%')
-                              ->orWhere('type', 'LIKE', '%coffret%')
-                              ->orWhere('type', 'LIKE', '%set%')
-                              ->orWhere('type', 'LIKE', '%kit%');
-                    });
-                } else {
-                    // Si on cherche un produit unitaire, exclure les coffrets
-                    $q->where('name', 'NOT LIKE', '%coffret%')
-                      ->where('name', 'NOT LIKE', '%set%')
-                      ->where('name', 'NOT LIKE', '%kit%')
-                      ->where('name', 'NOT LIKE', '%duo%')
-                      ->where('name', 'NOT LIKE', '%trio%')
-                      ->where('type', 'NOT LIKE', '%coffret%')
-                      ->where('type', 'NOT LIKE', '%set%')
-                      ->where('type', 'NOT LIKE', '%kit%');
-                }
-            })
+            ->limit(30)
             ->get();
 
-        if ($exactMatch->isNotEmpty()) {
-            // Filtrer les résultats pour vérifier la compatibilité des types
-            $filteredExactMatch = $exactMatch->filter(function($product) use ($type) {
-                if (!$type) {
-                    return true; // Si pas de type spécifié, accepter tous
-                }
-                
-                $productType = strtolower($product->type ?? '');
-                $searchType = strtolower($type);
-                
-                // Vérifier si les types sont compatibles
-                $parfumKeywords = ['parfum', 'eau de toilette', 'eau de cologne', 'edt', 'edp'];
-                $soinsKeywords = ['baume', 'crème', 'gel', 'lotion', 'sérum', 'soin'];
-                $deoKeywords = ['déodorant', 'deodorant', 'deo'];
-                $gelKeywords = ['gel douche', 'gel moussant', 'savon'];
-                
-                $isProductParfum = $this->containsAnyKeyword($productType, $parfumKeywords);
-                $isSearchParfum = $this->containsAnyKeyword($searchType, $parfumKeywords);
-                $isProductSoin = $this->containsAnyKeyword($productType, $soinsKeywords);
-                $isSearchSoin = $this->containsAnyKeyword($searchType, $soinsKeywords);
-                $isProductDeo = $this->containsAnyKeyword($productType, $deoKeywords);
-                $isSearchDeo = $this->containsAnyKeyword($searchType, $deoKeywords);
-                $isProductGel = $this->containsAnyKeyword($productType, $gelKeywords);
-                $isSearchGel = $this->containsAnyKeyword($searchType, $gelKeywords);
-                
-                // Rejeter si catégories incompatibles
-                if (($isSearchDeo && !$isProductDeo) || (!$isSearchDeo && $isProductDeo)) {
-                    return false; // Déodorant vs autre chose
-                }
-                if (($isSearchGel && !$isProductGel) || (!$isSearchGel && $isProductGel)) {
-                    return false; // Gel douche vs autre chose
-                }
-                if (($isSearchSoin && $isProductParfum) || ($isSearchParfum && $isProductSoin)) {
-                    return false; // Soin vs Parfum
-                }
-                
-                return true; // Types compatibles
-            });
-            
-            if ($filteredExactMatch->isNotEmpty()) {
-                $allResults = $allResults->merge($filteredExactMatch->map(fn($p) => [
-                    'product' => $p,
-                    'score' => 100
-                ]));
-            }
-        }
-
-        // 2. Recherche sans variation mais avec vérification coffret
-        if ($allResults->isEmpty()) {
-            $withoutVariation = Product::query()
-                ->where('vendor', 'LIKE', "%{$vendor}%")
-                ->where('name', 'LIKE', "%{$name}%")
-                ->when($type, fn($q) => $q->where('type', 'LIKE', "%{$type}%"))
-                ->where(function($q) use ($isCoffret) {
-                    if ($isCoffret) {
-                        $q->where(function($query) {
-                            $query->where('name', 'LIKE', '%coffret%')
-                                  ->orWhere('name', 'LIKE', '%set%')
-                                  ->orWhere('name', 'LIKE', '%kit%')
-                                  ->orWhere('name', 'LIKE', '%duo%')
-                                  ->orWhere('name', 'LIKE', '%trio%')
-                                  ->orWhere('type', 'LIKE', '%coffret%')
-                                  ->orWhere('type', 'LIKE', '%set%')
-                                  ->orWhere('type', 'LIKE', '%kit%');
-                        });
-                    } else {
-                        $q->where('name', 'NOT LIKE', '%coffret%')
-                          ->where('name', 'NOT LIKE', '%set%')
-                          ->where('name', 'NOT LIKE', '%kit%')
-                          ->where('name', 'NOT LIKE', '%duo%')
-                          ->where('name', 'NOT LIKE', '%trio%')
-                          ->where('type', 'NOT LIKE', '%coffret%')
-                          ->where('type', 'NOT LIKE', '%set%')
-                          ->where('type', 'NOT LIKE', '%kit%');
-                    }
-                })
+        if ($candidates->isEmpty()) {
+            // Si aucun résultat, essayer juste avec vendor
+            $candidates = Product::where('vendor', 'LIKE', "%{$vendor}%")
+                ->limit(30)
                 ->get();
-
-            // Filtrer les résultats pour vérifier la compatibilité des types
-            $filteredWithoutVariation = $withoutVariation->filter(function($product) use ($type) {
-                if (!$type) {
-                    return true;
-                }
-                
-                $productType = strtolower($product->type ?? '');
-                $searchType = strtolower($type);
-                
-                $parfumKeywords = ['parfum', 'eau de toilette', 'eau de cologne', 'edt', 'edp'];
-                $soinsKeywords = ['baume', 'crème', 'gel', 'lotion', 'sérum', 'soin'];
-                $deoKeywords = ['déodorant', 'deodorant', 'deo'];
-                $gelKeywords = ['gel douche', 'gel moussant', 'savon'];
-                
-                $isProductParfum = $this->containsAnyKeyword($productType, $parfumKeywords);
-                $isSearchParfum = $this->containsAnyKeyword($searchType, $parfumKeywords);
-                $isProductSoin = $this->containsAnyKeyword($productType, $soinsKeywords);
-                $isSearchSoin = $this->containsAnyKeyword($searchType, $soinsKeywords);
-                $isProductDeo = $this->containsAnyKeyword($productType, $deoKeywords);
-                $isSearchDeo = $this->containsAnyKeyword($searchType, $deoKeywords);
-                $isProductGel = $this->containsAnyKeyword($productType, $gelKeywords);
-                $isSearchGel = $this->containsAnyKeyword($searchType, $gelKeywords);
-                
-                // Rejeter si catégories incompatibles
-                if (($isSearchDeo && !$isProductDeo) || (!$isSearchDeo && $isProductDeo)) {
-                    return false;
-                }
-                if (($isSearchGel && !$isProductGel) || (!$isSearchGel && $isProductGel)) {
-                    return false;
-                }
-                if (($isSearchSoin && $isProductParfum) || ($isSearchParfum && $isProductSoin)) {
-                    return false;
-                }
-                
-                return true;
-            });
-
-            if ($filteredWithoutVariation->isNotEmpty()) {
-                $allResults = $allResults->merge($filteredWithoutVariation->map(fn($p) => [
-                    'product' => $p,
-                    'score' => 85
-                ]));
-            }
         }
 
-        // 3. Recherche vendor + name avec scoring (sans filtre strict coffret)
-        if ($allResults->isEmpty() || $allResults->count() < 5) {
-            $vendorAndName = Product::query()
-                ->where('vendor', 'LIKE', "%{$vendor}%")
-                ->where('name', 'LIKE', "%{$name}%")
-                ->limit(20)
-                ->get();
-
-            $scoredResults = $vendorAndName->map(function($product) use ($name, $type, $variation, $isCoffret) {
-                $score = 70;
-
-                // STRICT: Vérifier la correspondance du NAME
-                $productName = strtolower($product->name ?? '');
-                $searchName = strtolower($name);
-                
-                // Le name doit être présent dans le produit (déjà garanti par le WHERE LIKE ci-dessus)
-                // Mais on vérifie la qualité de la correspondance
-                if (stripos($productName, $searchName) !== false) {
-                    // Bonus si correspondance exacte ou très proche
-                    if ($productName === $searchName || str_replace(' ', '', $productName) === str_replace(' ', '', $searchName)) {
-                        $score += 20; // Correspondance exacte
-                    } else {
-                        $score += 10; // Correspondance partielle
-                    }
-                } else if (stripos($searchName, $productName) !== false) {
-                    $score += 10; // Le name du produit est contenu dans la recherche
-                } else {
-                    // Ne devrait pas arriver vu le WHERE LIKE, mais au cas où
-                    $score -= 50; // Grosse pénalité si le name ne correspond vraiment pas
-                }
-
-                // STRICT: Bonus pour type similaire, GROSSE PÉNALITÉ si type totalement différent
-                if ($type) {
-                    $productType = strtolower($product->type ?? '');
-                    $searchType = strtolower($type);
-                    
-                    // Si le type correspond exactement ou partiellement
-                    if (stripos($productType, $searchType) !== false || stripos($searchType, $productType) !== false) {
-                        $score += 20; // Bonus augmenté
-                    } else {
-                        // Types complètement différents
-                        // Vérifier si ce sont des catégories incompatibles
-                        $parfumKeywords = ['parfum', 'eau de toilette', 'eau de cologne', 'edt', 'edp'];
-                        $soinsKeywords = ['baume', 'crème', 'lotion', 'sérum', 'soin'];
-                        $deoKeywords = ['déodorant', 'deodorant', 'deo'];
-                        $gelKeywords = ['gel douche', 'gel moussant', 'savon', 'gel'];
-                        
-                        $isProductParfum = $this->containsAnyKeyword($productType, $parfumKeywords);
-                        $isSearchParfum = $this->containsAnyKeyword($searchType, $parfumKeywords);
-                        $isProductSoin = $this->containsAnyKeyword($productType, $soinsKeywords);
-                        $isSearchSoin = $this->containsAnyKeyword($searchType, $soinsKeywords);
-                        $isProductDeo = $this->containsAnyKeyword($productType, $deoKeywords);
-                        $isSearchDeo = $this->containsAnyKeyword($searchType, $deoKeywords);
-                        $isProductGel = $this->containsAnyKeyword($productType, $gelKeywords);
-                        $isSearchGel = $this->containsAnyKeyword($searchType, $gelKeywords);
-                        
-                        // Catégories incompatibles = grosse pénalité
-                        if (($isSearchDeo && !$isProductDeo) || (!$isSearchDeo && $isProductDeo)) {
-                            $score -= 40; // Déodorant vs autre
-                        } else if (($isSearchGel && !$isProductGel) || (!$isSearchGel && $isProductGel)) {
-                            $score -= 40; // Gel douche vs autre
-                        } else if (($isSearchSoin && $isProductParfum) || ($isSearchParfum && $isProductSoin)) {
-                            $score -= 40; // Grosse pénalité pour catégories incompatibles
-                        } else {
-                            $score -= 10; // Petite pénalité pour types différents mais potentiellement compatibles
-                        }
-                    }
-                }
-
-                // Bonus pour variation similaire
-                if ($variation && stripos($product->variation, $variation) !== false) {
-                    $score += 10;
-                }
-
-                // Vérifier la cohérence coffret
-                $productIsCoffret = $this->isProductCoffret($product);
-                if ($isCoffret === $productIsCoffret) {
-                    $score += 15;
-                } else {
-                    $score -= 20; // Pénalité si incohérence coffret
-                }
-
-                return [
-                    'product' => $product,
-                    'score' => $score
-                ];
-            });
-
-            $allResults = $allResults->merge($scoredResults);
+        if ($candidates->isEmpty()) {
+            $this->matchingProducts = [];
+            $this->bestMatch = null;
+            return;
         }
 
-        // 4. Recherche flexible MAIS TOUJOURS avec le vendor extrait (obligatoire)
-        // CETTE ÉTAPE EST DÉSACTIVÉE CAR ELLE RAMÈNE TROP DE RÉSULTATS NON PERTINENTS
-        // Si on arrive ici sans résultats, c'est qu'il n'y a vraiment pas de correspondance
-        /*
-        if ($allResults->isEmpty()) {
-            // Le vendor est OBLIGATOIRE dans cette recherche
-            $flexible = Product::where('vendor', 'LIKE', "%{$vendor}%")
-            ->limit(20)
-            ->get();
+        // Utiliser OpenAI pour matcher les produits
+        $scoredProducts = $this->matchProductsWithAI($candidates, $vendor, $name, $type, $variation, $isCoffret);
 
-            $scoredResults = $flexible->map(function($product) use ($vendor, $name, $type, $isCoffret) {
-                $score = 40;
-
-                // Le vendor match est garanti ici
-                $score += 20;
-
-                if (stripos($product->name, $name) !== false) {
-                    $score += 20;
-                }
-                
-                // STRICT: Vérifier le type
-                if ($type) {
-                    $productType = strtolower($product->type ?? '');
-                    $searchType = strtolower($type);
-                    
-                    if (stripos($productType, $searchType) !== false || stripos($searchType, $productType) !== false) {
-                        $score += 15;
-                    } else {
-                        // Vérifier incompatibilité de catégories
-                        $parfumKeywords = ['parfum', 'eau de toilette', 'eau de cologne', 'edt', 'edp'];
-                        $soinsKeywords = ['baume', 'crème', 'gel', 'lotion', 'sérum', 'soin'];
-                        
-                        $isProductParfum = $this->containsAnyKeyword($productType, $parfumKeywords);
-                        $isSearchParfum = $this->containsAnyKeyword($searchType, $parfumKeywords);
-                        $isProductSoin = $this->containsAnyKeyword($productType, $soinsKeywords);
-                        $isSearchSoin = $this->containsAnyKeyword($searchType, $soinsKeywords);
-                        
-                        if (($isSearchSoin && $isProductParfum) || ($isSearchParfum && $isProductSoin)) {
-                            $score -= 30;
-                        }
-                    }
-                }
-
-                $productIsCoffret = $this->isProductCoffret($product);
-                if ($isCoffret === $productIsCoffret) {
-                    $score += 10;
-                } else {
-                    $score -= 15;
-                }
-
-                return [
-                    'product' => $product,
-                    'score' => $score
-                ];
-            });
-
-            $allResults = $allResults->merge($scoredResults);
-        }
-        */
-
-        // Trier par score et éliminer les doublons
-        $sortedResults = $allResults
-            ->unique(fn($item) => $item['product']->id)
-            ->sortByDesc('score')
-            ->values();
-
-        // Filtrer les résultats avec un score minimum de 60 (augmenté de 50 à 60)
-        $filteredResults = $sortedResults->filter(fn($item) => $item['score'] >= 60);
-
-        if ($filteredResults->isNotEmpty()) {
-            $this->matchingProducts = $filteredResults->pluck('product')->toArray();
-            $this->bestMatch = $filteredResults->first()['product'];
+        if (!empty($scoredProducts)) {
+            $this->matchingProducts = array_column($scoredProducts, 'product');
+            $this->bestMatch = $scoredProducts[0]['product'] ?? null;
         } else {
             $this->matchingProducts = [];
             $this->bestMatch = null;
+        }
+    }
+
+    private function matchProductsWithAI($candidates, $vendor, $name, $type, $variation, $isCoffret)
+    {
+        // Préparer la liste des produits candidats pour OpenAI
+        $productsList = $candidates->map(function($product, $index) {
+            return [
+                'id' => $index,
+                'vendor' => $product->vendor,
+                'name' => $product->name,
+                'type' => $product->type,
+                'variation' => $product->variation,
+                'product_id' => $product->id
+            ];
+        })->toArray();
+
+        try {
+            $response = Http::withHeaders([
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
+            ])->timeout(30)->post('https://api.openai.com/v1/chat/completions', [
+                'model' => 'gpt-4o-mini',
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => 'Tu es un expert en matching de produits cosmétiques. Tu dois analyser une liste de produits et retourner UNIQUEMENT ceux qui correspondent EXACTEMENT au produit recherché. Sois TRÈS STRICT sur le type de produit. Réponds UNIQUEMENT avec un tableau JSON des IDs correspondants, sans markdown.'
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => "Produit recherché:
+Vendor: {$vendor}
+Name: {$name}
+Type: {$type}
+Variation: {$variation}
+Est un coffret: " . ($isCoffret ? 'OUI' : 'NON') . "
+
+Produits candidats:
+" . json_encode($productsList, JSON_PRETTY_PRINT) . "
+
+RÈGLES STRICTES:
+1. Le VENDOR doit correspondre exactement (ignorer majuscules/minuscules)
+2. Le NAME doit correspondre exactement ou être très similaire
+3. Le TYPE doit correspondre EXACTEMENT - NE PAS mélanger:
+   - Parfum/EDT/EDP ≠ Déodorant ≠ Gel douche ≠ Baume/Crème ≠ Après-rasage
+   - Un déodorant N'EST PAS un gel douche
+   - Un baume après-rasage N'EST PAS un parfum
+   - Un gel moussant N'EST PAS un déodorant
+4. Si coffret recherché, le produit doit être un coffret (et inversement)
+5. La variation peut différer (50ml vs 100ml = OK)
+
+Retourne un tableau JSON avec les IDs des produits qui correspondent, triés du meilleur au moins bon:
+Format: [id1, id2, id3]
+
+Si AUCUN produit ne correspond EXACTEMENT, retourne un tableau vide: []"
+                    ]
+                ],
+                'temperature' => 0.1,
+                'max_tokens' => 500
+            ]);
+
+            if (!$response->successful()) {
+                \Log::error('Erreur API OpenAI lors du matching', [
+                    'status' => $response->status(),
+                    'body' => $response->body()
+                ]);
+                return [];
+            }
+
+            $data = $response->json();
+            $content = $data['choices'][0]['message']['content'] ?? '';
+            
+            // Nettoyer le contenu
+            $content = preg_replace('/```json\s*|\s*```/', '', $content);
+            $content = trim($content);
+            
+            $matchedIds = json_decode($content, true);
+            
+            if (json_last_error() !== JSON_ERROR_NONE || !is_array($matchedIds)) {
+                \Log::error('Erreur parsing JSON du matching', [
+                    'content' => $content,
+                    'error' => json_last_error_msg()
+                ]);
+                return [];
+            }
+
+            // Récupérer les produits correspondants
+            $scoredProducts = [];
+            $score = 100;
+            
+            foreach ($matchedIds as $id) {
+                if (isset($candidates[$id])) {
+                    $scoredProducts[] = [
+                        'product' => $candidates[$id]->toArray(),
+                        'score' => $score
+                    ];
+                    $score -= 5; // Décrémenter le score pour les suivants
+                }
+            }
+
+            return $scoredProducts;
+
+        } catch (\Exception $e) {
+            \Log::error('Erreur lors du matching AI', [
+                'message' => $e->getMessage()
+            ]);
+            return [];
         }
     }
 
@@ -538,22 +349,6 @@ Maintenant, traite ce produit en suivant ces règles exactement."
             }
         }
 
-        return false;
-    }
-
-    /**
-     * Vérifie si un texte contient au moins un des mots-clés
-     */
-    private function containsAnyKeyword(string $text, array $keywords): bool
-    {
-        $lowerText = strtolower($text);
-        
-        foreach ($keywords as $keyword) {
-            if (strpos($lowerText, $keyword) !== false) {
-                return true;
-            }
-        }
-        
         return false;
     }
 
