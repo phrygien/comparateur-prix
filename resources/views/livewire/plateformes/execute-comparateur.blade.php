@@ -13,6 +13,7 @@ new class extends Component {
     public $isLoading = false;
     public $matchingProducts = [];
     public $bestMatch = null;
+    public $aiCorrection = null;
 
     public function mount($name, $id, $price): void
     {
@@ -26,10 +27,12 @@ new class extends Component {
         $this->isLoading = true;
         $this->matchingProducts = [];
         $this->bestMatch = null;
+        $this->aiCorrection = null;
         session()->forget(['error', 'warning', 'success']);
         
         try {
-            $response = Http::withHeaders([
+            // Étape 1: Extraction des données
+            $extractionResponse = Http::withHeaders([
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
             ])->post('https://api.openai.com/v1/chat/completions', [
@@ -78,26 +81,122 @@ Exemple 3 (produit de soin) :
                 'max_tokens' => 500
             ]);
 
-            if ($response->successful()) {
-                $data = $response->json();
-                $content = $data['choices'][0]['message']['content'];
+            if (!$extractionResponse->successful()) {
+                throw new \Exception('Erreur API OpenAI: ' . $extractionResponse->body());
+            }
+
+            $extractionData = $extractionResponse->json();
+            $content = $extractionData['choices'][0]['message']['content'];
+            
+            // Nettoyer le contenu
+            $content = preg_replace('/```json\s*|\s*```/', '', $content);
+            $content = trim($content);
+            
+            $this->extractedData = json_decode($content, true);
+            
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                throw new \Exception('Erreur de parsing JSON: ' . json_last_error_msg());
+            }
+
+            // Étape 2: Vérification de la correspondance avec OpenAI
+            $verificationResponse = Http::withHeaders([
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
+            ])->post('https://api.openai.com/v1/chat/completions', [
+                'model' => 'gpt-4o-mini',
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => 'Tu es un expert en produits cosmétiques et parfumerie. Tu dois analyser si le nom et le type de produit correspondent logiquement. Pour les parfums, si le nom ressemble à un nom de parfum (ex: "Chrome", "Sauvage", "J\'adore") et le type est "Déodorant", cela peut être correct. Réponds UNIQUEMENT avec un objet JSON valide contenant "is_correct" (booléen) et "correction" (objet avec vendor, name, type si correction nécessaire).'
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => "Analyse cette combinaison nom/type de produit et vérifie si elle est cohérente :
+                        
+Nom du produit original: {$this->productName}
+Vendor extrait: {$this->extractedData['vendor']}
+Name extrait: {$this->extractedData['name']}
+Type extrait: {$this->extractedData['type']}
+
+Questions à considérer:
+1. Est-ce que le 'name' ressemble à un nom de gamme/produit valide pour ce 'type'?
+2. Pour les parfums: 'Chrome', 'Sauvage', 'J\'adore' sont des noms de parfums valides pour des déodorants
+3. Pour les soins: 'Vital Perfection' est valide pour un 'Concentré Correcteur Rides'
+4. Y a-t-il des incohérences évidentes?
+
+Si la combinaison semble incorrecte, suggère une correction probable.
+
+Format de réponse attendu:
+{
+  \"is_correct\": true/false,
+  \"confidence\": \"high/medium/low\",
+  \"explanation\": \"Explication courte\",
+  \"correction\": {
+    \"vendor\": \"Vendor corrigé si nécessaire\",
+    \"name\": \"Name corrigé si nécessaire\",
+    \"type\": \"Type corrigé si nécessaire\"
+  }
+}
+
+Exemple de réponse pour 'Azzaro Chrome Déodorant':
+{
+  \"is_correct\": true,
+  \"confidence\": \"high\",
+  \"explanation\": \"Chrome est un nom de parfum Azzaro, compatible avec un déodorant\",
+  \"correction\": {}
+}
+
+Exemple de réponse pour incohérence:
+{
+  \"is_correct\": false,
+  \"confidence\": \"high\",
+  \"explanation\": \"Le nom 'Nettoyant Visage' ne correspond pas au type 'Parfum'\",
+  \"correction\": {
+    \"vendor\": \"Azzaro\",
+    \"name\": \"Chrome\",
+    \"type\": \"Déodorant\"
+  }
+}"
+                    ]
+                ],
+                'temperature' => 0.2,
+                'max_tokens' => 500
+            ]);
+
+            if ($verificationResponse->successful()) {
+                $verificationData = $verificationResponse->json();
+                $verificationContent = $verificationData['choices'][0]['message']['content'];
                 
                 // Nettoyer le contenu
-                $content = preg_replace('/```json\s*|\s*```/', '', $content);
-                $content = trim($content);
+                $verificationContent = preg_replace('/```json\s*|\s*```/', '', $verificationContent);
+                $verificationContent = trim($verificationContent);
                 
-                $this->extractedData = json_decode($content, true);
+                $this->aiCorrection = json_decode($verificationContent, true);
                 
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    throw new \Exception('Erreur de parsing JSON: ' . json_last_error_msg());
+                    throw new \Exception('Erreur de parsing JSON pour la vérification: ' . json_last_error_msg());
                 }
-                
-                // Rechercher les produits correspondants
-                $this->searchMatchingProducts();
-                
-            } else {
-                throw new \Exception('Erreur API OpenAI: ' . $response->body());
+
+                // Appliquer les corrections si nécessaire
+                if (!$this->aiCorrection['is_correct'] && !empty($this->aiCorrection['correction'])) {
+                    $correction = $this->aiCorrection['correction'];
+                    
+                    if (!empty($correction['vendor'])) {
+                        $this->extractedData['vendor'] = $correction['vendor'];
+                    }
+                    if (!empty($correction['name'])) {
+                        $this->extractedData['name'] = $correction['name'];
+                    }
+                    if (!empty($correction['type'])) {
+                        $this->extractedData['type'] = $correction['type'];
+                    }
+                    
+                    session()->flash('info', '⚠️ OpenAI a suggéré une correction: ' . ($this->aiCorrection['explanation'] ?? ''));
+                }
             }
+            
+            // Rechercher les produits correspondants
+            $this->searchMatchingProducts();
             
         } catch (\Exception $e) {
             \Log::error('Erreur extraction', [
@@ -237,6 +336,14 @@ Exemple 3 (produit de soin) :
             $variations[] = $name . ' Pour Femme';
             $variations[] = $vendor . ' ' . $name;
             $variations[] = $vendor; // Dans certains cas, le nom dans la base est juste le vendor
+            
+            // Ajouter des variantes courantes de parfums
+            if (str_contains(strtolower($name), 'chrome')) {
+                $variations[] = 'Chrome Azzaro';
+            }
+            if (str_contains(strtolower($name), 'sauvage')) {
+                $variations[] = 'Sauvage Dior';
+            }
         }
         
         // 3. Nom sans articles ou prépositions
@@ -254,7 +361,7 @@ Exemple 3 (produit de soin) :
      */
     private function isPerfumeType(string $type): bool
     {
-        $perfumeTypes = ['déodorant', 'deodorant', 'parfum', 'eau de toilette', 'eau de parfum', 'after shave', 'lotion'];
+        $perfumeTypes = ['déodorant', 'deodorant', 'parfum', 'eau de toilette', 'eau de parfum', 'after shave', 'lotion', 'baume'];
         $cleanType = strtolower($type);
         
         foreach ($perfumeTypes as $perfumeType) {
@@ -271,7 +378,7 @@ Exemple 3 (produit de soin) :
      */
     private function isSpecificProductType(string $type): bool
     {
-        $specificTypes = ['déodorant', 'deodorant', 'shampooing', 'shampoing', 'après-shampooing', 'gel douche', 'savon'];
+        $specificTypes = ['déodorant', 'deodorant', 'shampooing', 'shampoing', 'après-shampooing', 'gel douche', 'savon', 'lait corporel'];
         $cleanType = strtolower($type);
         
         foreach ($specificTypes as $specificType) {
@@ -362,9 +469,32 @@ Exemple 3 (produit de soin) :
         </div>
     @endif
 
+    @if(session('info'))
+        <div class="mt-4 p-4 bg-blue-100 text-blue-700 rounded">
+            ℹ️ {{ session('info') }}
+        </div>
+    @endif
+
     @if($extractedData)
         <div class="mt-6 p-4 bg-gray-50 rounded">
             <h3 class="font-bold mb-3">Critères extraits :</h3>
+            
+            @if($aiCorrection)
+                <div class="mb-4 p-3 rounded {{ $aiCorrection['is_correct'] ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200' }}">
+                    <div class="flex items-start">
+                        @if($aiCorrection['is_correct'])
+                            <span class="text-green-600 mr-2">✓</span>
+                        @else
+                            <span class="text-yellow-600 mr-2">⚠️</span>
+                        @endif
+                        <div>
+                            <p class="font-semibold">{{ $aiCorrection['explanation'] }}</p>
+                            <p class="text-sm text-gray-600 mt-1">Confiance: {{ $aiCorrection['confidence'] ?? 'N/A' }}</p>
+                        </div>
+                    </div>
+                </div>
+            @endif
+            
             <div class="grid grid-cols-2 gap-4">
                 <div class="{{ empty($extractedData['vendor']) ? 'text-red-600 font-semibold' : '' }}">
                     <span class="font-semibold">Vendor:</span> 
@@ -386,6 +516,32 @@ Exemple 3 (produit de soin) :
                     <span class="text-gray-400">{{ $extractedData['variation'] ?? 'N/A' }}</span>
                 </div>
             </div>
+            
+            @if($aiCorrection && !$aiCorrection['is_correct'] && !empty($aiCorrection['correction']))
+                <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
+                    <h4 class="font-semibold text-blue-700 mb-2">Corrections suggérées par OpenAI:</h4>
+                    <div class="grid grid-cols-2 gap-2 text-sm">
+                        @if(!empty($aiCorrection['correction']['vendor']))
+                            <div>
+                                <span class="font-medium">Vendor:</span> 
+                                <span class="text-blue-600">{{ $aiCorrection['correction']['vendor'] }}</span>
+                            </div>
+                        @endif
+                        @if(!empty($aiCorrection['correction']['name']))
+                            <div>
+                                <span class="font-medium">Name:</span> 
+                                <span class="text-blue-600">{{ $aiCorrection['correction']['name'] }}</span>
+                            </div>
+                        @endif
+                        @if(!empty($aiCorrection['correction']['type']))
+                            <div>
+                                <span class="font-medium">Type:</span> 
+                                <span class="text-blue-600">{{ $aiCorrection['correction']['type'] }}</span>
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            @endif
         </div>
     @endif
 
