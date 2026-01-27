@@ -285,9 +285,32 @@ Maintenant, traite ce produit en suivant ces règles exactement."
             $scoredResults = $vendorAndName->map(function($product) use ($type, $variation, $isCoffret) {
                 $score = 70;
 
-                // Bonus pour type similaire
-                if ($type && stripos($product->type, $type) !== false) {
-                    $score += 10;
+                // STRICT: Bonus pour type similaire, GROSSE PÉNALITÉ si type totalement différent
+                if ($type) {
+                    $productType = strtolower($product->type ?? '');
+                    $searchType = strtolower($type);
+                    
+                    // Si le type correspond exactement ou partiellement
+                    if (stripos($productType, $searchType) !== false || stripos($searchType, $productType) !== false) {
+                        $score += 20; // Bonus augmenté
+                    } else {
+                        // Types complètement différents (ex: Parfum vs Baume)
+                        // Vérifier si ce sont des catégories incompatibles
+                        $parfumKeywords = ['parfum', 'eau de toilette', 'eau de cologne', 'edt', 'edp'];
+                        $soinsKeywords = ['baume', 'crème', 'gel', 'lotion', 'sérum', 'soin'];
+                        
+                        $isProductParfum = $this->containsAnyKeyword($productType, $parfumKeywords);
+                        $isSearchParfum = $this->containsAnyKeyword($searchType, $parfumKeywords);
+                        $isProductSoin = $this->containsAnyKeyword($productType, $soinsKeywords);
+                        $isSearchSoin = $this->containsAnyKeyword($searchType, $soinsKeywords);
+                        
+                        // Si on cherche un soin mais qu'on trouve un parfum (ou inversement)
+                        if (($isSearchSoin && $isProductParfum) || ($isSearchParfum && $isProductSoin)) {
+                            $score -= 40; // Grosse pénalité pour catégories incompatibles
+                        } else {
+                            $score -= 10; // Petite pénalité pour types différents mais potentiellement compatibles
+                        }
+                    }
                 }
 
                 // Bonus pour variation similaire
@@ -328,8 +351,28 @@ Maintenant, traite ce produit en suivant ces règles exactement."
                 if (stripos($product->name, $name) !== false) {
                     $score += 20;
                 }
-                if ($type && stripos($product->type, $type) !== false) {
-                    $score += 10;
+                
+                // STRICT: Vérifier le type
+                if ($type) {
+                    $productType = strtolower($product->type ?? '');
+                    $searchType = strtolower($type);
+                    
+                    if (stripos($productType, $searchType) !== false || stripos($searchType, $productType) !== false) {
+                        $score += 15;
+                    } else {
+                        // Vérifier incompatibilité de catégories
+                        $parfumKeywords = ['parfum', 'eau de toilette', 'eau de cologne', 'edt', 'edp'];
+                        $soinsKeywords = ['baume', 'crème', 'gel', 'lotion', 'sérum', 'soin'];
+                        
+                        $isProductParfum = $this->containsAnyKeyword($productType, $parfumKeywords);
+                        $isSearchParfum = $this->containsAnyKeyword($searchType, $parfumKeywords);
+                        $isProductSoin = $this->containsAnyKeyword($productType, $soinsKeywords);
+                        $isSearchSoin = $this->containsAnyKeyword($searchType, $soinsKeywords);
+                        
+                        if (($isSearchSoin && $isProductParfum) || ($isSearchParfum && $isProductSoin)) {
+                            $score -= 30;
+                        }
+                    }
                 }
 
                 $productIsCoffret = $this->isProductCoffret($product);
@@ -354,8 +397,8 @@ Maintenant, traite ce produit en suivant ces règles exactement."
             ->sortByDesc('score')
             ->values();
 
-        // Filtrer les résultats avec un score minimum de 50
-        $filteredResults = $sortedResults->filter(fn($item) => $item['score'] >= 50);
+        // Filtrer les résultats avec un score minimum de 60 (augmenté de 50 à 60)
+        $filteredResults = $sortedResults->filter(fn($item) => $item['score'] >= 60);
 
         if ($filteredResults->isNotEmpty()) {
             $this->matchingProducts = $filteredResults->pluck('product')->toArray();
@@ -382,6 +425,22 @@ Maintenant, traite ce produit en suivant ces règles exactement."
             }
         }
 
+        return false;
+    }
+
+    /**
+     * Vérifie si un texte contient au moins un des mots-clés
+     */
+    private function containsAnyKeyword(string $text, array $keywords): bool
+    {
+        $lowerText = strtolower($text);
+        
+        foreach ($keywords as $keyword) {
+            if (strpos($lowerText, $keyword) !== false) {
+                return true;
+            }
+        }
+        
         return false;
     }
 
