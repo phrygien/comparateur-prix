@@ -215,7 +215,7 @@ Exemple de format attendu :
             ->when(!empty($this->selectedSites), function ($q) {
                 $q->whereIn('web_site_id', $this->selectedSites);
             })
-            ->orderByDesc('scraped_reference_id')
+            ->orderByDesc('scrap_reference_id')
             ->orderByDesc('id');
 
         // 1. Recherche exacte (vendor + name + type) - SANS variation
@@ -365,7 +365,7 @@ Exemple de format attendu :
                 ->when(!empty($this->selectedSites), function ($q) {
                     $q->whereIn('web_site_id', $this->selectedSites);
                 })
-                ->orderByDesc('scraped_reference_id')
+                ->orderByDesc('scrap_reference_id')
                 ->orderByDesc('id')
                 ->limit(100)
                 ->get();
@@ -393,7 +393,7 @@ Exemple de format attendu :
                             ->orWhereRaw('LOWER(name) LIKE ?', ['%' . $wordLower . '%']);
                     }
                 })
-                ->orderByDesc('scraped_reference_id')
+                ->orderByDesc('scrap_reference_id')
                 ->orderByDesc('id')
                 ->limit(100)
                 ->get();
