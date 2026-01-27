@@ -133,56 +133,65 @@ new class extends Component {
 
         $vendor_clean = preg_replace('/[^a-zA-Z0-9\s]/', '', strtolower($vendor));
         $name_clean = preg_replace('/[^a-zA-Z0-9\s]/', '', strtolower($name));
+        $type_clean = preg_replace('/[^a-zA-Z0-9\s]/', '', strtolower($type));
+        $variation_clean = preg_replace('/[^a-zA-Z0-9\s]/', '', strtolower($variation));
 
-        // FULLTEXT plus tolérant : vendor + mots clés du name (premiers 3)
-        $name_words = explode(' ', $name_clean);
-        $fulltext_terms = ['+' . $vendor_clean];
-        foreach (array_slice($name_words, 0, 3) as $word) {
-            if (strlen($word) > 2) $fulltext_terms[] = '+' . $word;
-        }
-        $fulltext_query = implode(' ', $fulltext_terms);
-
-        $variation_number = preg_replace('/[^0-9]/', '', $variation);
-        $variation_like = $variation_number ? $variation_number . '%' : '%';
-
-        $results = DB::select("
+        // Recherche large pour candidats
+        $candidates = DB::select("
             SELECT id, vendor, name, type, variation, prix_ht, url, image_url
             FROM last_price_scraped_product
-            WHERE MATCH(name, vendor, type, variation) AGAINST (? IN BOOLEAN MODE)
-                OR (LOWER(vendor) LIKE ? AND LOWER(name) LIKE ?)
-                " . ($variation_number ? "AND (variation LIKE ? OR name LIKE ? OR type LIKE ?)" : "") . "
+            WHERE LOWER(vendor) LIKE ?
+              OR LOWER(name) LIKE ?
+              OR LOWER(type) LIKE ?
             ORDER BY prix_ht ASC
-            LIMIT 20
-        ", array_filter([
-            $fulltext_query,
+            LIMIT 50
+        ", [
             "%$vendor_clean%",
-            "%" . implode('% %', array_slice($name_words, 0, 3)) . "%",
-            $variation_number ? "%$variation_like" : null,
-            $variation_number ? "%$variation_like" : null,
-            $variation_number ? "%$variation_like" : null,
-        ]));
+            "%$name_clean%",
+            "%$type_clean%"
+        ]);
 
-        // Filtre PHP assoupli : vendor ET au moins un mot du name
-        $this->matchingProducts = array_filter(array_map(fn($r) => (array)$r, $results), function ($product) use ($vendor_clean, $name_words) {
-            $pVendor = strtolower($product['vendor'] ?? '');
-            $pName = strtolower($product['name'] ?? '');
-            $pType = strtolower($product['type'] ?? '');
+        $candidates = array_map(fn($c) => (array)$c, $candidates);
 
-            $vendorMatch = str_contains($pVendor, $vendor_clean) || str_contains($vendor_clean, $pVendor);
-            $nameMatch = false;
-            foreach ($name_words as $word) {
-                if (str_contains($pName, $word) || str_contains($pType, $word)) {
-                    $nameMatch = true;
-                    break;
-                }
-            }
+        // Calcul de similarité (proche mais pas identique)
+        $scored = [];
+        foreach ($candidates as $cand) {
+            $cand_vendor = strtolower($cand['vendor'] ?? '');
+            $cand_name = strtolower($cand['name'] ?? '');
+            $cand_type = strtolower($cand['type'] ?? '');
+            $cand_variation = strtolower($cand['variation'] ?? '');
 
-            return $vendorMatch && $nameMatch;
-        });
+            $vendor_sim = Str::similarity($vendor_clean, $cand_vendor);
+            $name_sim = Str::similarity($name_clean, $cand_name);
+            $type_sim = Str::similarity($type_clean, $cand_type);
+            $variation_sim = Str::similarity($variation_clean, $cand_variation);
+
+            $score = ($vendor_sim * 0.3) + ($name_sim * 0.4) + ($type_sim * 0.2) + ($variation_sim * 0.1);
+
+            if ($score >= 0.95 || $score < 0.5) continue; // Skip trop identique ou trop différent
+
+            $cand['is_coffret'] = $this->isCoffret($cand);
+            $scored[] = $cand;
+        }
+
+        // Trier par score descendant
+        usort($scored, fn($a, $b) => $b['score'] <=> $a['score']);
+
+        $this->matchingProducts = $scored;
 
         if (empty($this->matchingProducts)) {
-            session()->flash('error', 'Aucun produit trouvé avec la combinaison vendor + name.');
+            session()->flash('error', 'Aucun produit proche trouvé.');
         }
+    }
+
+    private function isCoffret(array $product): bool
+    {
+        $keywords = ['coffret', 'kit', 'set', 'pack', 'gift', 'box'];
+        $text = strtolower(($product['name'] ?? '') . ' ' . ($product['type'] ?? '') . ' ' . ($product['variation'] ?? ''));
+        foreach ($keywords as $kw) {
+            if (str_contains($text, $kw)) return true;
+        }
+        return false;
     }
 
     public function selectProduct($productId)
@@ -233,7 +242,7 @@ new class extends Component {
 
     @if(!empty($matchingProducts))
         <div class="mt-6">
-            <h3 class="font-bold mb-3">Résultats trouvés ({{ count($matchingProducts) }}) :</h3>
+            <h3 class="font-bold mb-3">Résultats proches trouvés ({{ count($matchingProducts) }}) :</h3>
             <div class="space-y-2 max-h-96 overflow-y-auto">
                 @foreach($matchingProducts as $product)
                     <div 
@@ -246,7 +255,7 @@ new class extends Component {
                                     <img src="{{ $product['image_url'] }}" alt="{{ $product['name'] }}" class="w-12 h-12 object-cover rounded">
                                 @endif
                                 <div class="flex-1">
-                                    <p class="font-medium text-sm">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
+                                    <p class="font-medium text-sm">{{ $product['vendor'] }} - {{ $product['name'] }} {{ $product['is_coffret'] ? '(Coffret)' : '' }}</p>
                                     <p class="text-xs text-gray-500">{{ $product['type'] }} | {{ $product['variation'] }}</p>
                                 </div>
                             </div>
