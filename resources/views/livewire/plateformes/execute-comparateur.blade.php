@@ -2,6 +2,7 @@
 
 use Livewire\Volt\Component;
 use App\Models\Product;
+use Illuminate\Support\Facades\DB;
 
 new class extends Component {
     
@@ -124,92 +125,127 @@ Output:
         $cleanType = preg_replace('/\b(vaporisateur|spray|atomiseur)\b/i', '', $type);
         $cleanType = trim($cleanType);
 
-        // RECHERCHE STRICTE : Vendor + Name + Type OBLIGATOIRES
-        $strictMatch = Product::query()
-            ->where('vendor', 'LIKE', "%{$vendor}%")
-            ->where('name', 'LIKE', "%{$name}%")
-            ->where(function($q) use ($cleanType, $type) {
-                // Chercher le type nettoyé OU le type original
-                $q->where('type', 'LIKE', "%{$cleanType}%");
-                if ($cleanType !== $type) {
-                    $q->orWhere('type', 'LIKE', "%{$type}%");
-                }
-            })
-            // Filtre STRICT pour coffret
-            ->when($isCoffret, function($q) {
-                // Si c'est un coffret, le produit DOIT contenir un mot-clé coffret
-                $q->where(function($subQ) {
-                    $subQ->where('name', 'LIKE', '%coffret%')
-                         ->orWhere('type', 'LIKE', '%coffret%')
-                         ->orWhere('name', 'LIKE', '%kit%')
-                         ->orWhere('type', 'LIKE', '%kit%')
-                         ->orWhere('name', 'LIKE', '%set%')
-                         ->orWhere('type', 'LIKE', '%set%');
-                });
-            })
-            ->when(!$isCoffret, function($q) {
-                // Si ce n'est PAS un coffret, exclure TOUS les produits coffret
-                $q->where('name', 'NOT LIKE', '%coffret%')
-                  ->where('type', 'NOT LIKE', '%coffret%')
-                  ->where('name', 'NOT LIKE', '%kit%')
-                  ->where('type', 'NOT LIKE', '%kit%')
-                  ->where('name', 'NOT LIKE', '%set%')
-                  ->where('type', 'NOT LIKE', '%set%')
-                  ->where('name', 'NOT LIKE', '%box%')
-                  ->where('type', 'NOT LIKE', '%box%');
-            })
-            ->get();
-
-        // Si on a des résultats, prioriser ceux qui matchent aussi la variation
-        if ($strictMatch->isNotEmpty() && !empty($variation)) {
-            // Extraire juste le nombre de la variation (ex: "105" de "105ml")
-            preg_match('/(\d+)\s*(ml|g|oz)?/i', $variation, $matches);
-            $variationNumber = $matches[1] ?? '';
-            
-            // Chercher d'abord les matchs exacts de variation
-            $withExactVariation = $strictMatch->filter(function($product) use ($variation) {
-                return stripos($product->variation, $variation) !== false;
-            });
-            
-            if ($withExactVariation->isNotEmpty()) {
-                $this->matchingProducts = $withExactVariation->values()->toArray();
-                $this->bestMatch = $withExactVariation->first();
-                return;
-            }
-            
-            // Sinon, chercher le nombre de variation (plus flexible)
-            if (!empty($variationNumber)) {
-                $withSimilarVariation = $strictMatch->filter(function($product) use ($variationNumber) {
-                    return stripos($product->variation, $variationNumber) !== false;
-                });
-                
-                if ($withSimilarVariation->isNotEmpty()) {
-                    $this->matchingProducts = $withSimilarVariation->values()->toArray();
-                    $this->bestMatch = $withSimilarVariation->first();
-                    return;
-                }
-            }
-        }
+        // Construire la requête FULLTEXT avec opérateurs booléens
+        // + signifie que le mot DOIT être présent
+        $searchQuery = "+{$vendor} +{$name} +{$cleanType}";
         
-        // Retourner tous les résultats qui matchent vendor + name + type
-        if ($strictMatch->isNotEmpty()) {
-            $this->matchingProducts = $strictMatch->toArray();
-            $this->bestMatch = $strictMatch->first();
+        // Ajouter "coffret" si c'est un coffret
+        if ($isCoffret) {
+            $searchQuery .= " +(coffret kit set)";
+        }
+
+        // Exécuter la recherche FULLTEXT
+        $sql = "SELECT 
+                    lp.*, 
+                    ws.name as site_name, 
+                    lp.url as product_url, 
+                    lp.image_url as image
+                FROM last_price_scraped_product lp
+                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+                WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
+                    AGAINST (? IN BOOLEAN MODE)
+                AND (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')";
+
+        // Ajouter le filtre pour exclure les coffrets si ce n'est pas un coffret
+        if (!$isCoffret) {
+            $sql .= " AND lp.name NOT LIKE '%coffret%' 
+                     AND lp.type NOT LIKE '%coffret%'
+                     AND lp.name NOT LIKE '%kit%'
+                     AND lp.type NOT LIKE '%kit%'
+                     AND lp.name NOT LIKE '%set%'
+                     AND lp.type NOT LIKE '%set%'
+                     AND lp.name NOT LIKE '%box%'
+                     AND lp.type NOT LIKE '%box%'";
+        } else {
+            // Si c'est un coffret, forcer la présence du mot-clé
+            $sql .= " AND (lp.name LIKE '%coffret%' 
+                          OR lp.type LIKE '%coffret%'
+                          OR lp.name LIKE '%kit%'
+                          OR lp.type LIKE '%kit%'
+                          OR lp.name LIKE '%set%'
+                          OR lp.type LIKE '%set%')";
+        }
+
+        $results = DB::select($sql, [$searchQuery]);
+
+        // Convertir les résultats en collection
+        $collection = collect($results);
+
+        if ($collection->isEmpty()) {
+            $this->matchingProducts = [];
+            $this->bestMatch = null;
             return;
         }
 
-        // SI AUCUN RÉSULTAT : Ne rien retourner (pas de fallback)
-        $this->matchingProducts = [];
-        $this->bestMatch = null;
+        // Filtrage supplémentaire pour s'assurer de la correspondance stricte
+        $filtered = $collection->filter(function($product) use ($vendor, $name, $cleanType, $type) {
+            $productVendor = strtolower($product->vendor ?? '');
+            $productName = strtolower($product->name ?? '');
+            $productType = strtolower($product->type ?? '');
+            
+            $vendorMatch = str_contains($productVendor, strtolower($vendor));
+            $nameMatch = str_contains($productName, strtolower($name));
+            $typeMatch = str_contains($productType, strtolower($cleanType)) || 
+                        str_contains($productType, strtolower($type));
+            
+            return $vendorMatch && $nameMatch && $typeMatch;
+        });
+
+        if ($filtered->isEmpty()) {
+            $this->matchingProducts = [];
+            $this->bestMatch = null;
+            return;
+        }
+
+        // Prioriser les résultats qui matchent aussi la variation
+        if (!empty($variation)) {
+            // Extraire le nombre de la variation
+            preg_match('/(\d+)\s*(ml|g|oz)?/i', $variation, $matches);
+            $variationNumber = $matches[1] ?? '';
+            
+            // Trier par correspondance de variation
+            $sorted = $filtered->sortByDesc(function($product) use ($variation, $variationNumber) {
+                $productVariation = strtolower($product->variation ?? '');
+                
+                // Match exact = priorité maximale
+                if (str_contains($productVariation, strtolower($variation))) {
+                    return 3;
+                }
+                
+                // Match sur le nombre = priorité moyenne
+                if (!empty($variationNumber) && str_contains($productVariation, $variationNumber)) {
+                    return 2;
+                }
+                
+                // Pas de match = priorité faible
+                return 1;
+            });
+            
+            $this->matchingProducts = $sorted->values()->map(function($item) {
+                return (array) $item;
+            })->toArray();
+        } else {
+            $this->matchingProducts = $filtered->values()->map(function($item) {
+                return (array) $item;
+            })->toArray();
+        }
+
+        $this->bestMatch = $this->matchingProducts[0] ?? null;
     }
 
     public function selectProduct($productId)
     {
-        $product = Product::find($productId);
+        $result = DB::selectOne(
+            "SELECT lp.*, ws.name as site_name, lp.url as product_url, lp.image_url as image
+             FROM last_price_scraped_product lp
+             LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+             WHERE lp.id = ?",
+            [$productId]
+        );
         
-        if ($product) {
-            session()->flash('success', 'Produit sélectionné : ' . $product->name);
-            $this->bestMatch = $product;
+        if ($result) {
+            session()->flash('success', 'Produit sélectionné : ' . $result->name);
+            $this->bestMatch = (array) $result;
             $this->dispatch('product-selected', productId: $productId);
         }
     }
@@ -220,7 +256,7 @@ Output:
             // Détection si c'est un coffret pour l'affichage
             $isCoffret = false;
             $coffretKeywords = ['coffret', 'kit', 'set', 'box', 'trousse'];
-            $searchText = strtolower($product['name'] . ' ' . $product['type']);
+            $searchText = strtolower(($product['name'] ?? '') . ' ' . ($product['type'] ?? ''));
             
             foreach ($coffretKeywords as $keyword) {
                 if (str_contains($searchText, $keyword)) {
@@ -229,18 +265,18 @@ Output:
                 }
             }
             
-            $displayType = $product['type'] . ' | ' . $product['variation'];
+            $displayType = ($product['type'] ?? 'N/A') . ' | ' . ($product['variation'] ?? 'N/A');
             if ($isCoffret) {
                 $displayType = '📦 ' . $displayType;
             }
             
             return (object)[
-                'id' => $product['id'],
-                'title' => $product['vendor'] . ' - ' . $product['name'],
+                'id' => $product['id'] ?? null,
+                'title' => ($product['vendor'] ?? 'N/A') . ' - ' . ($product['name'] ?? 'N/A'),
                 'username' => $displayType,
-                'subtitle' => $product['prix_ht'] . ' ' . $product['currency'],
-                'avatar' => $product['image_url'] ?? null,
-                'url' => $product['url'] ?? null,
+                'subtitle' => ($product['prix_ht'] ?? 'N/A') . ' ' . ($product['currency'] ?? ''),
+                'avatar' => $product['image'] ?? $product['image_url'] ?? null,
+                'url' => $product['product_url'] ?? $product['url'] ?? null,
             ];
         });
     }
@@ -305,8 +341,8 @@ Output:
             </div>
             
             <div class="mt-3 p-3 bg-blue-50 border-l-4 border-blue-500 text-sm">
-                <p class="font-semibold text-blue-900">Critères de recherche STRICTS :</p>
-                <p class="text-blue-700">Vendor = "{{ $extractedData['vendor'] }}" ET Name = "{{ $extractedData['name'] }}" ET Type = "{{ $extractedData['type'] }}"</p>
+                <p class="font-semibold text-blue-900">Requête FULLTEXT :</p>
+                <p class="text-blue-700 font-mono">+{{ $extractedData['vendor'] }} +{{ $extractedData['name'] }} +{{ $extractedData['type'] }}</p>
             </div>
         </div>
     @endif
@@ -317,7 +353,7 @@ Output:
             @php
                 $isCoffret = false;
                 $coffretKeywords = ['coffret', 'kit', 'set', 'box', 'trousse'];
-                $searchText = strtolower($bestMatch['name'] . ' ' . $bestMatch['type']);
+                $searchText = strtolower(($bestMatch['name'] ?? '') . ' ' . ($bestMatch['type'] ?? ''));
                 
                 foreach ($coffretKeywords as $keyword) {
                     if (str_contains($searchText, $keyword)) {
@@ -326,24 +362,24 @@ Output:
                     }
                 }
                 
-                $displayType = $bestMatch['type'] . ' | ' . $bestMatch['variation'];
+                $displayType = ($bestMatch['type'] ?? 'N/A') . ' | ' . ($bestMatch['variation'] ?? 'N/A');
                 if ($isCoffret) {
                     $displayType = '📦 ' . $displayType;
                 }
                 
                 $bestMatchObj = (object)[
-                    'id' => $bestMatch['id'],
-                    'title' => $bestMatch['vendor'] . ' - ' . $bestMatch['name'],
+                    'id' => $bestMatch['id'] ?? null,
+                    'title' => ($bestMatch['vendor'] ?? 'N/A') . ' - ' . ($bestMatch['name'] ?? 'N/A'),
                     'username' => $displayType,
-                    'subtitle' => $bestMatch['prix_ht'] . ' ' . $bestMatch['currency'],
-                    'avatar' => $bestMatch['image_url'] ?? null,
+                    'subtitle' => ($bestMatch['prix_ht'] ?? 'N/A') . ' ' . ($bestMatch['currency'] ?? ''),
+                    'avatar' => $bestMatch['image'] ?? $bestMatch['image_url'] ?? null,
                 ];
             @endphp
             <x-list-item 
                 :item="$bestMatchObj" 
                 value="title"
                 sub-value="username" 
-                :link="$bestMatch['url'] ?? '#'" 
+                :link="$bestMatch['product_url'] ?? $bestMatch['url'] ?? '#'" 
             />
         </div>
     @endif
