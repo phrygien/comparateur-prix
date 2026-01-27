@@ -246,31 +246,44 @@ Exemple faux: {\"is_correct\": false, ... \"correction\": {\"type\": \"Déodoran
         ]);
     }
 
-    // Score simple de matching (0-1)
-    private function calculateMatchScore($product, string $vendor, string $name, string $type, bool $requireName = true): float
-    {
-        $score = 0;
-        $total = 0;
+private function calculateMatchScore($product, string $vendor, string $name, string $type, bool $requireName = true): float
+{
+    // Use array access instead of object notation
+    $productVendor = $product['vendor'] ?? '';
+    $productName   = $product['name']   ?? '';
+    $productType   = $product['type']   ?? '';
 
-        // Vendor match
-        $vendorMatch = (str_contains(strtolower($product->vendor), strtolower($vendor)) || str_contains(strtolower($vendor), strtolower($product->vendor)));
-        $score += $vendorMatch ? 1 : 0;
+    $score = 0.0;
+    $total = 0;
+
+    // Vendor match
+    $vendorMatch = (
+        str_contains(strtolower($productVendor), strtolower($vendor)) ||
+        str_contains(strtolower($vendor), strtolower($productVendor))
+    );
+    $score += $vendorMatch ? 1 : 0;
+    $total += 1;
+
+    // Name match
+    if ($requireName) {
+        $nameMatch = (
+            str_contains(strtolower($productName), strtolower($name)) ||
+            str_contains(strtolower($name), strtolower($productName))
+        );
+        $score += $nameMatch ? 1 : 0;
         $total += 1;
-
-        // Name match
-        if ($requireName) {
-            $nameMatch = str_contains(strtolower($product->name), strtolower($name)) || str_contains(strtolower($name), strtolower($product->name));
-            $score += $nameMatch ? 1 : 0;
-            $total += 1;
-        }
-
-        // Type match
-        $typeMatch = str_contains(strtolower($product->type), strtolower($type)) || str_contains(strtolower($type), strtolower($product->type));
-        $score += $typeMatch ? 1 : 0;
-        $total += 1;
-
-        return $score / $total;
     }
+
+    // Type match
+    $typeMatch = (
+        str_contains(strtolower($productType), strtolower($type)) ||
+        str_contains(strtolower($type), strtolower($productType))
+    );
+    $score += $typeMatch ? 1 : 0;
+    $total += 1;
+
+    return $total > 0 ? $score / $total : 0;
+}
 
     /**
      * Variations de nom étendues
