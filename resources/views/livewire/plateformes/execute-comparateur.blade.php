@@ -168,6 +168,17 @@ Pour un coffret :
         // Stratégie de recherche en cascade avec scoring
         $allResults = collect();
 
+        // IMPORTANT: Si vendor est vide, on ne peut pas faire de recherche fiable
+        if (empty($vendor)) {
+            \Log::warning('Vendor vide lors de la recherche', [
+                'product_name' => $this->productName,
+                'extracted_data' => $this->extractedData
+            ]);
+            $this->matchingProducts = [];
+            $this->bestMatch = null;
+            return;
+        }
+
         // 1. Recherche exacte (tous les critères + vérification coffret dans name/type)
         $exactMatch = Product::query()
             ->where('vendor', 'LIKE', "%{$vendor}%")
@@ -283,21 +294,19 @@ Pour un coffret :
             $allResults = $allResults->merge($scoredResults);
         }
 
-        // 4. Recherche flexible (vendor OU name) avec scoring
+        // 4. Recherche flexible MAIS TOUJOURS avec le vendor extrait (obligatoire)
         if ($allResults->isEmpty()) {
-            $flexible = Product::where(function($q) use ($vendor, $name) {
-                $q->where('vendor', 'LIKE', "%{$vendor}%")
-                  ->orWhere('name', 'LIKE', "%{$name}%");
-            })
+            // Le vendor est OBLIGATOIRE dans cette recherche
+            $flexible = Product::where('vendor', 'LIKE', "%{$vendor}%")
             ->limit(20)
             ->get();
 
             $scoredResults = $flexible->map(function($product) use ($vendor, $name, $type, $isCoffret) {
                 $score = 40;
 
-                if (stripos($product->vendor, $vendor) !== false) {
-                    $score += 20;
-                }
+                // Le vendor match est garanti ici
+                $score += 20;
+
                 if (stripos($product->name, $name) !== false) {
                     $score += 20;
                 }
