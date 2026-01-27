@@ -494,7 +494,7 @@ Pour un coffret :
                         <span class="font-medium">{{ $bestMatch['type'] }}</span> | 
                         <span>{{ $bestMatch['variation'] }}</span>
                     </p>
-                    <p class="text-lg font-bold text-green-600 mt-2">{{ number_format($bestMatch['prix_ht'], 2) }} {{ $bestMatch['currency'] }}</p>
+                    <p class="text-lg font-bold text-green-600 mt-2">{{ number_format((float)$bestMatch['prix_ht'], 2) }} {{ $bestMatch['currency'] }}</p>
                     @if($bestMatch['url'])
                         <a href="{{ $bestMatch['url'] }}" target="_blank" class="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 hover:underline mt-2">
                             Voir le produit
@@ -551,7 +551,7 @@ Pour un coffret :
                                     <p class="text-xs text-gray-500 truncate">{{ $product['type'] }} | {{ $product['variation'] }}</p>
                                 </div>
                                 <div class="text-right flex-shrink-0">
-                                    <p class="font-bold text-sm whitespace-nowrap">{{ number_format($product['prix_ht'], 2) }} {{ $product['currency'] }}</p>
+                                    <p class="font-bold text-sm whitespace-nowrap">{{ number_format((float)$product['prix_ht'], 2) }} {{ $product['currency'] }}</p>
                                     <p class="text-xs text-gray-400">ID: {{ $product['id'] }}</p>
                                 </div>
                             </div>
