@@ -242,7 +242,7 @@ Exemple de format attendu :
             if ($exactMatch->isNotEmpty()) {
                 $filtered = $this->filterByCoffretStatus($exactMatch, $isCoffretSource);
                 if (!empty($filtered)) {
-                    $this->groupResultsBySiteAndProduct($filtered);
+                    $this->groupAllProductsWithoutDuplicates($filtered);
                     $this->validateBestMatchWithAI();
                     return;
                 }
@@ -264,7 +264,7 @@ Exemple de format attendu :
             if ($vendorAndName->isNotEmpty()) {
                 $filtered = $this->filterByCoffretStatus($vendorAndName, $isCoffretSource);
                 if (!empty($filtered)) {
-                    $this->groupResultsBySiteAndProduct($filtered);
+                    $this->groupAllProductsWithoutDuplicates($filtered);
                     $this->validateBestMatchWithAI();
                     return;
                 }
@@ -300,7 +300,7 @@ Exemple de format attendu :
             if ($keywordSearch->isNotEmpty()) {
                 $filtered = $this->filterByCoffretStatus($keywordSearch, $isCoffretSource);
                 if (!empty($filtered)) {
-                    $this->groupResultsBySiteAndProduct($filtered);
+                    $this->groupAllProductsWithoutDuplicates($filtered);
                     $this->validateBestMatchWithAI();
                     return;
                 }
@@ -324,7 +324,7 @@ Exemple de format attendu :
             if ($broadSearch->isNotEmpty()) {
                 $filtered = $this->filterByCoffretStatus($broadSearch, $isCoffretSource);
                 if (!empty($filtered)) {
-                    $this->groupResultsBySiteAndProduct($filtered);
+                    $this->groupAllProductsWithoutDuplicates($filtered);
                     $this->validateBestMatchWithAI();
                     return;
                 }
@@ -347,7 +347,7 @@ Exemple de format attendu :
 
             $filtered = $this->filterByCoffretStatus($typeOnly, $isCoffretSource);
             if (!empty($filtered)) {
-                $this->groupResultsBySiteAndProduct($filtered);
+                $this->groupAllProductsWithoutDuplicates($filtered);
                 $this->validateBestMatchWithAI();
                 return;
             }
@@ -373,7 +373,7 @@ Exemple de format attendu :
             if ($vendorOnly->isNotEmpty()) {
                 $filtered = $this->filterByCoffretStatus($vendorOnly, $isCoffretSource);
                 if (!empty($filtered)) {
-                    $this->groupResultsBySiteAndProduct($filtered);
+                    $this->groupAllProductsWithoutDuplicates($filtered);
                     $this->validateBestMatchWithAI();
                 }
             }
@@ -401,7 +401,7 @@ Exemple de format attendu :
             if ($noVendorSearch->isNotEmpty()) {
                 $filtered = $this->filterByCoffretStatus($noVendorSearch, $isCoffretSource);
                 if (!empty($filtered)) {
-                    $this->groupResultsBySiteAndProduct($filtered);
+                    $this->groupAllProductsWithoutDuplicates($filtered);
                     $this->validateBestMatchWithAI();
                 }
             }
@@ -409,10 +409,10 @@ Exemple de format attendu :
     }
 
     /**
-     * Groupe les résultats par site et garde le produit avec le scrap_reference_id le plus élevé
-     * Pour éviter les doublons sur le même site
+     * Groupe les résultats par site et garde tous les produits UNIQUES par site
+     * Élimine les doublons basés sur vendor + name + type + variation
      */
-    private function groupResultsBySiteAndProduct(array $products)
+    private function groupAllProductsWithoutDuplicates(array $products)
     {
         if (empty($products)) {
             $this->matchingProducts = [];
@@ -420,11 +420,11 @@ Exemple de format attendu :
             return;
         }
 
-        // Convertir en collection et s'assurer que chaque produit a les champs nécessaires
+        // Convertir en collection
         $productsCollection = collect($products)->map(function ($product) {
             return array_merge([
                 'scrape_reference' => 'unknown_' . ($product['id'] ?? uniqid()),
-                'scrap_reference_id' => 0, // ID numérique de la référence
+                'scrap_reference_id' => 0,
                 'web_site_id' => 0,
                 'id' => 0,
                 'created_at' => now()->toDateTimeString()
@@ -434,45 +434,88 @@ Exemple de format attendu :
         // 1. Grouper par site
         $groupedBySite = $productsCollection->groupBy('web_site_id');
 
-        // 2. Pour chaque site, garder le produit avec le scrap_reference_id le plus élevé
-        // Si même scrap_reference_id, prendre le produit avec l'ID le plus élevé
+        // 2. Pour chaque site, éliminer les doublons (même vendor + name + type + variation)
         $uniqueProductsBySite = $groupedBySite->map(function ($siteProducts, $siteId) {
-            // Trier d'abord par scrap_reference_id décroissant, puis par ID décroissant
-            return $siteProducts->sortByDesc('scrap_reference_id')
-                ->sortByDesc('id')
-                ->first();
-        })->filter()->values(); // Filtrer les valeurs null et réindexer
+            $uniqueProducts = collect();
+            $seenKeys = [];
 
-        // Limiter à 50 résultats maximum
-        $this->matchingProducts = $uniqueProductsBySite->take(50)->toArray();
+            foreach ($siteProducts as $product) {
+                // Créer une clé unique basée sur les attributs du produit
+                $key = $this->createProductUniqueKey($product);
+                
+                if (!isset($seenKeys[$key])) {
+                    $seenKeys[$key] = true;
+                    $uniqueProducts->push($product);
+                }
+            }
 
-        // 3. Stocker les résultats groupés pour l'affichage
+            // Trier par scrap_reference_id décroissant et date décroissante
+            return $uniqueProducts->sortByDesc('scrap_reference_id')
+                ->sortByDesc('created_at')
+                ->values();
+        });
+
+        // 3. Aplatir tous les produits uniques de tous les sites
+        $allUniqueProducts = $uniqueProductsBySite->flatMap(function ($products) {
+            return $products;
+        })->sortByDesc('scrap_reference_id')
+          ->sortByDesc('created_at')
+          ->values();
+
+        // Limiter à 100 résultats maximum
+        $this->matchingProducts = $allUniqueProducts->take(100)->toArray();
+
+        // 4. Stocker les résultats groupés pour l'affichage
         $this->groupedResults = $groupedBySite->map(function ($siteProducts, $siteId) {
-            // Pour les statistiques, on garde tous les produits du site
             $totalProducts = $siteProducts->count();
-            $maxScrapedReferenceId = $siteProducts->max('scrap_reference_id');
-
-            // Trouver le produit avec le scrap_reference_id le plus élevé
-            $latestProduct = $siteProducts->sortByDesc('scrap_reference_id')
-                ->sortByDesc('id')
-                ->first();
+            
+            // Éliminer les doublons pour les statistiques
+            $uniqueProducts = collect();
+            $seenKeys = [];
+            
+            foreach ($siteProducts as $product) {
+                $key = $this->createProductUniqueKey($product);
+                if (!isset($seenKeys[$key])) {
+                    $seenKeys[$key] = true;
+                    $uniqueProducts->push($product);
+                }
+            }
+            
+            $uniqueCount = $uniqueProducts->count();
 
             return [
                 'site_id' => $siteId,
                 'total_products' => $totalProducts,
-                'max_scrap_reference_id' => $maxScrapedReferenceId,
-                'latest_product' => $latestProduct,
+                'unique_products' => $uniqueCount,
                 'all_products' => $siteProducts->map(function ($product) {
                     return [
                         'id' => $product['id'] ?? 0,
                         'scrap_reference_id' => $product['scrap_reference_id'] ?? 0,
                         'scrape_reference' => $product['scrape_reference'] ?? '',
+                        'vendor' => $product['vendor'] ?? '',
+                        'name' => $product['name'] ?? '',
+                        'type' => $product['type'] ?? '',
+                        'variation' => $product['variation'] ?? '',
                         'price' => $product['prix_ht'] ?? 0,
-                        'created_at' => $product['created_at'] ?? null
+                        'created_at' => $product['created_at'] ?? null,
+                        'url' => $product['url'] ?? null
                     ];
                 })->sortByDesc('scrap_reference_id')->values()->toArray()
             ];
         })->toArray();
+    }
+
+    /**
+     * Crée une clé unique pour un produit basée sur ses attributs
+     */
+    private function createProductUniqueKey(array $product): string
+    {
+        $vendor = mb_strtolower(trim($product['vendor'] ?? ''));
+        $name = mb_strtolower(trim($product['name'] ?? ''));
+        $type = mb_strtolower(trim($product['type'] ?? ''));
+        $variation = mb_strtolower(trim($product['variation'] ?? ''));
+        
+        return md5($vendor . '|' . $name . '|' . $type . '|' . $variation);
     }
 
     /**
@@ -603,11 +646,11 @@ Score de confiance entre 0 et 1."
                     if ($found) {
                         $this->bestMatch = $found;
                     } else {
-                        // Fallback sur le premier résultat (celui avec le scrap_reference_id le plus élevé)
+                        // Fallback sur le premier résultat
                         $this->bestMatch = $this->matchingProducts[0] ?? null;
                     }
                 } else {
-                    // Fallback sur le premier résultat (celui avec le scrap_reference_id le plus élevé)
+                    // Fallback sur le premier résultat
                     $this->bestMatch = $this->matchingProducts[0] ?? null;
                 }
             }
@@ -669,8 +712,7 @@ Score de confiance entre 0 et 1."
         <h2 class="text-xl font-bold mb-2">Extraction et recherche de produit</h2>
         <p class="text-gray-600">Produit: {{ $productName }}</p>
         <p class="text-sm text-gray-500 mt-1">
-            <span class="font-semibold">Affichage :</span> Un seul produit par site (celui avec le scrap_reference_id
-            le plus élevé)
+            <span class="font-semibold">Affichage :</span> Tous les produits uniques par site (sans doublons)
         </p>
     </div>
 
@@ -744,23 +786,24 @@ Score de confiance entre 0 et 1."
     @endif
 
     @if(!empty($groupedResults))
+        @php
+            $totalUniqueProducts = 0;
+            $totalAllProducts = 0;
+            foreach ($groupedResults as $siteData) {
+                $totalUniqueProducts += $siteData['unique_products'] ?? 0;
+                $totalAllProducts += $siteData['total_products'] ?? 0;
+            }
+        @endphp
+        
         <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
             <p class="text-sm text-blue-800">
                 <span class="font-semibold">{{ count($matchingProducts) }}</span> produit(s) unique(s) trouvé(s)
-                <span class="text-xs ml-2">(1 par site, scrap_reference_id le plus élevé)</span>
+                sur <span class="font-semibold">{{ count($groupedResults) }}</span> site(s)
             </p>
-            @php
-                $totalProductsAllSites = 0;
-                if (!empty($groupedResults)) {
-                    foreach ($groupedResults as $siteData) {
-                        $totalProductsAllSites += $siteData['total_products'] ?? 0;
-                    }
-                }
-            @endphp
             <p class="text-xs text-blue-600 mt-1">
-                Produits affichés : {{ count($matchingProducts) }} |
-                Produits totaux trouvés : {{ $totalProductsAllSites }} |
-                Sites avec résultats : {{ count($groupedResults) }}
+                Total produits avant déduplication : {{ $totalAllProducts }} |
+                Produits uniques après déduplication : {{ $totalUniqueProducts }} |
+                Doublons éliminés : {{ $totalAllProducts - $totalUniqueProducts }}
             </p>
         </div>
     @endif
@@ -802,24 +845,12 @@ Score de confiance entre 0 et 1."
                     <!-- Indicateur du site -->
                     @php
                         $siteInfo = collect($availableSites)->firstWhere('id', $bestMatch['web_site_id'] ?? 0);
-                        $siteId = $bestMatch['web_site_id'] ?? 0;
-                        $isLatestForSite = false;
-                        $totalProductsOnSite = 0;
-
-                        if (!empty($groupedResults[$siteId])) {
-                            $siteData = $groupedResults[$siteId];
-                            $isLatestForSite = ($siteData['latest_product']['id'] ?? 0) === ($bestMatch['id'] ?? 0);
-                            $totalProductsOnSite = $siteData['total_products'] ?? 0;
-                        }
                     @endphp
                     @if(!empty($siteInfo))
                         <div class="mt-2">
                             <span
                                 class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                 {{ $siteInfo['name'] ?? '' }}
-                                @if($isLatestForSite)
-                                    <span class="ml-1">• Dernier scrap ({{ $totalProductsOnSite }} produits trouvés)</span>
-                                @endif
                             </span>
                         </div>
                     @endif
@@ -839,23 +870,40 @@ Score de confiance entre 0 et 1."
     @if(!empty($matchingProducts) && count($matchingProducts) > 0)
         <div class="mt-6">
             <h3 class="font-bold mb-3">
-                Résultats uniques par site ({{ count($matchingProducts) }} produits) :
+                Tous les produits uniques trouvés ({{ count($matchingProducts) }} produits) :
                 <span class="text-sm font-normal text-gray-600">(Cliquez pour sélectionner)</span>
             </h3>
+            
+            <!-- Statistiques par site -->
+            @if(!empty($groupedResults))
+                <div class="mb-4 p-3 bg-gray-50 rounded border">
+                    <h4 class="font-medium text-gray-700 mb-2">Résultats par site :</h4>
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                        @foreach($groupedResults as $siteId => $siteData)
+                            @php
+                                $siteInfo = collect($availableSites)->firstWhere('id', $siteId);
+                            @endphp
+                            @if(!empty($siteInfo))
+                                <div class="text-xs p-2 bg-white border rounded">
+                                    <div class="font-medium">{{ $siteInfo['name'] }}</div>
+                                    <div class="text-gray-600">
+                                        {{ $siteData['unique_products'] ?? 0 }} produits uniques
+                                    </div>
+                                    <div class="text-gray-500 text-xs">
+                                        ({{ $siteData['total_products'] ?? 0 }} au total)
+                                    </div>
+                                </div>
+                            @endif
+                        @endforeach
+                    </div>
+                </div>
+            @endif
+
             <div class="space-y-3 max-h-96 overflow-y-auto">
                 @foreach($matchingProducts as $product)
                     @php
                         $product = is_array($product) ? $product : [];
                         $siteInfo = collect($availableSites)->firstWhere('id', $product['web_site_id'] ?? 0);
-                        $siteId = $product['web_site_id'] ?? 0;
-                        $isLatestForSite = false;
-                        $totalProductsOnSite = 0;
-
-                        if (!empty($groupedResults[$siteId])) {
-                            $siteData = $groupedResults[$siteId];
-                            $isLatestForSite = ($siteData['latest_product']['id'] ?? 0) === ($product['id'] ?? 0);
-                            $totalProductsOnSite = $siteData['total_products'] ?? 0;
-                        }
                     @endphp
                     <div wire:click="selectProduct({{ $product['id'] ?? 0 }})"
                         class="p-3 border rounded hover:bg-blue-50 cursor-pointer transition {{ !empty($bestMatch['id']) && $bestMatch['id'] === ($product['id'] ?? 0) ? 'bg-blue-100 border-blue-500' : 'bg-white' }}">
@@ -866,35 +914,26 @@ Score de confiance entre 0 et 1."
                             @endif
                             <div class="flex-1">
                                 <div class="flex justify-between">
-                                    <p class="font-medium text-sm">{{ $product['vendor'] ?? '' }} - {{ $product['name'] ?? '' }}
-                                    </p>
-                                    <p class="font-bold text-sm">{{ $product['prix_ht'] ?? 0 }} {{ $product['currency'] ?? '' }}
-                                    </p>
+                                    <p class="font-medium text-sm">{{ $product['vendor'] ?? '' }} - {{ $product['name'] ?? '' }}</p>
+                                    <p class="font-bold text-sm">{{ $product['prix_ht'] ?? 0 }} {{ $product['currency'] ?? '' }}</p>
                                 </div>
-                                <p class="text-xs text-gray-500">{{ $product['type'] ?? '' }} |
-                                    {{ $product['variation'] ?? '' }}</p>
-
-                                <!-- Informations site et référence -->
+                                <p class="text-xs text-gray-500">{{ $product['type'] ?? '' }} | {{ $product['variation'] ?? '' }}</p>
+                                
+                                <!-- Informations site -->
                                 <div class="flex items-center justify-between mt-2">
                                     <div class="flex items-center gap-2">
                                         @if(!empty($siteInfo))
-                                            <span
-                                                class="text-xs px-2 py-1 rounded {{ $isLatestForSite ? 'bg-green-100 text-green-800 border border-green-200' : 'bg-gray-100 text-gray-800' }}">
+                                            <span class="text-xs px-2 py-1 rounded bg-gray-100 text-gray-800">
                                                 {{ $siteInfo['name'] ?? '' }}
-                                                @if($isLatestForSite)
-                                                    <span class="ml-1 text-xs">
-                                                        (Dernier scrap • Ref ID: {{ $product['scrap_reference_id'] ?? 0 }} •
-                                                        {{ $totalProductsOnSite }} produits)
-                                                    </span>
-                                                @endif
                                             </span>
                                         @endif
-
+                                        
                                         <span class="text-xs text-gray-500">
+                                            Ref ID: {{ $product['scrap_reference_id'] ?? 0 }} | 
                                             ID: {{ $product['id'] ?? 0 }}
                                         </span>
                                     </div>
-
+                                    
                                     <div class="text-right">
                                         @if(!empty($product['url']))
                                             <a href="{{ $product['url'] }}" target="_blank"
