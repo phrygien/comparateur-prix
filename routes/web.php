@@ -1,6 +1,7 @@
 <?php
 
 use App\Livewire\Boutiques\Boutique;
+use App\Livewire\Boutiques\NosBoutique;
 use Livewire\Volt\Volt;
 
 // Route publique
@@ -22,5 +23,6 @@ Route::middleware(['check.auth', 'boutique.cache'])->group(function () {
     Volt::route('/top-product/{id}/edit', 'boutiques.top-product.edit-list')->name('top-product.edit');
 
     // Executer comparateur
+    Route::get('/nos-boutique', NosBoutique::class)->name('nos-boutiques');
     Volt::route('/executer-comparateur/{name}/{id}/{price}/execute', 'plateformes.execute-comparateur')->name('execute-comparateur');
 });
