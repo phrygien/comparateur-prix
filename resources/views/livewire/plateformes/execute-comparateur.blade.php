@@ -1,7 +1,7 @@
 <?php
 
 use Livewire\Volt\Component;
-use App\Models\Product;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
@@ -34,7 +34,7 @@ new class extends Component {
         session()->forget(['error', 'warning', 'success', 'info']);
         
         try {
-            // Étape 1: Extraction des données (prompt amélioré pour plus de flexibilité)
+            // Étape 1 : Extraction AI
             $extractionResponse = Http::withHeaders([
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
@@ -43,113 +43,49 @@ new class extends Component {
                 'messages' => [
                     [
                         'role' => 'system',
-                        'content' => 'Tu es un expert en extraction de données de produits cosmétiques et parfums. Extrait vendor (marque), name (nom de gamme/parfum, ex: "Chrome" pour Azzaro Chrome ou "Vital Perfection" pour soins), variation (taille, ex: "100 ml") et type (ex: "Eau de Toilette", "Déodorant", "Sérum"). Pour parfums, sépare vendor et name même si composés. Réponds UNIQUEMENT avec un JSON valide, sans texte supplémentaire.'
+                        'content' => 'Expert extraction produits cosmétiques/parfums. Extrait vendor (marque), name (nom gamme/parfum), variation (taille), type (ex: Eau de Toilette, Déodorant). Réponds UNIQUEMENT JSON valide.'
                     ],
                     [
                         'role' => 'user',
-                        'content' => "Extrait du nom: {$this->productName}
-
-Format JSON strict :
-{
-  \"vendor\": \"Marque\",
-  \"name\": \"Nom gamme/parfum\",
-  \"variation\": \"100 ml\",
-  \"type\": \"Eau de Toilette\"
-}
-
-Exemples:
-- 'Azzaro Chrome Déodorant 150ml' → {\"vendor\": \"Azzaro\", \"name\": \"Chrome\", \"variation\": \"150 ml\", \"type\": \"Déodorant\"}
-- 'Dior Sauvage Eau de Toilette 100ml' → {\"vendor\": \"Dior\", \"name\": \"Sauvage\", \"variation\": \"100 ml\", \"type\": \"Eau de Toilette\"}
-- 'Shiseido Vital Perfection Uplifting and Firming Cream 50ml' → {\"vendor\": \"Shiseido\", \"name\": \"Vital Perfection\", \"variation\": \"50 ml\", \"type\": \"Crème Uplifting and Firming\"}"
+                        'content' => "Extrait du nom: {$this->productName}\n\nFormat:\n{\"vendor\":\"Marque\",\"name\":\"Nom\",\"variation\":\"100 ml\",\"type\":\"Eau de Toilette\"}"
                     ]
                 ],
-                'temperature' => 0.1, // Plus déterministe
+                'temperature' => 0.1,
                 'max_tokens' => 300
             ]);
 
             if (!$extractionResponse->successful()) {
-                throw new \Exception('Erreur API OpenAI extraction: ' . $extractionResponse->body());
+                throw new \Exception('Erreur OpenAI extraction');
             }
 
-            $extractionData = $extractionResponse->json();
-            $content = trim(preg_replace('/```json\s*|\s*```/', '', $extractionData['choices'][0]['message']['content']));
-            
+            $content = trim(preg_replace('/```json\s*|\s*```/', '', $extractionResponse->json()['choices'][0]['message']['content']));
             $this->extractedData = json_decode($content, true);
-            
-            if (json_last_error() !== JSON_ERROR_NONE || empty($this->extractedData['vendor']) || empty($this->extractedData['name']) || empty($this->extractedData['type'])) {
-                // Fallback: Extraction basique si AI échoue
+
+            if (json_last_error() !== JSON_ERROR_NONE || empty($this->extractedData['vendor']) || empty($this->extractedData['name'])) {
                 $this->extractedData = $this->basicExtractionFallback($this->productName);
-                \Log::warning('Fallback extraction utilisée', ['product' => $this->productName]);
             }
 
-            // Étape 2: Vérification et correction AI (prompt amélioré)
-            $verificationResponse = Http::withHeaders([
-                'Content-Type' => 'application/json',
-                'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
-            ])->post('https://api.openai.com/v1/chat/completions', [
-                'model' => 'gpt-4o-mini',
-                'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' => 'Expert cosmétiques. Vérifie cohérence vendor/name/type. Pour parfums: "Chrome" + "Déodorant" OK. Pour soins: "Vital Perfection" + "Crème" OK. Réponds JSON: {"is_correct": bool, "confidence": "high/medium/low", "explanation": "court", "correction": {vendor/name/type si besoin, sinon {}}}.'
-                    ],
-                    [
-                        'role' => 'user',
-                        'content' => "Vérifie:
-Original: {$this->productName}
-Extrait: vendor={$this->extractedData['vendor']}, name={$this->extractedData['name']}, type={$this->extractedData['type']}
-
-Considère incohérences (ex: nom parfum avec type crème). Sugère corrections si faux.
-
-Exemple OK: {\"is_correct\": true, \"confidence\": \"high\", \"explanation\": \"Cohérent pour parfum\", \"correction\": {}}
-Exemple faux: {\"is_correct\": false, ... \"correction\": {\"type\": \"Déodorant\"}}"
-                    ]
-                ],
-                'temperature' => 0.1,
-                'max_tokens' => 400
-            ]);
-
-            if ($verificationResponse->successful()) {
-                $verificationData = $verificationResponse->json();
-                $verificationContent = trim(preg_replace('/```json\s*|\s*```/', '', $verificationData['choices'][0]['message']['content']));
-                
-                $this->aiCorrection = json_decode($verificationContent, true);
-                
-                if (json_last_error() === JSON_ERROR_NONE && !$this->aiCorrection['is_correct'] && !empty($this->aiCorrection['correction'])) {
-                    $correction = $this->aiCorrection['correction'];
-                    $this->extractedData = array_merge($this->extractedData, array_filter($correction));
-                    session()->flash('info', 'Correction AI appliquée: ' . ($this->aiCorrection['explanation'] ?? ''));
-                }
-            } else {
-                \Log::warning('Vérification AI échouée');
-            }
-            
-            // Recherche
+            // Étape 2 : Recherche concurrents
             $this->searchMatchingProducts();
             
         } catch (\Exception $e) {
-            \Log::error('Erreur extraction globale', [
-                'message' => $e->getMessage(),
-                'product_name' => $this->productName
-            ]);
-            session()->flash('error', 'Erreur extraction: ' . $e->getMessage());
+            \Log::error('Erreur extraction', ['message' => $e->getMessage()]);
+            session()->flash('error', 'Erreur : ' . $e->getMessage());
         } finally {
             $this->isLoading = false;
         }
     }
 
-    // Fallback basique si AI échoue (extraction par regex simple)
     private function basicExtractionFallback(string $productName): array
     {
-        // Exemple simple: Cherche marque connue, reste comme name/type
-        $knownVendors = ['Azzaro', 'Dior', 'Shiseido']; // À étendre
-        foreach ($knownVendors as $vendor) {
-            if (Str::contains(strtoupper($productName), strtoupper($vendor))) {
+        $knownVendors = ['Azzaro', 'Dior', 'Guerlain', 'Shiseido', 'Chanel'];
+        foreach ($knownVendors as $v) {
+            if (Str::contains(strtoupper($productName), strtoupper($v))) {
                 return [
-                    'vendor' => $vendor,
-                    'name' => trim(str_replace($vendor, '', $productName)),
-                    'variation' => '', // À parser
-                    'type' => 'Inconnu' // À améliorer
+                    'vendor' => $v,
+                    'name' => trim(str_replace($v, '', $productName)),
+                    'variation' => '',
+                    'type' => ''
                 ];
             }
         }
@@ -158,219 +94,85 @@ Exemple faux: {\"is_correct\": false, ... \"correction\": {\"type\": \"Déodoran
 
     public function searchMatchingProducts()
     {
-        if (!$this->extractedData || empty($this->extractedData['vendor']) || empty($this->extractedData['name']) || empty($this->extractedData['type'])) {
-            session()->flash('warning', 'Champs manquants pour recherche.');
+        if (!$this->extractedData || empty($this->extractedData['vendor']) || empty($this->extractedData['name'])) {
+            session()->flash('warning', 'Vendor et Name requis pour la recherche.');
             return;
         }
 
-        $vendor = trim($this->extractedData['vendor']);
-        $name = trim($this->extractedData['name']);
-        $type = trim($this->extractedData['type']);
-        $originalType = $type; // Garder original pour matching
+        $vendor    = trim($this->extractedData['vendor']);
+        $name      = trim($this->extractedData['name']);
+        $type      = trim($this->extractedData['type'] ?? '');
+        $variation = trim($this->extractedData['variation'] ?? '');
 
-        $cleanType = $this->cleanType($type);
-        $nameVariations = $this->getNameVariations($vendor, $name, $cleanType);
+        // Nettoyage pour FULLTEXT (éviter caractères spéciaux)
+        $vendor_clean  = preg_replace('/[^a-zA-Z0-9\s]/', '', $vendor);
+        $name_clean    = preg_replace('/[^a-zA-Z0-9\s]/', '', $name);
 
-        // Collecter tous les candidats avec scores
-        $candidates = collect();
+        // FULLTEXT query en mode BOOLEAN
+        $fulltext_terms = [];
+        if ($vendor_clean)  $fulltext_terms[] = '+' . $vendor_clean;
+        if ($name_clean)    $fulltext_terms[] = '+' . $name_clean;
+        $fulltext_query = implode(' ', $fulltext_terms);
 
-        // 1. Recherche stricte: vendor + name_var + type (original OU clean)
-        foreach ($nameVariations as $nameVar) {
-            $matches = Product::where(function($q) use ($vendor) {
-                $q->whereRaw('LOWER(vendor) LIKE ?', ['%' . strtolower($vendor) . '%']);
-            })->where(function($q) use ($nameVar) {
-                $q->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($nameVar) . '%']);
-            })->where(function($q) use ($originalType, $cleanType) {
-                $q->whereRaw('LOWER(type) LIKE ?', ['%' . strtolower($originalType) . '%'])
-                  ->orWhereRaw('LOWER(type) LIKE ?', ['%' . strtolower($cleanType) . '%']);
-            })->limit(5)->get(); // Limite pour perf
+        // Extraction du nombre pour la variation (ex: "100 ml" → "100")
+        $variation_number = preg_replace('/[^0-9]/', '', $variation) ?: '';
+        $variation_like   = $variation_number ?: $variation;
 
-            foreach ($matches as $match) {
-                $score = $this->calculateMatchScore($match->toArray(), $vendor, $nameVar, $type);
-                $candidates->push(['product' => $match->toArray(), 'score' => $score]);
-            }
-        }
+        // Requête concurrents
+        $results = DB::select("
+            SELECT 
+                id, vendor, name, type, variation, prix_ht, url, image_url,
+                MATCH(name, vendor, type, variation) AGAINST (? IN BOOLEAN MODE) AS relevance_score
+            FROM last_price_scraped_product
+            WHERE 
+                (
+                    MATCH(name, vendor, type, variation) AGAINST (? IN BOOLEAN MODE) > 0.1
+                    OR LOWER(name)   LIKE ?
+                    OR LOWER(vendor) LIKE ?
+                    OR LOWER(type)   LIKE ?
+                )
+                " . ($variation_number ? "AND (
+                    variation REGEXP ? 
+                    OR variation LIKE ?
+                    OR name      LIKE ?
+                    OR type      LIKE ?
+                )" : "") . "
+            ORDER BY relevance_score DESC, prix_ht ASC
+            LIMIT 15
+        ", array_filter([
+            $fulltext_query,
+            $fulltext_query,
+            "%$name_clean%",
+            "%$vendor_clean%",
+            "%$name_clean%",
+            $variation_number ? "[[:<:]]$variation_number" : null,
+            $variation_number ? "%$variation_like%" : null,
+            $variation_number ? "%$variation_like%" : null,
+            $variation_number ? "%$variation_like%" : null,
+        ]));
 
-        // 2. Flexible: vendor + name_var + mots-clés type
-        if ($candidates->isEmpty()) {
-            $typeKeywords = array_filter(explode(' ', strtolower($cleanType)), fn($k) => strlen($k) > 2);
-            foreach ($nameVariations as $nameVar) {
-                $matches = Product::where(function($q) use ($vendor) {
-                    $q->whereRaw('LOWER(vendor) LIKE ?', ['%' . strtolower($vendor) . '%']);
-                })->where(function($q) use ($nameVar) {
-                    $q->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($nameVar) . '%']);
-                })->where(function($q) use ($typeKeywords) {
-                    foreach ($typeKeywords as $kw) {
-                        $q->orWhereRaw('LOWER(type) LIKE ?', ['%' . $kw . '%']);
-                    }
-                })->limit(5)->get();
+        $this->matchingProducts = array_map(fn($r) => (array) $r, $results);
 
-                foreach ($matches as $match) {
-                    $score = $this->calculateMatchScore($match->toArray(), $vendor, $nameVar, $type) * 0.8; // Pénalité flexible
-                    $candidates->push(['product' => $match->toArray(), 'score' => $score]);
-                }
-            }
-        }
+        if (!empty($this->matchingProducts)) {
+            // Meilleur match = premier résultat avec meilleur score
+            $this->bestMatch = $this->matchingProducts[0];
+            $this->bestMatchScore = $this->bestMatch['relevance_score'] ?? 0;
 
-        // 3. Fallback: vendor + type seulement (si type spécifique)
-        if ($candidates->isEmpty() && $this->isSpecificProductType($cleanType)) {
-            $matches = Product::where(function($q) use ($vendor) {
-                $q->whereRaw('LOWER(vendor) LIKE ?', ['%' . strtolower($vendor) . '%']);
-            })->where(function($q) use ($originalType, $cleanType) {
-                $q->whereRaw('LOWER(type) LIKE ?', ['%' . strtolower($originalType) . '%'])
-                  ->orWhereRaw('LOWER(type) LIKE ?', ['%' . strtolower($cleanType) . '%']);
-            })->limit(10)->get();
-
-            foreach ($matches as $match) {
-                $score = $this->calculateMatchScore($match->toArray(), $vendor, $name, $type, false); // Sans name
-                $candidates->push(['product' => $match->toArray(), 'score' => $score * 0.6]);
-            }
-        }
-
-        // Trier par score et limiter
-        $candidates = $candidates->sortByDesc('score')->take(10);
-        $this->matchingProducts = $candidates->pluck('product')->toArray();
-        
-        if ($candidates->isNotEmpty()) {
-            $best = $candidates->first();
-            $this->bestMatch = $best['product'];
-            $this->bestMatchScore = $best['score'];
-            if ($best['score'] < 0.7) {
-                session()->flash('warning', "Meilleur match (score: " . round($best['score'] * 100, 0) . "%). Vérifiez manuellement.");
+            if ($this->bestMatchScore < 0.2) {
+                session()->flash('warning', 'Correspondance faible. Vérifiez les critères.');
             }
         } else {
-            session()->flash('error', 'Aucun produit trouvé. Essayez une recherche manuelle.');
+            session()->flash('error', 'Aucun concurrent trouvé.');
         }
-
-        \Log::info('Recherche terminée', [
-            'candidates_count' => $candidates->count(),
-            'best_score' => $candidates->isNotEmpty() ? $candidates->first()['score'] : 0,
-            'query' => $this->productName
-        ]);
-    }
-
-    private function calculateMatchScore(array $product, string $vendor, string $name, string $type, bool $requireName = true): float
-    {
-        // Use array access instead of object notation
-        $productVendor = $product['vendor'] ?? '';
-        $productName   = $product['name']   ?? '';
-        $productType   = $product['type']   ?? '';
-
-        $score = 0.0;
-        $total = 0;
-
-        // Vendor match
-        $vendorMatch = (
-            str_contains(strtolower($productVendor), strtolower($vendor)) ||
-            str_contains(strtolower($vendor), strtolower($productVendor))
-        );
-        $score += $vendorMatch ? 1 : 0;
-        $total += 1;
-
-        // Name match
-        if ($requireName) {
-            $nameMatch = (
-                str_contains(strtolower($productName), strtolower($name)) ||
-                str_contains(strtolower($name), strtolower($productName))
-            );
-            $score += $nameMatch ? 1 : 0;
-            $total += 1;
-        }
-
-        // Type match
-        $typeMatch = (
-            str_contains(strtolower($productType), strtolower($type)) ||
-            str_contains(strtolower($type), strtolower($productType))
-        );
-        $score += $typeMatch ? 1 : 0;
-        $total += 1;
-
-        return $total > 0 ? $score / $total : 0;
-    }
-
-    /**
-     * Variations de nom étendues
-     */
-    private function getNameVariations(string $vendor, string $name, string $type): array
-    {
-        $variations = [$name];
-
-        if ($this->isPerfumeType($type)) {
-            $variations = array_merge($variations, [
-                $name . ' Pour Homme',
-                $name . ' Pour Femme',
-                $name . ' Eau de Toilette',
-                $name . ' Eau de Parfum',
-                $name . ' Aftershave',
-                $vendor . ' ' . $name,
-                $vendor,
-                ucfirst(strtolower($name)) // Normalisation
-            ]);
-            // Variantes spécifiques
-            if (str_contains(strtolower($name), 'chrome')) $variations[] = 'Chrome pour Homme';
-            if (str_contains(strtolower($name), 'sauvage')) $variations[] = 'Sauvage Eau de Toilette';
-        }
-
-        // Nettoyage: sans articles
-        $clean = preg_replace('/\b(le|la|les|un|une|du|de|des|pour|et)\b/i', '', $name);
-        $clean = trim(preg_replace('/\s+/', ' ', $clean));
-        if ($clean && $clean !== $name) $variations[] = $clean;
-
-        return array_unique(array_filter($variations));
-    }
-    
-    private function isPerfumeType(string $type): bool
-    {
-        $types = ['déodorant', 'parfum', 'eau de toilette', 'eau de parfum', 'after shave', 'lotion après-rasage'];
-        return collect($types)->some(fn($t) => str_contains(strtolower($type), $t));
-    }
-    
-    private function isSpecificProductType(string $type): bool
-    {
-        $types = ['déodorant', 'shampooing', 'gel douche', 'crème', 'sérum'];
-        return collect($types)->some(fn($t) => str_contains(strtolower($type), $t));
-    }
-
-    /**
-     * Clean type amélioré: Préserve termes essentiels
-     */
-    private function cleanType(string $type): string
-    {
-        $essentialWords = ['eau', 'toilette', 'parfum', 'crème', 'sérum', 'concentré']; // À préserver
-        $stopWords = [
-            'vaporisateur', 'spray', 'pompe', 'tube', 'pot', 'roll-on', 'stick', 'ml', 'g', 'unité',
-            'sans', 'avec', 'le', 'la', 'les', 'en', 'par', 'à', 'des'
-        ];
-        
-        $cleaned = strtolower($type);
-        foreach ($stopWords as $word) {
-            if (!in_array($word, $essentialWords)) {
-                $cleaned = preg_replace('/\b' . preg_quote($word, '/') . '\b/i', '', $cleaned);
-            }
-        }
-        
-        $cleaned = preg_replace('/[\(\)\[\]-]/', ' ', $cleaned);
-        $cleaned = trim(preg_replace('/\s+/', ' ', $cleaned));
-        
-        return $cleaned;
     }
 
     public function selectProduct($productId)
     {
-        $product = Product::find($productId);
+        $product = DB::table('last_price_scraped_product')->find($productId);
         if ($product) {
-            $this->bestMatch = $product->toArray();
-            session()->flash('success', 'Produit sélectionné: ' . $product->name);
+            $this->bestMatch = (array) $product;
+            session()->flash('success', 'Produit sélectionné : ' . $product->name);
             $this->dispatch('product-selected', productId: $productId);
-        }
-    }
-
-    // Méthode pour relancer avec corrections manuelles (bonus)
-    public function manualCorrect($field, $value)
-    {
-        if ($this->extractedData) {
-            $this->extractedData[$field] = $value;
-            $this->searchMatchingProducts();
         }
     }
 
@@ -378,8 +180,8 @@ Exemple faux: {\"is_correct\": false, ... \"correction\": {\"type\": \"Déodoran
 
 <div class="p-6 bg-white rounded-lg shadow">
     <div class="mb-4">
-        <h2 class="text-xl font-bold mb-2">Extraction et recherche de produit</h2>
-        <p class="text-gray-600">Produit: {{ $productName }}</p>
+        <h2 class="text-xl font-bold mb-2">Recherche concurrents</h2>
+        <p class="text-gray-600">Produit : {{ $productName }}</p>
     </div>
 
     <button 
@@ -387,95 +189,67 @@ Exemple faux: {\"is_correct\": false, ... \"correction\": {\"type\": \"Déodoran
         wire:loading.attr="disabled"
         class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
     >
-        <span wire:loading.remove>Extraire et rechercher</span>
-        <span wire:loading>En cours...</span>
+        <span wire:loading.remove>Rechercher concurrents</span>
+        <span wire:loading>Recherche...</span>
     </button>
 
     @foreach(['error' => 'red', 'success' => 'green', 'warning' => 'yellow', 'info' => 'blue'] as $key => $color)
         @if(session($key))
             <div class="mt-4 p-4 bg-{{ $color }}-100 text-{{ $color }}-700 rounded border border-{{ $color }}-200">
-                @if($key === 'warning') ⚠️ @endif {{ $key === 'info' ? 'ℹ️ ' : '' }}{{ session($key) }}
+                {{ session($key) }}
             </div>
         @endif
     @endforeach
 
     @if($extractedData)
         <div class="mt-6 p-4 bg-gray-50 rounded">
-            <h3 class="font-bold mb-3">Critères extraits :</h3>
-            
-            @if($aiCorrection)
-                <div class="mb-4 p-3 rounded {{ $aiCorrection['is_correct'] ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200' }}">
-                    <div class="flex items-start">
-                        <span class="text-{{ $aiCorrection['is_correct'] ? 'green' : 'yellow' }}-600 mr-2">{{ $aiCorrection['is_correct'] ? '✓' : '⚠️' }}</span>
-                        <div>
-                            <p class="font-semibold">{{ $aiCorrection['explanation'] }}</p>
-                            <p class="text-sm text-gray-600">Confiance: {{ $aiCorrection['confidence'] ?? 'N/A' }}</p>
-                        </div>
-                    </div>
-                </div>
-            @endif
-            
-            <div class="grid grid-cols-2 gap-4 mb-4">
-                @foreach(['vendor' => 'Vendor', 'name' => 'Name', 'type' => 'Type'] as $key => $label)
-                    <div class="{{ empty($extractedData[$key]) ? 'text-red-600 font-semibold' : '' }}">
-                        <span class="font-semibold">{{ $label }}:</span> 
-                        {{ $extractedData[$key] ?? 'N/A' }}
-                        @if(empty($extractedData[$key])) <span class="text-xs">(requis)</span> @endif
-                        {{-- Bonus: Édition manuelle --}}
-                        @if($extractedData)
-                            <input type="text" wire:model.debounce.500ms="extractedData.{{ $key }}" wire:change="searchMatchingProducts" class="ml-2 text-xs p-1 border rounded" placeholder="Corriger">
-                        @endif
-                    </div>
-                @endforeach
-                <div>
-                    <span class="font-semibold text-gray-500">Variation:</span> 
-                    <span class="text-gray-400">{{ $extractedData['variation'] ?? 'N/A' }}</span>
-                </div>
+            <h3 class="font-bold mb-3">Critères utilisés :</h3>
+            <div class="grid grid-cols-2 gap-4">
+                <div><span class="font-semibold">Vendor:</span> {{ $extractedData['vendor'] ?? '—' }}</div>
+                <div><span class="font-semibold">Name:</span> {{ $extractedData['name'] ?? '—' }}</div>
+                <div><span class="font-semibold">Type:</span> {{ $extractedData['type'] ?? '—' }}</div>
+                <div><span class="font-semibold">Variation:</span> {{ $extractedData['variation'] ?? '—' }}</div>
             </div>
         </div>
     @endif
 
     @if($bestMatch)
         <div class="mt-6 p-4 bg-green-50 border-2 border-green-500 rounded">
-            <h3 class="font-bold text-green-700 mb-3">✓ Meilleur match (Score: {{ round($bestMatchScore * 100) }}%) :</h3>
+            <h3 class="font-bold text-green-700 mb-3">Meilleur concurrent trouvé (score : {{ round($bestMatchScore, 2) }})</h3>
             <div class="flex items-start gap-4">
-                @if($bestMatch['image_url'] ?? null)
+                @if($bestMatch['image_url'] ?? false)
                     <img src="{{ $bestMatch['image_url'] }}" alt="{{ $bestMatch['name'] }}" class="w-20 h-20 object-cover rounded">
                 @endif
                 <div class="flex-1">
-                    <p class="font-semibold">{{ $bestMatch['vendor'] ?? 'N/A' }} - {{ $bestMatch['name'] ?? 'N/A' }}</p>
-                    <p class="text-sm text-gray-600">{{ $bestMatch['type'] ?? 'N/A' }} | {{ $bestMatch['variation'] ?? 'N/A' }}</p>
-                    <p class="text-sm font-bold text-green-600 mt-1">{{ $bestMatch['prix_ht'] ?? 'N/A' }} {{ $bestMatch['currency'] ?? '' }}</p>
-                    <a href="{{ $bestMatch['url'] ?? '#' }}" target="_blank" class="text-xs text-blue-500 hover:underline">Voir</a>
+                    <p class="font-semibold">{{ $bestMatch['vendor'] }} — {{ $bestMatch['name'] }}</p>
+                    <p class="text-sm text-gray-600">{{ $bestMatch['type'] }} | {{ $bestMatch['variation'] }}</p>
+                    <p class="text-sm font-bold text-green-600 mt-1">{{ $bestMatch['prix_ht'] ?? '?' }} €</p>
+                    <a href="{{ $bestMatch['url'] ?? '#' }}" target="_blank" class="text-xs text-blue-500">Voir</a>
                 </div>
             </div>
         </div>
     @endif
 
-    @if(!empty($matchingProducts) && count($matchingProducts) > 1)
+    @if(!empty($matchingProducts))
         <div class="mt-6">
-            <h3 class="font-bold mb-3">Autres résultats ({{ count($matchingProducts) }}) :</h3>
-            <div class="space-y-2 max-h-96 overflow-y-auto">
+            <h3 class="font-bold mb-3">Autres concurrents ({{ count($matchingProducts) }})</h3>
+            <div class="space-y-3 max-h-96 overflow-y-auto">
                 @foreach($matchingProducts as $product)
-                    @php $score = $this->calculateMatchScore($product, $extractedData['vendor'] ?? '', $extractedData['name'] ?? '', $extractedData['type'] ?? ''); @endphp
-                    <div 
-                        wire:click="selectProduct({{ $product['id'] ?? '' }})"
-                        class="p-3 border rounded hover:bg-blue-50 cursor-pointer transition {{ $bestMatch && ($bestMatch['id'] ?? '') === ($product['id'] ?? '') ? 'bg-blue-100 border-blue-500' : 'bg-white' }}"
-                    >
-                        <div class="flex items-center justify-between">
+                    <div wire:click="selectProduct({{ $product['id'] }})" 
+                         class="p-3 border rounded cursor-pointer hover:bg-blue-50 transition">
+                        <div class="flex justify-between items-center">
                             <div class="flex items-center gap-3">
-                                @if($product['image_url'] ?? null)
-                                    <img src="{{ $product['image_url'] }}" alt="{{ $product['name'] }}" class="w-12 h-12 object-cover rounded">
+                                @if($product['image_url'] ?? false)
+                                    <img src="{{ $product['image_url'] }}" alt="" class="w-10 h-10 object-cover rounded">
                                 @endif
-                                <div class="flex-1">
-                                    <p class="font-medium text-sm">{{ $product['vendor'] ?? 'N/A' }} - {{ $product['name'] ?? 'N/A' }}</p>
-                                    <p class="text-xs text-gray-500">{{ $product['type'] ?? 'N/A' }} | {{ $product['variation'] ?? 'N/A' }}</p>
-                                    <div class="text-xs text-blue-600">Score: {{ round($score * 100) }}%</div>
+                                <div>
+                                    <p class="font-medium">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
+                                    <p class="text-xs text-gray-600">{{ $product['type'] ?? '' }} • {{ $product['variation'] ?? '' }}</p>
                                 </div>
                             </div>
                             <div class="text-right">
-                                <p class="font-bold text-sm">{{ $product['prix_ht'] ?? 'N/A' }} {{ $product['currency'] ?? '' }}</p>
-                                <p class="text-xs text-gray-500">ID: {{ $product['id'] ?? 'N/A' }}</p>
+                                <p class="font-bold">{{ $product['prix_ht'] ?? '?' }} €</p>
+                                <p class="text-xs text-gray-500">Score : {{ round($product['relevance_score'] ?? 0, 2) }}</p>
                             </div>
                         </div>
                     </div>
