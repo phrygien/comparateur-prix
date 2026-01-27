@@ -2,6 +2,7 @@
 
 use Livewire\Volt\Component;
 use App\Models\Product;
+use App\Models\Site;
 use Illuminate\Support\Facades\Http;
 
 new class extends Component {
@@ -14,12 +15,21 @@ new class extends Component {
     public $matchingProducts = [];
     public $bestMatch = null;
     public $aiValidation = null;
+    public $availableSites = [];
+    public $selectedSites = [];
+    public $groupedResults = [];
 
     public function mount($name, $id, $price): void
     {
         $this->productName = $name;
         $this->productId = $id;
         $this->productPrice = $price;
+
+        // Récupérer tous les sites disponibles
+        $this->availableSites = Site::orderBy('name')->get()->toArray();
+
+        // Par défaut, tous les sites sont sélectionnés
+        $this->selectedSites = collect($this->availableSites)->pluck('id')->toArray();
     }
 
     public function extractSearchTerme()
@@ -147,8 +157,12 @@ Exemple de format attendu :
         $nameWords = $this->extractKeywords($name);
         $typeWords = $this->extractKeywords($type);
 
-        // Stratégie de recherche en cascade AVEC FILTRE VENDOR OBLIGATOIRE
-        $query = Product::query()->where('vendor', 'LIKE', "%{$vendor}%");
+        // Stratégie de recherche en cascade AVEC FILTRE VENDOR ET SITES
+        $query = Product::query()
+            ->where('vendor', 'LIKE', "%{$vendor}%")
+            ->when(!empty($this->selectedSites), function ($q) {
+                $q->whereIn('web_site_id', $this->selectedSites);
+            });
 
         // 1. Recherche exacte (tous les critères AVEC variation)
         $exactMatch = (clone $query)
@@ -158,8 +172,9 @@ Exemple de format attendu :
             ->get();
 
         if ($exactMatch->isNotEmpty()) {
-            $this->matchingProducts = $this->filterByCoffretStatus($exactMatch, $isCoffretSource);
-            if (!empty($this->matchingProducts)) {
+            $filtered = $this->filterByCoffretStatus($exactMatch, $isCoffretSource);
+            if (!empty($filtered)) {
+                $this->groupResultsByScrapeReference($filtered);
                 $this->validateBestMatchWithAI();
                 return;
             }
@@ -172,8 +187,9 @@ Exemple de format attendu :
             ->get();
 
         if ($withoutVariation->isNotEmpty()) {
-            $this->matchingProducts = $this->filterByCoffretStatus($withoutVariation, $isCoffretSource);
-            if (!empty($this->matchingProducts)) {
+            $filtered = $this->filterByCoffretStatus($withoutVariation, $isCoffretSource);
+            if (!empty($filtered)) {
+                $this->groupResultsByScrapeReference($filtered);
                 $this->validateBestMatchWithAI();
                 return;
             }
@@ -185,36 +201,35 @@ Exemple de format attendu :
             ->get();
 
         if ($vendorAndName->isNotEmpty()) {
-            $this->matchingProducts = $this->filterByCoffretStatus($vendorAndName, $isCoffretSource);
-            if (!empty($this->matchingProducts)) {
+            $filtered = $this->filterByCoffretStatus($vendorAndName, $isCoffretSource);
+            if (!empty($filtered)) {
+                $this->groupResultsByScrapeReference($filtered);
                 $this->validateBestMatchWithAI();
                 return;
             }
         }
 
         // 4. Recherche flexible par mots-clés (SANS variation)
-        // Chercher les produits qui contiennent AU MOINS un mot du name ET un mot du type
         $keywordSearch = (clone $query)
             ->where(function ($q) use ($nameWords, $typeWords) {
-                // Au moins un mot du name
                 foreach ($nameWords as $word) {
                     $q->orWhere('name', 'LIKE', "%{$word}%");
                 }
             })
             ->when(!empty($typeWords), function ($q) use ($typeWords) {
-                // ET au moins un mot du type si disponible
                 $q->where(function ($subQ) use ($typeWords) {
                     foreach ($typeWords as $word) {
                         $subQ->orWhere('type', 'LIKE', "%{$word}%");
                     }
                 });
             })
-            ->limit(50)
+            ->limit(100)
             ->get();
 
         if ($keywordSearch->isNotEmpty()) {
-            $this->matchingProducts = $this->filterByCoffretStatus($keywordSearch, $isCoffretSource);
-            if (!empty($this->matchingProducts)) {
+            $filtered = $this->filterByCoffretStatus($keywordSearch, $isCoffretSource);
+            if (!empty($filtered)) {
+                $this->groupResultsByScrapeReference($filtered);
                 $this->validateBestMatchWithAI();
                 return;
             }
@@ -227,12 +242,13 @@ Exemple de format attendu :
                     $q->orWhere('name', 'LIKE', "%{$word}%");
                 }
             })
-            ->limit(50)
+            ->limit(100)
             ->get();
 
         if ($broadSearch->isNotEmpty()) {
-            $this->matchingProducts = $this->filterByCoffretStatus($broadSearch, $isCoffretSource);
-            if (!empty($this->matchingProducts)) {
+            $filtered = $this->filterByCoffretStatus($broadSearch, $isCoffretSource);
+            if (!empty($filtered)) {
+                $this->groupResultsByScrapeReference($filtered);
                 $this->validateBestMatchWithAI();
                 return;
             }
@@ -246,14 +262,43 @@ Exemple de format attendu :
                         $q->orWhere('type', 'LIKE', "%{$word}%");
                     }
                 })
-                ->limit(50)
+                ->limit(100)
                 ->get();
 
-            $this->matchingProducts = $this->filterByCoffretStatus($typeOnly, $isCoffretSource);
-            if (!empty($this->matchingProducts)) {
+            $filtered = $this->filterByCoffretStatus($typeOnly, $isCoffretSource);
+            if (!empty($filtered)) {
+                $this->groupResultsByScrapeReference($filtered);
                 $this->validateBestMatchWithAI();
             }
         }
+    }
+
+    /**
+     * Groupe les résultats par scrape_reference en ne gardant qu'un produit par référence
+     * Priorité : le produit avec le prix le plus bas
+     */
+    private function groupResultsByScrapeReference(array $products)
+    {
+        $grouped = collect($products)->groupBy('scrape_reference');
+
+        // Pour chaque référence, garder le produit avec le prix le plus bas
+        $uniqueProducts = $grouped->map(function ($group) {
+            return $group->sortBy('prix_ht')->first();
+        })->values();
+
+        // Limiter à 50 résultats maximum
+        $this->matchingProducts = $uniqueProducts->take(50)->toArray();
+
+        // Stocker les résultats groupés pour l'affichage
+        $this->groupedResults = $grouped->map(function ($group, $reference) {
+            return [
+                'reference' => $reference,
+                'count' => $group->count(),
+                'products' => $group->toArray(),
+                'best_price' => $group->min('prix_ht'),
+                'sites' => $group->pluck('web_site_id')->unique()->values()->toArray()
+            ];
+        })->toArray();
     }
 
     /**
@@ -415,6 +460,32 @@ Score de confiance entre 0 et 1."
         }
     }
 
+    /**
+     * Rafraîchir les résultats quand on change les sites sélectionnés
+     */
+    public function updatedSelectedSites()
+    {
+        if ($this->extractedData) {
+            $this->searchMatchingProducts();
+        }
+    }
+
+    /**
+     * Sélectionner/désélectionner tous les sites
+     */
+    public function toggleAllSites()
+    {
+        if (count($this->selectedSites) === count($this->availableSites)) {
+            $this->selectedSites = [];
+        } else {
+            $this->selectedSites = collect($this->availableSites)->pluck('id')->toArray();
+        }
+
+        if ($this->extractedData) {
+            $this->searchMatchingProducts();
+        }
+    }
+
 }; ?>
 
 <div class="p-6 bg-white rounded-lg shadow">
@@ -422,6 +493,30 @@ Score de confiance entre 0 et 1."
         <h2 class="text-xl font-bold mb-2">Extraction et recherche de produit</h2>
         <p class="text-gray-600">Produit: {{ $productName }}</p>
     </div>
+
+    <!-- Filtres par site -->
+    @if(!empty($availableSites))
+        <div class="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="font-semibold text-gray-700">Filtrer par site</h3>
+                <button wire:click="toggleAllSites" class="text-sm text-blue-600 hover:text-blue-800 font-medium">
+                    {{ count($selectedSites) === count($availableSites) ? 'Tout désélectionner' : 'Tout sélectionner' }}
+                </button>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                @foreach($availableSites as $site)
+                    <label class="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 p-2 rounded">
+                        <input type="checkbox" wire:model.live="selectedSites" value="{{ $site['id'] }}"
+                            class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                        <span class="text-sm">{{ $site['name'] }}</span>
+                    </label>
+                @endforeach
+            </div>
+            <p class="text-xs text-gray-500 mt-2">
+                {{ count($selectedSites) }} site(s) sélectionné(s)
+            </p>
+        </div>
+    @endif
 
     <button wire:click="extractSearchTerme" wire:loading.attr="disabled"
         class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50">
@@ -468,6 +563,15 @@ Score de confiance entre 0 et 1."
         </div>
     @endif
 
+    @if(!empty($groupedResults))
+        <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
+            <p class="text-sm text-blue-800">
+                <span class="font-semibold">{{ count($groupedResults) }}</span> référence(s) unique(s) trouvée(s)
+                <span class="text-xs ml-2">(max 1 produit par référence affichée)</span>
+            </p>
+        </div>
+    @endif
+
     @if($aiValidation)
         <div class="mt-4 p-4 bg-blue-50 border border-blue-300 rounded">
             <h3 class="font-bold text-blue-700 mb-2">🤖 Validation IA :</h3>
@@ -495,6 +599,7 @@ Score de confiance entre 0 et 1."
                 <div class="flex-1">
                     <p class="font-semibold">{{ $bestMatch['vendor'] }} - {{ $bestMatch['name'] }}</p>
                     <p class="text-sm text-gray-600">{{ $bestMatch['type'] }} | {{ $bestMatch['variation'] }}</p>
+                    <p class="text-xs text-gray-500 mt-1">Ref: {{ $bestMatch['scrape_reference'] ?? 'N/A' }}</p>
                     <p class="text-sm font-bold text-green-600 mt-1">{{ $bestMatch['prix_ht'] }}
                         {{ $bestMatch['currency'] }}</p>
                     @if($bestMatch['url'] ?? false)
@@ -521,10 +626,17 @@ Score de confiance entre 0 et 1."
                             <div class="flex-1">
                                 <p class="font-medium text-sm">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
                                 <p class="text-xs text-gray-500">{{ $product['type'] }} | {{ $product['variation'] }}</p>
+                                <p class="text-xs text-gray-400 mt-1">Ref: {{ $product['scrape_reference'] ?? 'N/A' }}</p>
                             </div>
                             <div class="text-right">
                                 <p class="font-bold text-sm">{{ $product['prix_ht'] }} {{ $product['currency'] }}</p>
                                 <p class="text-xs text-gray-500">ID: {{ $product['id'] }}</p>
+                                @php
+                                    $siteInfo = collect($availableSites)->firstWhere('id', $product['web_site_id']);
+                                @endphp
+                                @if($siteInfo)
+                                    <p class="text-xs text-blue-600 font-medium">{{ $siteInfo['name'] }}</p>
+                                @endif
                             </div>
                         </div>
                     </div>
