@@ -24,4 +24,9 @@ class Site extends Model
     {
         return $this->hasMany(Product::class, 'web_site_id');
     }
+
+     public function products()
+    {
+        return $this->hasMany(Product::class, 'web_site_id');
+    }
 }

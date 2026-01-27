@@ -2,6 +2,7 @@
 
 use Livewire\Volt\Component;
 use App\Models\Product;
+use Illuminate\Support\Facades\DB;
 
 new class extends Component {
     
@@ -102,80 +103,94 @@ Exemple de format attendu :
         $variation = $this->extractedData['variation'] ?? '';
         $type = $this->extractedData['type'] ?? '';
 
-        // Stratégie de recherche en cascade
-        $query = Product::query();
+        // Sous-requête pour récupérer le dernier scrap_reference_id par site
+        $latestProducts = DB::table('scraped_product as sp1')
+            ->select('sp1.*')
+            ->join(DB::raw('(SELECT web_site_id, MAX(scrap_reference_id) as max_ref_id 
+                            FROM scraped_product 
+                            GROUP BY web_site_id) as sp2'), function($join) {
+                $join->on('sp1.web_site_id', '=', 'sp2.web_site_id')
+                     ->on('sp1.scrap_reference_id', '=', 'sp2.max_ref_id');
+            });
 
+        // Stratégie de recherche en cascade
+        
         // 1. Recherche exacte (tous les critères)
-        $exactMatch = (clone $query)
-            ->where('vendor', 'LIKE', "%{$vendor}%")
-            ->where('name', 'LIKE', "%{$name}%")
-            ->where('variation', 'LIKE', "%{$variation}%")
-            ->when($type, fn($q) => $q->where('type', 'LIKE', "%{$type}%"))
+        $exactMatch = (clone $latestProducts)
+            ->where('sp1.vendor', 'LIKE', "%{$vendor}%")
+            ->where('sp1.name', 'LIKE', "%{$name}%")
+            ->where('sp1.variation', 'LIKE', "%{$variation}%")
+            ->when($type, fn($q) => $q->where('sp1.type', 'LIKE', "%{$type}%"))
             ->get();
 
         if ($exactMatch->isNotEmpty()) {
-            $this->matchingProducts = $exactMatch->toArray();
-            $this->bestMatch = $exactMatch->first();
+            $this->matchingProducts = $this->loadProductRelations($exactMatch);
+            $this->bestMatch = $this->matchingProducts[0] ?? null;
             return;
         }
 
         // 2. Recherche sans variation
-        $withoutVariation = (clone $query)
-            ->where('vendor', 'LIKE', "%{$vendor}%")
-            ->where('name', 'LIKE', "%{$name}%")
-            ->when($type, fn($q) => $q->where('type', 'LIKE', "%{$type}%"))
+        $withoutVariation = (clone $latestProducts)
+            ->where('sp1.vendor', 'LIKE', "%{$vendor}%")
+            ->where('sp1.name', 'LIKE', "%{$name}%")
+            ->when($type, fn($q) => $q->where('sp1.type', 'LIKE', "%{$type}%"))
             ->get();
 
         if ($withoutVariation->isNotEmpty()) {
-            $this->matchingProducts = $withoutVariation->toArray();
-            $this->bestMatch = $withoutVariation->first();
+            $this->matchingProducts = $this->loadProductRelations($withoutVariation);
+            $this->bestMatch = $this->matchingProducts[0] ?? null;
             return;
         }
 
         // 3. Recherche vendor + name seulement
-        $vendorAndName = (clone $query)
-            ->where('vendor', 'LIKE', "%{$vendor}%")
-            ->where('name', 'LIKE', "%{$name}%")
+        $vendorAndName = (clone $latestProducts)
+            ->where('sp1.vendor', 'LIKE', "%{$vendor}%")
+            ->where('sp1.name', 'LIKE', "%{$name}%")
             ->get();
 
         if ($vendorAndName->isNotEmpty()) {
-            $this->matchingProducts = $vendorAndName->toArray();
-            $this->bestMatch = $vendorAndName->first();
+            $this->matchingProducts = $this->loadProductRelations($vendorAndName);
+            $this->bestMatch = $this->matchingProducts[0] ?? null;
             return;
         }
 
-        // 4. Full-text search si disponible
-        if (method_exists(Product::class, 'scopeFullTextSearch')) {
-            $searchQuery = trim("{$vendor} {$name} {$type} {$variation}");
-            $fullTextResults = Product::fullTextSearch($searchQuery)->get();
-
-            if ($fullTextResults->isNotEmpty()) {
-                $this->matchingProducts = $fullTextResults->toArray();
-                $this->bestMatch = $fullTextResults->first();
-                return;
-            }
-        }
-
-        // 5. Recherche flexible (au moins vendor OU name)
-        $flexible = Product::where(function($q) use ($vendor, $name) {
-            $q->where('vendor', 'LIKE', "%{$vendor}%")
-              ->orWhere('name', 'LIKE', "%{$name}%");
-        })
-        ->limit(10)
-        ->get();
+        // 4. Recherche flexible avec dernier scrape par site
+        $flexible = Product::query()
+            ->with(['website', 'scraped_reference'])
+            ->whereIn('id', function($query) {
+                $query->select(DB::raw('MAX(id)'))
+                    ->from('scraped_product')
+                    ->groupBy('web_site_id', 'scrap_reference_id');
+            })
+            ->where(function($q) use ($vendor, $name) {
+                $q->where('vendor', 'LIKE', "%{$vendor}%")
+                  ->orWhere('name', 'LIKE', "%{$name}%");
+            })
+            ->orderBy('scrap_reference_id', 'DESC')
+            ->limit(10)
+            ->get();
 
         $this->matchingProducts = $flexible->toArray();
-        $this->bestMatch = $flexible->first();
+        $this->bestMatch = $flexible->first()?->toArray();
+    }
+
+    private function loadProductRelations($products)
+    {
+        $productIds = $products->pluck('id')->toArray();
+        
+        return Product::with(['website', 'scraped_reference'])
+            ->whereIn('id', $productIds)
+            ->get()
+            ->toArray();
     }
 
     public function selectProduct($productId)
     {
-        $product = Product::find($productId);
+        $product = Product::with(['website', 'scraped_reference'])->find($productId);
         
         if ($product) {
-            // Vous pouvez faire ce que vous voulez avec le produit sélectionné
             session()->flash('success', 'Produit sélectionné : ' . $product->name);
-            $this->bestMatch = $product;
+            $this->bestMatch = $product->toArray();
             
             // Émettre un événement si besoin
             $this->dispatch('product-selected', productId: $productId);
@@ -236,13 +251,31 @@ Exemple de format attendu :
             <h3 class="font-bold text-green-700 mb-3">✓ Meilleur résultat :</h3>
             <div class="flex items-start gap-4">
                 @if($bestMatch['image_url'])
-                    <img src="{{ $bestMatch['image_url'] }}" alt="{{ $bestMatch['name'] }}" class="w-20 h-20 object-cover rounded">
+                    <img src="{{ $bestMatch['image_url'] }}" alt="{{ $bestMatch['name'] }}" class="w-24 h-24 object-cover rounded">
                 @endif
                 <div class="flex-1">
-                    <p class="font-semibold">{{ $bestMatch['vendor'] }} - {{ $bestMatch['name'] }}</p>
-                    <p class="text-sm text-gray-600">{{ $bestMatch['type'] }} | {{ $bestMatch['variation'] }}</p>
-                    <p class="text-sm font-bold text-green-600 mt-1">{{ $bestMatch['prix_ht'] }} {{ $bestMatch['currency'] }}</p>
-                    <a href="{{ $bestMatch['url'] }}" target="_blank" class="text-xs text-blue-500 hover:underline">Voir le produit</a>
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-semibold rounded">
+                            {{ $bestMatch['website']['name'] ?? 'Site inconnu' }}
+                        </span>
+                        <span class="text-xs text-gray-500">
+                            Réf. Scrape: #{{ $bestMatch['scrap_reference_id'] }}
+                        </span>
+                    </div>
+                    <p class="font-semibold text-lg">{{ $bestMatch['vendor'] }} - {{ $bestMatch['name'] }}</p>
+                    <p class="text-sm text-gray-600 mt-1">{{ $bestMatch['type'] }} | {{ $bestMatch['variation'] }}</p>
+                    <p class="text-lg font-bold text-green-600 mt-2">{{ $bestMatch['prix_ht'] }} {{ $bestMatch['currency'] }}</p>
+                    <div class="mt-2 flex gap-2">
+                        <a href="{{ $bestMatch['url'] }}" target="_blank" class="text-sm text-blue-500 hover:underline inline-flex items-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                            </svg>
+                            Voir sur {{ $bestMatch['website']['name'] ?? 'le site' }}
+                        </a>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-2">
+                        Ajouté le {{ \Carbon\Carbon::parse($bestMatch['created_at'])->format('d/m/Y H:i') }}
+                    </p>
                 </div>
             </div>
         </div>
@@ -253,24 +286,40 @@ Exemple de format attendu :
             <h3 class="font-bold mb-3">Autres résultats trouvés ({{ count($matchingProducts) }}) :</h3>
             <div class="space-y-2 max-h-96 overflow-y-auto">
                 @foreach($matchingProducts as $product)
-                    <div 
-                        wire:click="selectProduct({{ $product['id'] }})"
-                        class="p-3 border rounded hover:bg-blue-50 cursor-pointer transition {{ $bestMatch && $bestMatch['id'] === $product['id'] ? 'bg-blue-100 border-blue-500' : 'bg-white' }}"
-                    >
-                        <div class="flex items-center gap-3">
-                            @if($product['image_url'])
-                                <img src="{{ $product['image_url'] }}" alt="{{ $product['name'] }}" class="w-12 h-12 object-cover rounded">
-                            @endif
-                            <div class="flex-1">
-                                <p class="font-medium text-sm">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
-                                <p class="text-xs text-gray-500">{{ $product['type'] }} | {{ $product['variation'] }}</p>
-                            </div>
-                            <div class="text-right">
-                                <p class="font-bold text-sm">{{ $product['prix_ht'] }} {{ $product['currency'] }}</p>
-                                <p class="text-xs text-gray-500">ID: {{ $product['id'] }}</p>
+                    @if(!$bestMatch || $bestMatch['id'] !== $product['id'])
+                        <div 
+                            wire:click="selectProduct({{ $product['id'] }})"
+                            class="p-3 border rounded hover:bg-blue-50 cursor-pointer transition bg-white"
+                        >
+                            <div class="flex items-center gap-3">
+                                @if($product['image_url'])
+                                    <img src="{{ $product['image_url'] }}" alt="{{ $product['name'] }}" class="w-16 h-16 object-cover rounded">
+                                @endif
+                                <div class="flex-1">
+                                    <div class="flex items-center gap-2 mb-1">
+                                        <span class="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs font-semibold rounded">
+                                            {{ $product['website']['name'] ?? 'Site inconnu' }}
+                                        </span>
+                                        <span class="text-xs text-gray-400">
+                                            Réf: #{{ $product['scrap_reference_id'] }}
+                                        </span>
+                                    </div>
+                                    <p class="font-medium text-sm">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
+                                    <p class="text-xs text-gray-500">{{ $product['type'] }} | {{ $product['variation'] }}</p>
+                                    <a href="{{ $product['url'] }}" target="_blank" class="text-xs text-blue-500 hover:underline inline-flex items-center gap-1 mt-1" onclick="event.stopPropagation()">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                                        </svg>
+                                        Voir le produit
+                                    </a>
+                                </div>
+                                <div class="text-right">
+                                    <p class="font-bold text-sm">{{ $product['prix_ht'] }} {{ $product['currency'] }}</p>
+                                    <p class="text-xs text-gray-400">{{ \Carbon\Carbon::parse($product['created_at'])->format('d/m/Y') }}</p>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    @endif
                 @endforeach
             </div>
         </div>
