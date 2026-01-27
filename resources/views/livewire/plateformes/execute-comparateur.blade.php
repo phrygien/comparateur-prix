@@ -31,15 +31,15 @@ new class extends Component {
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
             ])->post('https://api.openai.com/v1/chat/completions', [
-                'model' => 'gpt-4o-mini',
-                'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' => 'Tu es un expert en extraction de données de produits cosmétiques. Tu dois extraire vendor, name, variation, type et détecter si c\'est un coffret. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
-                    ],
-                    [
-                        'role' => 'user',
-                        'content' => "Extrait les informations suivantes du nom de produit et retourne-les au format JSON strict :
+                        'model' => 'gpt-4o-mini',
+                        'messages' => [
+                            [
+                                'role' => 'system',
+                                'content' => 'Tu es un expert en extraction de données de produits cosmétiques. Tu dois extraire vendor, name, variation, type et détecter si c\'est un coffret. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
+                            ],
+                            [
+                                'role' => 'user',
+                                'content' => "Extrait les informations suivantes du nom de produit et retourne-les au format JSON strict :
 - vendor : la marque du produit
 - name : le nom de la gamme/ligne de produit
 - variation : la contenance/taille (ml, g, etc.)
@@ -56,11 +56,11 @@ Exemple de format attendu :
   \"type\": \"Concentré Correcteur Rides\",
   \"is_coffret\": false
 }"
-                    ]
-                ],
-                'temperature' => 0.3,
-                'max_tokens' => 500
-            ]);
+                            ]
+                        ],
+                        'temperature' => 0.3,
+                        'max_tokens' => 500
+                    ]);
 
             if ($response->successful()) {
                 $data = $response->json();
@@ -101,7 +101,7 @@ Exemple de format attendu :
     private function isCoffret($product): bool
     {
         $cofferKeywords = ['coffret', 'set', 'kit', 'duo', 'trio', 'collection'];
-        
+
         $nameCheck = false;
         $typeCheck = false;
 
@@ -209,13 +209,11 @@ Exemple de format attendu :
                     }
                 });
             })
-            ->limit(20)
+            ->limit(50)
             ->get();
 
         if ($keywordSearch->isNotEmpty()) {
-            // Scorer les résultats par pertinence
-            $scored = $this->scoreProductsByKeywords($keywordSearch, $nameWords, $typeWords, $vendorWords);
-            $this->matchingProducts = $this->filterByCoffretStatus($scored, $isCoffretSource);
+            $this->matchingProducts = $this->filterByCoffretStatus($keywordSearch, $isCoffretSource);
             if (!empty($this->matchingProducts)) {
                 $this->validateBestMatchWithAI();
                 return;
@@ -229,12 +227,11 @@ Exemple de format attendu :
                     $q->orWhere('name', 'LIKE', "%{$word}%");
                 }
             })
-            ->limit(20)
+            ->limit(50)
             ->get();
 
         if ($broadSearch->isNotEmpty()) {
-            $scored = $this->scoreProductsByKeywords($broadSearch, $nameWords, $typeWords, $vendorWords);
-            $this->matchingProducts = $this->filterByCoffretStatus($scored, $isCoffretSource);
+            $this->matchingProducts = $this->filterByCoffretStatus($broadSearch, $isCoffretSource);
             if (!empty($this->matchingProducts)) {
                 $this->validateBestMatchWithAI();
                 return;
@@ -249,7 +246,7 @@ Exemple de format attendu :
                         $q->orWhere('type', 'LIKE', "%{$word}%");
                     }
                 })
-                ->limit(15)
+                ->limit(50)
                 ->get();
 
             $this->matchingProducts = $this->filterByCoffretStatus($typeOnly, $isCoffretSource);
@@ -270,11 +267,11 @@ Exemple de format attendu :
 
         // Mots à ignorer (stop words)
         $stopWords = ['de', 'la', 'le', 'les', 'des', 'du', 'un', 'une', 'et', 'ou', 'pour', 'avec', 'sans'];
-        
+
         // Nettoyer et découper
         $text = mb_strtolower($text);
         $words = preg_split('/[\s\-]+/', $text, -1, PREG_SPLIT_NO_EMPTY);
-        
+
         // Filtrer les mots courts et les stop words
         $keywords = array_filter($words, function ($word) use ($stopWords) {
             return mb_strlen($word) >= 3 && !in_array($word, $stopWords);
@@ -284,60 +281,13 @@ Exemple de format attendu :
     }
 
     /**
-     * Score les produits en fonction de la correspondance des mots-clés
-     */
-    private function scoreProductsByKeywords($products, array $nameWords, array $typeWords, array $vendorWords)
-    {
-        return $products->map(function ($product) use ($nameWords, $typeWords, $vendorWords) {
-            $score = 0;
-            
-            $productName = mb_strtolower($product->name ?? '');
-            $productType = mb_strtolower($product->type ?? '');
-            $productVendor = mb_strtolower($product->vendor ?? '');
-
-            // Score pour les mots du name (poids: 3 points par mot)
-            foreach ($nameWords as $word) {
-                if (str_contains($productName, $word)) {
-                    $score += 3;
-                }
-                if (str_contains($productType, $word)) {
-                    $score += 1; // Bonus si le mot du name apparaît aussi dans le type
-                }
-            }
-
-            // Score pour les mots du type (poids: 2 points par mot)
-            foreach ($typeWords as $word) {
-                if (str_contains($productType, $word)) {
-                    $score += 2;
-                }
-                if (str_contains($productName, $word)) {
-                    $score += 1; // Bonus si le mot du type apparaît aussi dans le name
-                }
-            }
-
-            // Score pour les mots du vendor (poids: 1 point par mot)
-            foreach ($vendorWords as $word) {
-                if (str_contains($productVendor, $word)) {
-                    $score += 1;
-                }
-            }
-
-            $product->relevance_score = $score;
-            return $product;
-        })
-        ->sortByDesc('relevance_score')
-        ->values()
-        ->toArray();
-    }
-
-    /**
      * Filtre les produits selon leur statut coffret
      */
     private function filterByCoffretStatus($products, bool $sourceisCoffret): array
     {
         return $products->filter(function ($product) use ($sourceisCoffret) {
             $productIsCoffret = $this->isCoffret($product->toArray());
-            
+
             // Si la source est un coffret, garder seulement les coffrets
             // Si la source n'est pas un coffret, exclure les coffrets
             return $sourceisCoffret ? $productIsCoffret : !$productIsCoffret;
@@ -355,7 +305,7 @@ Exemple de format attendu :
 
         // Préparer les données pour l'IA
         $candidateProducts = array_slice($this->matchingProducts, 0, 5); // Max 5 produits
-        
+
         $productsInfo = array_map(function ($product) {
             return [
                 'id' => $product['id'],
@@ -372,15 +322,15 @@ Exemple de format attendu :
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
             ])->timeout(15)->post('https://api.openai.com/v1/chat/completions', [
-                'model' => 'gpt-4o-mini',
-                'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' => 'Tu es un expert en matching de produits cosmétiques. Tu dois analyser la correspondance entre un produit source et une liste de candidats, puis retourner l\'ID du meilleur match avec un score de confiance. Réponds UNIQUEMENT avec un objet JSON.'
-                    ],
-                    [
-                        'role' => 'user',
-                        'content' => "Produit source : {$this->productName}
+                        'model' => 'gpt-4o-mini',
+                        'messages' => [
+                            [
+                                'role' => 'system',
+                                'content' => 'Tu es un expert en matching de produits cosmétiques. Tu dois analyser la correspondance entre un produit source et une liste de candidats, puis retourner l\'ID du meilleur match avec un score de confiance. Réponds UNIQUEMENT avec un objet JSON.'
+                            ],
+                            [
+                                'role' => 'user',
+                                'content' => "Produit source : {$this->productName}
 
 Critères extraits :
 - Vendor: {$this->extractedData['vendor']}
@@ -408,27 +358,27 @@ Critères de scoring :
 - Type identique = +20 points
 - Variation identique = +10 points
 Score de confiance entre 0 et 1."
-                    ]
-                ],
-                'temperature' => 0.2,
-                'max_tokens' => 800
-            ]);
+                            ]
+                        ],
+                        'temperature' => 0.2,
+                        'max_tokens' => 800
+                    ]);
 
             if ($response->successful()) {
                 $data = $response->json();
                 $content = $data['choices'][0]['message']['content'];
-                
+
                 // Nettoyer le contenu
                 $content = preg_replace('/```json\s*|\s*```/', '', $content);
                 $content = trim($content);
-                
+
                 $this->aiValidation = json_decode($content, true);
 
                 if ($this->aiValidation && isset($this->aiValidation['best_match_id'])) {
                     // Trouver le produit correspondant à l'ID recommandé par l'IA
                     $bestMatchId = $this->aiValidation['best_match_id'];
                     $found = collect($this->matchingProducts)->firstWhere('id', $bestMatchId);
-                    
+
                     if ($found) {
                         $this->bestMatch = $found;
                     } else {
@@ -446,7 +396,7 @@ Score de confiance entre 0 et 1."
                 'message' => $e->getMessage(),
                 'product_name' => $this->productName
             ]);
-            
+
             // Fallback sur le premier résultat en cas d'erreur
             $this->bestMatch = $this->matchingProducts[0];
         }
@@ -473,11 +423,8 @@ Score de confiance entre 0 et 1."
         <p class="text-gray-600">Produit: {{ $productName }}</p>
     </div>
 
-    <button 
-        wire:click="extractSearchTerme"
-        wire:loading.attr="disabled"
-        class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
-    >
+    <button wire:click="extractSearchTerme" wire:loading.attr="disabled"
+        class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50">
         <span wire:loading.remove>Extraire et rechercher</span>
         <span wire:loading>Extraction en cours...</span>
     </button>
@@ -511,8 +458,9 @@ Score de confiance entre 0 et 1."
                     <span class="font-semibold">Type:</span> {{ $extractedData['type'] ?? 'N/A' }}
                 </div>
                 <div class="col-span-2">
-                    <span class="font-semibold">Est un coffret:</span> 
-                    <span class="px-2 py-1 rounded text-sm {{ ($extractedData['is_coffret'] ?? false) ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800' }}">
+                    <span class="font-semibold">Est un coffret:</span>
+                    <span
+                        class="px-2 py-1 rounded text-sm {{ ($extractedData['is_coffret'] ?? false) ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800' }}">
                         {{ ($extractedData['is_coffret'] ?? false) ? 'Oui' : 'Non' }}
                     </span>
                 </div>
@@ -524,8 +472,9 @@ Score de confiance entre 0 et 1."
         <div class="mt-4 p-4 bg-blue-50 border border-blue-300 rounded">
             <h3 class="font-bold text-blue-700 mb-2">🤖 Validation IA :</h3>
             <p class="text-sm mb-1">
-                <span class="font-semibold">Score de confiance:</span> 
-                <span class="text-lg font-bold {{ $aiValidation['confidence_score'] >= 0.8 ? 'text-green-600' : ($aiValidation['confidence_score'] >= 0.6 ? 'text-yellow-600' : 'text-red-600') }}">
+                <span class="font-semibold">Score de confiance:</span>
+                <span
+                    class="text-lg font-bold {{ $aiValidation['confidence_score'] >= 0.8 ? 'text-green-600' : ($aiValidation['confidence_score'] >= 0.6 ? 'text-yellow-600' : 'text-red-600') }}">
                     {{ number_format($aiValidation['confidence_score'] * 100, 0) }}%
                 </span>
             </p>
@@ -540,14 +489,17 @@ Score de confiance entre 0 et 1."
             <h3 class="font-bold text-green-700 mb-3">✓ Meilleur résultat :</h3>
             <div class="flex items-start gap-4">
                 @if($bestMatch['image_url'] ?? false)
-                    <img src="{{ $bestMatch['image_url'] }}" alt="{{ $bestMatch['name'] }}" class="w-20 h-20 object-cover rounded">
+                    <img src="{{ $bestMatch['image_url'] }}" alt="{{ $bestMatch['name'] }}"
+                        class="w-20 h-20 object-cover rounded">
                 @endif
                 <div class="flex-1">
                     <p class="font-semibold">{{ $bestMatch['vendor'] }} - {{ $bestMatch['name'] }}</p>
                     <p class="text-sm text-gray-600">{{ $bestMatch['type'] }} | {{ $bestMatch['variation'] }}</p>
-                    <p class="text-sm font-bold text-green-600 mt-1">{{ $bestMatch['prix_ht'] }} {{ $bestMatch['currency'] }}</p>
+                    <p class="text-sm font-bold text-green-600 mt-1">{{ $bestMatch['prix_ht'] }}
+                        {{ $bestMatch['currency'] }}</p>
                     @if($bestMatch['url'] ?? false)
-                        <a href="{{ $bestMatch['url'] }}" target="_blank" class="text-xs text-blue-500 hover:underline">Voir le produit</a>
+                        <a href="{{ $bestMatch['url'] }}" target="_blank" class="text-xs text-blue-500 hover:underline">Voir le
+                            produit</a>
                     @endif
                 </div>
             </div>
@@ -559,13 +511,12 @@ Score de confiance entre 0 et 1."
             <h3 class="font-bold mb-3">Autres résultats trouvés ({{ count($matchingProducts) }}) :</h3>
             <div class="space-y-2 max-h-96 overflow-y-auto">
                 @foreach($matchingProducts as $product)
-                    <div 
-                        wire:click="selectProduct({{ $product['id'] }})"
-                        class="p-3 border rounded hover:bg-blue-50 cursor-pointer transition {{ $bestMatch && $bestMatch['id'] === $product['id'] ? 'bg-blue-100 border-blue-500' : 'bg-white' }}"
-                    >
+                    <div wire:click="selectProduct({{ $product['id'] }})"
+                        class="p-3 border rounded hover:bg-blue-50 cursor-pointer transition {{ $bestMatch && $bestMatch['id'] === $product['id'] ? 'bg-blue-100 border-blue-500' : 'bg-white' }}">
                         <div class="flex items-center gap-3">
                             @if($product['image_url'] ?? false)
-                                <img src="{{ $product['image_url'] }}" alt="{{ $product['name'] }}" class="w-12 h-12 object-cover rounded">
+                                <img src="{{ $product['image_url'] }}" alt="{{ $product['name'] }}"
+                                    class="w-12 h-12 object-cover rounded">
                             @endif
                             <div class="flex-1">
                                 <p class="font-medium text-sm">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
@@ -574,14 +525,6 @@ Score de confiance entre 0 et 1."
                             <div class="text-right">
                                 <p class="font-bold text-sm">{{ $product['prix_ht'] }} {{ $product['currency'] }}</p>
                                 <p class="text-xs text-gray-500">ID: {{ $product['id'] }}</p>
-                                @if($aiValidation && isset($aiValidation['all_scores']))
-                                    @php
-                                        $scoreData = collect($aiValidation['all_scores'])->firstWhere('id', $product['id']);
-                                    @endphp
-                                    @if($scoreData)
-                                        <p class="text-xs font-semibold text-blue-600">Score: {{ number_format($scoreData['score'] * 100, 0) }}%</p>
-                                    @endif
-                                @endif
                             </div>
                         </div>
                     </div>
@@ -592,7 +535,8 @@ Score de confiance entre 0 et 1."
 
     @if($extractedData && empty($matchingProducts))
         <div class="mt-6 p-4 bg-yellow-50 border border-yellow-300 rounded">
-            <p class="text-yellow-800">❌ Aucun produit trouvé avec ces critères (même vendor: {{ $extractedData['vendor'] }}, même statut coffret)</p>
+            <p class="text-yellow-800">❌ Aucun produit trouvé avec ces critères (même vendor:
+                {{ $extractedData['vendor'] }}, même statut coffret)</p>
         </div>
     @endif
 </div>
