@@ -64,7 +64,9 @@ new class extends Component {
                                 'content' => 'Tu es un expert en extraction de données de produits cosmétiques. 
 IMPORTANT: 
 1. Le champ "type" doit contenir UNIQUEMENT la catégorie du produit (Crème, Huile, Sérum, Eau de Parfum, etc.), PAS le nom de la gamme. 
-2. Pour le matching, seuls les 3 premiers mots du type seront utilisés.
+2. Pour le matching, une règle spéciale s\'applique : 
+   - Si le type a plus de 3 mots, utiliser seulement les 3 premiers mots pour le matching
+   - Si le type a 3 mots ou moins, utiliser seulement les 2 premiers mots pour le matching
 Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
                             ],
                             [
@@ -110,8 +112,6 @@ Exemple 3 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream En
 }
 
 Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum Intense Vaporisateur 30ml\"
-IMPORTANT: Le type complet est \"Eau de Parfum Intense Vaporisateur\" mais pour le matching, 
-seuls les 3 premiers mots \"Eau de Parfum Intense\" seront utilisés.
 {
   \"vendor\": \"Lancôme\",
   \"name\": \"La Nuit Trésor Rouge Drama\",
@@ -120,7 +120,18 @@ seuls les 3 premiers mots \"Eau de Parfum Intense\" seront utilisés.
   \"is_coffret\": false
 }
 
-Exemple 5 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage Lissante 30ml\"
+Exemple 5 - Produit : \"Rabanne - Fame In Love - Parfum Elixir Vaporisateur 80ml Rechargeable\"
+IMPORTANT : Le type complet est \"Parfum Elixir Vaporisateur Rechargeable\" 
+Pour le matching : utiliser \"Parfum Elixir\" (2 premiers mots car type ≤ 3 mots)
+{
+  \"vendor\": \"Rabanne\",
+  \"name\": \"Fame In Love\",
+  \"type\": \"Parfum Elixir Vaporisateur Rechargeable\",
+  \"variation\": \"80 ml\",
+  \"is_coffret\": false
+}
+
+Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage Lissante 30ml\"
 {
   \"vendor\": \"Sephora Collection\",
   \"name\": \"Smoothing Primer\",
@@ -194,7 +205,7 @@ Exemple 5 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
                     'vendor' => $this->extractedData['vendor'] ?? '',
                     'name' => $this->extractedData['name'] ?? '',
                     'type' => $this->extractedData['type'] ?? '',
-                    'type_premiers_mots' => $this->getTypeFirstWords($this->extractedData['type'] ?? '', 3),
+                    'type_matching_words' => $this->getTypeMatchingWords($this->extractedData['type'] ?? ''),
                     'variation' => $this->extractedData['variation'] ?? '',
                     'is_coffret' => $this->extractedData['is_coffret'] ?? false
                 ]);
@@ -224,6 +235,55 @@ Exemple 5 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
     }
 
     /**
+     * Récupère les mots à utiliser pour le matching selon la règle :
+     * - Si type > 3 mots : prendre 3 mots
+     * - Si type ≤ 3 mots : prendre 2 mots
+     */
+    private function getTypeMatchingWords(string $type): string
+    {
+        if (empty($type)) {
+            return '';
+        }
+
+        $typeWords = $this->extractTypeWordsForDisplay($type);
+        
+        if (count($typeWords) > 3) {
+            // Prendre 3 premiers mots
+            $matchingWords = array_slice($typeWords, 0, 3);
+        } else {
+            // Prendre 2 premiers mots (ou moins si pas assez de mots)
+            $matchingWords = array_slice($typeWords, 0, min(2, count($typeWords)));
+        }
+        
+        return implode(' ', $matchingWords);
+    }
+
+    /**
+     * Extrait les mots du type pour l'affichage (sans les stop words)
+     */
+    private function extractTypeWordsForDisplay(string $type): array
+    {
+        if (empty($type)) {
+            return [];
+        }
+
+        $typeLower = mb_strtolower(trim($type));
+
+        // Mots à IGNORER (articles, prépositions, etc.)
+        $stopWords = ['de', 'du', 'la', 'le', 'les', 'des', 'pour', 'à', 'au', 'aux', 'et', 'ou'];
+
+        // Découper par espaces et tirets
+        $allWords = preg_split('/[\s\-]+/', $typeLower, -1, PREG_SPLIT_NO_EMPTY);
+
+        // Filtrer les mots trop courts et les stop words
+        $significantWords = array_filter($allWords, function ($word) use ($stopWords) {
+            return mb_strlen($word) >= 3 && !in_array($word, $stopWords);
+        });
+
+        return array_values($significantWords);
+    }
+
+    /**
      * Recherche manuelle avec les champs personnalisés
      */
     public function manualSearch()
@@ -248,7 +308,7 @@ Exemple 5 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
                 'vendor' => $this->extractedData['vendor'],
                 'name' => $this->extractedData['name'],
                 'type' => $this->extractedData['type'],
-                'type_premiers_mots' => $this->getTypeFirstWords($this->extractedData['type'], 3),
+                'type_matching_words' => $this->getTypeMatchingWords($this->extractedData['type']),
                 'variation' => $this->extractedData['variation']
             ]);
 
@@ -272,28 +332,6 @@ Exemple 5 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
     public function toggleManualSearch()
     {
         $this->manualSearchMode = !$this->manualSearchMode;
-    }
-
-    /**
-     * Extrait les premiers mots du type selon la règle "3 mots max"
-     * Utilisé pour l'affichage et le logging
-     */
-    private function getTypeFirstWords(string $type, int $maxWords = 3): string
-    {
-        if (empty($type)) {
-            return '';
-        }
-
-        // Nettoyer le type
-        $type = preg_replace('/\s+/', ' ', trim($type));
-
-        // Découper en mots
-        $words = explode(' ', $type);
-
-        // Prendre les $maxWords premiers mots
-        $firstWords = array_slice($words, 0, $maxWords);
-
-        return implode(' ', $firstWords);
     }
 
     /**
@@ -381,16 +419,16 @@ Exemple 5 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
             return;
         }
 
-        // RÈGLE IMPORTANTE : Extraire les mots significatifs du type, limité aux 3 premiers mots si nécessaire
-        $typeWords = $this->extractTypeWords($type);
+        // NOUVELLE RÈGLE : Extraire les mots pour matching selon le nombre de mots
+        $typeWords = $this->extractTypeWordsForMatching($type);
 
-        // Afficher les 3 premiers mots pour référence
-        $firstThreeWords = $this->getTypeFirstWords($type, 3);
-        \Log::info('📝 Règle des 3 mots appliquée', [
+        // Afficher les mots utilisés pour le matching
+        $matchingWordsString = implode(' ', $typeWords);
+        \Log::info('📝 Règle de matching appliquée', [
             'type_complet' => $type,
-            '3_premiers_mots' => $firstThreeWords,
-            'mots_utilises_pour_matching' => $typeWords,
-            'count_mots_utilises' => count($typeWords)
+            'mots_utilises_pour_matching' => $matchingWordsString,
+            'nombre_mots_utilises' => count($typeWords),
+            'regle_appliquee' => $this->getMatchingRuleDescription($type)
         ]);
 
         // Extraire les mots du name EN EXCLUANT le vendor
@@ -407,9 +445,9 @@ Exemple 5 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
             'name' => $name,
             'nameWords' => $nameWords,
             'type' => $type,
-            'typeWords' => $typeWords,
+            'typeWords_for_matching' => $typeWords,
             'typeWords_count' => count($typeWords),
-            'regle_3_mots' => (count($typeWords) > 3) ? 'APPLIQUÉE' : 'NON APPLIQUÉE'
+            'matching_rule' => $this->getMatchingRuleDescription($type)
         ]);
 
         // ÉTAPE 1: Recherche de base - UNIQUEMENT sur le vendor et les sites sélectionnés
@@ -533,8 +571,7 @@ Exemple 5 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
             $filteredProducts = $nameFilteredProducts;
         }
 
-        // ÉTAPE 4: FILTRAGE STRICT MOT PAR MOT SUR LE TYPE
-        // RÈGLE : SI on a des mots de type, TOUS doivent être présents (maximum 3 mots)
+        // ÉTAPE 4: FILTRAGE STRICT MOT PAR MOT SUR LE TYPE selon la NOUVELLE RÈGLE
         if (!empty($typeWords)) {
             $typeFilteredProducts = collect($filteredProducts)->filter(function ($product) use ($typeWords) {
                 $productType = mb_strtolower($product['type'] ?? '');
@@ -594,14 +631,15 @@ Exemple 5 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
                 'produits_exclus' => count($filteredProducts) - count($typeFilteredProducts),
                 'typeWords_required' => $typeWords,
                 'typeWords_count' => count($typeWords),
-                'regle_3_mots' => (count($typeWords) > 3) ? 'APPLIQUÉE (limité à 3)' : 'NON APPLIQUÉE'
+                'matching_rule' => $this->getMatchingRuleDescription($type)
             ]);
 
             if (empty($typeFilteredProducts)) {
                 \Log::warning('⚠️ AUCUN produit ne correspond au type exact mot par mot', [
                     'type_recherché' => $type,
                     'typeWords' => $typeWords,
-                    '3_premiers_mots' => $firstThreeWords
+                    'matching_words' => implode(' ', $typeWords),
+                    'matching_rule' => $this->getMatchingRuleDescription($type)
                 ]);
 
                 $this->matchingProducts = [];
@@ -665,9 +703,12 @@ Exemple 5 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
                     $score += 500; // BONUS pour type exactement identique
                 }
 
-                // Bonus si le type a été limité à 3 mots et que ça match
-                if (count($typeWords) <= 3 && $typeMatchCount === count($typeWords)) {
-                    $score += 200; // Bonus pour match avec la règle des 3 mots
+                // Bonus spécial selon la règle appliquée
+                $typeWordCount = count($this->extractTypeWordsForDisplay($type));
+                if ($typeWordCount > 3 && count($typeWords) === 3) {
+                    $score += 300; // Bonus pour règle ">3 mots → 3 mots"
+                } elseif ($typeWordCount <= 3 && count($typeWords) === 2) {
+                    $score += 200; // Bonus pour règle "≤3 mots → 2 mots"
                 }
             }
 
@@ -682,7 +723,7 @@ Exemple 5 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
                     return $count + (str_contains($productName, $word) ? 1 : 0);
                 }, 0) : 0,
                 'name_words_total' => count($nameWords),
-                'regle_3_mots_appliquee' => (!empty($typeWords) && count($typeWords) > 3)
+                'matching_rule_applied' => $this->getMatchingRuleDescription($type)
             ];
         })
             ->sortByDesc('score')
@@ -691,9 +732,8 @@ Exemple 5 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
         \Log::info('📊 Scoring final', [
             'total_products' => $scoredProducts->count(),
             'type_recherche' => $type,
-            '3_premiers_mots' => $this->getTypeFirstWords($type, 3),
-            'typeWords' => $typeWords,
-            'regle_3_mots' => (count($typeWords) > 3) ? 'APPLIQUÉE' : 'NON APPLIQUÉE',
+            'matching_words' => implode(' ', $typeWords),
+            'matching_rule' => $this->getMatchingRuleDescription($type),
             'top_10_scores' => $scoredProducts->take(10)->map(function ($item) {
                 return [
                     'id' => $item['product']['id'] ?? 0,
@@ -702,7 +742,7 @@ Exemple 5 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
                     'type' => $item['product']['type'] ?? '',
                     'type_match' => $item['type_words_matched'] . '/' . $item['type_words_total'],
                     'name_match' => $item['name_match_count'] . '/' . $item['name_words_total'],
-                    'regle_3_mots' => $item['regle_3_mots_appliquee'] ? 'OUI' : 'NON'
+                    'matching_rule' => $item['matching_rule_applied']
                 ];
             })->toArray()
         ]);
@@ -717,54 +757,64 @@ Exemple 5 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
     }
 
     /**
-     * Extrait TOUS les mots significatifs du type pour matching strict
-     * RÈGLE : Si le type dépasse 3 mots, ne prendre que les 3 premiers mots
+     * NOUVELLE RÈGLE : Extrait les mots pour matching selon la règle :
+     * - Si le type a plus de 3 mots significatifs → prendre 3 premiers mots
+     * - Si le type a 3 mots ou moins significatifs → prendre 2 premiers mots
      */
-    private function extractTypeWords(string $type): array
+    private function extractTypeWordsForMatching(string $type): array
     {
         if (empty($type)) {
             return [];
         }
 
-        $typeLower = mb_strtolower(trim($type));
-
-        // Mots à IGNORER (articles, prépositions, etc.)
-        $stopWords = ['de', 'du', 'la', 'le', 'les', 'des', 'pour', 'à', 'au', 'aux', 'et', 'ou'];
-
-        // Découper par espaces et tirets
-        $allWords = preg_split('/[\s\-]+/', $typeLower, -1, PREG_SPLIT_NO_EMPTY);
-
-        // Filtrer les mots trop courts et les stop words
-        $significantWords = array_filter($allWords, function ($word) use ($stopWords) {
-            return mb_strlen($word) >= 3 && !in_array($word, $stopWords);
-        });
-
-        // RÈGLE IMPORTANTE : Si on a plus de 3 mots significatifs, ne prendre que les 3 premiers
-        $significantWords = array_values($significantWords);
-
-        if (count($significantWords) > 3) {
-            \Log::info('⚠️ Type a plus de 3 mots significatifs. Limitation aux 3 premiers mots.', [
+        // Extraire tous les mots significatifs
+        $allSignificantWords = $this->extractTypeWordsForDisplay($type);
+        
+        // Appliquer la règle
+        if (count($allSignificantWords) > 3) {
+            // Plus de 3 mots → prendre 3 premiers mots
+            $result = array_slice($allSignificantWords, 0, 3);
+            \Log::info('🔤 Règle ">3 mots → 3 mots" appliquée', [
                 'type_original' => $type,
-                'mots_complets' => $significantWords,
-                'mots_apres_limitation' => array_slice($significantWords, 0, 3),
-                'nombre_mots_originaux' => count($significantWords),
-                'nombre_mots_apres_limitation' => 3
+                'mots_significatifs' => $allSignificantWords,
+                'nombre_mots_significatifs' => count($allSignificantWords),
+                'mots_pour_matching' => $result,
+                'nombre_mots_matching' => count($result)
             ]);
-
-            $result = array_slice($significantWords, 0, 3);
         } else {
-            $result = $significantWords;
+            // 3 mots ou moins → prendre 2 premiers mots (ou moins si pas assez)
+            $result = array_slice($allSignificantWords, 0, min(2, count($allSignificantWords)));
+            \Log::info('🔤 Règle "≤3 mots → 2 mots" appliquée', [
+                'type_original' => $type,
+                'mots_significatifs' => $allSignificantWords,
+                'nombre_mots_significatifs' => count($allSignificantWords),
+                'mots_pour_matching' => $result,
+                'nombre_mots_matching' => count($result)
+            ]);
         }
 
-        \Log::info('🔤 Extraction des mots du TYPE (avec règle des 3 mots)', [
-            'type_original' => $type,
-            'mots_significatifs_complets' => $significantWords,
-            'mots_extraits_finaux' => $result,
-            'nombre_mots' => count($result),
-            'regle_3_mots_appliquee' => (count($significantWords) > 3)
-        ]);
-
         return $result;
+    }
+
+    /**
+     * Obtient la description de la règle de matching appliquée
+     */
+    private function getMatchingRuleDescription(string $type): string
+    {
+        if (empty($type)) {
+            return 'Aucun type';
+        }
+
+        $allSignificantWords = $this->extractTypeWordsForDisplay($type);
+        $wordCount = count($allSignificantWords);
+        
+        if ($wordCount > 3) {
+            return "type > 3 mots → matching sur 3 mots";
+        } elseif ($wordCount > 0) {
+            return "type ≤ 3 mots → matching sur " . min(2, $wordCount) . " mots";
+        } else {
+            return "type vide → pas de matching sur type";
+        }
     }
 
     /**
@@ -919,7 +969,9 @@ Exemple 5 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
                             [
                                 'role' => 'system',
                                 'content' => 'Tu es un expert en matching de produits cosmétiques. 
-NOTE IMPORTANTE : Pour le matching du type, seuls les 3 premiers mots ont été utilisés.
+NOTE IMPORTANTE : Pour le matching du type, une règle spéciale a été appliquée :
+- Si le type a plus de 3 mots, matching sur les 3 premiers mots
+- Si le type a 3 mots ou moins, matching sur les 2 premiers mots
 Réponds UNIQUEMENT avec un objet JSON.'
                             ],
                             [
@@ -932,7 +984,9 @@ Critères extraits :
 - Type: " . ($this->extractedData['type'] ?? 'N/A') . "
 - Variation: " . ($this->extractedData['variation'] ?? 'N/A') . "
 
-IMPORTANT : Pour le matching du type, seuls les 3 premiers mots ont été utilisés.
+IMPORTANT : Pour le matching du type, une règle spéciale a été appliquée :
+- Si le type a plus de 3 mots → matching sur 3 mots
+- Si le type a 3 mots ou moins → matching sur 2 mots
 
 Produits candidats :
 " . json_encode($productsInfo, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "
@@ -942,7 +996,7 @@ Retourne au format JSON :
   \"best_match_id\": 123,
   \"confidence_score\": 0.95,
   \"reasoning\": \"Explication courte\",
-  \"type_matching_method\": \"3_premiers_mots\"
+  \"type_matching_method\": \"regle_speciale_3_ou_2_mots\"
 }"
                             ]
                         ],
