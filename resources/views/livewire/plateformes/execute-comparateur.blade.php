@@ -229,13 +229,12 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
     /**
      * LOGIQUE DE RECHERCHE OPTIMISÉE
-     * 1. Recherche TOUS les produits sur les sites sélectionnés
-     * 2. Filtrage par statut COFFRET
+     * 1. Filtrer par VENDOR (obligatoire)
+     * 2. Filtrer par statut COFFRET
      * 3. FILTRAGE STRICT par NAME : TOUS les mots du name (hors vendor) doivent être présents
      *    Fallback : au moins 1 mot si filtrage strict ne donne rien
      * 4. SCORER avec :
      *    - BONUS ÉNORME (+500) si recherche coffret ET produit est coffret (PRIORITÉ ABSOLUE)
-     *    - BONUS VENDOR mais seulement s'il y a AUSSI d'autres critères de match
      *    - Matching HIÉRARCHIQUE sur le TYPE : vérifier étape par étape
      */
     private function searchMatchingProducts()
@@ -262,17 +261,9 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         $type = $extractedData['type'] ?? '';
         $isCoffretSource = $extractedData['is_coffret'] ?? false;
 
-        // Vérifier si nous avons au moins un critère de recherche autre que le vendor
-        $hasNonVendorCriteria = !empty($name) || !empty($type) || $isCoffretSource;
-        
-        if (!$hasNonVendorCriteria) {
-            \Log::warning('Recherche par vendor uniquement interdite', [
-                'vendor' => $vendor,
-                'name' => $name,
-                'type' => $type,
-                'is_coffret' => $isCoffretSource
-            ]);
-            session()->flash('error', 'La recherche par marque uniquement n\'est pas autorisée. Veuillez spécifier au moins un nom de gamme ou un type de produit.');
+        // Si pas de vendor, on ne peut pas faire de recherche fiable
+        if (empty($vendor)) {
+            \Log::warning('searchMatchingProducts: vendor vide');
             return;
         }
 
@@ -295,42 +286,40 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             'nameWords_brut' => $allNameWords,
             'nameWords_filtres' => $nameWords,
             'type' => $type,
-            'type_parts' => $typeParts,
-            'is_coffret' => $isCoffretSource,
-            'has_non_vendor_criteria' => $hasNonVendorCriteria
+            'type_parts' => $typeParts
         ]);
 
-        // ÉTAPE 1: Recherche de base - TOUS les produits sur les sites sélectionnés
+        // ÉTAPE 1: Recherche de base - UNIQUEMENT sur le vendor et les sites sélectionnés
         $baseQuery = Product::query()
+            ->where('vendor', 'LIKE', "%{$vendor}%")
             ->when(!empty($this->selectedSites), function ($q) {
                 $q->whereIn('web_site_id', $this->selectedSites);
             })
             ->orderByDesc('id');
 
-        $allProducts = $baseQuery->get();
+        $vendorProducts = $baseQuery->get();
 
-        if ($allProducts->isEmpty()) {
-            \Log::info('Aucun produit trouvé sur les sites sélectionnés');
+        if ($vendorProducts->isEmpty()) {
+            \Log::info('Aucun produit trouvé pour le vendor: ' . $vendor);
             return;
         }
 
-        \Log::info('Produits trouvés sur les sites', [
-            'count' => $allProducts->count()
+        \Log::info('Produits trouvés pour le vendor', [
+            'vendor' => $vendor,
+            'count' => $vendorProducts->count()
         ]);
 
         // ÉTAPE 2: Filtrer par statut coffret
-        $filteredProducts = $this->filterByCoffretStatus($allProducts, $isCoffretSource);
+        $filteredProducts = $this->filterByCoffretStatus($vendorProducts, $isCoffretSource);
 
         if (empty($filteredProducts)) {
             \Log::info('Aucun produit après filtrage coffret');
             return;
         }
 
-        // ÉTAPE 3: FILTRAGE STRICT par les mots du NAME
+        // ÉTAPE 2.5: FILTRAGE STRICT par les mots du NAME
         // Si on a des mots du name, on filtre pour garder seulement les produits qui contiennent TOUS les mots
-        $hasNameFilter = !empty($nameWords);
-        
-        if ($hasNameFilter) {
+        if (!empty($nameWords)) {
             $nameFilteredProducts = collect($filteredProducts)->filter(function ($product) use ($nameWords) {
                 $productName = mb_strtolower($product['name'] ?? '');
                 
@@ -373,22 +362,18 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                         'nameWords_used' => $nameWords
                     ]);
                 } else {
-                    \Log::info('Aucun produit après filtrage NAME, on garde tous les produits');
+                    \Log::info('Aucun produit après filtrage NAME, on garde tous les produits du vendor');
                 }
             }
         }
 
-        // ÉTAPE 4: Scoring hiérarchique basé sur le TYPE + BONUS COFFRET + BONUS VENDOR conditionnel
-        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $type, $isCoffretSource, $vendor, $hasNameFilter) {
+        // ÉTAPE 3: Scoring hiérarchique basé sur le TYPE + BONUS COFFRET
+        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $type, $isCoffretSource) {
             $score = 0;
             $productType = mb_strtolower($product['type'] ?? '');
-            $productVendor = mb_strtolower($product['vendor'] ?? '');
-            $searchVendor = mb_strtolower($vendor);
             
             $matchedTypeParts = [];
             $typePartsCount = count($typeParts);
-            $hasTypeMatch = false;
-            $hasNameMatch = $hasNameFilter;
 
             // ==========================================
             // PRIORITÉ ABSOLUE : BONUS COFFRET
@@ -411,7 +396,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     if (!empty($partLower)) {
                         // Vérifier si cette partie du type est présente dans le type du produit
                         if (str_contains($productType, $partLower)) {
-                            $hasTypeMatch = true;
                             // Bonus décroissant selon la position dans la hiérarchie
                             // La première partie (la plus importante) donne plus de points
                             $partBonus = 100 - ($index * 20); // 100, 80, 60, 40, etc.
@@ -444,22 +428,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 }
             }
 
-            // ==========================================
-            // BONUS VENDOR CONDITIONNEL
-            // ==========================================
-            // On donne un bonus pour le vendor SEULEMENT si le produit a aussi un match sur name OU type
-            $hasOtherMatch = $hasNameMatch || $hasTypeMatch || $productIsCoffret;
-            
-            if (!empty($searchVendor) && !empty($productVendor) && str_contains($productVendor, $searchVendor)) {
-                if ($hasOtherMatch) {
-                    // Bonus important pour correspondance de vendor + autre critère
-                    $score += 200;
-                } else {
-                    // Petit bonus même sans autre match, mais beaucoup plus faible
-                    $score += 50;
-                }
-            }
-
             return [
                 'product' => $product,
                 'score' => $score,
@@ -468,36 +436,25 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'type_parts_count' => $typePartsCount,
                 'matched_count' => count($matchedTypeParts),
                 'is_coffret' => $productIsCoffret,
-                'coffret_bonus_applied' => ($isCoffretSource && $productIsCoffret),
-                'vendor_match' => !empty($searchVendor) && !empty($productVendor) && str_contains($productVendor, $searchVendor),
-                'has_type_match' => $hasTypeMatch,
-                'has_name_match' => $hasNameMatch,
-                'has_other_match' => $hasOtherMatch
+                'coffret_bonus_applied' => ($isCoffretSource && $productIsCoffret)
             ];
         })
         // Trier par score décroissant (les coffrets auront le score le plus élevé)
         ->sortByDesc('score')
         ->values();
 
-        \Log::info('Scoring détaillé (TYPE HIÉRARCHIQUE + BONUS COFFRET + VENDOR CONDITIONNEL)', [
+        \Log::info('Scoring détaillé (TYPE HIÉRARCHIQUE + BONUS COFFRET)', [
             'total_products' => $scoredProducts->count(),
             'type_recherche' => $type,
             'type_parts' => $typeParts,
             'recherche_coffret' => $isCoffretSource,
-            'vendor_recherche' => $vendor,
-            'has_non_vendor_criteria' => $hasNonVendorCriteria,
             'top_10_scores' => $scoredProducts->take(10)->map(function($item) {
                 return [
                     'id' => $item['product']['id'] ?? 0,
                     'score' => $item['score'],
                     'is_coffret' => $item['is_coffret'],
                     'coffret_bonus' => $item['coffret_bonus_applied'],
-                    'vendor_match' => $item['vendor_match'],
-                    'has_type_match' => $item['has_type_match'],
-                    'has_name_match' => $item['has_name_match'],
-                    'has_other_match' => $item['has_other_match'],
                     'name' => $item['product']['name'] ?? '',
-                    'vendor' => $item['product']['vendor'] ?? '',
                     'type' => $item['product']['type'] ?? '',
                     'matched_type_parts' => array_map(function($part) {
                         return "{$part['part']} (+{$part['bonus']} pts)";
@@ -510,16 +467,15 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             })->toArray()
         ]);
 
-        // Ne garder que ceux qui ont un score > 0 ET qui ont au moins un match autre que le vendor
-        $scoredProducts = $scoredProducts->filter(fn($item) => $item['score'] > 0 && $item['has_other_match']);
+        // Ne garder que ceux qui ont un score > 0
+        $scoredProducts = $scoredProducts->filter(fn($item) => $item['score'] > 0);
 
         if ($scoredProducts->isEmpty()) {
-            \Log::info('Aucun produit avec score > 0 et avec match autre que vendor', [
-                'typeParts' => $typeParts,
-                'hasNonVendorCriteria' => $hasNonVendorCriteria
+            \Log::info('Aucun produit avec score > 0', [
+                'typeParts' => $typeParts
             ]);
             
-            // Fallback: si aucun match avec critères autres que vendor, on prend les 50 premiers produits
+            // Fallback: si aucun match par type, on prend les 50 premiers produits du vendor
             $this->matchingProducts = array_slice($filteredProducts, 0, 50);
             $this->groupResultsByScrapeReference($this->matchingProducts);
             $this->validateBestMatchWithAI();
