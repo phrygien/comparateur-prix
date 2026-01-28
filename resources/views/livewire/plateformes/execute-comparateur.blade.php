@@ -498,7 +498,8 @@ Exemple de format attendu :
                         'variation' => $product['variation'] ?? '',
                         'price' => $product['prix_ht'] ?? 0,
                         'created_at' => $product['created_at'] ?? null,
-                        'url' => $product['url'] ?? null
+                        'url' => $product['url'] ?? null,
+                        'image_url' => $product['image_url'] ?? null
                     ];
                 })->sortByDesc('scrap_reference_id')->values()->toArray()
             ];
@@ -533,7 +534,7 @@ Exemple de format attendu :
         // Nettoyer et découper (gérer les apostrophes)
         $text = mb_strtolower($text);
         // Remplacer les apostrophes par des espaces pour séparer les mots
-        $text = str_replace(["'", "’", "-"], " ", $text);
+        $text = str_replace(["'", "'", "-"], " ", $text);
         $words = preg_split('/[\s\-]+/', $text, -1, PREG_SPLIT_NO_EMPTY);
 
         // Filtrer les mots courts et les stop words
@@ -712,7 +713,7 @@ Score de confiance entre 0 et 1."
         <h2 class="text-xl font-bold mb-2">Extraction et recherche de produit</h2>
         <p class="text-gray-600">Produit: {{ $productName }}</p>
         <p class="text-sm text-gray-500 mt-1">
-            <span class="font-semibold">Affichage :</span> Tous les produits uniques par site (sans doublons)
+            <span class="font-semibold">Affichage :</span> Tous les produits uniques groupés par site
         </p>
     </div>
 
@@ -874,81 +875,118 @@ Score de confiance entre 0 et 1."
                 <span class="text-sm font-normal text-gray-600">(Cliquez pour sélectionner)</span>
             </h3>
             
-            <!-- Statistiques par site -->
+            <!-- Affichage des produits regroupés par site -->
             @if(!empty($groupedResults))
-                <div class="mb-4 p-3 bg-gray-50 rounded border">
-                    <h4 class="font-medium text-gray-700 mb-2">Résultats par site :</h4>
-                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                        @foreach($groupedResults as $siteId => $siteData)
-                            @php
-                                $siteInfo = collect($availableSites)->firstWhere('id', $siteId);
-                            @endphp
-                            @if(!empty($siteInfo))
-                                <div class="text-xs p-2 bg-white border rounded">
-                                    <div class="font-medium">{{ $siteInfo['name'] }}</div>
-                                    <div class="text-gray-600">
-                                        {{ $siteData['unique_products'] ?? 0 }} produits uniques
-                                    </div>
-                                    <div class="text-gray-500 text-xs">
-                                        ({{ $siteData['total_products'] ?? 0 }} au total)
+                <div class="space-y-6">
+                    @foreach($groupedResults as $siteId => $siteData)
+                        @php
+                            $siteInfo = collect($availableSites)->firstWhere('id', $siteId);
+                        @endphp
+                        @if(!empty($siteInfo) && !empty($siteData['all_products']))
+                            <div class="border-2 rounded-lg overflow-hidden">
+                                <!-- En-tête du site -->
+                                <div class="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <h4 class="text-lg font-bold">{{ $siteInfo['name'] }}</h4>
+                                            <p class="text-sm text-blue-100">
+                                                {{ $siteData['unique_products'] ?? 0 }} produit(s) unique(s)
+                                                @if(($siteData['total_products'] ?? 0) > ($siteData['unique_products'] ?? 0))
+                                                    <span class="text-xs">
+                                                        ({{ ($siteData['total_products'] ?? 0) - ($siteData['unique_products'] ?? 0) }} doublon(s) éliminé(s))
+                                                    </span>
+                                                @endif
+                                            </p>
+                                        </div>
+                                        <div class="text-right">
+                                            <span class="text-2xl font-bold">{{ $siteData['unique_products'] ?? 0 }}</span>
+                                            <p class="text-xs text-blue-100">produits</p>
+                                        </div>
                                     </div>
                                 </div>
-                            @endif
-                        @endforeach
-                    </div>
-                </div>
-            @endif
-
-            <div class="space-y-3 max-h-96 overflow-y-auto">
-                @foreach($matchingProducts as $product)
-                    @php
-                        $product = is_array($product) ? $product : [];
-                        $siteInfo = collect($availableSites)->firstWhere('id', $product['web_site_id'] ?? 0);
-                    @endphp
-                    <div wire:click="selectProduct({{ $product['id'] ?? 0 }})"
-                        class="p-3 border rounded hover:bg-blue-50 cursor-pointer transition {{ !empty($bestMatch['id']) && $bestMatch['id'] === ($product['id'] ?? 0) ? 'bg-blue-100 border-blue-500' : 'bg-white' }}">
-                        <div class="flex items-start gap-3">
-                            @if(!empty($product['image_url']))
-                                <img src="{{ $product['image_url'] }}" alt="{{ $product['name'] ?? '' }}"
-                                    class="w-12 h-12 object-cover rounded">
-                            @endif
-                            <div class="flex-1">
-                                <div class="flex justify-between">
-                                    <p class="font-medium text-sm">{{ $product['vendor'] ?? '' }} - {{ $product['name'] ?? '' }}</p>
-                                    <p class="font-bold text-sm">{{ $product['prix_ht'] ?? 0 }} {{ $product['currency'] ?? '' }}</p>
-                                </div>
-                                <p class="text-xs text-gray-500">{{ $product['type'] ?? '' }} | {{ $product['variation'] ?? '' }}</p>
                                 
-                                <!-- Informations site -->
-                                <div class="flex items-center justify-between mt-2">
-                                    <div class="flex items-center gap-2">
-                                        @if(!empty($siteInfo))
-                                            <span class="text-xs px-2 py-1 rounded bg-gray-100 text-gray-800">
-                                                {{ $siteInfo['name'] ?? '' }}
-                                            </span>
-                                        @endif
-                                        
-                                        <span class="text-xs text-gray-500">
-                                            Ref ID: {{ $product['scrap_reference_id'] ?? 0 }} | 
-                                            ID: {{ $product['id'] ?? 0 }}
-                                        </span>
-                                    </div>
-                                    
-                                    <div class="text-right">
-                                        @if(!empty($product['url']))
-                                            <a href="{{ $product['url'] }}" target="_blank"
-                                                class="text-xs text-blue-500 hover:text-blue-700 hover:underline"
-                                                onclick="event.stopPropagation();">
-                                                Voir produit
-                                            </a>
-                                        @endif
-                                    </div>
+                                <!-- Liste des produits du site -->
+                                <div class="bg-white p-4 space-y-3 max-h-96 overflow-y-auto">
+                                    @foreach($siteData['all_products'] as $product)
+                                        <div wire:click="selectProduct({{ $product['id'] ?? 0 }})"
+                                            class="p-3 border rounded-lg hover:bg-blue-50 cursor-pointer transition-all {{ !empty($bestMatch['id']) && $bestMatch['id'] === ($product['id'] ?? 0) ? 'bg-blue-100 border-blue-500 shadow-md' : 'hover:shadow-sm' }}">
+                                            <div class="flex items-start gap-3">
+                                                @if(!empty($product['image_url']))
+                                                    <img src="{{ $product['image_url'] }}" alt="{{ $product['name'] ?? '' }}"
+                                                        class="w-16 h-16 object-cover rounded-md flex-shrink-0">
+                                                @else
+                                                    <div class="w-16 h-16 bg-gray-200 rounded-md flex items-center justify-center flex-shrink-0">
+                                                        <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                                        </svg>
+                                                    </div>
+                                                @endif
+                                                
+                                                <div class="flex-1 min-w-0">
+                                                    <div class="flex justify-between items-start gap-2">
+                                                        <div class="flex-1 min-w-0">
+                                                            <p class="font-semibold text-sm text-gray-900 truncate">
+                                                                {{ $product['vendor'] ?? '' }}
+                                                            </p>
+                                                            <p class="font-medium text-sm text-gray-700 line-clamp-2">
+                                                                {{ $product['name'] ?? '' }}
+                                                            </p>
+                                                        </div>
+                                                        <p class="font-bold text-base text-green-600 whitespace-nowrap">
+                                                            {{ number_format($product['price'] ?? 0, 2) }} €
+                                                        </p>
+                                                    </div>
+                                                    
+                                                    <div class="mt-2 flex flex-wrap gap-2">
+                                                        @if(!empty($product['type']))
+                                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                                                                {{ $product['type'] }}
+                                                            </span>
+                                                        @endif
+                                                        @if(!empty($product['variation']))
+                                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                                                {{ $product['variation'] }}
+                                                            </span>
+                                                        @endif
+                                                    </div>
+                                                    
+                                                    <div class="mt-2 flex items-center justify-between text-xs text-gray-500">
+                                                        <div class="flex items-center gap-3">
+                                                            <span>Ref ID: {{ $product['scrap_reference_id'] ?? 0 }}</span>
+                                                            <span>ID: {{ $product['id'] ?? 0 }}</span>
+                                                            @if(!empty($product['created_at']))
+                                                                <span class="text-gray-400">
+                                                                    {{ \Carbon\Carbon::parse($product['created_at'])->format('d/m/Y') }}
+                                                                </span>
+                                                            @endif
+                                                        </div>
+                                                        
+                                                        @if(!empty($product['url']))
+                                                            <a href="{{ $product['url'] }}" target="_blank"
+                                                                class="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                                                                onclick="event.stopPropagation();">
+                                                                Voir ›
+                                                            </a>
+                                                        @endif
+                                                    </div>
+                                                    
+                                                    @if(!empty($bestMatch['id']) && $bestMatch['id'] === ($product['id'] ?? 0))
+                                                        <div class="mt-2">
+                                                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                                ✓ Meilleur match
+                                                            </span>
+                                                        </div>
+                                                    @endif
+                                                </div>
+                                            </div>
+                                        </div>
+                                    @endforeach
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                @endforeach
-            </div>
+                        @endif
+                    @endforeach
+                </div>
+            @endif
         </div>
     @endif
 
