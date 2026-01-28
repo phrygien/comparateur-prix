@@ -312,12 +312,12 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
     /**
      * LOGIQUE DE RECHERCHE OPTIMISÉE
      * 1. Filtrer par VENDOR (obligatoire)
-     * 2. Garder TOUS les produits (coffrets ET non-coffrets)
+     * 2. Filtrer par statut COFFRET
      * 3. FILTRAGE STRICT par NAME : TOUS les mots du name (hors vendor) doivent être présents
      *    Fallback progressif si filtrage strict ne donne rien
      * 4. SCORER avec :
-     *    - BONUS pour correspondance de type
-     *    - Gestion nuancée des coffrets
+     *    - BONUS ÉNORME (+500) si recherche coffret ET produit est coffret (PRIORITÉ ABSOLUE)
+     *    - Matching HIÉRARCHIQUE sur le TYPE : vérifier étape par étape
      */
     private function searchMatchingProducts()
     {
@@ -359,7 +359,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         $vendorWords = $this->extractKeywords($vendor);
         $nameWordsFiltered = array_diff($allNameWords, $vendorWords);
         
-        // PRENDRE TOUS LES MOTS significatifs
+        // PRENDRE TOUS LES MOTS significatifs (pas seulement 2)
+        // Cela permet de capturer des mots importants comme "Purple" même s'ils sont loin dans le nom
         $nameWords = array_values($nameWordsFiltered);
 
         \Log::info('Mots-clés pour la recherche', [
@@ -368,8 +369,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             'nameWords_brut' => $allNameWords,
             'nameWords_filtres' => $nameWords,
             'type' => $type,
-            'type_parts' => $typeParts,
-            'is_coffret_source' => $isCoffretSource
+            'type_parts' => $typeParts
         ]);
 
         // ÉTAPE 1: Recherche de base - UNIQUEMENT sur le vendor et les sites sélectionnés
@@ -392,24 +392,13 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             'count' => $vendorProducts->count()
         ]);
 
-        // ÉTAPE 2: Garder TOUS les produits (coffrets ET non-coffrets)
-        $filteredProducts = $vendorProducts->toArray();
+        // ÉTAPE 2: Filtrer par statut coffret
+        $filteredProducts = $this->filterByCoffretStatus($vendorProducts, $isCoffretSource);
 
         if (empty($filteredProducts)) {
-            \Log::info('Aucun produit après récupération');
+            \Log::info('Aucun produit après filtrage coffret');
             return;
         }
-
-        // Log supplémentaire pour voir ce qu'on a
-        \Log::info('Produits après récupération', [
-            'count' => count($filteredProducts),
-            'coffrets' => count(array_filter($filteredProducts, function($p) {
-                return $this->isCoffret($p);
-            })),
-            'non_coffrets' => count(array_filter($filteredProducts, function($p) {
-                return !$this->isCoffret($p);
-            }))
-        ]);
 
         // ÉTAPE 2.5: FILTRAGE STRICT PAR TYPE DE BASE
         // Exclure les produits qui ont un type de base différent (ex: déodorant vs eau de toilette)
@@ -524,7 +513,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             $filteredProducts = $nameFilteredProducts;
         }
 
-        // ÉTAPE 3: Scoring hiérarchique basé sur le TYPE + BONUS NAME + gestion nuancée des coffrets
+        // ÉTAPE 3: Scoring hiérarchique basé sur le TYPE + BONUS COFFRET + BONUS NAME
         $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $type, $isCoffretSource, $nameWords) {
             $score = 0;
             $productType = mb_strtolower($product['type'] ?? '');
@@ -534,28 +523,13 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             $typePartsCount = count($typeParts);
 
             // ==========================================
-            // GESTION NUANCÉE DES COFFRETS
+            // PRIORITÉ ABSOLUE : BONUS COFFRET
             // ==========================================
             $productIsCoffret = $this->isCoffret($product);
             
-            // Gestion plus nuancée des coffrets
-            if ($isCoffretSource) {
-                if ($productIsCoffret) {
-                    // Si on cherche un coffret ET que le produit est un coffret : bonus
-                    $score += 200;
-                } else {
-                    // Si on cherche un coffret mais que le produit n'est PAS un coffret : petit malus
-                    // Mais pas assez pour exclure complètement le produit
-                    $score -= 50;
-                }
-            } else {
-                if ($productIsCoffret) {
-                    // Si on ne cherche pas un coffret mais que le produit en est un : malus modéré
-                    $score -= 100;
-                } else {
-                    // Si ni la recherche ni le produit ne sont des coffrets : petit bonus
-                    $score += 50;
-                }
+            // Si on cherche un coffret ET que le produit est un coffret, ÉNORME BONUS
+            if ($isCoffretSource && $productIsCoffret) {
+                $score += 500; // MEGA BONUS pour prioriser les coffrets
             }
 
             // ==========================================
@@ -570,6 +544,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 }
                 
                 // Bonus proportionnel au nombre de mots matchés
+                // Plus il y a de mots qui matchent, plus le score est élevé
                 $nameMatchRatio = count($nameWords) > 0 ? ($nameMatchCount / count($nameWords)) : 0;
                 $nameBonus = (int)($nameMatchRatio * 300); // Jusqu'à +300 points
                 $score += $nameBonus;
@@ -588,6 +563,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             
             if (!empty($typeParts) && !empty($productType)) {
                 // BONUS CRITIQUE : Vérifier que le TYPE DE BASE correspond (ex: "Eau de Toilette" vs "Déodorant")
+                // C'est la partie la plus importante du type (généralement la première)
                 if (!empty($typeParts[0])) {
                     $baseTypeLower = mb_strtolower(trim($typeParts[0]));
                     if (str_contains($productType, $baseTypeLower)) {
@@ -618,6 +594,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                         // Vérifier si cette partie du type est présente dans le type du produit
                         if (str_contains($productType, $partLower)) {
                             // Bonus décroissant selon la position dans la hiérarchie
+                            // La première partie (la plus importante) donne plus de points
                             $partBonus = 100 - ($index * 20); // 100, 80, 60, 40, etc.
                             $partBonus = max($partBonus, 20); // Minimum 20 points
                             
@@ -663,18 +640,18 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'matched_count' => count($matchedTypeParts),
                 'type_matched' => $typeMatched, // Nouveau flag
                 'is_coffret' => $productIsCoffret,
-                'coffret_match' => ($isCoffretSource && $productIsCoffret),
+                'coffret_bonus_applied' => ($isCoffretSource && $productIsCoffret),
                 'name_match_count' => !empty($nameWords) ? array_reduce($nameWords, function($count, $word) use ($productName) {
                     return $count + (str_contains($productName, $word) ? 1 : 0);
                 }, 0) : 0,
                 'name_words_total' => count($nameWords)
             ];
         })
-        // Trier par score décroissant (les meilleurs matchs auront le score le plus élevé)
+        // Trier par score décroissant (les coffrets et meilleurs matchs de nom auront le score le plus élevé)
         ->sortByDesc('score')
         ->values();
 
-        \Log::info('Scoring détaillé', [
+        \Log::info('Scoring détaillé (TYPE HIÉRARCHIQUE + BONUS COFFRET + BONUS NAME)', [
             'total_products' => $scoredProducts->count(),
             'type_recherche' => $type,
             'type_parts' => $typeParts,
@@ -685,7 +662,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     'id' => $item['product']['id'] ?? 0,
                     'score' => $item['score'],
                     'is_coffret' => $item['is_coffret'],
-                    'coffret_match' => $item['coffret_match'],
+                    'coffret_bonus' => $item['coffret_bonus_applied'],
                     'name_match' => $item['name_match_count'] . '/' . $item['name_words_total'],
                     'type_match' => $item['type_matched'],
                     'name' => $item['product']['name'] ?? '',
@@ -749,13 +726,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         \Log::info('Produits après scoring (avant déduplication)', [
             'count' => count($this->matchingProducts),
             'best_score' => $scoredProducts->first()['score'] ?? 0,
-            'worst_score' => $scoredProducts->last()['score'] ?? 0,
-            'coffrets_trouvés' => count(array_filter($rankedProducts, function($p) {
-                return $this->isCoffret($p);
-            })),
-            'non_coffrets_trouvés' => count(array_filter($rankedProducts, function($p) {
-                return !$this->isCoffret($p);
-            }))
+            'worst_score' => $scoredProducts->last()['score'] ?? 0
         ]);
 
         // Grouper et valider avec l'IA (la déduplication se fait dans cette méthode)
@@ -929,10 +900,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
         \Log::info('Résultats finaux après déduplication', [
             'total_produits' => count($this->matchingProducts),
-            'par_site' => $uniqueProducts->groupBy('web_site_id')->map(fn($group) => $group->count())->toArray(),
-            'coffrets_finaux' => count(array_filter($this->matchingProducts, function($p) {
-                return $this->isCoffret($p);
-            }))
+            'par_site' => $uniqueProducts->groupBy('web_site_id')->map(fn($group) => $group->count())->toArray()
         ]);
 
         // Statistiques par site
@@ -1006,6 +974,20 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         });
 
         return array_values($keywords);
+    }
+
+    /**
+     * Filtre les produits selon leur statut coffret
+     */
+    private function filterByCoffretStatus($products, bool $sourceisCoffret): array
+    {
+        return $products->filter(function ($product) use ($sourceisCoffret) {
+            $productIsCoffret = $this->isCoffret($product->toArray());
+
+            // Si la source est un coffret, garder seulement les coffrets
+            // Si la source n'est pas un coffret, exclure les coffrets
+            return $sourceisCoffret ? $productIsCoffret : !$productIsCoffret;
+        })->values()->toArray();
     }
 
     /**
@@ -1412,7 +1394,6 @@ Score de confiance entre 0 et 1."
                         @php
                             $hasUrl = !empty($product['url']);
                             $isBestMatch = $bestMatch && $bestMatch['id'] === $product['id'];
-                            $isProductCoffret = $this->isCoffret($product);
                             $cardClass = "group relative border-r border-b border-gray-200 p-4 sm:p-6 cursor-pointer transition hover:bg-gray-50";
                             if ($isBestMatch) {
                                 $cardClass .= " ring-2 ring-indigo-500 bg-indigo-50";
@@ -1473,7 +1454,7 @@ Score de confiance entre 0 et 1."
                                 </div>
 
                                 <!-- Badge coffret -->
-                                @if($isProductCoffret)
+                                @if($product['name'] && (str_contains(strtolower($product['name']), 'coffret') || str_contains(strtolower($product['name']), 'set') || str_contains(strtolower($product['type'] ?? ''), 'coffret')))
                                     <div class="mb-2">
                                         <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800">🎁 Coffret</span>
                                     </div>
