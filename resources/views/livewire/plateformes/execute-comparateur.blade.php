@@ -207,6 +207,12 @@ Exemple de format attendu :
             return;
         }
 
+        // Si pas de name OU pas de type, abandonner la recherche
+        if (empty($name) && empty($type)) {
+            \Log::warning('Ni name ni type extrait, recherche impossible');
+            return;
+        }
+
         // Recherche UNIQUEMENT avec le vendor obligatoire + sites sélectionnés
         $baseQuery = Product::query()
             ->where(function ($q) use ($vendor, $vendorLower) {
@@ -224,7 +230,7 @@ Exemple de format attendu :
 
         $allResults = collect();
 
-        // 1. Recherche vendor + name + type (meilleure correspondance)
+        // Stratégie 1: Vendor + Name + Type (exacte - meilleure correspondance)
         if (!empty($name) && !empty($type)) {
             $exactMatch = (clone $baseQuery)
                 ->where(function ($q) use ($name, $nameLower) {
@@ -246,8 +252,82 @@ Exemple de format attendu :
             }
         }
 
-        // 2. Recherche vendor + name seulement
-        if (!empty($name)) {
+        // Stratégie 2: Vendor + mots-clés Name + Type exact
+        if (!empty($nameWords) && !empty($type)) {
+            $nameKeywordsWithType = (clone $baseQuery)
+                ->where(function ($q) use ($nameWords) {
+                    foreach ($nameWords as $word) {
+                        $wordLower = mb_strtolower($word);
+                        $q->orWhere('name', 'LIKE', "%{$word}%")
+                            ->orWhere('name', 'LIKE', "%" . mb_strtoupper($word) . "%")
+                            ->orWhereRaw('LOWER(name) LIKE ?', ['%' . $wordLower . '%']);
+                    }
+                })
+                ->where(function ($q) use ($type, $typeLower) {
+                    $q->where('type', 'LIKE', "%{$type}%")
+                        ->orWhere('type', 'LIKE', "%" . mb_strtoupper($type) . "%")
+                        ->orWhere('type', 'LIKE', "%" . ucfirst($typeLower) . "%")
+                        ->orWhereRaw('LOWER(type) LIKE ?', ['%' . $typeLower . '%']);
+                })
+                ->get();
+
+            if ($nameKeywordsWithType->isNotEmpty()) {
+                $allResults = $allResults->merge($nameKeywordsWithType);
+            }
+        }
+
+        // Stratégie 3: Vendor + Name exact + mots-clés Type
+        if (!empty($name) && !empty($typeWords)) {
+            $nameWithTypeKeywords = (clone $baseQuery)
+                ->where(function ($q) use ($name, $nameLower) {
+                    $q->where('name', 'LIKE', "%{$name}%")
+                        ->orWhere('name', 'LIKE', "%" . mb_strtoupper($name) . "%")
+                        ->orWhere('name', 'LIKE', "%" . ucfirst($nameLower) . "%")
+                        ->orWhereRaw('LOWER(name) LIKE ?', ['%' . $nameLower . '%']);
+                })
+                ->where(function ($q) use ($typeWords) {
+                    foreach ($typeWords as $word) {
+                        $wordLower = mb_strtolower($word);
+                        $q->orWhere('type', 'LIKE', "%{$word}%")
+                            ->orWhere('type', 'LIKE', "%" . mb_strtoupper($word) . "%")
+                            ->orWhereRaw('LOWER(type) LIKE ?', ['%' . $wordLower . '%']);
+                    }
+                })
+                ->get();
+
+            if ($nameWithTypeKeywords->isNotEmpty()) {
+                $allResults = $allResults->merge($nameWithTypeKeywords);
+            }
+        }
+
+        // Stratégie 4: Vendor + mots-clés Name + mots-clés Type
+        if (!empty($nameWords) && !empty($typeWords)) {
+            $keywordsMatch = (clone $baseQuery)
+                ->where(function ($q) use ($nameWords) {
+                    foreach ($nameWords as $word) {
+                        $wordLower = mb_strtolower($word);
+                        $q->orWhere('name', 'LIKE', "%{$word}%")
+                            ->orWhere('name', 'LIKE', "%" . mb_strtoupper($word) . "%")
+                            ->orWhereRaw('LOWER(name) LIKE ?', ['%' . $wordLower . '%']);
+                    }
+                })
+                ->where(function ($q) use ($typeWords) {
+                    foreach ($typeWords as $word) {
+                        $wordLower = mb_strtolower($word);
+                        $q->orWhere('type', 'LIKE', "%{$word}%")
+                            ->orWhere('type', 'LIKE', "%" . mb_strtoupper($word) . "%")
+                            ->orWhereRaw('LOWER(type) LIKE ?', ['%' . $wordLower . '%']);
+                    }
+                })
+                ->get();
+
+            if ($keywordsMatch->isNotEmpty()) {
+                $allResults = $allResults->merge($keywordsMatch);
+            }
+        }
+
+        // Stratégie 5: Si on a seulement le name, chercher Vendor + Name
+        if (!empty($name) && empty($type)) {
             $vendorAndName = (clone $baseQuery)
                 ->where(function ($q) use ($name, $nameLower) {
                     $q->where('name', 'LIKE', "%{$name}%")
@@ -262,8 +342,8 @@ Exemple de format attendu :
             }
         }
 
-        // 3. Recherche vendor + type seulement
-        if (!empty($type)) {
+        // Stratégie 6: Si on a seulement le type, chercher Vendor + Type
+        if (empty($name) && !empty($type)) {
             $vendorAndType = (clone $baseQuery)
                 ->where(function ($q) use ($type, $typeLower) {
                     $q->where('type', 'LIKE', "%{$type}%")
@@ -275,50 +355,6 @@ Exemple de format attendu :
 
             if ($vendorAndType->isNotEmpty()) {
                 $allResults = $allResults->merge($vendorAndType);
-            }
-        }
-
-        // 4. Recherche par mots-clés du name
-        if (!empty($nameWords)) {
-            $keywordSearch = (clone $baseQuery)
-                ->where(function ($q) use ($nameWords) {
-                    foreach ($nameWords as $word) {
-                        $wordLower = mb_strtolower($word);
-                        $q->orWhere('name', 'LIKE', "%{$word}%")
-                            ->orWhere('name', 'LIKE', "%" . mb_strtoupper($word) . "%")
-                            ->orWhereRaw('LOWER(name) LIKE ?', ['%' . $wordLower . '%']);
-                    }
-                })
-                ->get();
-
-            if ($keywordSearch->isNotEmpty()) {
-                $allResults = $allResults->merge($keywordSearch);
-            }
-        }
-
-        // 5. Recherche par mots-clés du type
-        if (!empty($typeWords)) {
-            $typeKeywordSearch = (clone $baseQuery)
-                ->where(function ($q) use ($typeWords) {
-                    foreach ($typeWords as $word) {
-                        $wordLower = mb_strtolower($word);
-                        $q->orWhere('type', 'LIKE', "%{$word}%")
-                            ->orWhere('type', 'LIKE', "%" . mb_strtoupper($word) . "%")
-                            ->orWhereRaw('LOWER(type) LIKE ?', ['%' . $wordLower . '%']);
-                    }
-                })
-                ->get();
-
-            if ($typeKeywordSearch->isNotEmpty()) {
-                $allResults = $allResults->merge($typeKeywordSearch);
-            }
-        }
-
-        // 6. Si toujours rien, récupérer TOUS les produits du vendor
-        if ($allResults->isEmpty()) {
-            $allVendorProducts = $baseQuery->limit(200)->get();
-            if ($allVendorProducts->isNotEmpty()) {
-                $allResults = $allResults->merge($allVendorProducts);
             }
         }
 
