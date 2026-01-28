@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use App\Models\Site as WebSite;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Http;
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -48,6 +49,10 @@ new class extends Component {
     public $showAnalysis = false;
     public $selectedAnalysis = [];
 
+    // Nouvelles propriétés pour OpenAI
+    public $openaiEnabled = true;
+    public $extractionMethod = 'openai'; // 'openai' ou 'legacy'
+    
     // Cache des vendors
     private array $knownVendors = [];
     private bool $vendorsLoaded = false;
@@ -75,6 +80,1107 @@ new class extends Component {
 
         // Recherche automatique avec la nouvelle logique
         $this->getCompetitorPrice($name);
+    }
+
+    /**
+     * ============================================================================
+     * NOUVELLE MÉTHODE : Extraction des critères avec OpenAI
+     * ============================================================================
+     */
+    private function extractProductComponentsWithOpenAI(string $search): array
+    {
+        // Vérifier si OpenAI est activé et disponible
+        if (!$this->openaiEnabled || empty(env('OPENAI_API_KEY'))) {
+            \Log::warning('OpenAI non disponible, utilisation de la méthode legacy');
+            return $this->extractProductComponentsLegacy($search);
+        }
+
+        try {
+            $cacheKey = 'openai_extraction:' . md5($search);
+            
+            // Vérifier le cache
+            $cachedResult = Cache::get($cacheKey);
+            if ($cachedResult !== null) {
+                \Log::info('Extraction OpenAI depuis cache', ['search' => $search]);
+                return $cachedResult;
+            }
+
+            \Log::info('Extraction OpenAI en cours', ['search' => $search]);
+
+            // Appel à l'API OpenAI
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
+                'Content-Type' => 'application/json',
+            ])->timeout(10)->post('https://api.openai.com/v1/chat/completions', [
+                'model' => 'gpt-4o-mini', // Modèle plus rapide et économique
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => $this->getOpenAISystemPrompt()
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => "Analyse ce nom de produit cosmétique et extrait les informations structurées : \"$search\""
+                    ]
+                ],
+                'temperature' => 0.1, // Très déterministe
+                'max_tokens' => 500,
+                'response_format' => ['type' => 'json_object']
+            ]);
+
+            if (!$response->successful()) {
+                throw new \Exception('OpenAI API error: ' . $response->body());
+            }
+
+            $result = $response->json();
+            $extractedData = json_decode($result['choices'][0]['message']['content'], true);
+
+            \Log::info('Extraction OpenAI réussie', [
+                'search' => $search,
+                'extracted' => $extractedData
+            ]);
+
+            // Normaliser les données extraites
+            $components = $this->normalizeOpenAIExtraction($extractedData, $search);
+
+            // Mettre en cache pour 1 heure
+            Cache::put($cacheKey, $components, now()->addHour());
+
+            return $components;
+
+        } catch (\Throwable $e) {
+            \Log::error('Erreur extraction OpenAI', [
+                'message' => $e->getMessage(),
+                'search' => $search
+            ]);
+            
+            // Fallback sur la méthode legacy
+            return $this->extractProductComponentsLegacy($search);
+        }
+    }
+
+    /**
+     * Prompt système pour OpenAI
+     */
+    private function getOpenAISystemPrompt(): string
+    {
+        return <<<PROMPT
+Tu es un expert en analyse de noms de produits cosmétiques et parfums.
+
+Ta tâche : extraire les informations structurées d'un nom de produit.
+
+**RÈGLES IMPORTANTES :**
+
+1. **VENDOR (Marque)** : Toujours en premier, avant le premier tiret ou séparateur
+   - Exemples : "Dior", "Chanel", "Yves Saint Laurent", "Giorgio Armani"
+   - Peut contenir plusieurs mots : "Jean Paul Gaultier", "Ralph Lauren"
+
+2. **NAME (Nom du produit)** : Le nom principal après le vendor, sans les détails techniques
+   - Exemples : "Sauvage", "J'adore", "La Vie Est Belle", "Terre d'Hermès"
+   - NE PAS inclure : type, volume, mots comme "Intense", "Extrême"
+   - Extraire TOUS les mots du nom : ["Sauvage"], ["La", "Vie", "Est", "Belle"]
+
+3. **TYPE** : Le type de produit cosmétique
+   - Parfums : "Eau de Parfum", "Eau de Toilette", "Parfum", "Cologne", "EDP", "EDT"
+   - Soins : "Lait Corps", "Gel Douche", "Crème", "Sérum", "Baume", "Huile"
+   - Maquillage : "Rouge à Lèvres", "Fond de Teint", "Mascara"
+   - Extraire aussi les MOTS du type : ["Eau", "Parfum"], ["Lait", "Corps"]
+
+4. **VOLUME** : Si présent (ex: "100ml", "50 ml", "75ml")
+
+5. **KEYWORDS** : Modificateurs et descripteurs
+   - Exemples : "Intense", "Absolu", "Extrême", "Pour Homme", "Pour Femme"
+   - "Vaporisateur", "Spray", "Coffret", "Edition Limitée"
+
+**FORMAT DE SORTIE (JSON strict) :**
+{
+  "vendor": "Nom de la marque",
+  "name": "Nom du produit (sans type ni modificateurs)",
+  "name_words": ["mot1", "mot2", "mot3"],
+  "type": "Type de produit",
+  "type_words": ["mot1", "mot2"],
+  "full_type": "Type complet avec tous les mots",
+  "volume": "Volume si présent (ex: 100ml)",
+  "keywords": ["modificateur1", "modificateur2"],
+  "clean_name": "Nom nettoyé sans ponctuation"
+}
+
+**EXEMPLES :**
+
+Input: "Dior - Sauvage - Eau de Parfum 100ml Vaporisateur"
+Output:
+{
+  "vendor": "Dior",
+  "name": "Sauvage",
+  "name_words": ["Sauvage"],
+  "type": "Eau de Parfum",
+  "type_words": ["Eau", "Parfum"],
+  "full_type": "Eau de Parfum",
+  "volume": "100ml",
+  "keywords": ["Vaporisateur"],
+  "clean_name": "Sauvage"
+}
+
+Input: "Yves Saint Laurent - La Nuit de L'Homme - Eau de Toilette Intense 60ml"
+Output:
+{
+  "vendor": "Yves Saint Laurent",
+  "name": "La Nuit de L'Homme",
+  "name_words": ["La", "Nuit", "de", "L'Homme"],
+  "type": "Eau de Toilette",
+  "type_words": ["Eau", "Toilette"],
+  "full_type": "Eau de Toilette",
+  "volume": "60ml",
+  "keywords": ["Intense"],
+  "clean_name": "La Nuit de L'Homme"
+}
+
+Input: "Chanel - Coco Mademoiselle Lait Corps Hydratant 200ml"
+Output:
+{
+  "vendor": "Chanel",
+  "name": "Coco Mademoiselle",
+  "name_words": ["Coco", "Mademoiselle"],
+  "type": "Lait Corps",
+  "type_words": ["Lait", "Corps"],
+  "full_type": "Lait Corps Hydratant",
+  "volume": "200ml",
+  "keywords": ["Hydratant"],
+  "clean_name": "Coco Mademoiselle"
+}
+
+**IMPORTANT :** 
+- Réponds UNIQUEMENT en JSON valide
+- Sois précis et cohérent
+- Si une information n'est pas présente, utilise une chaîne vide "" ou un tableau vide []
+PROMPT;
+    }
+
+    /**
+     * Normaliser les données extraites par OpenAI
+     */
+    private function normalizeOpenAIExtraction(array $extracted, string $originalSearch): array
+    {
+        return [
+            'original' => $originalSearch,
+            'vendor' => $extracted['vendor'] ?? '',
+            'name' => $extracted['name'] ?? '',
+            'name_words' => $extracted['name_words'] ?? [],
+            'type' => $extracted['type'] ?? '',
+            'type_words' => $extracted['type_words'] ?? [],
+            'full_type' => $extracted['full_type'] ?? '',
+            'volume' => $extracted['volume'] ?? '',
+            'keywords' => $extracted['keywords'] ?? [],
+            'clean_name' => $extracted['clean_name'] ?? ''
+        ];
+    }
+
+    /**
+     * Méthode legacy (ancienne méthode)
+     */
+    private function extractProductComponentsLegacy(string $search): array
+    {
+        $components = [
+            'original' => $search,
+            'vendor' => '',
+            'name' => '',
+            'name_words' => [],
+            'type' => '',
+            'type_words' => [],
+            'full_type' => '',
+            'volume' => '',
+            'keywords' => [],
+            'clean_name' => ''
+        ];
+
+        // Séparer par tiret
+        $parts = preg_split('/\s*-\s*/', $search, 2);
+
+        // VENDOR: première partie avant le premier tiret
+        if (count($parts) > 1) {
+            $components['vendor'] = trim($parts[0]);
+            $remaining = trim($parts[1]);
+        } else {
+            $remaining = trim($parts[0]);
+        }
+
+        // Extraire le volume (ex: 40ml, 100 ml, 75 ml)
+        if (preg_match('/(\d+)\s*ml/i', $remaining, $matches)) {
+            $components['volume'] = $matches[1] . 'ml';
+            $remaining = preg_replace('/(\d+)\s*ml/i', '', $remaining);
+        }
+
+        // Liste des types de produits COMPLÈTE avec variantes
+        $productTypes = [
+            'eau de parfum',
+            'eau de toilette',
+            'eau fraiche',
+            'eau de cologne',
+            'parfum',
+            'cologne',
+            'edp',
+            'edt',
+            'edc',
+            'lait',
+            'lait pour le corps',
+            'lait corporel',
+            'gel',
+            'gel douche',
+            'gel lavant',
+            'crème',
+            'crème pour le corps',
+            'crème pour les mains',
+            'crème pour le visage',
+            'sérum',
+            'sérum visage',
+            'baume',
+            'baume à lèvres',
+            'baume pour le corps',
+            'huile',
+            'huile pour le corps',
+            'huile sèche',
+            'spray',
+            'spray corporel',
+            'vaporisateur',
+            'stick',
+            'déodorant',
+            'shampooing',
+            'après-shampooing',
+            'masque',
+            'gommage',
+            'exfoliant',
+            'savon',
+            'pain',
+            'lotion',
+            'lotion tonique',
+            'contour des yeux',
+            'soin des yeux',
+            'fond de teint',
+            'poudre',
+            'fard à paupières',
+            'mascara',
+            'rouge à lèvres',
+            'gloss',
+            'vernis à ongles',
+            'parfum solide',
+            'déodorant solide'
+        ];
+
+        // Extraire le type complet
+        $components['full_type'] = '';
+        $foundType = '';
+
+        foreach ($productTypes as $type) {
+            if (stripos($remaining, $type) !== false) {
+                // Garder le type le plus long trouvé
+                if (strlen($type) > strlen($foundType)) {
+                    $foundType = $type;
+                }
+            }
+        }
+
+        if (!empty($foundType)) {
+            $components['full_type'] = $foundType;
+            $components['type'] = $foundType;
+            $remaining = str_ireplace($foundType, '', $remaining);
+
+            // Extraire les mots du type
+            $typeWords = preg_split('/\s+/', $foundType);
+            $components['type_words'] = array_filter($typeWords, function ($word) {
+                return strlen($word) > 2 && !in_array(strtolower($word), ['de', 'le', 'la', 'les', 'pour', 'des', 'du']);
+            });
+        }
+
+        // Si pas de type complet trouvé, chercher des mots-clés de type
+        if (empty($components['type'])) {
+            // Mots-clés de type individuels
+            $typeKeywords = [
+                'lait',
+                'gel',
+                'crème',
+                'sérum',
+                'baume',
+                'huile',
+                'spray',
+                'vaporisateur',
+                'stick',
+                'déodorant',
+                'shampooing',
+                'masque',
+                'gommage',
+                'exfoliant',
+                'savon',
+                'pain',
+                'lotion',
+                'contour',
+                'fond',
+                'poudre',
+                'fard',
+                'mascara',
+                'rouge',
+                'gloss',
+                'vernis',
+                'solide',
+                'corps',
+                'visage',
+                'mains',
+                'lèvres',
+                'yeux',
+                'corporel',
+                'lavant',
+                'tonique'
+            ];
+
+            foreach ($typeKeywords as $keyword) {
+                if (stripos($remaining, $keyword) !== false) {
+                    if (empty($components['type'])) {
+                        $components['type'] = $keyword;
+                    } else {
+                        $components['type'] .= ' ' . $keyword;
+                    }
+
+                    // Ajouter au tableau des mots du type
+                    if (!in_array(strtolower($keyword), $components['type_words'])) {
+                        $components['type_words'][] = strtolower($keyword);
+                    }
+
+                    $remaining = str_ireplace($keyword, '', $remaining);
+                }
+            }
+        }
+
+        // Mots clés à extraire (Intense, Vaporisateur, Spray, etc.)
+        $keywords = [
+            'intense',
+            'vaporisateur',
+            'spray',
+            'coffret',
+            'absolu',
+            'extrême',
+            'extreme',
+            'pour homme',
+            'pour femme',
+            'homme',
+            'femme',
+            'lissant',
+            'raffermissant',
+            'hydratant',
+            'nourrissant',
+            'apaisant',
+            'démaquillant',
+            'nettoyant',
+            'purifiant',
+            'éclat',
+            'anti-âge',
+            'antirides',
+            'jeunesse',
+            'éclat'
+        ];
+
+        foreach ($keywords as $keyword) {
+            if (stripos($remaining, $keyword) !== false) {
+                $components['keywords'][] = $keyword;
+                $remaining = str_ireplace($keyword, '', $remaining);
+            }
+        }
+
+        // NOM: ce qui reste après extraction
+        $components['name'] = trim(preg_replace('/\s+/', ' ', $remaining));
+
+        // Nettoyer le nom (supprimer la ponctuation, double espaces)
+        $cleanName = preg_replace('/[^\p{L}\p{N}\s]/u', ' ', $components['name']);
+        $cleanName = trim(preg_replace('/\s+/', ' ', $cleanName));
+        $components['clean_name'] = $cleanName;
+
+        // Séparer en mots
+        $nameWords = preg_split('/\s+/', $cleanName);
+        $components['name_words'] = array_filter($nameWords, function ($word) {
+            return strlen($word) > 1 && !is_numeric($word);
+        });
+
+        // Si pas de vendor trouvé, essayer de le deviner
+        if (empty($components['vendor']) && !empty($components['name_words'])) {
+            $components['vendor'] = $this->guessVendorFromWords($components['name_words']);
+        }
+
+        return $components;
+    }
+
+    /**
+     * ============================================================================
+     * NOUVELLE MÉTHODE : Recherche par vendor et mots spécifiques
+     * ============================================================================
+     */
+    private function searchByVendorAndWords(array $components, array $words, bool $strictMode = false): array
+    {
+        $vendor = $components['vendor'];
+        
+        if (empty($vendor) || empty($words)) {
+            return [];
+        }
+
+        $vendorVariations = $this->getVendorVariations($vendor);
+
+        $sql = "SELECT 
+                lp.*, 
+                ws.name as site_name, 
+                lp.url as product_url, 
+                lp.image_url as image
+            FROM last_price_scraped_product lp
+            LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+            WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')";
+
+        $params = [];
+        $vendorConditions = [];
+
+        // Conditions pour le vendor
+        foreach ($vendorVariations as $variation) {
+            $vendorConditions[] = "lp.vendor LIKE ?";
+            $params[] = '%' . $variation . '%';
+        }
+
+        $sql .= " AND (" . implode(' OR ', $vendorConditions) . ")";
+
+        // Conditions pour les mots du nom
+        $nameConditions = [];
+        foreach ($words as $word) {
+            if (strlen($word) > 2) { // Ignorer les mots trop courts
+                if ($strictMode) {
+                    // Mode strict : tous les mots doivent être présents
+                    $nameConditions[] = "(lp.name LIKE ? OR lp.variation LIKE ?)";
+                    $params[] = '%' . $word . '%';
+                    $params[] = '%' . $word . '%';
+                } else {
+                    // Mode souple : au moins un mot doit être présent
+                    $nameConditions[] = "(lp.name LIKE ? OR lp.variation LIKE ?)";
+                    $params[] = '%' . $word . '%';
+                    $params[] = '%' . $word . '%';
+                }
+            }
+        }
+
+        if (!empty($nameConditions)) {
+            if ($strictMode) {
+                $sql .= " AND (" . implode(' AND ', $nameConditions) . ")";
+            } else {
+                $sql .= " AND (" . implode(' OR ', $nameConditions) . ")";
+            }
+        }
+
+        $sql .= " ORDER BY lp.prix_ht DESC LIMIT 50";
+
+        return DB::connection('mysql')->select($sql, $params);
+    }
+
+    /**
+     * Recherche par vendor et type
+     */
+    private function searchByVendorAndType(array $components): array
+    {
+        $vendor = $components['vendor'];
+        $typeWords = $components['type_words'];
+        
+        if (empty($vendor) || empty($typeWords)) {
+            return [];
+        }
+
+        $vendorVariations = $this->getVendorVariations($vendor);
+
+        $sql = "SELECT 
+                lp.*, 
+                ws.name as site_name, 
+                lp.url as product_url, 
+                lp.image_url as image
+            FROM last_price_scraped_product lp
+            LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+            WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')";
+
+        $params = [];
+        $vendorConditions = [];
+
+        foreach ($vendorVariations as $variation) {
+            $vendorConditions[] = "lp.vendor LIKE ?";
+            $params[] = '%' . $variation . '%';
+        }
+
+        $sql .= " AND (" . implode(' OR ', $vendorConditions) . ")";
+
+        // Conditions pour le type
+        $typeConditions = [];
+        foreach ($typeWords as $typeWord) {
+            if (strlen($typeWord) > 2) {
+                $typeConditions[] = "lp.type LIKE ?";
+                $params[] = '%' . $typeWord . '%';
+            }
+        }
+
+        if (!empty($typeConditions)) {
+            $sql .= " AND (" . implode(' OR ', $typeConditions) . ")";
+        }
+
+        $sql .= " ORDER BY lp.prix_ht DESC LIMIT 50";
+
+        return DB::connection('mysql')->select($sql, $params);
+    }
+
+    /**
+     * Recherche par vendor et volume
+     */
+    private function searchByVendorAndVolume(array $components): array
+    {
+        $vendor = $components['vendor'];
+        $volume = $components['volume'];
+        
+        if (empty($vendor) || empty($volume)) {
+            return [];
+        }
+
+        $vendorVariations = $this->getVendorVariations($vendor);
+        $volumeNumber = str_replace('ml', '', $volume);
+
+        $sql = "SELECT 
+                lp.*, 
+                ws.name as site_name, 
+                lp.url as product_url, 
+                lp.image_url as image
+            FROM last_price_scraped_product lp
+            LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+            WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')";
+
+        $params = [];
+        $vendorConditions = [];
+
+        foreach ($vendorVariations as $variation) {
+            $vendorConditions[] = "lp.vendor LIKE ?";
+            $params[] = '%' . $variation . '%';
+        }
+
+        $sql .= " AND (" . implode(' OR ', $vendorConditions) . ")";
+
+        // Condition pour le volume
+        $sql .= " AND (lp.name LIKE ? OR lp.variation LIKE ?)";
+        $params[] = '%' . $volumeNumber . 'ml%';
+        $params[] = '%' . $volumeNumber . 'ml%';
+
+        $sql .= " ORDER BY lp.prix_ht DESC LIMIT 50";
+
+        return DB::connection('mysql')->select($sql, $params);
+    }
+
+    /**
+     * ============================================================================
+     * SCORING AMÉLIORÉ avec matching précis
+     * ============================================================================
+     */
+    private function processAndRankProductsImproved(array $products, array $components): array
+    {
+        $processed = [];
+
+        foreach ($products as $product) {
+            // Nettoyer les données
+            if (isset($product->prix_ht)) {
+                $product->prix_ht = $this->cleanPrice($product->prix_ht);
+            }
+
+            $product->product_url = $product->product_url ?? $product->url ?? null;
+            $product->image = $product->image ?? $product->image_url ?? null;
+            $product->is_manual_search = false;
+
+            // Calculer le score de pertinence AMÉLIORÉ
+            $relevanceScore = $this->calculateImprovedRelevanceScore($product, $components);
+            $product->similarity_score = $relevanceScore;
+            $product->match_level = $this->getMatchLevel($relevanceScore);
+            $product->search_source = 'automatic_openai';
+
+            $processed[] = $product;
+        }
+
+        // Trier par score décroissant
+        usort($processed, function ($a, $b) {
+            return $b->similarity_score <=> $a->similarity_score;
+        });
+
+        return $processed;
+    }
+
+    /**
+     * Calcul de score amélioré avec matching mot par mot
+     */
+    private function calculateImprovedRelevanceScore($product, array $components): float
+    {
+        $weights = [
+            'vendor_exact_match' => 0.30,  // Augmenté
+            'name_word_match' => 0.25,     // Augmenté - matching mot par mot
+            'type_match' => 0.20,
+            'volume_match' => 0.10,
+            'keywords_match' => 0.10,
+            'variation_bonus' => 0.05
+        ];
+
+        $totalScore = 0;
+
+        // 1. VENDOR - Matching exact prioritaire
+        $vendorScore = $this->calculateVendorExactMatch($product, $components['vendor']);
+        $totalScore += $vendorScore * $weights['vendor_exact_match'];
+
+        // 2. NAME - Matching mot par mot avec pondération
+        $nameScore = $this->calculateNameWordByWordMatch($product, $components['name_words']);
+        $totalScore += $nameScore * $weights['name_word_match'];
+
+        // 3. TYPE - Matching sur les mots du type
+        $typeScore = $this->calculateTypeWordsMatch($product, $components['type_words']);
+        $totalScore += $typeScore * $weights['type_match'];
+
+        // 4. VOLUME - Matching exact ou proche
+        $volumeScore = $this->calculateVolumeExactMatch($product, $components['volume']);
+        $totalScore += $volumeScore * $weights['volume_match'];
+
+        // 5. KEYWORDS - Bonus pour correspondance
+        $keywordsScore = $this->calculateKeywordsPresence($product, $components['keywords']);
+        $totalScore += $keywordsScore * $weights['keywords_match'];
+
+        // 6. VARIATION - Bonus si pertinent
+        $variationScore = $this->calculateVariationRelevance($product, $components);
+        $totalScore += $variationScore * $weights['variation_bonus'];
+
+        return min(1.0, $totalScore);
+    }
+
+    /**
+     * Matching exact du vendor
+     */
+    private function calculateVendorExactMatch($product, string $searchVendor): float
+    {
+        $productVendor = $product->vendor ?? '';
+        
+        if (empty($productVendor) || empty($searchVendor)) {
+            return 0;
+        }
+
+        $productLower = mb_strtolower(trim($productVendor));
+        $searchLower = mb_strtolower(trim($searchVendor));
+
+        // Correspondance exacte
+        if ($productLower === $searchLower) {
+            return 1.0;
+        }
+
+        // Correspondance avec normalisation (espaces, tirets)
+        $productNorm = preg_replace('/[\s\-]+/', '', $productLower);
+        $searchNorm = preg_replace('/[\s\-]+/', '', $searchLower);
+        
+        if ($productNorm === $searchNorm) {
+            return 0.95;
+        }
+
+        // Correspondance partielle au début
+        if (str_starts_with($productLower, $searchLower)) {
+            return 0.85;
+        }
+
+        // Correspondance partielle
+        if (str_contains($productLower, $searchLower)) {
+            return 0.70;
+        }
+
+        // Similarité de Levenshtein
+        $distance = levenshtein($searchLower, $productLower);
+        $maxLength = max(strlen($searchLower), strlen($productLower));
+        
+        if ($maxLength > 0) {
+            $similarity = 1 - ($distance / $maxLength);
+            return max(0, $similarity * 0.6); // Max 0.6 pour similarité
+        }
+
+        return 0;
+    }
+
+    /**
+     * Matching mot par mot pour le nom
+     */
+    private function calculateNameWordByWordMatch($product, array $searchWords): float
+    {
+        if (empty($searchWords)) {
+            return 0;
+        }
+
+        $productName = mb_strtolower($product->name ?? '');
+        $productVariation = mb_strtolower($product->variation ?? '');
+        $productText = $productName . ' ' . $productVariation;
+
+        $matchedWords = 0;
+        $wordScores = [];
+
+        foreach ($searchWords as $word) {
+            $wordLower = mb_strtolower($word);
+            
+            if (strlen($wordLower) <= 2) {
+                continue; // Ignorer les mots trop courts
+            }
+
+            // Vérifier correspondance exacte du mot
+            if (preg_match('/\b' . preg_quote($wordLower, '/') . '\b/u', $productText)) {
+                $wordScores[] = 1.0; // Correspondance exacte
+                $matchedWords++;
+            }
+            // Vérifier correspondance partielle
+            elseif (str_contains($productText, $wordLower)) {
+                $wordScores[] = 0.7; // Correspondance partielle
+                $matchedWords += 0.7;
+            }
+        }
+
+        if (empty($wordScores)) {
+            return 0;
+        }
+
+        // Score = moyenne des correspondances * ratio de mots trouvés
+        $averageScore = array_sum($wordScores) / count($wordScores);
+        $coverageRatio = $matchedWords / count($searchWords);
+
+        return $averageScore * $coverageRatio;
+    }
+
+    /**
+     * Matching des mots du type
+     */
+    private function calculateTypeWordsMatch($product, array $typeWords): float
+    {
+        if (empty($typeWords)) {
+            return 0.5; // Score neutre si pas de type
+        }
+
+        $productType = mb_strtolower($product->type ?? '');
+        
+        if (empty($productType)) {
+            return 0.3;
+        }
+
+        $matchedWords = 0;
+
+        foreach ($typeWords as $word) {
+            $wordLower = mb_strtolower($word);
+            
+            if (strlen($wordLower) <= 2) {
+                continue;
+            }
+
+            if (str_contains($productType, $wordLower)) {
+                $matchedWords++;
+            }
+        }
+
+        if (count($typeWords) > 0) {
+            return $matchedWords / count($typeWords);
+        }
+
+        return 0;
+    }
+
+    /**
+     * Matching exact du volume
+     */
+    private function calculateVolumeExactMatch($product, string $searchVolume): float
+    {
+        if (empty($searchVolume)) {
+            return 0.5; // Score neutre
+        }
+
+        $productText = ($product->name ?? '') . ' ' . ($product->variation ?? '');
+        
+        // Extraire le volume du produit
+        if (preg_match('/(\d+)\s*ml/i', $productText, $matches)) {
+            $productVolume = intval($matches[1]);
+            $searchVolumeNum = intval(str_replace('ml', '', $searchVolume));
+
+            // Correspondance exacte
+            if ($productVolume === $searchVolumeNum) {
+                return 1.0;
+            }
+
+            // Correspondance proche (±10ml)
+            $difference = abs($productVolume - $searchVolumeNum);
+            if ($difference <= 10) {
+                return 0.8;
+            }
+
+            // Correspondance approximative (±20ml)
+            if ($difference <= 20) {
+                return 0.5;
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * Présence des mots-clés
+     */
+    private function calculateKeywordsPresence($product, array $keywords): float
+    {
+        if (empty($keywords)) {
+            return 0.5;
+        }
+
+        $productText = mb_strtolower(
+            ($product->name ?? '') . ' ' . 
+            ($product->variation ?? '') . ' ' . 
+            ($product->type ?? '')
+        );
+
+        $matchedKeywords = 0;
+
+        foreach ($keywords as $keyword) {
+            if (str_contains($productText, mb_strtolower($keyword))) {
+                $matchedKeywords++;
+            }
+        }
+
+        return count($keywords) > 0 ? $matchedKeywords / count($keywords) : 0;
+    }
+
+    /**
+     * Pertinence de la variation
+     */
+    private function calculateVariationRelevance($product, array $components): float
+    {
+        $variation = mb_strtolower($product->variation ?? '');
+        
+        if (empty($variation) || $variation === 'standard') {
+            return 0.5;
+        }
+
+        $score = 0;
+
+        // Bonus si variation contient des mots du nom
+        foreach ($components['name_words'] as $word) {
+            if (str_contains($variation, mb_strtolower($word))) {
+                $score += 0.3;
+            }
+        }
+
+        // Bonus si variation contient des keywords
+        foreach ($components['keywords'] as $keyword) {
+            if (str_contains($variation, mb_strtolower($keyword))) {
+                $score += 0.2;
+            }
+        }
+
+        return min(1.0, $score);
+    }
+
+    /**
+     * Recherche large améliorée
+     */
+    private function searchBroadImproved(array $components): array
+    {
+        $searchTerms = [];
+
+        // Vendor + mots significatifs du nom
+        if (!empty($components['vendor']) && !empty($components['name_words'])) {
+            foreach ($components['name_words'] as $word) {
+                if (strlen($word) > 3) {
+                    $searchTerms[] = $components['vendor'] . ' ' . $word;
+                }
+            }
+        }
+
+        // Vendor + type
+        if (!empty($components['vendor']) && !empty($components['type'])) {
+            $searchTerms[] = $components['vendor'] . ' ' . $components['type'];
+        }
+
+        if (empty($searchTerms)) {
+            return [];
+        }
+
+        $allProducts = [];
+
+        foreach ($searchTerms as $term) {
+            $searchQuery = $this->prepareAutomaticSearchTerms($term);
+
+            $sql = "SELECT 
+                    lp.*, 
+                    ws.name as site_name, 
+                    lp.url as product_url, 
+                    lp.image_url as image
+                FROM last_price_scraped_product lp
+                LEFT JOIN web_site ws ON lp.web_site_id = ws.id
+                WHERE MATCH (lp.name, lp.vendor, lp.type, lp.variation) 
+                    AGAINST (? IN BOOLEAN MODE)
+                AND (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
+                ORDER BY lp.prix_ht DESC 
+                LIMIT 30";
+
+            $products = DB::connection('mysql')->select($sql, [$searchQuery]);
+            $allProducts = array_merge($allProducts, $products);
+        }
+
+        return $allProducts;
+    }
+
+    /**
+     * RECHERCHE AUTOMATIQUE AMÉLIORÉE avec matching mot par mot
+     * 1. Utilise OpenAI pour extraire les composants
+     * 2. Recherche progressive mot par mot
+     * 3. Scoring amélioré avec matching précis
+     */
+    public function getCompetitorPrice($search)
+    {
+        try {
+            if (empty($search)) {
+                return $this->resetSearchState();
+            }
+
+            $cacheKey = $this->getCacheKey($search, [], false);
+            $cachedData = $this->getCachedResults($cacheKey);
+
+            if ($cachedData !== null) {
+                $this->matchedProducts = $cachedData['products'];
+                $this->products = $cachedData['products'];
+                $this->originalAutomaticResults = $cachedData['products'];
+                $this->hasAppliedFilters = false;
+                $this->hasData = !empty($cachedData['products']);
+                $this->isAutomaticSearch = true;
+                $this->showTable = true;
+                $this->resetSelection();
+                return $cachedData['full_result'];
+            }
+
+            // 1. EXTRACTION INTELLIGENTE avec OpenAI
+            \Log::info('Début extraction critères de recherche', ['search' => $search]);
+            
+            $components = $this->extractProductComponentsWithOpenAI($search);
+            
+            \Log::info('Critères extraits', [
+                'vendor' => $components['vendor'],
+                'name' => $components['name'],
+                'name_words' => $components['name_words'],
+                'type' => $components['type'],
+                'type_words' => $components['type_words']
+            ]);
+
+            // Mettre à jour le filtre vendor
+            if (!empty($components['vendor'])) {
+                $this->filters['vendor'] = $components['vendor'];
+            }
+
+            // 2. RECHERCHE PROGRESSIVE MOT PAR MOT
+            $allProducts = [];
+
+            // ÉTAPE 1: Vendor + Premier mot du nom
+            if (!empty($components['vendor']) && !empty($components['name_words'][0])) {
+                $step1 = $this->searchByVendorAndWords($components, [$components['name_words'][0]]);
+                $allProducts = array_merge($allProducts, $step1);
+                \Log::info('Étape 1 - Vendor + 1er mot', [
+                    'vendor' => $components['vendor'],
+                    'word' => $components['name_words'][0],
+                    'found' => count($step1)
+                ]);
+            }
+
+            // ÉTAPE 2: Vendor + Deux premiers mots
+            if (!empty($components['vendor']) && count($components['name_words']) >= 2) {
+                $step2 = $this->searchByVendorAndWords($components, array_slice($components['name_words'], 0, 2));
+                $allProducts = array_merge($allProducts, $step2);
+                \Log::info('Étape 2 - Vendor + 2 premiers mots', [
+                    'words' => array_slice($components['name_words'], 0, 2),
+                    'found' => count($step2)
+                ]);
+            }
+
+            // ÉTAPE 3: Vendor + Tous les mots du nom (recherche stricte)
+            if (!empty($components['vendor']) && count($components['name_words']) > 2) {
+                $step3 = $this->searchByVendorAndWords($components, $components['name_words'], true);
+                $allProducts = array_merge($allProducts, $step3);
+                \Log::info('Étape 3 - Vendor + tous les mots', [
+                    'words' => $components['name_words'],
+                    'found' => count($step3)
+                ]);
+            }
+
+            // ÉTAPE 4: Vendor + Type
+            if (!empty($components['vendor']) && !empty($components['type_words'])) {
+                $step4 = $this->searchByVendorAndType($components);
+                $allProducts = array_merge($allProducts, $step4);
+                \Log::info('Étape 4 - Vendor + Type', [
+                    'type' => $components['type'],
+                    'found' => count($step4)
+                ]);
+            }
+
+            // ÉTAPE 5: Vendor + Volume
+            if (!empty($components['vendor']) && !empty($components['volume'])) {
+                $step5 = $this->searchByVendorAndVolume($components);
+                $allProducts = array_merge($allProducts, $step5);
+                \Log::info('Étape 5 - Vendor + Volume', [
+                    'volume' => $components['volume'],
+                    'found' => count($step5)
+                ]);
+            }
+
+            // Éliminer les doublons
+            $uniqueProducts = $this->removeDuplicates($allProducts);
+            \Log::info('Produits uniques', ['count' => count($uniqueProducts)]);
+
+            // Si peu de résultats, recherche plus large
+            if (count($uniqueProducts) < 5) {
+                $broadSearch = $this->searchBroadImproved($components);
+                $uniqueProducts = array_merge($uniqueProducts, $broadSearch);
+                $uniqueProducts = $this->removeDuplicates($uniqueProducts);
+                \Log::info('Après recherche large', ['count' => count($uniqueProducts)]);
+            }
+
+            if (empty($uniqueProducts)) {
+                return $this->handleEmptyResults($cacheKey);
+            }
+
+            // 3. SCORING ET RANKING AMÉLIORÉ
+            $processedProducts = $this->processAndRankProductsImproved($uniqueProducts, $components);
+
+            // Préparer le résultat final
+            $fullResult = [
+                'count' => count($processedProducts),
+                'has_data' => !empty($processedProducts),
+                'products' => $processedProducts,
+                'product' => $this->getOneProductDetails($this->id),
+                'query' => $search,
+                'components' => $components,
+                'search_strategy' => 'openai_word_by_word',
+                'extraction_method' => $this->extractionMethod
+            ];
+
+            // Mettre en cache
+            $this->cacheResults($cacheKey, [
+                'products' => $processedProducts,
+                'full_result' => $fullResult
+            ]);
+
+            // Mettre à jour les propriétés
+            $this->matchedProducts = $processedProducts;
+            $this->products = $processedProducts;
+            $this->originalAutomaticResults = $processedProducts;
+            $this->hasAppliedFilters = false;
+            $this->hasData = !empty($processedProducts);
+            $this->isAutomaticSearch = true;
+            $this->showTable = true;
+            $this->resetSelection();
+
+            return $fullResult;
+
+        } catch (\Throwable $e) {
+            \Log::error('Erreur recherche automatique', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            $this->products = [];
+            $this->hasData = false;
+            $this->originalAutomaticResults = [];
+            $this->hasAppliedFilters = false;
+            $this->showTable = true;
+            $this->resetSelection();
+            return ['error' => $e->getMessage()];
+        }
     }
 
     /**
@@ -818,364 +1924,6 @@ new class extends Component {
             $this->products = [];
             $this->hasData = false;
         }
-    }
-
-    /**
-     * RECHERCHE AUTOMATIQUE AMÉLIORÉE
-     * 1. Commence par chercher avec le vendor
-     * 2. Joue avec les mots dans le nom
-     * 3. Extrait le type dans le texte et joue avec les mots du type
-     */
-    public function getCompetitorPrice($search)
-    {
-        try {
-            if (empty($search)) {
-                return $this->resetSearchState();
-            }
-
-            $cacheKey = $this->getCacheKey($search, [], false);
-            $cachedData = $this->getCachedResults($cacheKey);
-
-            if ($cachedData !== null) {
-                $this->matchedProducts = $cachedData['products'];
-                $this->products = $cachedData['products'];
-                $this->originalAutomaticResults = $cachedData['products'];
-                $this->hasAppliedFilters = false;
-                $this->hasData = !empty($cachedData['products']);
-                $this->isAutomaticSearch = true;
-                $this->showTable = true;
-                $this->resetSelection();
-
-                return $cachedData['full_result'];
-            }
-
-            // 1. ANALYSER LE PRODUIT À RECHERCHER
-            \Log::info('Analyse du produit à rechercher:', ['search' => $search]);
-
-            $components = $this->extractProductComponents($search);
-            \Log::info('Composants extraits:', $components);
-
-            // Mettre à jour les filtres avec les composants extraits
-            if (!empty($components['vendor'])) {
-                $this->filters['vendor'] = $components['vendor'];
-            }
-
-            // 2. RECHERCHE EN 3 ÉTAPES
-            $allProducts = [];
-
-            // ÉTAPE 1: Recherche par vendor + premier mot du nom
-            if (!empty($components['vendor']) && !empty($components['name_words'][0])) {
-                $stage1Products = $this->searchByVendorAndFirstWord($components);
-                $allProducts = array_merge($allProducts, $stage1Products);
-                \Log::info('Étape 1 - Vendor + premier mot:', ['count' => count($stage1Products)]);
-            }
-
-            // ÉTAPE 2: Recherche par vendor + tous les mots du nom
-            if (!empty($components['vendor']) && count($components['name_words']) > 1) {
-                $stage2Products = $this->searchByVendorAndAllNameWords($components);
-                $allProducts = array_merge($allProducts, $stage2Products);
-                \Log::info('Étape 2 - Vendor + tous mots nom:', ['count' => count($stage2Products)]);
-            }
-
-            // ÉTAPE 3: Recherche par vendor seul avec filtres additionnels
-            if (!empty($components['vendor'])) {
-                $stage3Products = $this->searchByVendorWithFilters($components);
-                $allProducts = array_merge($allProducts, $stage3Products);
-                \Log::info('Étape 3 - Vendor avec filtres:', ['count' => count($stage3Products)]);
-            }
-
-            // Éliminer les doublons
-            $uniqueProducts = $this->removeDuplicates($allProducts);
-            \Log::info('Produits uniques après recherche:', ['count' => count($uniqueProducts)]);
-
-            // Si peu de résultats, essayer une recherche plus large
-            if (count($uniqueProducts) < 5) {
-                $broadSearchProducts = $this->searchBroad($components);
-                $uniqueProducts = array_merge($uniqueProducts, $broadSearchProducts);
-                $uniqueProducts = $this->removeDuplicates($uniqueProducts);
-                \Log::info('Après recherche large:', ['count' => count($uniqueProducts)]);
-            }
-
-            if (empty($uniqueProducts)) {
-                return $this->handleEmptyResults($cacheKey);
-            }
-
-            // 3. FILTRER ET TRIER PAR PERTINENCE
-            $processedProducts = $this->processAndRankProducts($uniqueProducts, $components);
-
-            // Préparer le résultat final
-            $fullResult = [
-                'count' => count($processedProducts),
-                'has_data' => !empty($processedProducts),
-                'products' => $processedProducts,
-                'product' => $this->getOneProductDetails($this->id),
-                'query' => $search,
-                'components' => $components,
-                'search_strategy' => 'vendor_first_smart_search'
-            ];
-
-            // Mettre en cache
-            $this->cacheResults($cacheKey, [
-                'products' => $processedProducts,
-                'full_result' => $fullResult
-            ]);
-
-            // Mettre à jour les propriétés
-            $this->matchedProducts = $processedProducts;
-            $this->products = $processedProducts;
-            $this->originalAutomaticResults = $processedProducts;
-            $this->hasAppliedFilters = false;
-            $this->hasData = !empty($processedProducts);
-            $this->isAutomaticSearch = true;
-            $this->showTable = true;
-            $this->resetSelection();
-
-            return $fullResult;
-
-        } catch (\Throwable $e) {
-            \Log::error('Competitor price error:', [
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            $this->products = [];
-            $this->hasData = false;
-            $this->originalAutomaticResults = [];
-            $this->hasAppliedFilters = false;
-            $this->showTable = true;
-            $this->resetSelection();
-            return ['error' => $e->getMessage()];
-        }
-    }
-
-    /**
-     * Extrait tous les composants du produit (AMÉLIORÉ)
-     */
-    private function extractProductComponents(string $search): array
-    {
-        $components = [
-            'original' => $search,
-            'vendor' => '',
-            'name' => '',
-            'name_words' => [],
-            'type' => '',
-            'type_words' => [], // NOUVEAU: mots du type
-            'full_type' => '', // NOUVEAU: type complet
-            'volume' => '',
-            'keywords' => [],
-            'clean_name' => ''
-        ];
-
-        // Séparer par tiret
-        $parts = preg_split('/\s*-\s*/', $search, 2);
-
-        // VENDOR: première partie avant le premier tiret
-        if (count($parts) > 1) {
-            $components['vendor'] = trim($parts[0]);
-            $remaining = trim($parts[1]);
-        } else {
-            $remaining = trim($parts[0]);
-        }
-
-        // Extraire le volume (ex: 40ml, 100 ml, 75 ml)
-        if (preg_match('/(\d+)\s*ml/i', $remaining, $matches)) {
-            $components['volume'] = $matches[1] . 'ml';
-            $remaining = preg_replace('/(\d+)\s*ml/i', '', $remaining);
-        }
-
-        // Liste des types de produits COMPLÈTE avec variantes
-        $productTypes = [
-            'eau de parfum',
-            'eau de toilette',
-            'eau fraiche',
-            'eau de cologne',
-            'parfum',
-            'cologne',
-            'edp',
-            'edt',
-            'edc',
-            'lait',
-            'lait pour le corps',
-            'lait corporel',
-            'gel',
-            'gel douche',
-            'gel lavant',
-            'crème',
-            'crème pour le corps',
-            'crème pour les mains',
-            'crème pour le visage',
-            'sérum',
-            'sérum visage',
-            'baume',
-            'baume à lèvres',
-            'baume pour le corps',
-            'huile',
-            'huile pour le corps',
-            'huile sèche',
-            'spray',
-            'spray corporel',
-            'vaporisateur',
-            'stick',
-            'déodorant',
-            'shampooing',
-            'après-shampooing',
-            'masque',
-            'gommage',
-            'exfoliant',
-            'savon',
-            'pain',
-            'lotion',
-            'lotion tonique',
-            'contour des yeux',
-            'soin des yeux',
-            'fond de teint',
-            'poudre',
-            'fard à paupières',
-            'mascara',
-            'rouge à lèvres',
-            'gloss',
-            'vernis à ongles',
-            'parfum solide',
-            'déodorant solide'
-        ];
-
-        // Extraire le type complet
-        $components['full_type'] = '';
-        $foundType = '';
-
-        foreach ($productTypes as $type) {
-            if (stripos($remaining, $type) !== false) {
-                // Garder le type le plus long trouvé
-                if (strlen($type) > strlen($foundType)) {
-                    $foundType = $type;
-                }
-            }
-        }
-
-        if (!empty($foundType)) {
-            $components['full_type'] = $foundType;
-            $components['type'] = $foundType;
-            $remaining = str_ireplace($foundType, '', $remaining);
-
-            // Extraire les mots du type
-            $typeWords = preg_split('/\s+/', $foundType);
-            $components['type_words'] = array_filter($typeWords, function ($word) {
-                return strlen($word) > 2 && !in_array(strtolower($word), ['de', 'le', 'la', 'les', 'pour', 'des', 'du']);
-            });
-        }
-
-        // Si pas de type complet trouvé, chercher des mots-clés de type
-        if (empty($components['type'])) {
-            // Mots-clés de type individuels
-            $typeKeywords = [
-                'lait',
-                'gel',
-                'crème',
-                'sérum',
-                'baume',
-                'huile',
-                'spray',
-                'vaporisateur',
-                'stick',
-                'déodorant',
-                'shampooing',
-                'masque',
-                'gommage',
-                'exfoliant',
-                'savon',
-                'pain',
-                'lotion',
-                'contour',
-                'fond',
-                'poudre',
-                'fard',
-                'mascara',
-                'rouge',
-                'gloss',
-                'vernis',
-                'solide',
-                'corps',
-                'visage',
-                'mains',
-                'lèvres',
-                'yeux',
-                'corporel',
-                'lavant',
-                'tonique'
-            ];
-
-            foreach ($typeKeywords as $keyword) {
-                if (stripos($remaining, $keyword) !== false) {
-                    if (empty($components['type'])) {
-                        $components['type'] = $keyword;
-                    } else {
-                        $components['type'] .= ' ' . $keyword;
-                    }
-
-                    // Ajouter au tableau des mots du type
-                    if (!in_array(strtolower($keyword), $components['type_words'])) {
-                        $components['type_words'][] = strtolower($keyword);
-                    }
-
-                    $remaining = str_ireplace($keyword, '', $remaining);
-                }
-            }
-        }
-
-        // Mots clés à extraire (Intense, Vaporisateur, Spray, etc.)
-        $keywords = [
-            'intense',
-            'vaporisateur',
-            'spray',
-            'coffret',
-            'absolu',
-            'extrême',
-            'extreme',
-            'pour homme',
-            'pour femme',
-            'homme',
-            'femme',
-            'lissant',
-            'raffermissant',
-            'hydratant',
-            'nourrissant',
-            'apaisant',
-            'démaquillant',
-            'nettoyant',
-            'purifiant',
-            'éclat',
-            'anti-âge',
-            'antirides',
-            'jeunesse',
-            'éclat'
-        ];
-
-        foreach ($keywords as $keyword) {
-            if (stripos($remaining, $keyword) !== false) {
-                $components['keywords'][] = $keyword;
-                $remaining = str_ireplace($keyword, '', $remaining);
-            }
-        }
-
-        // NOM: ce qui reste après extraction
-        $components['name'] = trim(preg_replace('/\s+/', ' ', $remaining));
-
-        // Nettoyer le nom (supprimer la ponctuation, double espaces)
-        $cleanName = preg_replace('/[^\p{L}\p{N}\s]/u', ' ', $components['name']);
-        $cleanName = trim(preg_replace('/\s+/', ' ', $cleanName));
-        $components['clean_name'] = $cleanName;
-
-        // Séparer en mots
-        $nameWords = preg_split('/\s+/', $cleanName);
-        $components['name_words'] = array_filter($nameWords, function ($word) {
-            return strlen($word) > 1 && !is_numeric($word);
-        });
-
-        // Si pas de vendor trouvé, essayer de le deviner
-        if (empty($components['vendor']) && !empty($components['name_words'])) {
-            $components['vendor'] = $this->guessVendorFromWords($components['name_words']);
-        }
-
-        return $components;
     }
 
     /**
@@ -2721,7 +3469,7 @@ new class extends Component {
 
         if (!empty($this->searchQuery)) {
             // Utiliser la nouvelle méthode d'extraction pour la recherche manuelle
-            $components = $this->extractProductComponents($this->searchQuery);
+            $components = $this->extractProductComponentsLegacy($this->searchQuery);
             $similarityScore = $this->calculateRelevanceScore($product, $components);
             $matchLevel = $this->getMatchLevel($similarityScore);
 
@@ -2745,7 +3493,7 @@ new class extends Component {
     {
         // Si $components est vide, les extraire du search
         if (empty($components) || !isset($components['name_words'])) {
-            $components = $this->extractProductComponents($search);
+            $components = $this->extractProductComponentsLegacy($search);
         }
 
         // Utiliser la nouvelle méthode de calcul de score
