@@ -205,30 +205,30 @@ Exemple 8 - Produit : \"Gel Douche Hydratant Recharge 500ml\"
                     }
                 }
 
-                // Post-traitement du type : enlever les termes non désirés
-                if (!empty($this->extractedData['type'])) {
-                    $type = $this->extractedData['type'];
-                    
-                    // Liste des termes à enlever du type
-                    $unwantedTypeTerms = [
-                        'recharge', 'refill', 'rechargeable', 'vaporisateur', 'spray', 'flacon',
-                        'pot', 'tube', 'stick', 'stick', 'applicateur', 'pompe', 'pression'
-                    ];
-                    
-                    foreach ($unwantedTypeTerms as $term) {
-                        $type = preg_replace('/\s*' . preg_quote($term, '/') . '\s*/i', ' ', $type);
-                    }
-                    
-                    // Nettoyer les espaces multiples
-                    $type = preg_replace('/\s+/', ' ', trim($type));
-                    
-                    // Si le type est vide après nettoyage, essayer de le déduire
-                    if (empty($type)) {
-                        $type = $this->deduceTypeFromProductName($this->productName);
-                    }
-                    
-                    $this->extractedData['type'] = $type;
-                }
+// Post-traitement du type : enlever les termes non désirés
+if (!empty($this->extractedData['type'])) {
+    $type = $this->extractedData['type'];
+    
+    // Liste des termes à enlever du type
+    $unwantedTypeTerms = [
+        'recharge', 'refill', 'rechargeable', 'vaporisateur', 'spray', 'flacon',
+        'pot', 'tube', 'stick', 'applicateur', 'pompe', 'pression'
+    ];
+    
+    foreach ($unwantedTypeTerms as $term) {
+        $type = preg_replace('/\s*' . preg_quote($term, '/') . '\s*/i', ' ', $type);
+    }
+    
+    // Nettoyer les espaces multiples
+    $type = preg_replace('/\s+/', ' ', trim($type));
+    
+    // Si le type est vide après nettoyage, essayer de le déduire
+    if (empty($type)) {
+        $type = $this->deduceTypeFromProductName($this->productName);
+    }
+    
+    $this->extractedData['type'] = $type;
+}
 
                 // Post-traitement du name : enlever le vendor et les termes de type
                 if (!empty($this->extractedData['name'])) {
