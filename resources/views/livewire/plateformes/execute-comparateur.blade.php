@@ -18,6 +18,13 @@ new class extends Component {
     public $availableSites = [];
     public $selectedSites = [];
     public $groupedResults = [];
+    
+    // Nouveaux champs pour recherche manuelle
+    public $manualSearchMode = false;
+    public $manualVendor = '';
+    public $manualName = '';
+    public $manualType = '';
+    public $manualVariation = '';
 
     public function mount($name, $id, $price): void
     {
@@ -43,6 +50,7 @@ new class extends Component {
         $this->bestMatch = null;
         $this->aiValidation = null;
         $this->groupedResults = [];
+        $this->manualSearchMode = false;
 
         try {
             $response = Http::withHeaders([
@@ -142,6 +150,12 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     'is_coffret' => false
                 ], $decodedData);
 
+                // Initialiser les champs de recherche manuelle
+                $this->manualVendor = $this->extractedData['vendor'] ?? '';
+                $this->manualName = $this->extractedData['name'] ?? '';
+                $this->manualType = $this->extractedData['type'] ?? '';
+                $this->manualVariation = $this->extractedData['variation'] ?? '';
+
                 // Post-traitement : nettoyer le type s'il contient des informations parasites
                 if (!empty($this->extractedData['type'])) {
                     $type = $this->extractedData['type'];
@@ -158,6 +172,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     $type = preg_replace('/\s+/', ' ', $type);
                     
                     $this->extractedData['type'] = trim($type);
+                    $this->manualType = $this->extractedData['type'];
                 }
 
                 \Log::info('Données extraites', [
@@ -190,6 +205,73 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         } finally {
             $this->isLoading = false;
         }
+    }
+
+    /**
+     * Recherche manuelle avec les champs personnalisés
+     */
+    public function manualSearch()
+    {
+        $this->isLoading = true;
+        $this->matchingProducts = [];
+        $this->bestMatch = null;
+        $this->aiValidation = null;
+        $this->groupedResults = [];
+
+        try {
+            // Créer extractedData à partir des champs manuels
+            $this->extractedData = [
+                'vendor' => trim($this->manualVendor),
+                'name' => trim($this->manualName),
+                'type' => trim($this->manualType),
+                'variation' => trim($this->manualVariation),
+                'is_coffret' => $this->isCoffretFromString($this->manualName . ' ' . $this->manualType)
+            ];
+
+            \Log::info('Recherche manuelle', [
+                'vendor' => $this->extractedData['vendor'],
+                'name' => $this->extractedData['name'],
+                'type' => $this->extractedData['type'],
+                'variation' => $this->extractedData['variation']
+            ]);
+
+            // Lancer la recherche
+            $this->searchMatchingProducts();
+
+        } catch (\Exception $e) {
+            \Log::error('Erreur recherche manuelle', [
+                'message' => $e->getMessage()
+            ]);
+
+            session()->flash('error', 'Erreur lors de la recherche manuelle: ' . $e->getMessage());
+        } finally {
+            $this->isLoading = false;
+        }
+    }
+
+    /**
+     * Activer/désactiver le mode de recherche manuelle
+     */
+    public function toggleManualSearch()
+    {
+        $this->manualSearchMode = !$this->manualSearchMode;
+    }
+
+    /**
+     * Vérifie si une chaîne contient des mots-clés de coffret
+     */
+    private function isCoffretFromString(string $text): bool
+    {
+        $cofferKeywords = ['coffret', 'set', 'kit', 'duo', 'trio', 'collection'];
+        $textLower = mb_strtolower($text);
+        
+        foreach ($cofferKeywords as $keyword) {
+            if (str_contains($textLower, $keyword)) {
+                return true;
+            }
+        }
+        
+        return false;
     }
 
     /**
@@ -555,8 +637,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'nameWords' => $nameWords
             ]);
             
-            // Fallback: si aucun match par type, on prend les 50 premiers produits du vendor
-            $this->matchingProducts = array_slice($filteredProducts, 0, 50);
+            // Fallback: si aucun match par type, on prend les premiers produits du vendor
+            $this->matchingProducts = array_slice($filteredProducts, 0, 200);
             $this->groupResultsByScrapeReference($this->matchingProducts);
             $this->validateBestMatchWithAI();
             return;
@@ -565,16 +647,16 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         // Extraire uniquement les produits des résultats scorés
         $rankedProducts = $scoredProducts->pluck('product')->toArray();
 
-        // Limiter à 50 résultats
-        $this->matchingProducts = array_slice($rankedProducts, 0, 50);
+        // Limiter avant déduplication
+        $this->matchingProducts = $rankedProducts;
 
-        \Log::info('Produits après scoring', [
+        \Log::info('Produits après scoring (avant déduplication)', [
             'count' => count($this->matchingProducts),
             'best_score' => $scoredProducts->first()['score'] ?? 0,
             'worst_score' => $scoredProducts->last()['score'] ?? 0
         ]);
 
-        // Grouper et valider avec l'IA
+        // Grouper et valider avec l'IA (la déduplication se fait dans cette méthode)
         $this->groupResultsByScrapeReference($this->matchingProducts);
         $this->validateBestMatchWithAI();
     }
@@ -658,8 +740,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
     }
 
     /**
-     * Organise les résultats pour afficher TOUS les produits qui matchent par site
-     * Tri : par scrape_reference_id décroissant (les plus récents en premier)
+     * Organise les résultats en ne gardant que le dernier scrape_reference_id par produit unique
+     * Critère d'unicité : vendor + name + type + variation + site
      */
     private function groupResultsByScrapeReference(array $products)
     {
@@ -675,51 +757,70 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'scrape_reference' => 'unknown_' . ($product['id'] ?? uniqid()),
                 'scrape_reference_id' => $product['scrape_reference_id'] ?? 0,
                 'web_site_id' => 0,
-                'id' => 0
+                'id' => 0,
+                'vendor' => '',
+                'name' => '',
+                'type' => '',
+                'variation' => ''
             ], $product);
         });
 
-        \Log::info('Avant tri des résultats', [
+        \Log::info('Avant déduplication des résultats', [
             'total_produits' => $productsCollection->count()
         ]);
 
-        // GARDER TOUS LES PRODUITS, juste les trier par scrape_reference_id décroissant
-        // Cela met les produits les plus récents en premier pour chaque site
-        $sortedProducts = $productsCollection
-            ->sortByDesc('scrape_reference_id')
-            ->values();
+        // DÉDUPLICATION : Garder uniquement le produit avec le scrape_reference_id le plus élevé pour chaque combinaison unique
+        $uniqueProducts = $productsCollection
+            ->groupBy(function ($product) {
+                // Créer une clé unique basée sur les caractéristiques du produit
+                return md5(
+                    strtolower(trim($product['vendor'])) . '|' .
+                    strtolower(trim($product['name'])) . '|' .
+                    strtolower(trim($product['type'])) . '|' .
+                    strtolower(trim($product['variation'])) . '|' .
+                    $product['web_site_id']
+                );
+            })
+            ->map(function ($group) {
+                // Pour chaque groupe, garder uniquement le produit avec le scrape_reference_id le plus élevé
+                return $group->sortByDesc('scrape_reference_id')->first();
+            })
+            ->values()
+            ->sortByDesc('scrape_reference_id');
 
-        // Limiter à 100 résultats maximum pour éviter la surcharge
-        $this->matchingProducts = $sortedProducts->take(100)->toArray();
-
-        \Log::info('Résultats après tri par scrape_reference_id', [
-            'total_produits' => count($this->matchingProducts),
-            'par_site' => $sortedProducts->groupBy('web_site_id')->map(fn($group) => $group->count())->toArray()
+        \Log::info('Après déduplication', [
+            'produits_avant' => $productsCollection->count(),
+            'produits_apres' => $uniqueProducts->count(),
+            'produits_supprimés' => $productsCollection->count() - $uniqueProducts->count()
         ]);
 
-        // ÉTAPE 2: Grouper par scrape_reference pour les statistiques
-        $grouped = $productsCollection->groupBy('scrape_reference');
+        // Augmenter la limite à 200 produits uniques
+        $this->matchingProducts = $uniqueProducts->take(200)->toArray();
 
-        // Grouper aussi par site pour les statistiques
-        $bySiteStats = $productsCollection->groupBy('web_site_id')->map(function ($siteProducts, $siteId) {
+        \Log::info('Résultats finaux après déduplication', [
+            'total_produits' => count($this->matchingProducts),
+            'par_site' => $uniqueProducts->groupBy('web_site_id')->map(fn($group) => $group->count())->toArray()
+        ]);
+
+        // Statistiques par site
+        $bySiteStats = $uniqueProducts->groupBy('web_site_id')->map(function ($siteProducts, $siteId) {
             return [
                 'site_id' => $siteId,
                 'total_products' => $siteProducts->count(),
                 'max_scrape_ref_id' => $siteProducts->max('scrape_reference_id'),
                 'min_scrape_ref_id' => $siteProducts->min('scrape_reference_id'),
-                'products' => $siteProducts->sortByDesc('scrape_reference_id')->values()->toArray()
+                'products' => $siteProducts->values()->toArray()
             ];
         });
 
-        // Stocker les résultats groupés pour l'affichage des statistiques
+        // Grouper par scrape_reference pour les statistiques globales
+        $grouped = $uniqueProducts->groupBy('scrape_reference');
+        
         $this->groupedResults = $grouped->map(function ($group, $reference) {
-            // Groupe par site pour les statistiques
             $bySite = $group->groupBy('web_site_id')->map(function ($siteProducts) {
-                // Pour chaque site, garde tous les produits triés par scrape_reference_id
-                $sortedSiteProducts = $siteProducts->sortByDesc('scrape_reference_id')->values();
                 return [
                     'count' => $siteProducts->count(),
-                    'products' => $sortedSiteProducts->toArray(),
+                    'products' => $siteProducts->values()->toArray(),
                     'max_scrape_ref_id' => $siteProducts->max('scrape_reference_id'),
                     'lowest_price' => $siteProducts->min('prix_ht'),
                     'highest_price' => $siteProducts->max('prix_ht'),
@@ -747,7 +848,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             ];
         })->toArray();
 
-        // Ajouter les stats par site
         $this->groupedResults['_site_stats'] = $bySiteStats->toArray();
     }
 
@@ -939,19 +1039,72 @@ Score de confiance entre 0 et 1."
 }; ?>
 
 <div class="bg-white">
-    <!-- Header avec le bouton de recherche (maintenant optionnel) -->
+    <!-- Header avec le bouton de recherche -->
     <div class="px-6 py-4 border-b border-gray-200">
         <div class="flex items-center justify-between">
             <h2 class="text-xl font-bold text-gray-900">Recherche de produit</h2>
-            <button wire:click="extractSearchTerme" wire:loading.attr="disabled"
-                class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium shadow-sm">
-                <span wire:loading.remove>Rechercher à nouveau</span>
-                <span wire:loading>Extraction en cours...</span>
-            </button>
+            <div class="flex gap-2">
+                <button wire:click="toggleManualSearch"
+                    class="px-4 py-2 {{ $manualSearchMode ? 'bg-gray-600' : 'bg-green-600' }} text-white rounded-lg hover:opacity-90 font-medium shadow-sm">
+                    {{ $manualSearchMode ? 'Mode Auto' : 'Recherche Manuelle' }}
+                </button>
+                <button wire:click="extractSearchTerme" wire:loading.attr="disabled"
+                    class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium shadow-sm">
+                    <span wire:loading.remove>Rechercher à nouveau</span>
+                    <span wire:loading>Extraction en cours...</span>
+                </button>
+            </div>
         </div>
     </div>
 
     <livewire:plateformes.detail :id="$productId" />
+
+    <!-- Formulaire de recherche manuelle -->
+    @if($manualSearchMode)
+        <div class="px-6 py-4 bg-blue-50 border-b border-blue-200">
+            <h3 class="font-semibold text-gray-900 mb-3">🔍 Recherche Manuelle</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Vendor (readonly) -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Marque (Vendor)</label>
+                    <input type="text" wire:model="manualVendor" readonly
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-600 cursor-not-allowed">
+                </div>
+
+                <!-- Name -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Nom de la gamme</label>
+                    <input type="text" wire:model="manualName"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        placeholder="Ex: J'adore, N°5, Vital Perfection">
+                </div>
+
+                <!-- Type -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Type de produit</label>
+                    <input type="text" wire:model="manualType"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        placeholder="Ex: Eau de Parfum, Crème visage">
+                </div>
+
+                <!-- Variation -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Contenance</label>
+                    <input type="text" wire:model="manualVariation"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        placeholder="Ex: 50 ml, 200 ml">
+                </div>
+            </div>
+
+            <div class="mt-4 flex justify-end">
+                <button wire:click="manualSearch" wire:loading.attr="disabled"
+                    class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium shadow-sm">
+                    <span wire:loading.remove>🔎 Lancer la recherche</span>
+                    <span wire:loading>Recherche en cours...</span>
+                </button>
+            </div>
+        </div>
+    @endif
 
     <!-- Filtres par site -->
     @if(!empty($availableSites))
@@ -1007,7 +1160,10 @@ Score de confiance entre 0 et 1."
         @if(!empty($groupedResults) && !$isLoading)
             <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                 <p class="text-sm text-blue-800">
-                    <span class="font-semibold">{{ count($matchingProducts) }}</span> produit(s) trouvé(s)
+                    <span class="font-semibold">{{ count($matchingProducts) }}</span> produit(s) unique(s) trouvé(s)
+                    @if(isset($groupedResults['_site_stats']))
+                        (après déduplication)
+                    @endif
                 </p>
                 @if(isset($groupedResults['_site_stats']))
                     <div class="mt-2 flex flex-wrap gap-2">
@@ -1115,7 +1271,7 @@ Score de confiance entre 0 et 1."
 
                                 <!-- ID scrape -->
                                 @if(isset($product['scrape_reference_id']))
-                                    <p class="text-xs text-gray-400 mt-2">ID: {{ $product['scrape_reference_id'] }}</p>
+                                    <p class="text-xs text-gray-400 mt-2">Scrape ID: {{ $product['scrape_reference_id'] }}</p>
                                 @endif
                             </div>
                             
@@ -1141,7 +1297,7 @@ Score de confiance entre 0 et 1."
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <h3 class="mt-2 text-sm font-medium text-gray-900">Aucun produit trouvé</h3>
-                <p class="mt-1 text-sm text-gray-500">Essayez de modifier les filtres par site</p>
+                <p class="mt-1 text-sm text-gray-500">Essayez de modifier les filtres par site ou utilisez la recherche manuelle</p>
             </div>
         @else
             <!-- État initial (avant chargement) -->
