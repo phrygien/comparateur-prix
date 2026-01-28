@@ -61,24 +61,56 @@ new class extends Component {
                         'messages' => [
                             [
                                 'role' => 'system',
-                                'content' => 'Tu es un expert en extraction de données de produits cosmétiques. IMPORTANT: Le champ "type" doit contenir UNIQUEMENT la catégorie du produit (Crème, Huile, Sérum, Eau de Parfum, etc.), PAS le nom de la gamme. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
+                                'content' => 'Tu es un expert en extraction de données de produits cosmétiques. IMPORTANT: Le champ "type" doit contenir UNIQUEMENT la catégorie du produit (Crème, Huile, Sérum, Eau de Parfum, etc.), PAS le nom de la gamme. Si des mots appartiennent à la gamme mais sont dans le type, ils doivent être déplacés dans le "name". Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
                             ],
                             [
                                 'role' => 'user',
                                 'content' => "Extrait les informations suivantes du nom de produit et retourne-les au format JSON strict :
 
 RÈGLES IMPORTANTES :
-- vendor : la marque du produit (ex: Dior, Shiseido, Chanel)
-- name : le nom de la gamme/ligne de produit UNIQUEMENT (ex: \"J'adore\", \"Vital Perfection\", \"La Vie Est Belle\")
-- type : UNIQUEMENT la catégorie/type du produit (ex: \"Huile pour le corps\", \"Eau de Parfum\", \"Crème visage\", \"Sérum\")
-- variation : la contenance/taille avec unité (ex: \"200 ml\", \"50 ml\", \"30 g\")
-- is_coffret : true si c'est un coffret/set/kit, false sinon
+1. vendor : la marque du produit (ex: Dior, Shiseido, Chanel)
+2. name : le nom de la gamme/ligne de produit UNIQUEMENT (ex: \"J'adore\", \"Vital Perfection\", \"La Vie Est Belle\")
+3. type : UNIQUEMENT la catégorie/type du produit (ex: \"Huile pour le corps\", \"Eau de Parfum\", \"Crème visage\", \"Sérum\")
+4. variation : la contenance/taille avec unité (ex: \"200 ml\", \"50 ml\", \"30 g\")
+5. is_coffret : true si c'est un coffret/set/kit, false sinon
+
+CRITÈRE SPÉCIAL :
+- Si des mots dans le type semblent appartenir au nom de la gamme (ex: \"Divine\" dans \"Eau de Parfum Divine\"), ils doivent être déplacés dans le \"name\"
 
 Nom du produit : {$this->productName}
 
-EXEMPLES DE FORMAT ATTENDU :
+EXEMPLES CRITIQUES :
 
-Exemple 1 - Produit : \"Dior J'adore Les Adorables Huile Scintillante Huile pour le corps 200ml\"
+Exemple CRITIQUE 1 - Produit : \"Jean Paul Gaultier - Gaultier Divine - Gaultier Divine Collector Eau de Parfum 100ml\"
+{
+  \"vendor\": \"Jean Paul Gaultier\",
+  \"name\": \"Gaultier Divine Collector\",
+  \"type\": \"Eau de Parfum\",
+  \"variation\": \"100 ml\",
+  \"is_coffret\": false
+}
+
+Exemple CRITIQUE 2 - Produit : \"Dior - J'adore L'Or - Eau de Parfum L'Or 30ml\"
+{
+  \"vendor\": \"Dior\",
+  \"name\": \"J'adore L'Or\",
+  \"type\": \"Eau de Parfum\",
+  \"variation\": \"30 ml\",
+  \"is_coffret\": false
+}
+
+Exemple CRITIQUE 3 - Produit : \"Chanel - N°5 L'Eau - Eau de Toilette L'Eau 50ml\"
+{
+  \"vendor\": \"Chanel\",
+  \"name\": \"N°5 L'Eau\",
+  \"type\": \"Eau de Toilette\",
+  \"variation\": \"50 ml\",
+  \"is_coffret\": false
+}
+
+Autres exemples :
+
+Exemple 4 - Produit : \"Dior J'adore Les Adorables Huile Scintillante Huile pour le corps 200ml\"
 {
   \"vendor\": \"Dior\",
   \"name\": \"J'adore Les Adorables\",
@@ -87,30 +119,12 @@ Exemple 1 - Produit : \"Dior J'adore Les Adorables Huile Scintillante Huile pour
   \"is_coffret\": false
 }
 
-Exemple 2 - Produit : \"Chanel N°5 Eau de Parfum Vaporisateur 100 ml\"
+Exemple 5 - Produit : \"Chanel N°5 Eau de Parfum Vaporisateur 100 ml\"
 {
   \"vendor\": \"Chanel\",
   \"name\": \"N°5\",
   \"type\": \"Eau de Parfum Vaporisateur\",
   \"variation\": \"100 ml\",
-  \"is_coffret\": false
-}
-
-Exemple 3 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream Enriched 50ml\"
-{
-  \"vendor\": \"Shiseido\",
-  \"name\": \"Vital Perfection Uplifting and Firming\",
-  \"type\": \"Crème visage Enrichie\",
-  \"variation\": \"50 ml\",
-  \"is_coffret\": false
-}
-
-Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum Intense Vaporisateur 30ml\"
-{
-  \"vendor\": \"Lancôme\",
-  \"name\": \"La Nuit Trésor Rouge Drama\",
-  \"type\": \"Eau de Parfum Intense Vaporisateur\",
-  \"variation\": \"30 ml\",
   \"is_coffret\": false
 }"
                             ]
@@ -136,6 +150,9 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     ]);
                     throw new \Exception('Erreur de parsing JSON: ' . json_last_error_msg());
                 }
+
+                // NETTOYER ET CORRIGER LES DONNÉES
+                $decodedData = $this->cleanExtractedData($decodedData);
 
                 // Valider que les données essentielles existent
                 if (empty($decodedData) || !is_array($decodedData)) {
@@ -352,23 +369,25 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         // Extraire les parties du TYPE pour matching hiérarchique
         $typeParts = $this->extractTypeParts($type);
         
-        // Extraire les mots du name EN EXCLUANT le vendor
-        $allNameWords = $this->extractKeywords($name);
-        
-        // Retirer le vendor des mots du name pour éviter les faux positifs
-        $vendorWords = $this->extractKeywords($vendor);
-        $nameWordsFiltered = array_diff($allNameWords, $vendorWords);
-        
-        // PRENDRE TOUS LES MOTS significatifs (pas seulement 2)
-        // Cela permet de capturer des mots importants comme "Purple" même s'ils sont loin dans le nom
-        $nameWords = array_values($nameWordsFiltered);
+        // Extraire les mots-clés étendus (name + type)
+        $extendedKeywords = $this->extractExtendedKeywords($name, $type);
 
-        \Log::info('Mots-clés pour la recherche', [
+        // Extraire les mots du vendor pour exclusion
+        $vendorWords = $this->extractKeywords($vendor);
+
+        // Retirer le vendor des mots-clés pour éviter les faux positifs
+        $keywordsFiltered = array_diff($extendedKeywords, $vendorWords);
+
+        // Utiliser les mots-clés étendus pour la recherche
+        $searchKeywords = array_values($keywordsFiltered);
+
+        \Log::info('Mots-clés étendus pour la recherche', [
             'vendor' => $vendor,
             'name' => $name,
-            'nameWords_brut' => $allNameWords,
-            'nameWords_filtres' => $nameWords,
             'type' => $type,
+            'keywords_bruts' => $extendedKeywords,
+            'keywords_filtres' => $searchKeywords,
+            'vendor_words_exclus' => $vendorWords,
             'type_parts' => $typeParts
         ]);
 
@@ -415,40 +434,40 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             $filteredProducts = $typeFilteredProducts;
         }
 
-        // ÉTAPE 2.6: FILTRAGE PROGRESSIF par les mots du NAME
-        $nameFilteredProducts = $filteredProducts;
+        // ÉTAPE 2.6: FILTRAGE PROGRESSIF par les mots-clés étendus
+        $keywordFilteredProducts = $filteredProducts;
         
-        if (!empty($nameWords)) {
-            // TENTATIVE 1: TOUS les mots doivent être présents (filtrage le plus strict)
-            $allWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords) {
-                $productName = mb_strtolower($product['name'] ?? '');
+        if (!empty($searchKeywords)) {
+            // TENTATIVE 1: TOUS les mots-clés doivent être présents (filtrage le plus strict)
+            $allKeywordsMatch = collect($filteredProducts)->filter(function ($product) use ($searchKeywords) {
+                $productText = mb_strtolower(($product['name'] ?? '') . ' ' . ($product['type'] ?? ''));
                 
                 $matchCount = 0;
-                foreach ($nameWords as $word) {
-                    if (str_contains($productName, $word)) {
+                foreach ($searchKeywords as $keyword) {
+                    if (str_contains($productText, $keyword)) {
                         $matchCount++;
                     }
                 }
                 
-                return $matchCount === count($nameWords);
+                return $matchCount === count($searchKeywords);
             })->values()->toArray();
 
-            if (!empty($allWordsMatch)) {
-                $nameFilteredProducts = $allWordsMatch;
-                \Log::info('✅ Produits après filtrage STRICT par NAME (TOUS les mots)', [
-                    'count' => count($nameFilteredProducts),
-                    'nameWords_required' => $nameWords
+            if (!empty($allKeywordsMatch)) {
+                $keywordFilteredProducts = $allKeywordsMatch;
+                \Log::info('✅ Produits après filtrage STRICT par KEYWORDS (TOUS les mots)', [
+                    'count' => count($keywordFilteredProducts),
+                    'keywords_required' => $searchKeywords
                 ]);
             } else {
-                // TENTATIVE 2: Au moins 80% des mots doivent être présents
-                $minRequired = max(1, (int)ceil(count($nameWords) * 0.8));
+                // TENTATIVE 2: Au moins 80% des mots-clés doivent être présents
+                $minRequired = max(1, (int)ceil(count($searchKeywords) * 0.8));
                 
-                $mostWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $minRequired) {
-                    $productName = mb_strtolower($product['name'] ?? '');
+                $mostKeywordsMatch = collect($filteredProducts)->filter(function ($product) use ($searchKeywords, $minRequired) {
+                    $productText = mb_strtolower(($product['name'] ?? '') . ' ' . ($product['type'] ?? ''));
                     
                     $matchCount = 0;
-                    foreach ($nameWords as $word) {
-                        if (str_contains($productName, $word)) {
+                    foreach ($searchKeywords as $keyword) {
+                        if (str_contains($productText, $keyword)) {
                             $matchCount++;
                         }
                     }
@@ -456,22 +475,22 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     return $matchCount >= $minRequired;
                 })->values()->toArray();
                 
-                if (!empty($mostWordsMatch)) {
-                    $nameFilteredProducts = $mostWordsMatch;
-                    \Log::info('✅ Produits après filtrage 80% par NAME (au moins ' . $minRequired . ' mots sur ' . count($nameWords) . ')', [
-                        'count' => count($nameFilteredProducts),
-                        'nameWords_used' => $nameWords
+                if (!empty($mostKeywordsMatch)) {
+                    $keywordFilteredProducts = $mostKeywordsMatch;
+                    \Log::info('✅ Produits après filtrage 80% par KEYWORDS (au moins ' . $minRequired . ' mots sur ' . count($searchKeywords) . ')', [
+                        'count' => count($keywordFilteredProducts),
+                        'keywords_used' => $searchKeywords
                     ]);
                 } else {
-                    // TENTATIVE 3: Au moins 50% des mots doivent être présents
-                    $minRequired = max(1, (int)ceil(count($nameWords) * 0.5));
+                    // TENTATIVE 3: Au moins 50% des mots-clés doivent être présents
+                    $minRequired = max(1, (int)ceil(count($searchKeywords) * 0.5));
                     
-                    $halfWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $minRequired) {
-                        $productName = mb_strtolower($product['name'] ?? '');
+                    $halfKeywordsMatch = collect($filteredProducts)->filter(function ($product) use ($searchKeywords, $minRequired) {
+                        $productText = mb_strtolower(($product['name'] ?? '') . ' ' . ($product['type'] ?? ''));
                         
                         $matchCount = 0;
-                        foreach ($nameWords as $word) {
-                            if (str_contains($productName, $word)) {
+                        foreach ($searchKeywords as $keyword) {
+                            if (str_contains($productText, $keyword)) {
                                 $matchCount++;
                             }
                         }
@@ -479,45 +498,46 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                         return $matchCount >= $minRequired;
                     })->values()->toArray();
                     
-                    if (!empty($halfWordsMatch)) {
-                        $nameFilteredProducts = $halfWordsMatch;
-                        \Log::info('⚠️ Produits après filtrage 50% par NAME (au moins ' . $minRequired . ' mots sur ' . count($nameWords) . ')', [
-                            'count' => count($nameFilteredProducts),
-                            'nameWords_used' => $nameWords
+                    if (!empty($halfKeywordsMatch)) {
+                        $keywordFilteredProducts = $halfKeywordsMatch;
+                        \Log::info('⚠️ Produits après filtrage 50% par KEYWORDS (au moins ' . $minRequired . ' mots sur ' . count($searchKeywords) . ')', [
+                            'count' => count($keywordFilteredProducts),
+                            'keywords_used' => $searchKeywords
                         ]);
                     } else {
-                        // FALLBACK FINAL: Au moins 1 mot doit être présent
-                        $anyWordMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords) {
-                            $productName = mb_strtolower($product['name'] ?? '');
-                            foreach ($nameWords as $word) {
-                                if (str_contains($productName, $word)) {
+                        // FALLBACK FINAL: Au moins 1 mot-clé doit être présent
+                        $anyKeywordMatch = collect($filteredProducts)->filter(function ($product) use ($searchKeywords) {
+                            $productText = mb_strtolower(($product['name'] ?? '') . ' ' . ($product['type'] ?? ''));
+                            foreach ($searchKeywords as $keyword) {
+                                if (str_contains($productText, $keyword)) {
                                     return true;
                                 }
                             }
                             return false;
                         })->values()->toArray();
                         
-                        if (!empty($anyWordMatch)) {
-                            $nameFilteredProducts = $anyWordMatch;
-                            \Log::info('⚠️ Produits après filtrage SOUPLE par NAME (au moins 1 mot)', [
-                                'count' => count($nameFilteredProducts),
-                                'nameWords_used' => $nameWords
+                        if (!empty($anyKeywordMatch)) {
+                            $keywordFilteredProducts = $anyKeywordMatch;
+                            \Log::info('⚠️ Produits après filtrage SOUPLE par KEYWORDS (au moins 1 mot)', [
+                                'count' => count($keywordFilteredProducts),
+                                'keywords_used' => $searchKeywords
                             ]);
                         } else {
-                            \Log::info('❌ Aucun produit après filtrage NAME, on garde tous les produits du vendor');
+                            \Log::info('❌ Aucun produit après filtrage KEYWORDS, on garde tous les produits du vendor');
                         }
                     }
                 }
             }
             
-            $filteredProducts = $nameFilteredProducts;
+            $filteredProducts = $keywordFilteredProducts;
         }
 
-        // ÉTAPE 3: Scoring hiérarchique basé sur le TYPE + BONUS COFFRET + BONUS NAME
-        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $type, $isCoffretSource, $nameWords) {
+        // ÉTAPE 3: Scoring hiérarchique basé sur le TYPE + BONUS COFFRET + BONUS KEYWORDS ÉTENDUS
+        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $type, $isCoffretSource, $searchKeywords) {
             $score = 0;
             $productType = mb_strtolower($product['type'] ?? '');
             $productName = mb_strtolower($product['name'] ?? '');
+            $productText = $productName . ' ' . $productType;
             
             $matchedTypeParts = [];
             $typePartsCount = count($typeParts);
@@ -533,25 +553,51 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             }
 
             // ==========================================
-            // BONUS NAME : Compter combien de mots du name sont présents
+            // BONUS KEYWORDS ÉTENDUS : Compter combien de mots-clés sont présents
             // ==========================================
-            if (!empty($nameWords)) {
-                $nameMatchCount = 0;
-                foreach ($nameWords as $word) {
-                    if (str_contains($productName, $word)) {
-                        $nameMatchCount++;
+            if (!empty($searchKeywords)) {
+                $keywordMatchCount = 0;
+                $nameOnlyMatchCount = 0;
+                
+                foreach ($searchKeywords as $keyword) {
+                    // Vérifier dans le texte complet (name + type)
+                    if (str_contains($productText, $keyword)) {
+                        $keywordMatchCount++;
+                    }
+                    
+                    // Vérifier dans le name seulement
+                    if (str_contains($productName, $keyword)) {
+                        $nameOnlyMatchCount++;
                     }
                 }
                 
-                // Bonus proportionnel au nombre de mots matchés
-                // Plus il y a de mots qui matchent, plus le score est élevé
-                $nameMatchRatio = count($nameWords) > 0 ? ($nameMatchCount / count($nameWords)) : 0;
-                $nameBonus = (int)($nameMatchRatio * 300); // Jusqu'à +300 points
-                $score += $nameBonus;
+                // Bonus proportionnel au nombre de mots-clés matchés
+                $keywordMatchRatio = count($searchKeywords) > 0 ? ($keywordMatchCount / count($searchKeywords)) : 0;
+                $keywordBonus = (int)($keywordMatchRatio * 400); // Jusqu'à +400 points
+                $score += $keywordBonus;
                 
-                // BONUS EXTRA si TOUS les mots matchent
-                if ($nameMatchCount === count($nameWords)) {
-                    $score += 200; // +200 points supplémentaires pour match parfait
+                // BONUS ÉNORME si TOUS les mots-clés matchent
+                if ($keywordMatchCount === count($searchKeywords) && count($searchKeywords) > 0) {
+                    $score += 300; // +300 points supplémentaires pour match parfait
+                }
+                
+                // BONUS supplémentaire si les mots-clés sont dans le name (pas seulement le type)
+                if ($nameOnlyMatchCount > 0) {
+                    $nameOnlyBonus = (int)(($nameOnlyMatchCount / count($searchKeywords)) * 200); // Jusqu'à +200 points
+                    $score += $nameOnlyBonus;
+                }
+                
+                // BONUS supplémentaire si les mots-clés sont au début du name
+                $nameStartsWithKeyword = false;
+                foreach ($searchKeywords as $keyword) {
+                    if (str_starts_with($productName, $keyword)) {
+                        $nameStartsWithKeyword = true;
+                        break;
+                    }
+                }
+                
+                if ($nameStartsWithKeyword) {
+                    $score += 150; // +150 points si le name commence par un mot-clé
                 }
             }
 
@@ -641,21 +687,24 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'type_matched' => $typeMatched, // Nouveau flag
                 'is_coffret' => $productIsCoffret,
                 'coffret_bonus_applied' => ($isCoffretSource && $productIsCoffret),
-                'name_match_count' => !empty($nameWords) ? array_reduce($nameWords, function($count, $word) use ($productName) {
-                    return $count + (str_contains($productName, $word) ? 1 : 0);
+                'keyword_match_count' => !empty($searchKeywords) ? array_reduce($searchKeywords, function($count, $keyword) use ($productText) {
+                    return $count + (str_contains($productText, $keyword) ? 1 : 0);
                 }, 0) : 0,
-                'name_words_total' => count($nameWords)
+                'name_only_match_count' => !empty($searchKeywords) ? array_reduce($searchKeywords, function($count, $keyword) use ($productName) {
+                    return $count + (str_contains($productName, $keyword) ? 1 : 0);
+                }, 0) : 0,
+                'keywords_total' => count($searchKeywords)
             ];
         })
         // Trier par score décroissant (les coffrets et meilleurs matchs de nom auront le score le plus élevé)
         ->sortByDesc('score')
         ->values();
 
-        \Log::info('Scoring détaillé (TYPE HIÉRARCHIQUE + BONUS COFFRET + BONUS NAME)', [
+        \Log::info('Scoring détaillé (TYPE HIÉRARCHIQUE + BONUS COFFRET + BONUS KEYWORDS ÉTENDUS)', [
             'total_products' => $scoredProducts->count(),
             'type_recherche' => $type,
             'type_parts' => $typeParts,
-            'name_words' => $nameWords,
+            'search_keywords' => $searchKeywords,
             'recherche_coffret' => $isCoffretSource,
             'top_10_scores' => $scoredProducts->take(10)->map(function($item) {
                 return [
@@ -663,7 +712,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     'score' => $item['score'],
                     'is_coffret' => $item['is_coffret'],
                     'coffret_bonus' => $item['coffret_bonus_applied'],
-                    'name_match' => $item['name_match_count'] . '/' . $item['name_words_total'],
+                    'keyword_match' => $item['keyword_match_count'] . '/' . $item['keywords_total'],
+                    'name_only_match' => $item['name_only_match_count'] . '/' . $item['keywords_total'],
                     'type_match' => $item['type_matched'],
                     'name' => $item['product']['name'] ?? '',
                     'type' => $item['product']['type'] ?? '',
@@ -678,37 +728,37 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             })->toArray()
         ]);
 
-        // FILTRAGE CRITIQUE : Ne garder QUE les produits qui matchent à la fois sur NAME et TYPE
-        $scoredProducts = $scoredProducts->filter(function($item) use ($nameWords) {
-            $hasNameMatch = !empty($nameWords) ? $item['name_match_count'] > 0 : true;
+        // FILTRAGE CRITIQUE : Ne garder QUE les produits qui matchent à la fois sur KEYWORDS et TYPE
+        $scoredProducts = $scoredProducts->filter(function($item) use ($searchKeywords) {
+            $hasKeywordMatch = !empty($searchKeywords) ? $item['keyword_match_count'] > 0 : true;
             $hasTypeMatch = $item['type_matched'];
             
-            $keepProduct = $item['score'] > 0 && $hasNameMatch && $hasTypeMatch;
+            $keepProduct = $item['score'] > 0 && $hasKeywordMatch && $hasTypeMatch;
             
             if (!$keepProduct) {
-                \Log::debug('Produit exclu car ne match pas NAME ET TYPE', [
+                \Log::debug('Produit exclu car ne match pas KEYWORDS ET TYPE', [
                     'product_id' => $item['product']['id'] ?? 0,
                     'product_name' => $item['product']['name'] ?? '',
                     'product_type' => $item['product']['type'] ?? '',
                     'score' => $item['score'],
-                    'name_match' => $hasNameMatch,
+                    'keyword_match' => $hasKeywordMatch,
                     'type_match' => $hasTypeMatch,
-                    'name_match_count' => $item['name_match_count'],
-                    'name_words_total' => $item['name_words_total']
+                    'keyword_match_count' => $item['keyword_match_count'],
+                    'keywords_total' => $item['keywords_total']
                 ]);
             }
             
             return $keepProduct;
         });
 
-        \Log::info('Après filtrage NAME ET TYPE obligatoires', [
+        \Log::info('Après filtrage KEYWORDS ET TYPE obligatoires', [
             'produits_restants' => $scoredProducts->count()
         ]);
 
         if ($scoredProducts->isEmpty()) {
-            \Log::info('Aucun produit après filtrage NAME ET TYPE', [
+            \Log::info('Aucun produit après filtrage KEYWORDS ET TYPE', [
                 'typeParts' => $typeParts,
-                'nameWords' => $nameWords
+                'searchKeywords' => $searchKeywords
             ]);
             
             // Pas de fallback, on ne retourne aucun produit
@@ -838,6 +888,64 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         }
         
         return array_values($parts);
+    }
+
+    /**
+     * Extrait les mots-clés étendus en cherchant aussi dans le type
+     */
+    private function extractExtendedKeywords(string $name, string $type): array
+    {
+        if (empty($name) && empty($type)) {
+            return [];
+        }
+
+        // Mots à ignorer (stop words)
+        $stopWords = ['de', 'la', 'le', 'les', 'des', 'du', 'un', 'une', 'et', 'ou', 'pour', 'avec', 'sans', 'eau', 'parfum', 'toilette', 'cologne', 'spray', 'vaporisateur'];
+        
+        // Combiner name et type pour l'analyse
+        $combinedText = $name . ' ' . $type;
+        $combinedText = mb_strtolower($combinedText);
+        
+        // Extraire tous les mots
+        $allWords = preg_split('/[\s\-\.]+/', $combinedText, -1, PREG_SPLIT_NO_EMPTY);
+        
+        // Filtrer les mots courts, stop words et mots trop communs en parfumerie
+        $commonPerfumeWords = ['spray', 'vaporisateur', 'flacon', 'roll', 'stick', 'ml', 'g', 'oz', 'extrait', 'intense', 'absolu', 'extreme'];
+        
+        $keywords = array_filter($allWords, function ($word) use ($stopWords, $commonPerfumeWords) {
+            // Mots de 2 caractères ou moins
+            if (mb_strlen($word) <= 2) {
+                return false;
+            }
+            
+            // Stop words
+            if (in_array($word, $stopWords)) {
+                return false;
+            }
+            
+            // Mots communs en parfumerie (à ignorer)
+            if (in_array($word, $commonPerfumeWords)) {
+                return false;
+            }
+            
+            // Nombres purs
+            if (is_numeric($word) && (int)$word < 2000) { // Exclure les années
+                return false;
+            }
+            
+            return true;
+        });
+        
+        // Supprimer les doublons
+        $keywords = array_unique($keywords);
+        
+        \Log::info('Mots-clés étendus extraits', [
+            'name_original' => $name,
+            'type_original' => $type,
+            'mots_clés' => $keywords
+        ]);
+        
+        return array_values($keywords);
     }
 
     /**
@@ -1088,6 +1196,67 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         ]);
 
         return $filtered;
+    }
+
+    /**
+     * Nettoie et corrige les données extraites
+     */
+    private function cleanExtractedData(array $data): array
+    {
+        $vendor = $data['vendor'] ?? '';
+        $name = $data['name'] ?? '';
+        $type = $data['type'] ?? '';
+        
+        // Liste des mots-clés qui devraient probablement être dans le name
+        $nameKeywords = ['divine', 'collector', 'lor', 'leau', 'limited', 'edition', 'special', 'exclusive', 'collector', 'prestige', 'elixir', 'extreme', 'intense'];
+        
+        // Vérifier si le type contient des mots qui devraient être dans le name
+        $typeLower = mb_strtolower($type);
+        $nameLower = mb_strtolower($name);
+        
+        foreach ($nameKeywords as $keyword) {
+            if (str_contains($typeLower, $keyword) && !str_contains($nameLower, $keyword)) {
+                // Le mot-clé est dans le type mais pas dans le name
+                // L'ajouter au name
+                $name = trim($name . ' ' . ucfirst($keyword));
+                
+                // Le retirer du type
+                $type = preg_replace('/\b' . preg_quote($keyword, '/') . '\b/i', '', $type);
+                $type = preg_replace('/\s+/', ' ', $type);
+                $type = trim($type);
+                
+                \Log::info('Correction automatique appliquée', [
+                    'mot_clé' => $keyword,
+                    'type_avant' => $data['type'],
+                    'type_après' => $type,
+                    'name_avant' => $data['name'],
+                    'name_après' => $name
+                ]);
+            }
+        }
+        
+        // Supprimer le vendor du name s'il y est en double
+        if (!empty($vendor) && !empty($name)) {
+            $vendorLower = mb_strtolower($vendor);
+            $nameLower = mb_strtolower($name);
+            
+            // Retirer le vendor du début du name
+            if (str_starts_with($nameLower, $vendorLower)) {
+                $name = trim(mb_substr($name, mb_strlen($vendor)));
+                \Log::info('Vendor retiré du name', [
+                    'vendor' => $vendor,
+                    'name_corrigé' => $name
+                ]);
+            }
+        }
+        
+        return [
+            'vendor' => $vendor,
+            'name' => $name,
+            'type' => $type,
+            'variation' => $data['variation'] ?? '',
+            'is_coffret' => $data['is_coffret'] ?? false
+        ];
     }
 
     /**
@@ -1399,14 +1568,14 @@ Score de confiance entre 0 et 1."
                                 $cardClass .= " ring-2 ring-indigo-500 bg-indigo-50";
                             }
                         @endphp
-                        
+
                         @if($hasUrl)
                             <a href="{{ $product['url'] }}" target="_blank" rel="noopener noreferrer" 
                                class="{{ $cardClass }}">
                         @else
                             <div class="{{ $cardClass }}">
                         @endif
-                            
+
                             <!-- Image du produit -->
                             @if(!empty($product['image_url']))
                                 <img src="{{ $product['image_url'] }}" 
@@ -1430,7 +1599,7 @@ Score de confiance entre 0 et 1."
                                             $productNameLower = mb_strtolower($product['name'] ?? '');
                                             $nameMatches = str_contains($productNameLower, $searchNameLower);
                                         }
-                                        
+
                                         // Vérifier si le type matche
                                         $typeMatches = false;
                                         if (!empty($extractedData['type'])) {
@@ -1439,13 +1608,13 @@ Score de confiance entre 0 et 1."
                                             $typeMatches = str_contains($productTypeLower, $searchTypeLower);
                                         }
                                     @endphp
-                                    
+
                                     @if($nameMatches)
                                         <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
                                             ✓ Name
                                         </span>
                                     @endif
-                                    
+
                                     @if($typeMatches)
                                         <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
                                             ✓ Type
@@ -1465,12 +1634,12 @@ Score de confiance entre 0 et 1."
                                     {{ $product['vendor'] }}
                                 </h3>
                                 <p class="text-xs text-gray-600 mt-1 truncate">{{ $product['name'] }}</p>
-                                
+
                                 <!-- Type avec badge coloré -->
                                 @php
                                     $productTypeLower = strtolower($product['type'] ?? '');
                                     $badgeColor = 'bg-gray-100 text-gray-800';
-                                    
+
                                     if (str_contains($productTypeLower, 'eau de toilette') || str_contains($productTypeLower, 'eau de parfum')) {
                                         $badgeColor = 'bg-purple-100 text-purple-800';
                                     } elseif (str_contains($productTypeLower, 'déodorant') || str_contains($productTypeLower, 'deodorant')) {
@@ -1481,13 +1650,13 @@ Score de confiance entre 0 et 1."
                                         $badgeColor = 'bg-yellow-100 text-yellow-800';
                                     }
                                 @endphp
-                                
+
                                 <div class="mt-1">
                                     <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ $badgeColor }}">
                                         {{ $product['type'] }}
                                     </span>
                                 </div>
-                                
+
                                 <p class="text-xs text-gray-400 mt-1">{{ $product['variation'] }}</p>
 
                                 <!-- Site -->
@@ -1504,7 +1673,7 @@ Score de confiance entre 0 et 1."
 
                                 <!-- Prix -->
                                 <p class="mt-4 text-base font-medium text-gray-900">
-                                    {{ number_format((float)($product['prix_ht'] ?? 0), 2) }} €
+                                    {{ number_format((float) ($product['prix_ht'] ?? 0), 2) }} €
                                 </p>
 
                                 <!-- Bouton voir produit -->
@@ -1530,7 +1699,7 @@ Score de confiance entre 0 et 1."
                                     <p class="text-xs text-gray-400 mt-2">Scrape ID: {{ $product['scrape_reference_id'] }}</p>
                                 @endif
                             </div>
-                            
+
                         @if($hasUrl)
                             </a>
                         @else
