@@ -479,7 +479,7 @@ class Boutique extends Component
                     $subQuery .= "
                         $and LOWER(
                             REGEXP_REPLACE(
-                                CONCAT(product_char.name, ' ', COALESCE(options.attribute_value, '')),
+                                CONCAT(product_char.name, ' ', COALESCE(options.attribute_value, '')) COLLATE utf8mb4_unicode_ci,
                                 '[^a-z0-9 ]',
                                 ''
                             )
@@ -491,7 +491,7 @@ class Boutique extends Component
 
                 $subQuery .= "
                     OR LOWER(
-                        REGEXP_REPLACE(produit.sku, '[^a-z0-9 ]', '')
+                        REGEXP_REPLACE(produit.sku COLLATE utf8mb4_unicode_ci, '[^a-z0-9 ]', '')
                     ) LIKE ?
                 )";
                 $params[] = "%{$searchNormalized}%";
@@ -506,7 +506,7 @@ class Boutique extends Component
             if (!empty($this->filterName)) {
                 $subQuery .= "
                     AND LOWER(
-                        REGEXP_REPLACE(product_char.name, '[^a-z0-9 ]', '')
+                        REGEXP_REPLACE(product_char.name COLLATE utf8mb4_unicode_ci, '[^a-z0-9 ]', '')
                     ) LIKE ?
                 ";
                 $params[] = '%' . $this->normalizeSearch($this->filterName) . '%';
@@ -516,7 +516,7 @@ class Boutique extends Component
                 $subQuery .= "
                     AND LOWER(
                         REGEXP_REPLACE(
-                            SUBSTRING_INDEX(product_char.name, ' - ', 1),
+                            SUBSTRING_INDEX(product_char.name COLLATE utf8mb4_unicode_ci, ' - ', 1),
                             '[^a-z0-9 ]',
                             ''
                         )
@@ -529,7 +529,7 @@ class Boutique extends Component
                 $subQuery .= "
                     AND LOWER(
                         REGEXP_REPLACE(
-                            SUBSTRING_INDEX(eas.attribute_set_name, '_', -1),
+                            SUBSTRING_INDEX(eas.attribute_set_name COLLATE utf8mb4_unicode_ci, '_', -1),
                             '[^a-z0-9 ]',
                             ''
                         )
@@ -541,7 +541,7 @@ class Boutique extends Component
             if (!empty($this->filterEAN)) {
                 $subQuery .= "
                     AND LOWER(
-                        REGEXP_REPLACE(produit.sku, '[^a-z0-9 ]', '')
+                        REGEXP_REPLACE(produit.sku COLLATE utf8mb4_unicode_ci, '[^a-z0-9 ]', '')
                     ) LIKE ?
                 ";
                 $params[] = '%' . $this->normalizeSearch($this->filterEAN) . '%';
@@ -628,6 +628,8 @@ class Boutique extends Component
                 ORDER BY produit.entity_id DESC
                 LIMIT ? OFFSET ?
             ";
+
+            dd($dataQuery);
 
             $params[] = $perPage;
             $params[] = $offset;
