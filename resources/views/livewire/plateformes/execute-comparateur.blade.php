@@ -221,7 +221,9 @@ Exemple 3 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream En
      * 2. Filtrer par statut COFFRET
      * 3. FILTRAGE STRICT par NAME : TOUS les mots du name (hors vendor) doivent être présents
      *    Fallback : au moins 1 mot si filtrage strict ne donne rien
-     * 4. SCORER uniquement sur le TYPE (matching maximum)
+     * 4. SCORER avec :
+     *    - BONUS ÉNORME (+500) si recherche coffret ET produit est coffret (PRIORITÉ ABSOLUE)
+     *    - Matching sur le TYPE pour le reste du scoring
      */
     private function searchMatchingProducts()
     {
@@ -353,15 +355,25 @@ Exemple 3 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream En
             }
         }
 
-        // ÉTAPE 3: Scoring basé UNIQUEMENT sur le TYPE
-        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeWords, $type) {
+        // ÉTAPE 3: Scoring basé sur le TYPE + BONUS COFFRET
+        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeWords, $type, $isCoffretSource) {
             $score = 0;
             $productType = mb_strtolower($product['type'] ?? '');
             
             $matchedTypeWords = [];
 
             // ==========================================
-            // MATCHING EXCLUSIF SUR LE TYPE
+            // PRIORITÉ ABSOLUE : BONUS COFFRET
+            // ==========================================
+            $productIsCoffret = $this->isCoffret($product);
+            
+            // Si on cherche un coffret ET que le produit est un coffret, ÉNORME BONUS
+            if ($isCoffretSource && $productIsCoffret) {
+                $score += 500; // MEGA BONUS pour prioriser les coffrets
+            }
+
+            // ==========================================
+            // MATCHING SUR LE TYPE
             // ==========================================
             
             // Vérifier si TOUS les mots du type sont présents
@@ -399,21 +411,26 @@ Exemple 3 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream En
                 'matched_type_words' => $matchedTypeWords,
                 'all_type_words_matched' => $allTypeWordsMatched,
                 'type_words_count' => $typeWordsCount,
-                'matched_count' => count($matchedTypeWords)
+                'matched_count' => count($matchedTypeWords),
+                'is_coffret' => $productIsCoffret,
+                'coffret_bonus_applied' => ($isCoffretSource && $productIsCoffret)
             ];
         })
-        // Trier par score décroissant
+        // Trier par score décroissant (les coffrets auront le score le plus élevé)
         ->sortByDesc('score')
         ->values();
 
-        \Log::info('Scoring détaillé (TYPE UNIQUEMENT)', [
+        \Log::info('Scoring détaillé (TYPE + BONUS COFFRET)', [
             'total_products' => $scoredProducts->count(),
             'type_recherche' => $type,
             'type_words' => $typeWords,
+            'recherche_coffret' => $isCoffretSource,
             'top_10_scores' => $scoredProducts->take(10)->map(function($item) {
                 return [
                     'id' => $item['product']['id'] ?? 0,
                     'score' => $item['score'],
+                    'is_coffret' => $item['is_coffret'],
+                    'coffret_bonus' => $item['coffret_bonus_applied'],
                     'name' => $item['product']['name'] ?? '',
                     'type' => $item['product']['type'] ?? '',
                     'matched_type' => $item['matched_type_words'],
@@ -813,7 +830,12 @@ Score de confiance entre 0 et 1."
 
     @if($bestMatch)
         <div class="mt-6 p-4 bg-green-50 border-2 border-green-500 rounded">
-            <h3 class="font-bold text-green-700 mb-3">✓ Meilleur résultat :</h3>
+            <h3 class="font-bold text-green-700 mb-3">
+                ✓ Meilleur résultat :
+                @if($bestMatch['name'] && (str_contains(strtolower($bestMatch['name']), 'coffret') || str_contains(strtolower($bestMatch['name']), 'set') || str_contains(strtolower($bestMatch['name']), 'kit') || str_contains(strtolower($bestMatch['type'] ?? ''), 'coffret') || str_contains(strtolower($bestMatch['type'] ?? ''), 'set') || str_contains(strtolower($bestMatch['type'] ?? ''), 'kit')))
+                    <span class="ml-2 px-3 py-1 bg-purple-500 text-white text-xs rounded-full font-bold">🎁 COFFRET</span>
+                @endif
+            </h3>
             <div class="flex items-start gap-4">
                 @if($bestMatch['image_url'] ?? false)
                     <img src="{{ $bestMatch['image_url'] }}" alt="{{ $bestMatch['name'] }}"
@@ -847,7 +869,12 @@ Score de confiance entre 0 et 1."
                                     class="w-12 h-12 object-cover rounded">
                             @endif
                             <div class="flex-1">
-                                <p class="font-medium text-sm">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
+                                <div class="flex items-center gap-2">
+                                    <p class="font-medium text-sm">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
+                                    @if($product['name'] && (str_contains(strtolower($product['name']), 'coffret') || str_contains(strtolower($product['name']), 'set') || str_contains(strtolower($product['name']), 'kit') || str_contains(strtolower($product['type'] ?? ''), 'coffret') || str_contains(strtolower($product['type'] ?? ''), 'set') || str_contains(strtolower($product['type'] ?? ''), 'kit')))
+                                        <span class="px-2 py-0.5 bg-purple-500 text-white text-xs rounded-full font-bold">🎁</span>
+                                    @endif
+                                </div>
                                 <p class="text-xs text-gray-500">{{ $product['type'] }} | {{ $product['variation'] }}</p>
                                 <p class="text-xs text-gray-400 mt-1">Ref: {{ $product['scrape_reference'] ?? 'N/A' }}</p>
                             </div>
