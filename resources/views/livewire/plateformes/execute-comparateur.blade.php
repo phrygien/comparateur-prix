@@ -63,8 +63,10 @@ new class extends Component {
                                 'role' => 'system',
                                 'content' => 'Tu es un expert en extraction de données de produits cosmétiques. 
 IMPORTANT: 
-1. Le champ "type" doit contenir UNIQUEMENT la catégorie du produit (Crème, Huile, Sérum, Eau de Parfum, etc.), PAS le nom de la gamme. 
-2. Pour le matching, une règle spéciale s\'applique : 
+1. Le champ "type" doit contenir UNIQUEMENT la catégorie principale du produit (Crème, Huile, Sérum, Eau de Parfum, Gel, etc.)
+2. NE PAS inclure des termes comme "Recharge", "Refill", "Vaporisateur", "Pot", "Tube" dans le type
+3. Le type doit être la CATÉGORIE DE BASE du produit
+4. Pour le matching, une règle spéciale s\'applique : 
    - Si le type a plus de 3 mots, utiliser seulement les 3 premiers mots pour le matching
    - Si le type a 3 mots ou moins, utiliser seulement les 2 premiers mots pour le matching
 Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
@@ -74,17 +76,45 @@ Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémen
                                 'content' => "Extrait les informations suivantes du nom de produit et retourne-les au format JSON strict :
 
 RÈGLES IMPORTANTES :
-- vendor : la marque du produit (ex: Dior, Shiseido, Chanel)
-- name : le nom de la gamme/ligne de produit UNIQUEMENT (ex: \"J'adore\", \"Vital Perfection\", \"La Vie Est Belle\")
-- type : UNIQUEMENT la catégorie/type du produit (ex: \"Huile pour le corps\", \"Eau de Parfum\", \"Crème visage\", \"Sérum\")
-- variation : la contenance/taille avec unité (ex: \"200 ml\", \"50 ml\", \"30 g\")
+- vendor : la marque du produit (ex: Dior, Shiseido, Chanel, Shiseido Men)
+- name : le nom de la gamme/ligne de produit UNIQUEMENT (ex: \"J'adore\", \"Vital Perfection\", \"La Vie Est Belle\", \"Revitalisant Total\")
+- type : UNIQUEMENT la catégorie/type de base du produit (ex: \"Crème\", \"Huile\", \"Sérum\", \"Gel\")
+  → NE PAS inclure: "Recharge", "Refill", "Vaporisateur", "Pot", "Tube", "Flacon", "Spray"
+- variation : la contenance/taille avec unité (ex: \"200 ml\", \"50 ml\", \"30 g\", \"50 ml Pot\")
 - is_coffret : true si c'est un coffret/set/kit, false sinon
 
 Nom du produit : {$this->productName}
 
 EXEMPLES DE FORMAT ATTENDU :
 
-Exemple 1 - Produit : \"Dior J'adore Les Adorables Huile Scintillante Huile pour le corps 200ml\"
+Exemple 1 - Produit : \"Shiseido Men - Revitalisant Total Crème - Recharge 50 ml\"
+{
+  \"vendor\": \"Shiseido Men\",
+  \"name\": \"Revitalisant Total\",
+  \"type\": \"Crème\",
+  \"variation\": \"50 ml\",
+  \"is_coffret\": false
+}
+
+Exemple 2 - Produit : \"Shiseido Shiseido Men- Revitalisant Total Crème 50 ml Pot\"
+{
+  \"vendor\": \"Shiseido Men\",
+  \"name\": \"Revitalisant Total\",
+  \"type\": \"Crème\",
+  \"variation\": \"50 ml Pot\",
+  \"is_coffret\": false
+}
+
+Exemple 3 - Produit : \"Chanel N°5 Eau de Parfum Vaporisateur 100 ml\"
+{
+  \"vendor\": \"Chanel\",
+  \"name\": \"N°5\",
+  \"type\": \"Eau de Parfum\",
+  \"variation\": \"100 ml\",
+  \"is_coffret\": false
+}
+
+Exemple 4 - Produit : \"Dior J'adore Les Adorables Huile Scintillante Huile pour le corps 200ml\"
 {
   \"vendor\": \"Dior\",
   \"name\": \"J'adore Les Adorables\",
@@ -93,50 +123,39 @@ Exemple 1 - Produit : \"Dior J'adore Les Adorables Huile Scintillante Huile pour
   \"is_coffret\": false
 }
 
-Exemple 2 - Produit : \"Chanel N°5 Eau de Parfum Vaporisateur 100 ml\"
-{
-  \"vendor\": \"Chanel\",
-  \"name\": \"N°5\",
-  \"type\": \"Eau de Parfum Vaporisateur\",
-  \"variation\": \"100 ml\",
-  \"is_coffret\": false
-}
-
-Exemple 3 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream Enriched 50ml\"
-{
-  \"vendor\": \"Shiseido\",
-  \"name\": \"Vital Perfection Uplifting and Firming\",
-  \"type\": \"Crème visage Enrichie\",
-  \"variation\": \"50 ml\",
-  \"is_coffret\": false
-}
-
-Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum Intense Vaporisateur 30ml\"
+Exemple 5 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum Intense Vaporisateur 30ml\"
 {
   \"vendor\": \"Lancôme\",
   \"name\": \"La Nuit Trésor Rouge Drama\",
-  \"type\": \"Eau de Parfum Intense Vaporisateur\",
+  \"type\": \"Eau de Parfum Intense\",
   \"variation\": \"30 ml\",
   \"is_coffret\": false
 }
 
-Exemple 5 - Produit : \"Rabanne - Fame In Love - Parfum Elixir Vaporisateur 80ml Rechargeable\"
-IMPORTANT : Le type complet est \"Parfum Elixir Vaporisateur Rechargeable\" 
-Pour le matching : utiliser \"Parfum Elixir\" (2 premiers mots car type ≤ 3 mots)
+Exemple 6 - Produit : \"Rabanne - Fame In Love - Parfum Elixir Vaporisateur 80ml Rechargeable\"
 {
   \"vendor\": \"Rabanne\",
   \"name\": \"Fame In Love\",
-  \"type\": \"Parfum Elixir Vaporisateur Rechargeable\",
+  \"type\": \"Parfum Elixir\",
   \"variation\": \"80 ml\",
   \"is_coffret\": false
 }
 
-Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage Lissante 30ml\"
+Exemple 7 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage Lissante 30ml\"
 {
   \"vendor\": \"Sephora Collection\",
   \"name\": \"Smoothing Primer\",
-  \"type\": \"Base de Maquillage Lissante\",
+  \"type\": \"Base de Maquillage\",
   \"variation\": \"30 ml\",
+  \"is_coffret\": false
+}
+
+Exemple 8 - Produit : \"Gel Douche Hydratant Recharge 500ml\"
+{
+  \"vendor\": \"[Marque à déterminer]\",
+  \"name\": \"Gel Douche Hydratant\",
+  \"type\": \"Gel Douche\",
+  \"variation\": \"500 ml\",
   \"is_coffret\": false
 }"
                             ]
@@ -176,32 +195,81 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
                     'is_coffret' => false
                 ], $decodedData);
 
+                // Nettoyage spécial pour "Shiseido Men" vs "Shiseido"
+                if (str_contains(strtolower($this->extractedData['vendor'] ?? ''), 'shiseido')) {
+                    // Si le vendor contient "Men", garder "Shiseido Men", sinon "Shiseido"
+                    if (str_contains(strtolower($this->extractedData['vendor'] ?? ''), 'men')) {
+                        $this->extractedData['vendor'] = 'Shiseido Men';
+                    } else {
+                        $this->extractedData['vendor'] = 'Shiseido';
+                    }
+                }
+
+                // Post-traitement du type : enlever les termes non désirés
+                if (!empty($this->extractedData['type'])) {
+                    $type = $this->extractedData['type'];
+                    
+                    // Liste des termes à enlever du type
+                    $unwantedTypeTerms = [
+                        'recharge', 'refill', 'rechargeable', 'vaporisateur', 'spray', 'flacon',
+                        'pot', 'tube', 'stick', 'stick', 'applicateur', 'pompe', 'pression'
+                    ];
+                    
+                    foreach ($unwantedTypeTerms as $term) {
+                        $type = preg_replace('/\s*' . preg_quote($term, '/') . '\s*/i', ' ', $type);
+                    }
+                    
+                    // Nettoyer les espaces multiples
+                    $type = preg_replace('/\s+/', ' ', trim($type));
+                    
+                    // Si le type est vide après nettoyage, essayer de le déduire
+                    if (empty($type)) {
+                        $type = $this->deduceTypeFromProductName($this->productName);
+                    }
+                    
+                    $this->extractedData['type'] = $type;
+                }
+
+                // Post-traitement du name : enlever le vendor et les termes de type
+                if (!empty($this->extractedData['name'])) {
+                    $name = $this->extractedData['name'];
+                    
+                    // Enlever le vendor du name s'il y est
+                    $vendor = $this->extractedData['vendor'] ?? '';
+                    if (!empty($vendor)) {
+                        $name = trim(str_ireplace($vendor, '', $name));
+                    }
+                    
+                    // Enlever les termes de type du name
+                    if (!empty($this->extractedData['type'])) {
+                        $type = $this->extractedData['type'];
+                        $name = trim(str_ireplace($type, '', $name));
+                    }
+                    
+                    // Nettoyer les tirets et espaces multiples
+                    $name = preg_replace('/\s*-\s*/', ' ', $name);
+                    $name = preg_replace('/\s+/', ' ', trim($name));
+                    
+                    $this->extractedData['name'] = $name;
+                }
+
+                // Post-traitement de la variation
+                if (!empty($this->extractedData['variation'])) {
+                    $variation = $this->extractedData['variation'];
+                    // Standardiser "ml" et "g"
+                    $variation = preg_replace('/(\d+)\s*(ml|mls|millilitre|millilitres)/i', '$1 ml', $variation);
+                    $variation = preg_replace('/(\d+)\s*(g|gr|gramme|grammes)/i', '$1 g', $variation);
+                    $this->extractedData['variation'] = trim($variation);
+                }
+
                 // Initialiser les champs de recherche manuelle
                 $this->manualVendor = $this->extractedData['vendor'] ?? '';
                 $this->manualName = $this->extractedData['name'] ?? '';
                 $this->manualType = $this->extractedData['type'] ?? '';
                 $this->manualVariation = $this->extractedData['variation'] ?? '';
 
-                // Post-traitement : nettoyer le type s'il contient des informations parasites
-                if (!empty($this->extractedData['type'])) {
-                    $type = $this->extractedData['type'];
-
-                    // Si le type contient le nom de la gamme, essayer de le nettoyer
-                    if (!empty($this->extractedData['name'])) {
-                        $name = $this->extractedData['name'];
-                        // Enlever le nom de la gamme du type s'il y est
-                        $type = trim(str_ireplace($name, '', $type));
-                    }
-
-                    // Enlever les tirets et espaces multiples
-                    $type = preg_replace('/\s*-\s*/', ' ', $type);
-                    $type = preg_replace('/\s+/', ' ', $type);
-
-                    $this->extractedData['type'] = trim($type);
-                    $this->manualType = $this->extractedData['type'];
-                }
-
-                \Log::info('Données extraites', [
+                \Log::info('Données extraites et nettoyées', [
+                    'product_source' => $this->productName,
                     'vendor' => $this->extractedData['vendor'] ?? '',
                     'name' => $this->extractedData['name'] ?? '',
                     'type' => $this->extractedData['type'] ?? '',
@@ -232,6 +300,61 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
         } finally {
             $this->isLoading = false;
         }
+    }
+
+    /**
+     * Tente de déduire le type à partir du nom du produit
+     */
+    private function deduceTypeFromProductName(string $productName): string
+    {
+        $productNameLower = mb_strtolower($productName);
+        
+        // Mapping des termes courants vers les types
+        $typeMapping = [
+            'crème' => 'Crème',
+            'cream' => 'Crème',
+            'creme' => 'Crème',
+            'sérum' => 'Sérum',
+            'serum' => 'Sérum',
+            'huile' => 'Huile',
+            'oil' => 'Huile',
+            'gel' => 'Gel',
+            'lotion' => 'Lotion',
+            'baume' => 'Baume',
+            'balm' => 'Baume',
+            'parfum' => 'Parfum',
+            'perfume' => 'Parfum',
+            'eau de parfum' => 'Eau de Parfum',
+            'eau de toilette' => 'Eau de Toilette',
+            'shampooing' => 'Shampooing',
+            'shampoo' => 'Shampooing',
+            'après-shampooing' => 'Après-shampooing',
+            'conditioner' => 'Après-shampooing',
+            'masque' => 'Masque',
+            'mask' => 'Masque',
+            'gommage' => 'Gommage',
+            'scrub' => 'Gommage',
+            'tonique' => 'Tonique',
+            'toner' => 'Tonique',
+            'fond de teint' => 'Fond de Teint',
+            'foundation' => 'Fond de Teint',
+            'poudre' => 'Poudre',
+            'powder' => 'Poudre',
+            'rouge à lèvres' => 'Rouge à Lèvres',
+            'lipstick' => 'Rouge à Lèvres',
+            'mascara' => 'Mascara',
+            'eyeliner' => 'Eyeliner',
+            'fard à paupières' => 'Fard à Paupières',
+            'eyeshadow' => 'Fard à Paupières'
+        ];
+        
+        foreach ($typeMapping as $term => $type) {
+            if (str_contains($productNameLower, $term)) {
+                return $type;
+            }
+        }
+        
+        return '';
     }
 
     /**
@@ -270,14 +393,14 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
         $typeLower = mb_strtolower(trim($type));
 
         // Mots à IGNORER (articles, prépositions, etc.)
-        $stopWords = ['de', 'du', 'la', 'le', 'les', 'des', 'pour', 'à', 'au', 'aux', 'et', 'ou'];
+        $stopWords = ['de', 'du', 'la', 'le', 'les', 'des', 'pour', 'à', 'au', 'aux', 'et', 'ou', 'en'];
 
         // Découper par espaces et tirets
         $allWords = preg_split('/[\s\-]+/', $typeLower, -1, PREG_SPLIT_NO_EMPTY);
 
         // Filtrer les mots trop courts et les stop words
         $significantWords = array_filter($allWords, function ($word) use ($stopWords) {
-            return mb_strlen($word) >= 3 && !in_array($word, $stopWords);
+            return mb_strlen($word) >= 2 && !in_array($word, $stopWords);
         });
 
         return array_values($significantWords);
@@ -339,7 +462,7 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
      */
     private function isCoffretFromString(string $text): bool
     {
-        $cofferKeywords = ['coffret', 'set', 'kit', 'duo', 'trio', 'collection'];
+        $cofferKeywords = ['coffret', 'set', 'kit', 'duo', 'trio', 'collection', 'pack'];
         $textLower = mb_strtolower($text);
 
         foreach ($cofferKeywords as $keyword) {
@@ -356,7 +479,7 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
      */
     private function isCoffret($product): bool
     {
-        $cofferKeywords = ['coffret', 'set', 'kit', 'duo', 'trio', 'collection'];
+        $cofferKeywords = ['coffret', 'set', 'kit', 'duo', 'trio', 'collection', 'pack'];
 
         $nameCheck = false;
         $typeCheck = false;
@@ -387,7 +510,8 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
     }
 
     /**
-     * LOGIQUE DE RECHERCHE OPTIMISÉE AVEC MATCHING STRICT MOT PAR MOT SUR LE TYPE
+     * LOGIQUE DE RECHERCHE OPTIMISÉE AVEC MATCHING STRICT
+     * AMÉLIORATION : Recherche plus flexible pour Shiseido
      */
     private function searchMatchingProducts()
     {
@@ -425,6 +549,9 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
         // Afficher les mots utilisés pour le matching
         $matchingWordsString = implode(' ', $typeWords);
         \Log::info('📝 Règle de matching appliquée', [
+            'product_source' => $this->productName,
+            'vendor' => $vendor,
+            'name' => $name,
             'type_complet' => $type,
             'mots_utilises_pour_matching' => $matchingWordsString,
             'nombre_mots_utilises' => count($typeWords),
@@ -440,7 +567,7 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
 
         $nameWords = array_values($nameWordsFiltered);
 
-        \Log::info('🔍 Mots-clés pour la recherche STRICTE', [
+        \Log::info('🔍 Mots-clés pour la recherche', [
             'vendor' => $vendor,
             'name' => $name,
             'nameWords' => $nameWords,
@@ -450,10 +577,21 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
             'matching_rule' => $this->getMatchingRuleDescription($type)
         ]);
 
-        // ÉTAPE 1: Recherche de base - UNIQUEMENT sur le vendor et les sites sélectionnés
-        $baseQuery = Product::query()
-            ->where('vendor', 'LIKE', "%{$vendor}%")
-            ->when(!empty($this->selectedSites), function ($q) {
+        // ÉTAPE 1: Recherche de base - GESTION SPÉCIALE POUR SHISEIDO
+        $baseQuery = Product::query();
+        
+        // Gestion spéciale pour Shiseido
+        if (str_contains(strtolower($vendor), 'shiseido')) {
+            // Recherche flexible pour Shiseido / Shiseido Men
+            $baseQuery->where(function($q) use ($vendor) {
+                $q->where('vendor', 'LIKE', "%Shiseido%")
+                  ->orWhere('vendor', 'LIKE', "%Shiseido Men%");
+            });
+        } else {
+            $baseQuery->where('vendor', 'LIKE', "%{$vendor}%");
+        }
+        
+        $baseQuery->when(!empty($this->selectedSites), function ($q) {
                 $q->whereIn('web_site_id', $this->selectedSites);
             })
             ->orderByDesc('id');
@@ -467,7 +605,8 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
 
         \Log::info('✅ Produits trouvés pour le vendor', [
             'vendor' => $vendor,
-            'count' => $vendorProducts->count()
+            'count' => $vendorProducts->count(),
+            'vendors_trouves' => $vendorProducts->pluck('vendor')->unique()->values()->toArray()
         ]);
 
         // ÉTAPE 2: Filtrer par statut coffret
@@ -482,31 +621,14 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
         $nameFilteredProducts = $filteredProducts;
 
         if (!empty($nameWords)) {
-            // TENTATIVE 1: TOUS les mots doivent être présents
-            $allWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords) {
-                $productName = mb_strtolower($product['name'] ?? '');
-
-                $matchCount = 0;
-                foreach ($nameWords as $word) {
-                    if (str_contains($productName, $word)) {
-                        $matchCount++;
-                    }
-                }
-
-                return $matchCount === count($nameWords);
-            })->values()->toArray();
-
-            if (!empty($allWordsMatch)) {
-                $nameFilteredProducts = $allWordsMatch;
-                \Log::info('✅ Produits après filtrage STRICT par NAME (TOUS les mots)', [
-                    'count' => count($nameFilteredProducts),
-                    'nameWords_required' => $nameWords
-                ]);
-            } else {
-                // TENTATIVE 2: Au moins 80% des mots doivent être présents
-                $minRequired = max(1, (int) ceil(count($nameWords) * 0.8));
-
-                $mostWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $minRequired) {
+            // Pour Shiseido, être plus flexible avec le name
+            $isShiseido = str_contains(strtolower($vendor), 'shiseido');
+            
+            if ($isShiseido) {
+                // Pour Shiseido, accepter un matching partiel
+                $minRequired = max(1, (int) ceil(count($nameWords) * 0.6)); // 60% minimum
+                
+                $nameMatchProducts = collect($filteredProducts)->filter(function ($product) use ($nameWords, $minRequired) {
                     $productName = mb_strtolower($product['name'] ?? '');
 
                     $matchCount = 0;
@@ -519,16 +641,39 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
                     return $matchCount >= $minRequired;
                 })->values()->toArray();
 
-                if (!empty($mostWordsMatch)) {
-                    $nameFilteredProducts = $mostWordsMatch;
-                    \Log::info('✅ Produits après filtrage 80% par NAME', [
+                if (!empty($nameMatchProducts)) {
+                    $nameFilteredProducts = $nameMatchProducts;
+                    \Log::info('✅ Produits Shiseido après filtrage 60% par NAME', [
                         'count' => count($nameFilteredProducts)
                     ]);
-                } else {
-                    // TENTATIVE 3: Au moins 50% des mots doivent être présents
-                    $minRequired = max(1, (int) ceil(count($nameWords) * 0.5));
+                }
+            } else {
+                // Pour les autres marques, logique normale
+                // TENTATIVE 1: TOUS les mots doivent être présents
+                $allWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords) {
+                    $productName = mb_strtolower($product['name'] ?? '');
 
-                    $halfWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $minRequired) {
+                    $matchCount = 0;
+                    foreach ($nameWords as $word) {
+                        if (str_contains($productName, $word)) {
+                            $matchCount++;
+                        }
+                    }
+
+                    return $matchCount === count($nameWords);
+                })->values()->toArray();
+
+                if (!empty($allWordsMatch)) {
+                    $nameFilteredProducts = $allWordsMatch;
+                    \Log::info('✅ Produits après filtrage STRICT par NAME (TOUS les mots)', [
+                        'count' => count($nameFilteredProducts),
+                        'nameWords_required' => $nameWords
+                    ]);
+                } else {
+                    // TENTATIVE 2: Au moins 80% des mots doivent être présents
+                    $minRequired = max(1, (int) ceil(count($nameWords) * 0.8));
+
+                    $mostWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $minRequired) {
                         $productName = mb_strtolower($product['name'] ?? '');
 
                         $matchCount = 0;
@@ -541,28 +686,51 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
                         return $matchCount >= $minRequired;
                     })->values()->toArray();
 
-                    if (!empty($halfWordsMatch)) {
-                        $nameFilteredProducts = $halfWordsMatch;
-                        \Log::info('⚠️ Produits après filtrage 50% par NAME', [
+                    if (!empty($mostWordsMatch)) {
+                        $nameFilteredProducts = $mostWordsMatch;
+                        \Log::info('✅ Produits après filtrage 80% par NAME', [
                             'count' => count($nameFilteredProducts)
                         ]);
                     } else {
-                        // FALLBACK FINAL: Au moins 1 mot doit être présent
-                        $anyWordMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords) {
+                        // TENTATIVE 3: Au moins 50% des mots doivent être présents
+                        $minRequired = max(1, (int) ceil(count($nameWords) * 0.5));
+
+                        $halfWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $minRequired) {
                             $productName = mb_strtolower($product['name'] ?? '');
+
+                            $matchCount = 0;
                             foreach ($nameWords as $word) {
                                 if (str_contains($productName, $word)) {
-                                    return true;
+                                    $matchCount++;
                                 }
                             }
-                            return false;
+
+                            return $matchCount >= $minRequired;
                         })->values()->toArray();
 
-                        if (!empty($anyWordMatch)) {
-                            $nameFilteredProducts = $anyWordMatch;
-                            \Log::info('⚠️ Produits après filtrage SOUPLE par NAME', [
+                        if (!empty($halfWordsMatch)) {
+                            $nameFilteredProducts = $halfWordsMatch;
+                            \Log::info('⚠️ Produits après filtrage 50% par NAME', [
                                 'count' => count($nameFilteredProducts)
                             ]);
+                        } else {
+                            // FALLBACK FINAL: Au moins 1 mot doit être présent
+                            $anyWordMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords) {
+                                $productName = mb_strtolower($product['name'] ?? '');
+                                foreach ($nameWords as $word) {
+                                    if (str_contains($productName, $word)) {
+                                        return true;
+                                    }
+                                }
+                                return false;
+                            })->values()->toArray();
+
+                            if (!empty($anyWordMatch)) {
+                                $nameFilteredProducts = $anyWordMatch;
+                                \Log::info('⚠️ Produits après filtrage SOUPLE par NAME', [
+                                    'count' => count($nameFilteredProducts)
+                                ]);
+                            }
                         }
                     }
                 }
@@ -571,13 +739,22 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
             $filteredProducts = $nameFilteredProducts;
         }
 
-        // ÉTAPE 4: FILTRAGE STRICT MOT PAR MOT SUR LE TYPE selon la NOUVELLE RÈGLE
+        // ÉTAPE 4: FILTRAGE SUR LE TYPE - PLUS FLEXIBLE POUR LES TYPES COURTS
         if (!empty($typeWords)) {
-            $typeFilteredProducts = collect($filteredProducts)->filter(function ($product) use ($typeWords) {
+            $typeFilteredProducts = collect($filteredProducts)->filter(function ($product) use ($typeWords, $type) {
                 $productType = mb_strtolower($product['type'] ?? '');
 
-                // Si le produit n'a pas de type, on l'EXCLUT (pas de tolérance)
+                // Si le produit n'a pas de type, on peut l'accepter si le type recherché est court
                 if (empty($productType)) {
+                    // Pour les types courts comme "Crème", accepter les produits sans type
+                    if (in_array(strtolower($type), ['crème', 'cream', 'sérum', 'serum', 'huile', 'oil', 'gel'])) {
+                        \Log::debug('✅ Produit ACCEPTÉ (type court recherché, produit sans type)', [
+                            'product_id' => $product['id'] ?? 0,
+                            'product_name' => $product['name'] ?? '',
+                            'type_recherché' => $type
+                        ]);
+                        return true;
+                    }
                     \Log::debug('❌ Produit EXCLU (type vide)', [
                         'product_id' => $product['id'] ?? 0,
                         'product_name' => $product['name'] ?? ''
@@ -585,21 +762,35 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
                     return false;
                 }
 
-                // Vérifier que TOUS les mots du type recherché sont présents
+                // Vérifier si au moins un des mots du type recherché est présent
                 $matchCount = 0;
                 $matchedWords = [];
-                $missingWords = [];
 
                 foreach ($typeWords as $word) {
                     if (str_contains($productType, $word)) {
                         $matchCount++;
                         $matchedWords[] = $word;
-                    } else {
-                        $missingWords[] = $word;
                     }
                 }
 
-                $allWordsPresent = ($matchCount === count($typeWords));
+                // Pour les types courts, accepter si au moins un mot match
+                $typeWordCount = count($typeWords);
+                $isShortType = ($typeWordCount <= 2);
+                
+                if ($isShortType && $matchCount >= 1) {
+                    \Log::debug('✅ Produit ACCEPTÉ (type court, au moins 1 mot match)', [
+                        'product_id' => $product['id'] ?? 0,
+                        'product_name' => $product['name'] ?? '',
+                        'product_type' => $productType,
+                        'typeWords_required' => $typeWords,
+                        'matched_words' => $matchedWords,
+                        'match_ratio' => $matchCount . '/' . $typeWordCount
+                    ]);
+                    return true;
+                }
+                
+                // Pour les types plus longs, nécessiter tous les mots
+                $allWordsPresent = ($matchCount === $typeWordCount);
 
                 if (!$allWordsPresent) {
                     \Log::debug('❌ Produit EXCLU (mots de type manquants)', [
@@ -607,10 +798,9 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
                         'product_name' => $product['name'] ?? '',
                         'product_type' => $productType,
                         'typeWords_required' => $typeWords,
-                        'typeWords_count' => count($typeWords),
+                        'typeWords_count' => $typeWordCount,
                         'matched_words' => $matchedWords,
-                        'missing_words' => $missingWords,
-                        'match_ratio' => $matchCount . '/' . count($typeWords)
+                        'match_ratio' => $matchCount . '/' . $typeWordCount
                     ]);
                 } else {
                     \Log::debug('✅ Produit ACCEPTÉ (tous les mots de type présents)', [
@@ -618,14 +808,14 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
                         'product_name' => $product['name'] ?? '',
                         'product_type' => $productType,
                         'typeWords_matched' => $matchedWords,
-                        'match_ratio' => $matchCount . '/' . count($typeWords)
+                        'match_ratio' => $matchCount . '/' . $typeWordCount
                     ]);
                 }
 
                 return $allWordsPresent;
             })->values()->toArray();
 
-            \Log::info('🎯 Résultat du filtrage STRICT mot par mot sur le TYPE', [
+            \Log::info('🎯 Résultat du filtrage sur le TYPE', [
                 'produits_avant' => count($filteredProducts),
                 'produits_après' => count($typeFilteredProducts),
                 'produits_exclus' => count($filteredProducts) - count($typeFilteredProducts),
@@ -635,16 +825,22 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
             ]);
 
             if (empty($typeFilteredProducts)) {
-                \Log::warning('⚠️ AUCUN produit ne correspond au type exact mot par mot', [
+                \Log::warning('⚠️ AUCUN produit ne correspond au type', [
                     'type_recherché' => $type,
                     'typeWords' => $typeWords,
                     'matching_words' => implode(' ', $typeWords),
                     'matching_rule' => $this->getMatchingRuleDescription($type)
                 ]);
 
-                $this->matchingProducts = [];
-                $this->groupedResults = [];
-                return;
+                // Pour Shiseido, essayer sans filtre type si pas de résultat
+                if (str_contains(strtolower($vendor), 'shiseido') && !empty($nameWords)) {
+                    \Log::info('🔄 Essai sans filtre type pour Shiseido');
+                    $typeFilteredProducts = $filteredProducts;
+                } else {
+                    $this->matchingProducts = [];
+                    $this->groupedResults = [];
+                    return;
+                }
             }
 
             $filteredProducts = $typeFilteredProducts;
@@ -652,17 +848,26 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
             \Log::info('ℹ️ Pas de mots de type à vérifier, on garde tous les produits filtrés par NAME');
         }
 
-        // ÉTAPE 5: Scoring
-        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeWords, $type, $isCoffretSource, $nameWords) {
+        // ÉTAPE 5: Scoring amélioré pour Shiseido
+        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeWords, $type, $isCoffretSource, $nameWords, $vendor) {
             $score = 0;
             $productType = mb_strtolower($product['type'] ?? '');
             $productName = mb_strtolower($product['name'] ?? '');
+            $productVendor = mb_strtolower($product['vendor'] ?? '');
 
             // BONUS COFFRET
             $productIsCoffret = $this->isCoffret($product);
 
             if ($isCoffretSource && $productIsCoffret) {
                 $score += 500;
+            }
+
+            // BONUS VENDOR EXACT MATCH
+            $vendorLower = mb_strtolower($vendor);
+            if ($productVendor === $vendorLower) {
+                $score += 400;
+            } elseif (str_contains($productVendor, $vendorLower) || str_contains($vendorLower, $productVendor)) {
+                $score += 200; // Match partiel
             }
 
             // BONUS NAME
@@ -681,9 +886,14 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
                 if ($nameMatchCount === count($nameWords)) {
                     $score += 200;
                 }
+                
+                // Bonus spécial pour "Revitalisant Total"
+                if (str_contains($productName, 'revitalisant') && str_contains($productName, 'total')) {
+                    $score += 300;
+                }
             }
 
-            // BONUS TYPE - TOUS les mots sont présents (garanti par le filtrage)
+            // BONUS TYPE
             if (!empty($typeWords)) {
                 $typeMatchCount = 0;
                 foreach ($typeWords as $word) {
@@ -692,38 +902,61 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
                     }
                 }
 
-                // Si TOUS les mots matchent (ce qui doit être le cas)
+                // Si TOUS les mots matchent
                 if ($typeMatchCount === count($typeWords)) {
-                    $score += 1000; // ÉNORME BONUS car c'est un match PARFAIT
+                    $score += 1000;
+                } elseif ($typeMatchCount > 0) {
+                    // Match partiel
+                    $typeMatchRatio = $typeMatchCount / count($typeWords);
+                    $score += (int) ($typeMatchRatio * 500);
                 }
 
                 // Bonus supplémentaire si le type complet est identique
                 $typeLower = mb_strtolower(trim($type));
                 if (!empty($typeLower) && $productType === $typeLower) {
-                    $score += 500; // BONUS pour type exactement identique
+                    $score += 500;
                 }
 
                 // Bonus spécial selon la règle appliquée
                 $typeWordCount = count($this->extractTypeWordsForDisplay($type));
                 if ($typeWordCount > 3 && count($typeWords) === 3) {
-                    $score += 300; // Bonus pour règle ">3 mots → 3 mots"
+                    $score += 300;
                 } elseif ($typeWordCount <= 3 && count($typeWords) === 2) {
-                    $score += 200; // Bonus pour règle "≤3 mots → 2 mots"
+                    $score += 200;
+                }
+                
+                // Bonus spécial pour "Crème"
+                if (str_contains($typeLower, 'crème') && str_contains($productType, 'crème')) {
+                    $score += 400;
+                }
+            }
+
+            // BONUS VARIATION MATCH
+            $variation = $this->extractedData['variation'] ?? '';
+            $productVariation = mb_strtolower($product['variation'] ?? '');
+            if (!empty($variation) && !empty($productVariation)) {
+                // Extraire les nombres pour comparer
+                preg_match('/(\d+)\s*(ml|g)/i', $variation, $sourceMatch);
+                preg_match('/(\d+)\s*(ml|g)/i', $productVariation, $productMatch);
+                
+                if (!empty($sourceMatch) && !empty($productMatch)) {
+                    if ($sourceMatch[1] === $productMatch[1] && $sourceMatch[2] === $productMatch[2]) {
+                        $score += 300; // Même quantité et unité
+                    }
                 }
             }
 
             return [
                 'product' => $product,
                 'score' => $score,
-                'type_words_matched' => !empty($typeWords) ? count($typeWords) : 0,
+                'type_words_matched' => !empty($typeWords) ? $typeMatchCount : 0,
                 'type_words_total' => count($typeWords),
                 'is_coffret' => $productIsCoffret,
                 'coffret_bonus_applied' => ($isCoffretSource && $productIsCoffret),
-                'name_match_count' => !empty($nameWords) ? array_reduce($nameWords, function ($count, $word) use ($productName) {
-                    return $count + (str_contains($productName, $word) ? 1 : 0);
-                }, 0) : 0,
+                'name_match_count' => $nameMatchCount ?? 0,
                 'name_words_total' => count($nameWords),
-                'matching_rule_applied' => $this->getMatchingRuleDescription($type)
+                'matching_rule_applied' => $this->getMatchingRuleDescription($type),
+                'vendor_match' => $productVendor === mb_strtolower($vendor) ? 'exact' : 'partial'
             ];
         })
             ->sortByDesc('score')
@@ -731,6 +964,8 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
 
         \Log::info('📊 Scoring final', [
             'total_products' => $scoredProducts->count(),
+            'product_source' => $this->productName,
+            'vendor' => $vendor,
             'type_recherche' => $type,
             'matching_words' => implode(' ', $typeWords),
             'matching_rule' => $this->getMatchingRuleDescription($type),
@@ -738,11 +973,14 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
                 return [
                     'id' => $item['product']['id'] ?? 0,
                     'score' => $item['score'],
+                    'vendor' => $item['product']['vendor'] ?? '',
                     'name' => $item['product']['name'] ?? '',
                     'type' => $item['product']['type'] ?? '',
+                    'variation' => $item['product']['variation'] ?? '',
                     'type_match' => $item['type_words_matched'] . '/' . $item['type_words_total'],
                     'name_match' => $item['name_match_count'] . '/' . $item['name_words_total'],
-                    'matching_rule' => $item['matching_rule_applied']
+                    'matching_rule' => $item['matching_rule_applied'],
+                    'vendor_match' => $item['vendor_match']
                 ];
             })->toArray()
         ]);
@@ -915,12 +1153,12 @@ Exemple 6 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage L
             return [];
         }
 
-        $stopWords = ['de', 'la', 'le', 'les', 'des', 'du', 'un', 'une', 'et', 'ou', 'pour', 'avec', 'sans'];
+        $stopWords = ['de', 'la', 'le', 'les', 'des', 'du', 'un', 'une', 'et', 'ou', 'pour', 'avec', 'sans', 'en', 'à'];
         $text = mb_strtolower($text);
         $words = preg_split('/[\s\-]+/', $text, -1, PREG_SPLIT_NO_EMPTY);
 
         $keywords = array_filter($words, function ($word) use ($stopWords) {
-            return mb_strlen($word) >= 3 && !in_array($word, $stopWords);
+            return mb_strlen($word) >= 2 && !in_array($word, $stopWords);
         });
 
         return array_values($keywords);
