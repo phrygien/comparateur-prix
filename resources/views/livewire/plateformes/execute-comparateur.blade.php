@@ -940,7 +940,7 @@ Score de confiance entre 0 et 1."
                                     <p class="text-xs text-gray-500 truncate">{{ $product['type'] }} | {{ $product['variation'] }}</p>
                                     
                                     <div class="flex items-center gap-2 mt-1">
-                                        <p class="text-sm font-bold text-indigo-600">{{ number_format($product['prix_ht'], 2) }} €</p>
+                                        <p class="text-sm font-bold text-indigo-600">{{ number_format((float)($product['prix_ht'] ?? 0), 2) }} €</p>
                                         @php
                                             $siteInfo = collect($availableSites)->firstWhere('id', $product['web_site_id']);
                                         @endphp
