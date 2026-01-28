@@ -18,7 +18,7 @@ new class extends Component {
     public $availableSites = [];
     public $selectedSites = [];
     public $groupedResults = [];
-    
+
     // Nouveaux champs pour recherche manuelle
     public $manualSearchMode = false;
     public $manualVendor = '';
@@ -37,7 +37,7 @@ new class extends Component {
 
         // Par défaut, tous les sites sont sélectionnés
         $this->selectedSites = collect($this->availableSites)->pluck('id')->toArray();
-        
+
         // Lancer automatiquement l'extraction au chargement
         $this->extractSearchTerme();
     }
@@ -61,7 +61,11 @@ new class extends Component {
                         'messages' => [
                             [
                                 'role' => 'system',
-                                'content' => 'Tu es un expert en extraction de données de produits cosmétiques. IMPORTANT: Le champ "type" doit contenir UNIQUEMENT la catégorie du produit (Crème, Huile, Sérum, Eau de Parfum, etc.), PAS le nom de la gamme. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
+                                'content' => 'Tu es un expert en extraction de données de produits cosmétiques. 
+IMPORTANT: 
+1. Le champ "type" doit contenir UNIQUEMENT la catégorie du produit (Crème, Huile, Sérum, Eau de Parfum, etc.), PAS le nom de la gamme. 
+2. Pour le matching, seuls les 3 premiers mots du type seront utilisés.
+Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
                             ],
                             [
                                 'role' => 'user',
@@ -106,10 +110,21 @@ Exemple 3 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream En
 }
 
 Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum Intense Vaporisateur 30ml\"
+IMPORTANT: Le type complet est \"Eau de Parfum Intense Vaporisateur\" mais pour le matching, 
+seuls les 3 premiers mots \"Eau de Parfum Intense\" seront utilisés.
 {
   \"vendor\": \"Lancôme\",
   \"name\": \"La Nuit Trésor Rouge Drama\",
   \"type\": \"Eau de Parfum Intense Vaporisateur\",
+  \"variation\": \"30 ml\",
+  \"is_coffret\": false
+}
+
+Exemple 5 - Produit : \"Sephora Collection Smoothing Primer Base de Maquillage Lissante 30ml\"
+{
+  \"vendor\": \"Sephora Collection\",
+  \"name\": \"Smoothing Primer\",
+  \"type\": \"Base de Maquillage Lissante\",
   \"variation\": \"30 ml\",
   \"is_coffret\": false
 }"
@@ -159,18 +174,18 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 // Post-traitement : nettoyer le type s'il contient des informations parasites
                 if (!empty($this->extractedData['type'])) {
                     $type = $this->extractedData['type'];
-                    
+
                     // Si le type contient le nom de la gamme, essayer de le nettoyer
                     if (!empty($this->extractedData['name'])) {
                         $name = $this->extractedData['name'];
                         // Enlever le nom de la gamme du type s'il y est
                         $type = trim(str_ireplace($name, '', $type));
                     }
-                    
+
                     // Enlever les tirets et espaces multiples
                     $type = preg_replace('/\s*-\s*/', ' ', $type);
                     $type = preg_replace('/\s+/', ' ', $type);
-                    
+
                     $this->extractedData['type'] = trim($type);
                     $this->manualType = $this->extractedData['type'];
                 }
@@ -179,6 +194,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     'vendor' => $this->extractedData['vendor'] ?? '',
                     'name' => $this->extractedData['name'] ?? '',
                     'type' => $this->extractedData['type'] ?? '',
+                    'type_premiers_mots' => $this->getTypeFirstWords($this->extractedData['type'] ?? '', 3),
                     'variation' => $this->extractedData['variation'] ?? '',
                     'is_coffret' => $this->extractedData['is_coffret'] ?? false
                 ]);
@@ -232,6 +248,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'vendor' => $this->extractedData['vendor'],
                 'name' => $this->extractedData['name'],
                 'type' => $this->extractedData['type'],
+                'type_premiers_mots' => $this->getTypeFirstWords($this->extractedData['type'], 3),
                 'variation' => $this->extractedData['variation']
             ]);
 
@@ -258,19 +275,41 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
     }
 
     /**
+     * Extrait les premiers mots du type selon la règle "3 mots max"
+     * Utilisé pour l'affichage et le logging
+     */
+    private function getTypeFirstWords(string $type, int $maxWords = 3): string
+    {
+        if (empty($type)) {
+            return '';
+        }
+
+        // Nettoyer le type
+        $type = preg_replace('/\s+/', ' ', trim($type));
+
+        // Découper en mots
+        $words = explode(' ', $type);
+
+        // Prendre les $maxWords premiers mots
+        $firstWords = array_slice($words, 0, $maxWords);
+
+        return implode(' ', $firstWords);
+    }
+
+    /**
      * Vérifie si une chaîne contient des mots-clés de coffret
      */
     private function isCoffretFromString(string $text): bool
     {
         $cofferKeywords = ['coffret', 'set', 'kit', 'duo', 'trio', 'collection'];
         $textLower = mb_strtolower($text);
-        
+
         foreach ($cofferKeywords as $keyword) {
             if (str_contains($textLower, $keyword)) {
                 return true;
             }
         }
-        
+
         return false;
     }
 
@@ -342,16 +381,25 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             return;
         }
 
-        // NOUVEAU: Extraire TOUS les mots significatifs du type pour matching strict
+        // RÈGLE IMPORTANTE : Extraire les mots significatifs du type, limité aux 3 premiers mots si nécessaire
         $typeWords = $this->extractTypeWords($type);
-        
+
+        // Afficher les 3 premiers mots pour référence
+        $firstThreeWords = $this->getTypeFirstWords($type, 3);
+        \Log::info('📝 Règle des 3 mots appliquée', [
+            'type_complet' => $type,
+            '3_premiers_mots' => $firstThreeWords,
+            'mots_utilises_pour_matching' => $typeWords,
+            'count_mots_utilises' => count($typeWords)
+        ]);
+
         // Extraire les mots du name EN EXCLUANT le vendor
         $allNameWords = $this->extractKeywords($name);
-        
+
         // Retirer le vendor des mots du name pour éviter les faux positifs
         $vendorWords = $this->extractKeywords($vendor);
         $nameWordsFiltered = array_diff($allNameWords, $vendorWords);
-        
+
         $nameWords = array_values($nameWordsFiltered);
 
         \Log::info('🔍 Mots-clés pour la recherche STRICTE', [
@@ -360,7 +408,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             'nameWords' => $nameWords,
             'type' => $type,
             'typeWords' => $typeWords,
-            'typeWords_count' => count($typeWords)
+            'typeWords_count' => count($typeWords),
+            'regle_3_mots' => (count($typeWords) > 3) ? 'APPLIQUÉE' : 'NON APPLIQUÉE'
         ]);
 
         // ÉTAPE 1: Recherche de base - UNIQUEMENT sur le vendor et les sites sélectionnés
@@ -393,19 +442,19 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
         // ÉTAPE 3: FILTRAGE PROGRESSIF par les mots du NAME
         $nameFilteredProducts = $filteredProducts;
-        
+
         if (!empty($nameWords)) {
             // TENTATIVE 1: TOUS les mots doivent être présents
             $allWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords) {
                 $productName = mb_strtolower($product['name'] ?? '');
-                
+
                 $matchCount = 0;
                 foreach ($nameWords as $word) {
                     if (str_contains($productName, $word)) {
                         $matchCount++;
                     }
                 }
-                
+
                 return $matchCount === count($nameWords);
             })->values()->toArray();
 
@@ -417,21 +466,21 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 ]);
             } else {
                 // TENTATIVE 2: Au moins 80% des mots doivent être présents
-                $minRequired = max(1, (int)ceil(count($nameWords) * 0.8));
-                
+                $minRequired = max(1, (int) ceil(count($nameWords) * 0.8));
+
                 $mostWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $minRequired) {
                     $productName = mb_strtolower($product['name'] ?? '');
-                    
+
                     $matchCount = 0;
                     foreach ($nameWords as $word) {
                         if (str_contains($productName, $word)) {
                             $matchCount++;
                         }
                     }
-                    
+
                     return $matchCount >= $minRequired;
                 })->values()->toArray();
-                
+
                 if (!empty($mostWordsMatch)) {
                     $nameFilteredProducts = $mostWordsMatch;
                     \Log::info('✅ Produits après filtrage 80% par NAME', [
@@ -439,21 +488,21 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     ]);
                 } else {
                     // TENTATIVE 3: Au moins 50% des mots doivent être présents
-                    $minRequired = max(1, (int)ceil(count($nameWords) * 0.5));
-                    
+                    $minRequired = max(1, (int) ceil(count($nameWords) * 0.5));
+
                     $halfWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $minRequired) {
                         $productName = mb_strtolower($product['name'] ?? '');
-                        
+
                         $matchCount = 0;
                         foreach ($nameWords as $word) {
                             if (str_contains($productName, $word)) {
                                 $matchCount++;
                             }
                         }
-                        
+
                         return $matchCount >= $minRequired;
                     })->values()->toArray();
-                    
+
                     if (!empty($halfWordsMatch)) {
                         $nameFilteredProducts = $halfWordsMatch;
                         \Log::info('⚠️ Produits après filtrage 50% par NAME', [
@@ -470,7 +519,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                             }
                             return false;
                         })->values()->toArray();
-                        
+
                         if (!empty($anyWordMatch)) {
                             $nameFilteredProducts = $anyWordMatch;
                             \Log::info('⚠️ Produits après filtrage SOUPLE par NAME', [
@@ -480,16 +529,16 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     }
                 }
             }
-            
+
             $filteredProducts = $nameFilteredProducts;
         }
 
         // ÉTAPE 4: FILTRAGE STRICT MOT PAR MOT SUR LE TYPE
-        // SI on a des mots de type, TOUS doivent être présents
+        // RÈGLE : SI on a des mots de type, TOUS doivent être présents (maximum 3 mots)
         if (!empty($typeWords)) {
             $typeFilteredProducts = collect($filteredProducts)->filter(function ($product) use ($typeWords) {
                 $productType = mb_strtolower($product['type'] ?? '');
-                
+
                 // Si le produit n'a pas de type, on l'EXCLUT (pas de tolérance)
                 if (empty($productType)) {
                     \Log::debug('❌ Produit EXCLU (type vide)', [
@@ -498,12 +547,12 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     ]);
                     return false;
                 }
-                
+
                 // Vérifier que TOUS les mots du type recherché sont présents
                 $matchCount = 0;
                 $matchedWords = [];
                 $missingWords = [];
-                
+
                 foreach ($typeWords as $word) {
                     if (str_contains($productType, $word)) {
                         $matchCount++;
@@ -512,42 +561,54 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                         $missingWords[] = $word;
                     }
                 }
-                
+
                 $allWordsPresent = ($matchCount === count($typeWords));
-                
+
                 if (!$allWordsPresent) {
                     \Log::debug('❌ Produit EXCLU (mots de type manquants)', [
                         'product_id' => $product['id'] ?? 0,
                         'product_name' => $product['name'] ?? '',
                         'product_type' => $productType,
                         'typeWords_required' => $typeWords,
+                        'typeWords_count' => count($typeWords),
                         'matched_words' => $matchedWords,
                         'missing_words' => $missingWords,
                         'match_ratio' => $matchCount . '/' . count($typeWords)
                     ]);
+                } else {
+                    \Log::debug('✅ Produit ACCEPTÉ (tous les mots de type présents)', [
+                        'product_id' => $product['id'] ?? 0,
+                        'product_name' => $product['name'] ?? '',
+                        'product_type' => $productType,
+                        'typeWords_matched' => $matchedWords,
+                        'match_ratio' => $matchCount . '/' . count($typeWords)
+                    ]);
                 }
-                
+
                 return $allWordsPresent;
             })->values()->toArray();
-            
+
             \Log::info('🎯 Résultat du filtrage STRICT mot par mot sur le TYPE', [
                 'produits_avant' => count($filteredProducts),
                 'produits_après' => count($typeFilteredProducts),
                 'produits_exclus' => count($filteredProducts) - count($typeFilteredProducts),
-                'typeWords_required' => $typeWords
+                'typeWords_required' => $typeWords,
+                'typeWords_count' => count($typeWords),
+                'regle_3_mots' => (count($typeWords) > 3) ? 'APPLIQUÉE (limité à 3)' : 'NON APPLIQUÉE'
             ]);
-            
+
             if (empty($typeFilteredProducts)) {
                 \Log::warning('⚠️ AUCUN produit ne correspond au type exact mot par mot', [
                     'type_recherché' => $type,
-                    'typeWords' => $typeWords
+                    'typeWords' => $typeWords,
+                    '3_premiers_mots' => $firstThreeWords
                 ]);
-                
+
                 $this->matchingProducts = [];
                 $this->groupedResults = [];
                 return;
             }
-            
+
             $filteredProducts = $typeFilteredProducts;
         } else {
             \Log::info('ℹ️ Pas de mots de type à vérifier, on garde tous les produits filtrés par NAME');
@@ -561,7 +622,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
             // BONUS COFFRET
             $productIsCoffret = $this->isCoffret($product);
-            
+
             if ($isCoffretSource && $productIsCoffret) {
                 $score += 500;
             }
@@ -574,11 +635,11 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                         $nameMatchCount++;
                     }
                 }
-                
+
                 $nameMatchRatio = count($nameWords) > 0 ? ($nameMatchCount / count($nameWords)) : 0;
-                $nameBonus = (int)($nameMatchRatio * 300);
+                $nameBonus = (int) ($nameMatchRatio * 300);
                 $score += $nameBonus;
-                
+
                 if ($nameMatchCount === count($nameWords)) {
                     $score += 200;
                 }
@@ -592,16 +653,21 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                         $typeMatchCount++;
                     }
                 }
-                
+
                 // Si TOUS les mots matchent (ce qui doit être le cas)
                 if ($typeMatchCount === count($typeWords)) {
                     $score += 1000; // ÉNORME BONUS car c'est un match PARFAIT
                 }
-                
+
                 // Bonus supplémentaire si le type complet est identique
                 $typeLower = mb_strtolower(trim($type));
                 if (!empty($typeLower) && $productType === $typeLower) {
                     $score += 500; // BONUS pour type exactement identique
+                }
+
+                // Bonus si le type a été limité à 3 mots et que ça match
+                if (count($typeWords) <= 3 && $typeMatchCount === count($typeWords)) {
+                    $score += 200; // Bonus pour match avec la règle des 3 mots
                 }
             }
 
@@ -612,27 +678,31 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'type_words_total' => count($typeWords),
                 'is_coffret' => $productIsCoffret,
                 'coffret_bonus_applied' => ($isCoffretSource && $productIsCoffret),
-                'name_match_count' => !empty($nameWords) ? array_reduce($nameWords, function($count, $word) use ($productName) {
+                'name_match_count' => !empty($nameWords) ? array_reduce($nameWords, function ($count, $word) use ($productName) {
                     return $count + (str_contains($productName, $word) ? 1 : 0);
                 }, 0) : 0,
-                'name_words_total' => count($nameWords)
+                'name_words_total' => count($nameWords),
+                'regle_3_mots_appliquee' => (!empty($typeWords) && count($typeWords) > 3)
             ];
         })
-        ->sortByDesc('score')
-        ->values();
+            ->sortByDesc('score')
+            ->values();
 
         \Log::info('📊 Scoring final', [
             'total_products' => $scoredProducts->count(),
             'type_recherche' => $type,
+            '3_premiers_mots' => $this->getTypeFirstWords($type, 3),
             'typeWords' => $typeWords,
-            'top_10_scores' => $scoredProducts->take(10)->map(function($item) {
+            'regle_3_mots' => (count($typeWords) > 3) ? 'APPLIQUÉE' : 'NON APPLIQUÉE',
+            'top_10_scores' => $scoredProducts->take(10)->map(function ($item) {
                 return [
                     'id' => $item['product']['id'] ?? 0,
                     'score' => $item['score'],
                     'name' => $item['product']['name'] ?? '',
                     'type' => $item['product']['type'] ?? '',
                     'type_match' => $item['type_words_matched'] . '/' . $item['type_words_total'],
-                    'name_match' => $item['name_match_count'] . '/' . $item['name_words_total']
+                    'name_match' => $item['name_match_count'] . '/' . $item['name_words_total'],
+                    'regle_3_mots' => $item['regle_3_mots_appliquee'] ? 'OUI' : 'NON'
                 ];
             })->toArray()
         ]);
@@ -647,36 +717,53 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
     }
 
     /**
-     * NOUVEAU: Extrait TOUS les mots significatifs du type pour matching strict
-     * Ignore les mots de liaison et ne garde que les mots importants
+     * Extrait TOUS les mots significatifs du type pour matching strict
+     * RÈGLE : Si le type dépasse 3 mots, ne prendre que les 3 premiers mots
      */
     private function extractTypeWords(string $type): array
     {
         if (empty($type)) {
             return [];
         }
-        
+
         $typeLower = mb_strtolower(trim($type));
-        
+
         // Mots à IGNORER (articles, prépositions, etc.)
         $stopWords = ['de', 'du', 'la', 'le', 'les', 'des', 'pour', 'à', 'au', 'aux', 'et', 'ou'];
-        
+
         // Découper par espaces et tirets
-        $words = preg_split('/[\s\-]+/', $typeLower, -1, PREG_SPLIT_NO_EMPTY);
-        
+        $allWords = preg_split('/[\s\-]+/', $typeLower, -1, PREG_SPLIT_NO_EMPTY);
+
         // Filtrer les mots trop courts et les stop words
-        $significantWords = array_filter($words, function($word) use ($stopWords) {
+        $significantWords = array_filter($allWords, function ($word) use ($stopWords) {
             return mb_strlen($word) >= 3 && !in_array($word, $stopWords);
         });
-        
-        $result = array_values($significantWords);
-        
-        \Log::info('🔤 Extraction des mots du TYPE', [
+
+        // RÈGLE IMPORTANTE : Si on a plus de 3 mots significatifs, ne prendre que les 3 premiers
+        $significantWords = array_values($significantWords);
+
+        if (count($significantWords) > 3) {
+            \Log::info('⚠️ Type a plus de 3 mots significatifs. Limitation aux 3 premiers mots.', [
+                'type_original' => $type,
+                'mots_complets' => $significantWords,
+                'mots_apres_limitation' => array_slice($significantWords, 0, 3),
+                'nombre_mots_originaux' => count($significantWords),
+                'nombre_mots_apres_limitation' => 3
+            ]);
+
+            $result = array_slice($significantWords, 0, 3);
+        } else {
+            $result = $significantWords;
+        }
+
+        \Log::info('🔤 Extraction des mots du TYPE (avec règle des 3 mots)', [
             'type_original' => $type,
-            'mots_extraits' => $result,
-            'nombre_mots' => count($result)
+            'mots_significatifs_complets' => $significantWords,
+            'mots_extraits_finaux' => $result,
+            'nombre_mots' => count($result),
+            'regle_3_mots_appliquee' => (count($significantWords) > 3)
         ]);
-        
+
         return $result;
     }
 
@@ -733,7 +820,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         });
 
         $grouped = $uniqueProducts->groupBy('scrape_reference');
-        
+
         $this->groupedResults = $grouped->map(function ($group, $reference) {
             $bySite = $group->groupBy('web_site_id')->map(function ($siteProducts) {
                 return [
@@ -827,21 +914,25 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
             ])->timeout(15)->post('https://api.openai.com/v1/chat/completions', [
-                'model' => 'gpt-4o-mini',
-                'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' => 'Tu es un expert en matching de produits cosmétiques. Réponds UNIQUEMENT avec un objet JSON.'
-                    ],
-                    [
-                        'role' => 'user',
-                        'content' => "Produit source : {$this->productName}
+                        'model' => 'gpt-4o-mini',
+                        'messages' => [
+                            [
+                                'role' => 'system',
+                                'content' => 'Tu es un expert en matching de produits cosmétiques. 
+NOTE IMPORTANTE : Pour le matching du type, seuls les 3 premiers mots ont été utilisés.
+Réponds UNIQUEMENT avec un objet JSON.'
+                            ],
+                            [
+                                'role' => 'user',
+                                'content' => "Produit source : {$this->productName}
 
 Critères extraits :
 - Vendor: " . ($this->extractedData['vendor'] ?? 'N/A') . "
 - Name: " . ($this->extractedData['name'] ?? 'N/A') . "
 - Type: " . ($this->extractedData['type'] ?? 'N/A') . "
 - Variation: " . ($this->extractedData['variation'] ?? 'N/A') . "
+
+IMPORTANT : Pour le matching du type, seuls les 3 premiers mots ont été utilisés.
 
 Produits candidats :
 " . json_encode($productsInfo, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "
@@ -850,13 +941,14 @@ Retourne au format JSON :
 {
   \"best_match_id\": 123,
   \"confidence_score\": 0.95,
-  \"reasoning\": \"Explication courte\"
+  \"reasoning\": \"Explication courte\",
+  \"type_matching_method\": \"3_premiers_mots\"
 }"
-                    ]
-                ],
-                'temperature' => 0.2,
-                'max_tokens' => 800
-            ]);
+                            ]
+                        ],
+                        'temperature' => 0.2,
+                        'max_tokens' => 800
+                    ]);
 
             if ($response->successful()) {
                 $data = $response->json();
