@@ -661,6 +661,7 @@ class Boutique extends Component
 
     public function render()
     {
+        dd("test");
         $productsData = $this->getListProduct($this->search, $this->getPage(), $this->perPage);
         $cacheStats = $this->getCacheStats();
         
