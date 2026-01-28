@@ -80,7 +80,7 @@ Exemple 2 - Produit : \"Chanel N°5 Eau de Parfum Vaporisateur 100 ml\"
 {
   \"vendor\": \"Chanel\",
   \"name\": \"N°5\",
-  \"type\": \"Eau de Parfum Vaporisateur\",
+  \"type\": \"Eau de Parfum\",
   \"variation\": \"100 ml\",
   \"is_coffret\": false
 }
@@ -89,17 +89,8 @@ Exemple 3 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream En
 {
   \"vendor\": \"Shiseido\",
   \"name\": \"Vital Perfection Uplifting and Firming\",
-  \"type\": \"Crème visage Enrichie\",
+  \"type\": \"Crème visage\",
   \"variation\": \"50 ml\",
-  \"is_coffret\": false
-}
-
-Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum Intense Vaporisateur 30ml\"
-{
-  \"vendor\": \"Lancôme\",
-  \"name\": \"La Nuit Trésor Rouge Drama\",
-  \"type\": \"Eau de Parfum Intense Vaporisateur\",
-  \"variation\": \"30 ml\",
   \"is_coffret\": false
 }"
                             ]
@@ -232,7 +223,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
      *    Fallback : au moins 1 mot si filtrage strict ne donne rien
      * 4. SCORER avec :
      *    - BONUS ÉNORME (+500) si recherche coffret ET produit est coffret (PRIORITÉ ABSOLUE)
-     *    - Matching HIÉRARCHIQUE sur le TYPE : vérifier étape par étape
+     *    - Matching sur le TYPE pour le reste du scoring
      */
     private function searchMatchingProducts()
     {
@@ -264,8 +255,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             return;
         }
 
-        // Extraire les parties du TYPE pour matching hiérarchique
-        $typeParts = $this->extractTypeParts($type);
+        // Extraire TOUS les mots du type (pour le scoring)
+        $typeWords = $this->extractKeywords($type);
         
         // Extraire les mots du name EN EXCLUANT le vendor
         $allNameWords = $this->extractKeywords($name);
@@ -283,7 +274,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             'nameWords_brut' => $allNameWords,
             'nameWords_filtres' => $nameWords,
             'type' => $type,
-            'type_parts' => $typeParts
+            'typeWords' => $typeWords
         ]);
 
         // ÉTAPE 1: Recherche de base - UNIQUEMENT sur le vendor et les sites sélectionnés
@@ -364,13 +355,12 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             }
         }
 
-        // ÉTAPE 3: Scoring hiérarchique basé sur le TYPE + BONUS COFFRET
-        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $type, $isCoffretSource) {
+        // ÉTAPE 3: Scoring basé sur le TYPE + BONUS COFFRET
+        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeWords, $type, $isCoffretSource) {
             $score = 0;
             $productType = mb_strtolower($product['type'] ?? '');
             
-            $matchedTypeParts = [];
-            $typePartsCount = count($typeParts);
+            $matchedTypeWords = [];
 
             // ==========================================
             // PRIORITÉ ABSOLUE : BONUS COFFRET
@@ -383,55 +373,45 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             }
 
             // ==========================================
-            // MATCHING HIÉRARCHIQUE SUR LE TYPE
+            // MATCHING SUR LE TYPE
             // ==========================================
             
-            if (!empty($typeParts) && !empty($productType)) {
-                // Vérifier chaque partie du type dans l'ordre
-                foreach ($typeParts as $index => $part) {
-                    $partLower = mb_strtolower(trim($part));
-                    if (!empty($partLower)) {
-                        // Vérifier si cette partie du type est présente dans le type du produit
-                        if (str_contains($productType, $partLower)) {
-                            // Bonus décroissant selon la position dans la hiérarchie
-                            // La première partie (la plus importante) donne plus de points
-                            $partBonus = 100 - ($index * 20); // 100, 80, 60, 40, etc.
-                            $partBonus = max($partBonus, 20); // Minimum 20 points
-                            
-                            $score += $partBonus;
-                            $matchedTypeParts[] = [
-                                'part' => $part,
-                                'bonus' => $partBonus,
-                                'position' => $index + 1
-                            ];
-                        }
-                    }
+            // Vérifier si TOUS les mots du type sont présents
+            $allTypeWordsMatched = true;
+            $typeWordsCount = count($typeWords);
+            
+            foreach ($typeWords as $word) {
+                if (str_contains($productType, $word)) {
+                    $score += 30; // Chaque mot du type = +30 points
+                    $matchedTypeWords[] = $word;
+                } else {
+                    $allTypeWordsMatched = false;
                 }
-                
-                // BONUS supplémentaire si TOUTES les parties du type correspondent
-                if (count($matchedTypeParts) === $typePartsCount && $typePartsCount > 0) {
-                    $score += 150; // +150 points pour un match complet
-                }
-                
-                // BONUS MAXIMUM si le type complet est une sous-chaîne exacte
-                $typeLower = mb_strtolower(trim($type));
-                if (!empty($typeLower) && str_contains($productType, $typeLower)) {
-                    $score += 200; // +200 points pour type exact dans le produit
-                }
-                
-                // BONUS supplémentaire si le type du produit commence par le type recherché
-                if (!empty($typeLower) && str_starts_with($productType, $typeLower)) {
-                    $score += 100; // +100 points si le type est au début
-                }
+            }
+            
+            // BONUS ÉNORME si tous les mots du type correspondent
+            if ($allTypeWordsMatched && $typeWordsCount > 0) {
+                $score += 100; // +100 points pour un match complet du type
+            }
+            
+            // BONUS MAXIMUM si le type complet est une sous-chaîne exacte
+            $typeLower = mb_strtolower(trim($type));
+            if (!empty($typeLower) && str_contains($productType, $typeLower)) {
+                $score += 150; // +150 points pour type exact dans le produit
+            }
+            
+            // BONUS supplémentaire si le type du produit commence par le type recherché
+            if (!empty($typeLower) && str_starts_with($productType, $typeLower)) {
+                $score += 50; // +50 points si le type est au début
             }
 
             return [
                 'product' => $product,
                 'score' => $score,
-                'matched_type_parts' => $matchedTypeParts,
-                'all_type_parts_matched' => count($matchedTypeParts) === $typePartsCount,
-                'type_parts_count' => $typePartsCount,
-                'matched_count' => count($matchedTypeParts),
+                'matched_type_words' => $matchedTypeWords,
+                'all_type_words_matched' => $allTypeWordsMatched,
+                'type_words_count' => $typeWordsCount,
+                'matched_count' => count($matchedTypeWords),
                 'is_coffret' => $productIsCoffret,
                 'coffret_bonus_applied' => ($isCoffretSource && $productIsCoffret)
             ];
@@ -440,10 +420,10 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         ->sortByDesc('score')
         ->values();
 
-        \Log::info('Scoring détaillé (TYPE HIÉRARCHIQUE + BONUS COFFRET)', [
+        \Log::info('Scoring détaillé (TYPE + BONUS COFFRET)', [
             'total_products' => $scoredProducts->count(),
             'type_recherche' => $type,
-            'type_parts' => $typeParts,
+            'type_words' => $typeWords,
             'recherche_coffret' => $isCoffretSource,
             'top_10_scores' => $scoredProducts->take(10)->map(function($item) {
                 return [
@@ -453,12 +433,10 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     'coffret_bonus' => $item['coffret_bonus_applied'],
                     'name' => $item['product']['name'] ?? '',
                     'type' => $item['product']['type'] ?? '',
-                    'matched_type_parts' => array_map(function($part) {
-                        return "{$part['part']} (+{$part['bonus']} pts)";
-                    }, $item['matched_type_parts']),
-                    'all_type_matched' => $item['all_type_parts_matched'],
-                    'match_ratio' => $item['type_parts_count'] > 0 
-                        ? round(($item['matched_count'] / $item['type_parts_count']) * 100) . '%'
+                    'matched_type' => $item['matched_type_words'],
+                    'all_type_matched' => $item['all_type_words_matched'],
+                    'match_ratio' => $item['type_words_count'] > 0 
+                        ? round(($item['matched_count'] / $item['type_words_count']) * 100) . '%'
                         : '0%'
                 ];
             })->toArray()
@@ -469,7 +447,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
         if ($scoredProducts->isEmpty()) {
             \Log::info('Aucun produit avec score > 0', [
-                'typeParts' => $typeParts
+                'typeWords' => $typeWords
             ]);
             
             // Fallback: si aucun match par type, on prend les 50 premiers produits du vendor
@@ -494,84 +472,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         // Grouper et valider avec l'IA
         $this->groupResultsByScrapeReference($this->matchingProducts);
         $this->validateBestMatchWithAI();
-    }
-
-    /**
-     * Extrait les parties d'un type pour matching hiérarchique
-     * Exemple: "Eau de Parfum Intense Vaporisateur" => ["Eau de Parfum", "Intense", "Vaporisateur"]
-     */
-    private function extractTypeParts(string $type): array
-    {
-        if (empty($type)) {
-            return [];
-        }
-
-        // Liste des séparateurs possibles
-        $separators = [' - ', ' / ', ' + ', ', ', ' et ', ' & '];
-        
-        // Remplacer les séparateurs par un séparateur unique
-        $normalized = $type;
-        foreach ($separators as $separator) {
-            $normalized = str_replace($separator, '|', $normalized);
-        }
-        
-        // Séparer par espace mais garder les mots composés ensemble
-        $parts = explode('|', $normalized);
-        
-        // Nettoyer et filtrer les parties vides
-        $parts = array_map('trim', $parts);
-        $parts = array_filter($parts, function($part) {
-            return !empty($part);
-        });
-        
-        // Si on n'a pas de séparateurs explicites, essayer de séparer par mots clés
-        if (count($parts) === 1) {
-            // Mots-clés hiérarchiques pour les parfums
-            $perfumeKeywords = ['eau de parfum', 'eau de toilette', 'parfum', 'eau fraiche', 'extrait'];
-            $intensityKeywords = ['intense', 'extrême', 'absolu', 'concentré', 'léger', 'doux'];
-            $formatKeywords = ['vaporisateur', 'spray', 'atomiseur', 'flacon', 'roller', 'stick'];
-            
-            $typeLower = mb_strtolower($type);
-            $foundParts = [];
-            
-            // Chercher d'abord le type de parfum
-            foreach ($perfumeKeywords as $keyword) {
-                if (str_contains($typeLower, $keyword)) {
-                    $foundParts[] = ucfirst($keyword);
-                    break;
-                }
-            }
-            
-            // Chercher l'intensité
-            foreach ($intensityKeywords as $keyword) {
-                if (str_contains($typeLower, $keyword)) {
-                    $foundParts[] = ucfirst($keyword);
-                    break;
-                }
-            }
-            
-            // Chercher le format
-            foreach ($formatKeywords as $keyword) {
-                if (str_contains($typeLower, $keyword)) {
-                    $foundParts[] = ucfirst($keyword);
-                    break;
-                }
-            }
-            
-            // Si on a trouvé des parties avec cette méthode, les utiliser
-            if (!empty($foundParts)) {
-                return $foundParts;
-            }
-            
-            // Sinon, simplement diviser par espace et garder les mots significatifs
-            $words = preg_split('/\s+/', $type);
-            $words = array_filter($words, function($word) {
-                return mb_strlen($word) >= 3;
-            });
-            return array_values($words);
-        }
-        
-        return array_values($parts);
     }
 
     /**
@@ -939,17 +839,8 @@ Score de confiance entre 0 et 1."
 
                 <div class="-mx-px grid grid-cols-2 border-l border-gray-200 sm:mx-0 md:grid-cols-3 lg:grid-cols-4">
                     @foreach($matchingProducts as $product)
-                        @php
-                            $hasUrl = !empty($product['url']);
-                            $cardClass = "group relative border-r border-b border-gray-200 p-4 sm:p-6 cursor-pointer transition hover:bg-gray-50 {{ $bestMatch && $bestMatch['id'] === $product['id'] ? 'ring-2 ring-indigo-500 bg-indigo-50' : '' }}";
-                        @endphp
-                        
-                        @if($hasUrl)
-                            <a href="{{ $product['url'] }}" target="_blank" rel="noopener noreferrer" 
-                               class="{{ $cardClass }}">
-                        @else
-                            <div class="{{ $cardClass }}">
-                        @endif
+                        <div wire:click="selectProduct({{ $product['id'] }})" 
+                            class="group relative border-r border-b border-gray-200 p-4 sm:p-6 cursor-pointer transition hover:bg-gray-50 {{ $bestMatch && $bestMatch['id'] === $product['id'] ? 'ring-2 ring-indigo-500 bg-indigo-50' : '' }}">
                             
                             <!-- Image du produit -->
                             @if(!empty($product['image_url']))
@@ -973,7 +864,10 @@ Score de confiance entre 0 et 1."
 
                                 <!-- Nom du produit -->
                                 <h3 class="text-sm font-medium text-gray-900">
-                                    {{ $product['vendor'] }}
+                                    <a href="#">
+                                        <span aria-hidden="true" class="absolute inset-0"></span>
+                                        {{ $product['vendor'] }}
+                                    </a>
                                 </h3>
                                 <p class="text-xs text-gray-600 mt-1 truncate">{{ $product['name'] }}</p>
                                 <p class="text-xs text-gray-500 truncate">{{ $product['type'] }}</p>
@@ -997,20 +891,16 @@ Score de confiance entre 0 et 1."
                                 </p>
 
                                 <!-- Bouton voir produit -->
-                                @if($hasUrl)
+                                @if($product['url'] ?? false)
                                     <div class="mt-2">
-                                        <span class="inline-flex items-center text-xs font-medium text-indigo-600">
-                                            Ouvrir dans un nouvel onglet
+                                        <a href="{{ $product['url'] }}" target="_blank" 
+                                           onclick="event.stopPropagation()"
+                                           class="inline-flex items-center text-xs font-medium text-indigo-600 hover:text-indigo-500">
+                                            Voir produit
                                             <svg class="ml-1 h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                             </svg>
-                                        </span>
-                                    </div>
-                                @else
-                                    <div class="mt-2">
-                                        <span class="inline-flex items-center text-xs font-medium text-gray-400">
-                                            URL non disponible
-                                        </span>
+                                        </a>
                                     </div>
                                 @endif
 
@@ -1019,12 +909,7 @@ Score de confiance entre 0 et 1."
                                     <p class="text-xs text-gray-400 mt-2">ID: {{ $product['scrape_reference_id'] }}</p>
                                 @endif
                             </div>
-                            
-                        @if($hasUrl)
-                            </a>
-                        @else
-                            </div>
-                        @endif
+                        </div>
                     @endforeach
                 </div>
             </div>
