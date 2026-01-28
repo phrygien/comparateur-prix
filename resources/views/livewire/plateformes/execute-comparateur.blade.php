@@ -577,8 +577,15 @@ Exemple de format attendu :
      */
     private function filterByCoffretStatus($products, bool $sourceisCoffret): array
     {
+        // S'assurer que $products est une collection
+        if (is_array($products)) {
+            $products = collect($products);
+        }
+        
         $filtered = $products->filter(function ($product) use ($sourceisCoffret) {
-            $productIsCoffret = $this->isCoffret($product->toArray());
+            // Convertir en array si c'est un objet
+            $productArray = is_array($product) ? $product : (array) $product;
+            $productIsCoffret = $this->isCoffret($productArray);
 
             // Si la source est un coffret, garder seulement les coffrets
             // Si la source n'est pas un coffret, exclure les coffrets
