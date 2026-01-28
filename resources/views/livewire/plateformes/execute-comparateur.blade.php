@@ -50,16 +50,17 @@ new class extends Component {
                         'messages' => [
                             [
                                 'role' => 'system',
-                                'content' => 'Tu es un expert en extraction de données de produits cosmétiques. IMPORTANT: Le champ "type" doit contenir UNIQUEMENT la catégorie du produit (Crème, Huile, Sérum, Eau de Parfum, etc.), PAS le nom de la gamme. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
+                                'content' => 'Tu es un expert en extraction de données de produits cosmétiques. Sépare bien le type principal des détails du type. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
                             ],
                             [
                                 'role' => 'user',
                                 'content' => "Extrait les informations suivantes du nom de produit et retourne-les au format JSON strict :
 
 RÈGLES IMPORTANTES :
-- vendor : la marque du produit (ex: Dior, Shiseido, Chanel)
-- name : le nom de la gamme/ligne de produit UNIQUEMENT (ex: \"J'adore\", \"Vital Perfection\", \"La Vie Est Belle\")
-- type : UNIQUEMENT la catégorie/type du produit (ex: \"Huile pour le corps\", \"Eau de Parfum\", \"Crème visage\", \"Sérum\")
+- vendor : la marque du produit (ex: Dior, Shiseido, Chanel, Lancôme)
+- name : le nom de la gamme/ligne de produit UNIQUEMENT (ex: \"J'adore\", \"Vital Perfection\", \"La Nuit Trésor\")
+- type : la catégorie principale (ex: \"Eau de Parfum\", \"Crème\", \"Sérum\", \"Huile\")
+- type_details : TOUS les qualificatifs du type séparés par des virgules (ex: \"Intense, Vaporisateur\", \"Scintillante, pour le corps\", \"Enriched\")
 - variation : la contenance/taille avec unité (ex: \"200 ml\", \"50 ml\", \"30 g\")
 - is_coffret : true si c'est un coffret/set/kit, false sinon
 
@@ -67,29 +68,42 @@ Nom du produit : {$this->productName}
 
 EXEMPLES DE FORMAT ATTENDU :
 
-Exemple 1 - Produit : \"Dior J'adore Les Adorables Huile Scintillante Huile pour le corps 200ml\"
+Exemple 1 - Produit : \"Lancôme La Nuit Trésor Rouge Drama Eau de Parfum Intense Vaporisateur 30ml\"
+{
+  \"vendor\": \"Lancôme\",
+  \"name\": \"La Nuit Trésor Rouge Drama\",
+  \"type\": \"Eau de Parfum\",
+  \"type_details\": \"Intense, Vaporisateur\",
+  \"variation\": \"30 ml\",
+  \"is_coffret\": false
+}
+
+Exemple 2 - Produit : \"Dior J'adore Les Adorables Huile Scintillante Huile pour le corps 200ml\"
 {
   \"vendor\": \"Dior\",
   \"name\": \"J'adore Les Adorables\",
-  \"type\": \"Huile pour le corps\",
+  \"type\": \"Huile\",
+  \"type_details\": \"Scintillante, pour le corps\",
   \"variation\": \"200 ml\",
   \"is_coffret\": false
 }
 
-Exemple 2 - Produit : \"Chanel N°5 Eau de Parfum Vaporisateur 100 ml\"
+Exemple 3 - Produit : \"Chanel N°5 Eau de Parfum Vaporisateur 100 ml\"
 {
   \"vendor\": \"Chanel\",
   \"name\": \"N°5\",
   \"type\": \"Eau de Parfum\",
+  \"type_details\": \"Vaporisateur\",
   \"variation\": \"100 ml\",
   \"is_coffret\": false
 }
 
-Exemple 3 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream Enriched 50ml\"
+Exemple 4 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream Enriched 50ml\"
 {
   \"vendor\": \"Shiseido\",
   \"name\": \"Vital Perfection Uplifting and Firming\",
-  \"type\": \"Crème visage\",
+  \"type\": \"Crème\",
+  \"type_details\": \"Enriched, visage\",
   \"variation\": \"50 ml\",
   \"is_coffret\": false
 }"
@@ -127,31 +141,15 @@ Exemple 3 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream En
                     'name' => '',
                     'variation' => '',
                     'type' => '',
+                    'type_details' => '',
                     'is_coffret' => false
                 ], $decodedData);
-
-                // Post-traitement : nettoyer le type s'il contient des informations parasites
-                if (!empty($this->extractedData['type'])) {
-                    $type = $this->extractedData['type'];
-                    
-                    // Si le type contient le nom de la gamme, essayer de le nettoyer
-                    if (!empty($this->extractedData['name'])) {
-                        $name = $this->extractedData['name'];
-                        // Enlever le nom de la gamme du type s'il y est
-                        $type = trim(str_ireplace($name, '', $type));
-                    }
-                    
-                    // Enlever les tirets et espaces multiples
-                    $type = preg_replace('/\s*-\s*/', ' ', $type);
-                    $type = preg_replace('/\s+/', ' ', $type);
-                    
-                    $this->extractedData['type'] = trim($type);
-                }
 
                 \Log::info('Données extraites', [
                     'vendor' => $this->extractedData['vendor'] ?? '',
                     'name' => $this->extractedData['name'] ?? '',
                     'type' => $this->extractedData['type'] ?? '',
+                    'type_details' => $this->extractedData['type_details'] ?? '',
                     'variation' => $this->extractedData['variation'] ?? '',
                     'is_coffret' => $this->extractedData['is_coffret'] ?? false
                 ]);
@@ -216,14 +214,15 @@ Exemple 3 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream En
     }
 
     /**
-     * LOGIQUE DE RECHERCHE OPTIMISÉE
-     * 1. Filtrer par VENDOR (obligatoire)
-     * 2. Filtrer par statut COFFRET
-     * 3. FILTRAGE STRICT par NAME : TOUS les mots du name (hors vendor) doivent être présents
-     *    Fallback : au moins 1 mot si filtrage strict ne donne rien
-     * 4. SCORER avec :
-     *    - BONUS ÉNORME (+500) si recherche coffret ET produit est coffret (PRIORITÉ ABSOLUE)
-     *    - Matching sur le TYPE pour le reste du scoring
+     * NOUVELLE LOGIQUE DE RECHERCHE
+     * 1. Recherche LARGE : tous les produits de la base (filtrés par sites sélectionnés)
+     * 2. Scoring progressif avec critères en cascade :
+     *    - VENDOR match
+     *    - NAME match (tous les mots)
+     *    - TYPE PRINCIPAL match
+     *    - TYPE DETAILS match étape par étape
+     *    - VARIATION match
+     *    - BONUS COFFRET
      */
     private function searchMatchingProducts()
     {
@@ -241,204 +240,253 @@ Exemple 3 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream En
             'name' => '',
             'variation' => '',
             'type' => '',
+            'type_details' => '',
             'is_coffret' => false
         ], $this->extractedData);
 
         $vendor = $extractedData['vendor'] ?? '';
         $name = $extractedData['name'] ?? '';
         $type = $extractedData['type'] ?? '';
+        $typeDetails = $extractedData['type_details'] ?? '';
+        $variation = $extractedData['variation'] ?? '';
         $isCoffretSource = $extractedData['is_coffret'] ?? false;
 
-        // Si pas de vendor, on ne peut pas faire de recherche fiable
-        if (empty($vendor)) {
-            \Log::warning('searchMatchingProducts: vendor vide');
-            return;
-        }
-
-        // Extraire TOUS les mots du type (pour le scoring)
+        // Extraire les mots-clés
+        $vendorWords = $this->extractKeywords($vendor);
+        $nameWords = $this->extractKeywords($name);
         $typeWords = $this->extractKeywords($type);
         
-        // Extraire les mots du name EN EXCLUANT le vendor
-        $allNameWords = $this->extractKeywords($name);
-        
-        // Retirer le vendor des mots du name pour éviter les faux positifs
-        $vendorWords = $this->extractKeywords($vendor);
-        $nameWordsFiltered = array_diff($allNameWords, $vendorWords);
-        
-        // Prendre les 2 premiers mots APRÈS avoir retiré le vendor
-        $nameWords = array_slice(array_values($nameWordsFiltered), 0, 2);
+        // Extraire les détails du type comme liste
+        $typeDetailsList = [];
+        if (!empty($typeDetails)) {
+            $typeDetailsList = array_map('trim', explode(',', mb_strtolower($typeDetails)));
+            $typeDetailsList = array_filter($typeDetailsList);
+        }
 
-        \Log::info('Mots-clés pour la recherche', [
+        \Log::info('Critères de recherche extraits', [
             'vendor' => $vendor,
+            'vendorWords' => $vendorWords,
             'name' => $name,
-            'nameWords_brut' => $allNameWords,
-            'nameWords_filtres' => $nameWords,
+            'nameWords' => $nameWords,
             'type' => $type,
-            'typeWords' => $typeWords
+            'typeWords' => $typeWords,
+            'typeDetails' => $typeDetails,
+            'typeDetailsList' => $typeDetailsList,
+            'variation' => $variation,
+            'isCoffret' => $isCoffretSource
         ]);
 
-        // ÉTAPE 1: Recherche de base - UNIQUEMENT sur le vendor et les sites sélectionnés
-        $baseQuery = Product::query()
-            ->where('vendor', 'LIKE', "%{$vendor}%")
+        // ÉTAPE 1: Recherche LARGE - tous les produits filtrés par sites sélectionnés
+        $allProducts = Product::query()
             ->when(!empty($this->selectedSites), function ($q) {
                 $q->whereIn('web_site_id', $this->selectedSites);
             })
-            ->orderByDesc('id');
+            ->orderByDesc('id')
+            ->limit(5000) // Limite raisonnable pour éviter la surcharge
+            ->get();
 
-        $vendorProducts = $baseQuery->get();
-
-        if ($vendorProducts->isEmpty()) {
-            \Log::info('Aucun produit trouvé pour le vendor: ' . $vendor);
+        if ($allProducts->isEmpty()) {
+            \Log::info('Aucun produit trouvé dans la base');
             return;
         }
 
-        \Log::info('Produits trouvés pour le vendor', [
-            'vendor' => $vendor,
-            'count' => $vendorProducts->count()
+        \Log::info('Produits récupérés pour le scoring', [
+            'count' => $allProducts->count()
         ]);
 
-        // ÉTAPE 2: Filtrer par statut coffret
-        $filteredProducts = $this->filterByCoffretStatus($vendorProducts, $isCoffretSource);
+        // ÉTAPE 2: Filtrer par statut coffret EN PREMIER
+        $filteredProducts = $this->filterByCoffretStatus($allProducts, $isCoffretSource);
 
         if (empty($filteredProducts)) {
             \Log::info('Aucun produit après filtrage coffret');
             return;
         }
 
-        // ÉTAPE 2.5: FILTRAGE STRICT par les mots du NAME
-        // Si on a des mots du name, on filtre pour garder seulement les produits qui contiennent TOUS les mots
-        if (!empty($nameWords)) {
-            $nameFilteredProducts = collect($filteredProducts)->filter(function ($product) use ($nameWords) {
-                $productName = mb_strtolower($product['name'] ?? '');
-                
-                // Le produit doit contenir TOUS les mots du name (pas juste 1)
-                $matchCount = 0;
+        \Log::info('Produits après filtrage coffret', [
+            'count' => count($filteredProducts)
+        ]);
+
+        // ÉTAPE 3: SCORING PROGRESSIF
+        $scoredProducts = collect($filteredProducts)->map(function ($product) use (
+            $vendor, $vendorWords, 
+            $name, $nameWords, 
+            $type, $typeWords, 
+            $typeDetailsList,
+            $variation,
+            $isCoffretSource
+        ) {
+            $score = 0;
+            $debug = [
+                'id' => $product['id'] ?? 0,
+                'product_name' => $product['name'] ?? '',
+                'product_type' => $product['type'] ?? '',
+                'breakdown' => []
+            ];
+            
+            $productVendor = mb_strtolower($product['vendor'] ?? '');
+            $productName = mb_strtolower($product['name'] ?? '');
+            $productType = mb_strtolower($product['type'] ?? '');
+            $productVariation = mb_strtolower($product['variation'] ?? '');
+
+            // ==========================================
+            // 1. VENDOR MATCH (très important)
+            // ==========================================
+            $vendorScore = 0;
+            $vendorLower = mb_strtolower($vendor);
+            
+            if (str_contains($productVendor, $vendorLower)) {
+                $vendorScore = 100; // Match exact du vendor
+            } else {
+                // Vérifier mot par mot
+                $vendorMatchCount = 0;
+                foreach ($vendorWords as $word) {
+                    if (str_contains($productVendor, $word)) {
+                        $vendorMatchCount++;
+                    }
+                }
+                if ($vendorMatchCount > 0) {
+                    $vendorScore = 50 + ($vendorMatchCount * 10);
+                }
+            }
+            
+            $score += $vendorScore;
+            $debug['breakdown']['vendor'] = $vendorScore;
+
+            // ==========================================
+            // 2. NAME MATCH (important)
+            // ==========================================
+            $nameScore = 0;
+            $nameMatchCount = 0;
+            
+            if (!empty($nameWords)) {
                 foreach ($nameWords as $word) {
                     if (str_contains($productName, $word)) {
-                        $matchCount++;
+                        $nameMatchCount++;
                     }
                 }
                 
-                // Retourner true seulement si TOUS les mots sont trouvés
-                return $matchCount === count($nameWords);
-            })->values()->toArray();
-
-            // Si on a des résultats après filtrage strict par name, on utilise ces résultats
-            // Sinon essayer un filtrage plus souple (au moins 1 mot)
-            if (!empty($nameFilteredProducts)) {
-                $filteredProducts = $nameFilteredProducts;
-                \Log::info('Produits après filtrage STRICT par NAME (tous les mots)', [
-                    'count' => count($filteredProducts),
-                    'nameWords_required' => $nameWords
-                ]);
-            } else {
-                // Fallback : au moins 1 mot du name doit être présent
-                $nameFilteredProductsSoft = collect($filteredProducts)->filter(function ($product) use ($nameWords) {
-                    $productName = mb_strtolower($product['name'] ?? '');
-                    foreach ($nameWords as $word) {
-                        if (str_contains($productName, $word)) {
-                            return true;
-                        }
-                    }
-                    return false;
-                })->values()->toArray();
+                $nameMatchRatio = count($nameWords) > 0 ? $nameMatchCount / count($nameWords) : 0;
                 
-                if (!empty($nameFilteredProductsSoft)) {
-                    $filteredProducts = $nameFilteredProductsSoft;
-                    \Log::info('Produits après filtrage SOUPLE par NAME (au moins 1 mot)', [
-                        'count' => count($filteredProducts),
-                        'nameWords_used' => $nameWords
-                    ]);
+                if ($nameMatchRatio === 1.0) {
+                    $nameScore = 150; // Tous les mots du name matchent
+                } elseif ($nameMatchRatio >= 0.5) {
+                    $nameScore = 75 + ($nameMatchCount * 15); // Au moins 50% des mots
                 } else {
-                    \Log::info('Aucun produit après filtrage NAME, on garde tous les produits du vendor');
+                    $nameScore = $nameMatchCount * 20; // Quelques mots
                 }
             }
-        }
-
-        // ÉTAPE 3: Scoring basé sur le TYPE + BONUS COFFRET
-        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeWords, $type, $isCoffretSource) {
-            $score = 0;
-            $productType = mb_strtolower($product['type'] ?? '');
             
-            $matchedTypeWords = [];
+            $score += $nameScore;
+            $debug['breakdown']['name'] = [
+                'score' => $nameScore,
+                'matched' => $nameMatchCount,
+                'total' => count($nameWords)
+            ];
 
             // ==========================================
-            // PRIORITÉ ABSOLUE : BONUS COFFRET
+            // 3. TYPE PRINCIPAL MATCH (très important)
             // ==========================================
+            $typeScore = 0;
+            $typeLower = mb_strtolower(trim($type));
+            
+            // Vérifier si le type principal est présent
+            if (!empty($typeLower) && str_contains($productType, $typeLower)) {
+                $typeScore = 200; // ÉNORME bonus si type principal match
+                
+                // Bonus si c'est au début
+                if (str_starts_with($productType, $typeLower)) {
+                    $typeScore += 50;
+                }
+            } else {
+                // Sinon vérifier mot par mot
+                $typeMatchCount = 0;
+                foreach ($typeWords as $word) {
+                    if (str_contains($productType, $word)) {
+                        $typeMatchCount++;
+                    }
+                }
+                
+                if ($typeMatchCount > 0) {
+                    $typeScore = 50 + ($typeMatchCount * 25);
+                }
+            }
+            
+            $score += $typeScore;
+            $debug['breakdown']['type_principal'] = $typeScore;
+
+            // ==========================================
+            // 4. TYPE DETAILS MATCH PROGRESSIF (vérification étape par étape)
+            // ==========================================
+            $typeDetailsScore = 0;
+            $detailsMatched = [];
+            
+            if (!empty($typeDetailsList)) {
+                foreach ($typeDetailsList as $detail) {
+                    $detail = trim($detail);
+                    if (empty($detail)) continue;
+                    
+                    // Vérifier si ce détail est présent dans le type du produit
+                    if (str_contains($productType, $detail)) {
+                        $typeDetailsScore += 50; // +50 pour chaque détail qui match
+                        $detailsMatched[] = $detail;
+                    }
+                }
+                
+                // BONUS si tous les détails matchent
+                if (count($detailsMatched) === count($typeDetailsList)) {
+                    $typeDetailsScore += 100;
+                }
+            }
+            
+            $score += $typeDetailsScore;
+            $debug['breakdown']['type_details'] = [
+                'score' => $typeDetailsScore,
+                'matched' => $detailsMatched,
+                'total' => $typeDetailsList
+            ];
+
+            // ==========================================
+            // 5. VARIATION MATCH
+            // ==========================================
+            $variationScore = 0;
+            $variationLower = mb_strtolower(trim($variation));
+            
+            if (!empty($variationLower) && str_contains($productVariation, $variationLower)) {
+                $variationScore = 30;
+            }
+            
+            $score += $variationScore;
+            $debug['breakdown']['variation'] = $variationScore;
+
+            // ==========================================
+            // 6. BONUS COFFRET
+            // ==========================================
+            $coffretBonus = 0;
             $productIsCoffret = $this->isCoffret($product);
             
-            // Si on cherche un coffret ET que le produit est un coffret, ÉNORME BONUS
             if ($isCoffretSource && $productIsCoffret) {
-                $score += 500; // MEGA BONUS pour prioriser les coffrets
-            }
-
-            // ==========================================
-            // MATCHING SUR LE TYPE
-            // ==========================================
-            
-            // Vérifier si TOUS les mots du type sont présents
-            $allTypeWordsMatched = true;
-            $typeWordsCount = count($typeWords);
-            
-            foreach ($typeWords as $word) {
-                if (str_contains($productType, $word)) {
-                    $score += 30; // Chaque mot du type = +30 points
-                    $matchedTypeWords[] = $word;
-                } else {
-                    $allTypeWordsMatched = false;
-                }
+                $coffretBonus = 300; // ÉNORME BONUS pour coffret
             }
             
-            // BONUS ÉNORME si tous les mots du type correspondent
-            if ($allTypeWordsMatched && $typeWordsCount > 0) {
-                $score += 100; // +100 points pour un match complet du type
-            }
-            
-            // BONUS MAXIMUM si le type complet est une sous-chaîne exacte
-            $typeLower = mb_strtolower(trim($type));
-            if (!empty($typeLower) && str_contains($productType, $typeLower)) {
-                $score += 150; // +150 points pour type exact dans le produit
-            }
-            
-            // BONUS supplémentaire si le type du produit commence par le type recherché
-            if (!empty($typeLower) && str_starts_with($productType, $typeLower)) {
-                $score += 50; // +50 points si le type est au début
-            }
+            $score += $coffretBonus;
+            $debug['breakdown']['coffret_bonus'] = $coffretBonus;
+            $debug['total_score'] = $score;
 
             return [
                 'product' => $product,
                 'score' => $score,
-                'matched_type_words' => $matchedTypeWords,
-                'all_type_words_matched' => $allTypeWordsMatched,
-                'type_words_count' => $typeWordsCount,
-                'matched_count' => count($matchedTypeWords),
-                'is_coffret' => $productIsCoffret,
-                'coffret_bonus_applied' => ($isCoffretSource && $productIsCoffret)
+                'debug' => $debug,
+                'is_coffret' => $productIsCoffret
             ];
         })
-        // Trier par score décroissant (les coffrets auront le score le plus élevé)
+        // Trier par score décroissant
         ->sortByDesc('score')
         ->values();
 
-        \Log::info('Scoring détaillé (TYPE + BONUS COFFRET)', [
-            'total_products' => $scoredProducts->count(),
-            'type_recherche' => $type,
-            'type_words' => $typeWords,
-            'recherche_coffret' => $isCoffretSource,
-            'top_10_scores' => $scoredProducts->take(10)->map(function($item) {
-                return [
-                    'id' => $item['product']['id'] ?? 0,
-                    'score' => $item['score'],
-                    'is_coffret' => $item['is_coffret'],
-                    'coffret_bonus' => $item['coffret_bonus_applied'],
-                    'name' => $item['product']['name'] ?? '',
-                    'type' => $item['product']['type'] ?? '',
-                    'matched_type' => $item['matched_type_words'],
-                    'all_type_matched' => $item['all_type_words_matched'],
-                    'match_ratio' => $item['type_words_count'] > 0 
-                        ? round(($item['matched_count'] / $item['type_words_count']) * 100) . '%'
-                        : '0%'
-                ];
+        \Log::info('Scoring détaillé complet', [
+            'total_products_scored' => $scoredProducts->count(),
+            'top_20_scores' => $scoredProducts->take(20)->map(function($item) {
+                return $item['debug'];
             })->toArray()
         ]);
 
@@ -446,24 +494,17 @@ Exemple 3 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream En
         $scoredProducts = $scoredProducts->filter(fn($item) => $item['score'] > 0);
 
         if ($scoredProducts->isEmpty()) {
-            \Log::info('Aucun produit avec score > 0', [
-                'typeWords' => $typeWords
-            ]);
-            
-            // Fallback: si aucun match par type, on prend les 50 premiers produits du vendor
-            $this->matchingProducts = array_slice($filteredProducts, 0, 50);
-            $this->groupResultsByScrapeReference($this->matchingProducts);
-            $this->validateBestMatchWithAI();
+            \Log::info('Aucun produit avec score > 0');
             return;
         }
 
         // Extraire uniquement les produits des résultats scorés
         $rankedProducts = $scoredProducts->pluck('product')->toArray();
 
-        // Limiter à 50 résultats
-        $this->matchingProducts = array_slice($rankedProducts, 0, 50);
+        // Limiter à 100 résultats
+        $this->matchingProducts = array_slice($rankedProducts, 0, 100);
 
-        \Log::info('Produits après scoring', [
+        \Log::info('Résultats finaux', [
             'count' => count($this->matchingProducts),
             'best_score' => $scoredProducts->first()['score'] ?? 0,
             'worst_score' => $scoredProducts->last()['score'] ?? 0
@@ -648,6 +689,7 @@ Critères extraits :
 - Vendor: " . ($this->extractedData['vendor'] ?? 'N/A') . "
 - Name: " . ($this->extractedData['name'] ?? 'N/A') . "
 - Type: " . ($this->extractedData['type'] ?? 'N/A') . "
+- Type Details: " . ($this->extractedData['type_details'] ?? 'N/A') . "
 - Variation: " . ($this->extractedData['variation'] ?? 'N/A') . "
 
 Produits candidats :
@@ -668,6 +710,7 @@ Critères de scoring :
 - Vendor exact = +40 points
 - Name similaire = +30 points
 - Type identique = +20 points
+- Type details matchent = +10 points (chacun)
 - Variation identique = +10 points
 Score de confiance entre 0 et 1."
                             ]
