@@ -168,10 +168,11 @@ Exemple de format attendu :
     }
 
     /**
-     * NOUVELLE LOGIQUE DE RECHERCHE SIMPLIFIÉE
+     * NOUVELLE LOGIQUE DE RECHERCHE OPTIMISÉE
      * 1. Filtrer uniquement par vendor
      * 2. Filtrer par statut coffret
-     * 3. Scorer les résultats en fonction des mots-clés du name et du type
+     * 3. Scorer les résultats avec PRIORITÉ sur le TYPE (matching strict)
+     *    et seulement les 2 mots les plus importants du NAME
      */
     private function searchMatchingProducts()
     {
@@ -203,9 +204,18 @@ Exemple de format attendu :
             return;
         }
 
-        // Extraire les mots clés importants du name et du type
-        $nameWords = $this->extractKeywords($name);
+        // Extraire TOUS les mots du type (très important)
         $typeWords = $this->extractKeywords($type);
+        
+        // Extraire seulement les 2 PREMIERS mots importants du name
+        $allNameWords = $this->extractKeywords($name);
+        $nameWords = array_slice($allNameWords, 0, 2); // LIMITER À 2 MOTS
+
+        \Log::info('Mots-clés pour la recherche', [
+            'vendor' => $vendor,
+            'nameWords' => $nameWords,
+            'typeWords' => $typeWords
+        ]);
 
         // ÉTAPE 1: Recherche de base - UNIQUEMENT sur le vendor et les sites sélectionnés
         $baseQuery = Product::query()
@@ -235,8 +245,8 @@ Exemple de format attendu :
             return;
         }
 
-        // ÉTAPE 3: Scoring des produits basé sur les mots-clés du name et du type
-        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($nameWords, $typeWords) {
+        // ÉTAPE 3: Scoring avec HAUTE PRIORITÉ sur le TYPE
+        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($nameWords, $typeWords, $type) {
             $score = 0;
             $productName = mb_strtolower($product['name'] ?? '');
             $productType = mb_strtolower($product['type'] ?? '');
@@ -244,39 +254,72 @@ Exemple de format attendu :
             $matchedNameWords = [];
             $matchedTypeWords = [];
 
-            // Score basé sur les mots du name (plus important)
-            foreach ($nameWords as $word) {
-                if (str_contains($productName, $word)) {
-                    $score += 10; // Chaque mot du name trouvé = +10 points
-                    $matchedNameWords[] = $word;
-                }
-            }
-
-            // Score basé sur les mots du type (important aussi)
+            // ==========================================
+            // PRIORITÉ 1: MATCHING DU TYPE (TRÈS IMPORTANT)
+            // ==========================================
+            
+            // Vérifier si TOUS les mots du type sont présents
+            $allTypeWordsMatched = true;
             foreach ($typeWords as $word) {
                 if (str_contains($productType, $word)) {
-                    $score += 8; // Chaque mot du type trouvé = +8 points
+                    $score += 20; // Chaque mot du type = +20 points
                     $matchedTypeWords[] = $word;
+                } else {
+                    $allTypeWordsMatched = false;
                 }
             }
+            
+            // BONUS ÉNORME si tous les mots du type correspondent
+            if ($allTypeWordsMatched && count($typeWords) > 0) {
+                $score += 50; // +50 points pour un match complet du type
+            }
+            
+            // BONUS si le type complet est une sous-chaîne
+            $typeLower = mb_strtolower(trim($type));
+            if (!empty($typeLower) && str_contains($productType, $typeLower)) {
+                $score += 30; // +30 points pour type exact
+            }
 
-            // Bonus si le type correspond exactement
-            if (!empty($typeWords) && str_contains($productType, implode(' ', $typeWords))) {
-                $score += 15;
+            // ==========================================
+            // PRIORITÉ 2: MATCHING DU NAME (2 mots max, moins important)
+            // ==========================================
+            
+            foreach ($nameWords as $word) {
+                if (str_contains($productName, $word)) {
+                    $score += 5; // Chaque mot du name = seulement +5 points
+                    $matchedNameWords[] = $word;
+                }
             }
 
             return [
                 'product' => $product,
                 'score' => $score,
                 'matched_name_words' => $matchedNameWords,
-                'matched_type_words' => $matchedTypeWords
+                'matched_type_words' => $matchedTypeWords,
+                'all_type_words_matched' => $allTypeWordsMatched
             ];
         })
         // Trier par score décroissant
         ->sortByDesc('score')
-        // Ne garder que ceux qui ont un score > 0
-        ->filter(fn($item) => $item['score'] > 0)
         ->values();
+
+        \Log::info('Scoring détaillé', [
+            'total_products' => $scoredProducts->count(),
+            'top_5_scores' => $scoredProducts->take(5)->map(function($item) {
+                return [
+                    'id' => $item['product']['id'] ?? 0,
+                    'score' => $item['score'],
+                    'name' => $item['product']['name'] ?? '',
+                    'type' => $item['product']['type'] ?? '',
+                    'matched_name' => $item['matched_name_words'],
+                    'matched_type' => $item['matched_type_words'],
+                    'all_type_matched' => $item['all_type_words_matched']
+                ];
+            })->toArray()
+        ]);
+
+        // Ne garder que ceux qui ont un score > 0
+        $scoredProducts = $scoredProducts->filter(fn($item) => $item['score'] > 0);
 
         if ($scoredProducts->isEmpty()) {
             \Log::info('Aucun produit avec score > 0', [
@@ -284,7 +327,7 @@ Exemple de format attendu :
                 'typeWords' => $typeWords
             ]);
             
-            // Fallback: si aucun match par mots-clés, on prend tous les produits du vendor
+            // Fallback: si aucun match par mots-clés, on prend les 50 premiers produits du vendor
             $this->matchingProducts = array_slice($filteredProducts, 0, 50);
             $this->groupResultsByScrapeReference($this->matchingProducts);
             $this->validateBestMatchWithAI();
@@ -299,7 +342,8 @@ Exemple de format attendu :
 
         \Log::info('Produits après scoring', [
             'count' => count($this->matchingProducts),
-            'top_scores' => $scoredProducts->take(5)->pluck('score')->toArray()
+            'best_score' => $scoredProducts->first()['score'] ?? 0,
+            'worst_score' => $scoredProducts->last()['score'] ?? 0
         ]);
 
         // Grouper et valider avec l'IA
