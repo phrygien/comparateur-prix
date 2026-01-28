@@ -839,17 +839,8 @@ Score de confiance entre 0 et 1."
 
                 <div class="-mx-px grid grid-cols-2 border-l border-gray-200 sm:mx-0 md:grid-cols-3 lg:grid-cols-4">
                     @foreach($matchingProducts as $product)
-                        @php
-                            $hasUrl = !empty($product['url']);
-                            $cardClass = "group relative border-r border-b border-gray-200 p-4 sm:p-6 cursor-pointer transition hover:bg-gray-50 {{ $bestMatch && $bestMatch['id'] === $product['id'] ? 'ring-2 ring-indigo-500 bg-indigo-50' : '' }}";
-                        @endphp
-                        
-                        @if($hasUrl)
-                            <a href="{{ $product['url'] }}" target="_blank" rel="noopener noreferrer" 
-                               class="{{ $cardClass }}">
-                        @else
-                            <div class="{{ $cardClass }}">
-                        @endif
+                        <div wire:click="selectProduct({{ $product['id'] }})" 
+                            class="group relative border-r border-b border-gray-200 p-4 sm:p-6 cursor-pointer transition hover:bg-gray-50 {{ $bestMatch && $bestMatch['id'] === $product['id'] ? 'ring-2 ring-indigo-500 bg-indigo-50' : '' }}">
                             
                             <!-- Image du produit -->
                             @if(!empty($product['image_url']))
@@ -873,7 +864,10 @@ Score de confiance entre 0 et 1."
 
                                 <!-- Nom du produit -->
                                 <h3 class="text-sm font-medium text-gray-900">
-                                    {{ $product['vendor'] }}
+                                    <a href="#">
+                                        <span aria-hidden="true" class="absolute inset-0"></span>
+                                        {{ $product['vendor'] }}
+                                    </a>
                                 </h3>
                                 <p class="text-xs text-gray-600 mt-1 truncate">{{ $product['name'] }}</p>
                                 <p class="text-xs text-gray-500 truncate">{{ $product['type'] }}</p>
@@ -897,20 +891,16 @@ Score de confiance entre 0 et 1."
                                 </p>
 
                                 <!-- Bouton voir produit -->
-                                @if($hasUrl)
+                                @if($product['url'] ?? false)
                                     <div class="mt-2">
-                                        <span class="inline-flex items-center text-xs font-medium text-indigo-600">
-                                            Ouvrir dans un nouvel onglet
+                                        <a href="{{ $product['url'] }}" target="_blank" 
+                                           onclick="event.stopPropagation()"
+                                           class="inline-flex items-center text-xs font-medium text-indigo-600 hover:text-indigo-500">
+                                            Voir produit
                                             <svg class="ml-1 h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                             </svg>
-                                        </span>
-                                    </div>
-                                @else
-                                    <div class="mt-2">
-                                        <span class="inline-flex items-center text-xs font-medium text-gray-400">
-                                            URL non disponible
-                                        </span>
+                                        </a>
                                     </div>
                                 @endif
 
@@ -919,12 +909,7 @@ Score de confiance entre 0 et 1."
                                     <p class="text-xs text-gray-400 mt-2">ID: {{ $product['scrape_reference_id'] }}</p>
                                 @endif
                             </div>
-                            
-                        @if($hasUrl)
-                            </a>
-                        @else
-                            </div>
-                        @endif
+                        </div>
                     @endforeach
                 </div>
             </div>
