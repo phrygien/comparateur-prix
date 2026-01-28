@@ -18,7 +18,7 @@ new class extends Component {
     public $availableSites = [];
     public $selectedSites = [];
     public $groupedResults = [];
-    
+
     // Nouveaux champs pour recherche manuelle
     public $manualSearchMode = false;
     public $manualVendor = '';
@@ -37,7 +37,7 @@ new class extends Component {
 
         // Par défaut, tous les sites sont sélectionnés
         $this->selectedSites = collect($this->availableSites)->pluck('id')->toArray();
-        
+
         // Lancer automatiquement l'extraction au chargement
         $this->extractSearchTerme();
     }
@@ -61,78 +61,58 @@ new class extends Component {
                         'messages' => [
                             [
                                 'role' => 'system',
-                                'content' => 'Tu es un expert en extraction de données de produits cosmétiques. Tu dois analyser le nom du produit et extraire les informations structurées suivantes. IMPORTANT : Si des mots appartiennent au nom de la gamme mais sont dans le type, ils DOIVENT être déplacés dans le "name". Le type doit contenir UNIQUEMENT la catégorie du produit. Réponds UNIQUEMENT avec un objet JSON valide.'
+                                'content' => 'Tu es un expert en extraction de données de produits cosmétiques. IMPORTANT: Le champ "type" doit contenir UNIQUEMENT la catégorie du produit (Crème, Huile, Sérum, Eau de Parfum, etc.), PAS le nom de la gamme. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
                             ],
                             [
                                 'role' => 'user',
-                                'content' => "Analyse ce nom de produit cosmétique et extrais les informations structurées :
-
-PRODUIT À ANALYSER : \"{$this->productName}\"
+                                'content' => "Extrait les informations suivantes du nom de produit et retourne-les au format JSON strict :
 
 RÈGLES IMPORTANTES :
-1. vendor : la marque du produit (ex: Dior, Shiseido, Chanel)
-2. name : le nom COMPLET de la gamme/ligne de produit
-   - Si des mots comme 'Divine', 'Collector', 'L\\'Or', 'L\\'Eau' apparaissent, ils doivent faire partie du name
-   - Le name doit être aussi complet que possible
-3. type : UNIQUEMENT la catégorie/type du produit (ex: \"Huile pour le corps\", \"Eau de Parfum\", \"Crème visage\", \"Sérum\")
-   - N'inclus PAS les mots de la gamme dans le type
-4. variation : la contenance/taille avec unité (ex: \"200 ml\", \"50 ml\", \"30 g\")
-5. is_coffret : true si c'est un coffret/set/kit, false sinon
-6. search_keywords : une liste de mots-clés significatifs pour la recherche (génère ces mots-clés toi-même en analysant le produit)
-   - Ces mots-clés doivent aider à trouver des produits similaires
-   - Inclus les mots importants du name et du type
-   - Exclut les mots trop communs comme 'de', 'pour', 'avec'
+- vendor : la marque du produit (ex: Dior, Shiseido, Chanel)
+- name : le nom de la gamme/ligne de produit UNIQUEMENT (ex: \"J'adore\", \"Vital Perfection\", \"La Vie Est Belle\")
+- type : UNIQUEMENT la catégorie/type du produit (ex: \"Huile pour le corps\", \"Eau de Parfum\", \"Crème visage\", \"Sérum\")
+- variation : la contenance/taille avec unité (ex: \"200 ml\", \"50 ml\", \"30 g\")
+- is_coffret : true si c'est un coffret/set/kit, false sinon
 
-Ton analyse doit être intelligente et comprendre que :
-- 'Divine' dans 'Eau de Parfum Divine' doit aller dans le name
-- 'Collector' est un mot de gamme, pas de type
-- 'L\\'Or' et 'L\\'Eau' font partie du nom de gamme
+Nom du produit : {$this->productName}
 
-EXEMPLES :
+EXEMPLES DE FORMAT ATTENDU :
 
-Exemple 1 - Produit : \"Jean Paul Gaultier - Gaultier Divine - Gaultier Divine Collector Eau de Parfum 100ml\"
-{
-  \"vendor\": \"Jean Paul Gaultier\",
-  \"name\": \"Gaultier Divine Collector\",
-  \"type\": \"Eau de Parfum\",
-  \"variation\": \"100 ml\",
-  \"is_coffret\": false,
-  \"search_keywords\": [\"gaultier\", \"divine\", \"collector\", \"eau de parfum\"]
-}
-
-Exemple 2 - Produit : \"Dior - J'adore L'Or - Eau de Parfum L'Or 30ml\"
+Exemple 1 - Produit : \"Dior J'adore Les Adorables Huile Scintillante Huile pour le corps 200ml\"
 {
   \"vendor\": \"Dior\",
-  \"name\": \"J'adore L'Or\",
-  \"type\": \"Eau de Parfum\",
-  \"variation\": \"30 ml\",
-  \"is_coffret\": false,
-  \"search_keywords\": [\"j'adore\", \"l'or\", \"dior\", \"parfum\"]
+  \"name\": \"J'adore Les Adorables\",
+  \"type\": \"Huile pour le corps\",
+  \"variation\": \"200 ml\",
+  \"is_coffret\": false
 }
 
-Exemple 3 - Produit : \"Chanel N°5 Eau de Parfum Vaporisateur 100 ml\"
+Exemple 2 - Produit : \"Chanel N°5 Eau de Parfum Vaporisateur 100 ml\"
 {
   \"vendor\": \"Chanel\",
   \"name\": \"N°5\",
   \"type\": \"Eau de Parfum Vaporisateur\",
   \"variation\": \"100 ml\",
-  \"is_coffret\": false,
-  \"search_keywords\": [\"n°5\", \"chanel\", \"vaporisateur\", \"eau de parfum\"]
+  \"is_coffret\": false
 }
 
-Exemple 4 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream Enriched 50ml\"
+Exemple 3 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream Enriched 50ml\"
 {
   \"vendor\": \"Shiseido\",
   \"name\": \"Vital Perfection Uplifting and Firming\",
   \"type\": \"Crème visage Enrichie\",
   \"variation\": \"50 ml\",
-  \"is_coffret\": false,
-  \"search_keywords\": [\"vital\", \"perfection\", \"uplifting\", \"firming\", \"creme\", \"enrichie\"]
+  \"is_coffret\": false
 }
 
-Maintenant, analyse ce produit : \"{$this->productName}\"
-
-Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
+Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum Intense Vaporisateur 30ml\"
+{
+  \"vendor\": \"Lancôme\",
+  \"name\": \"La Nuit Trésor Rouge Drama\",
+  \"type\": \"Eau de Parfum Intense Vaporisateur\",
+  \"variation\": \"30 ml\",
+  \"is_coffret\": false
+}"
                             ]
                         ],
                         'temperature' => 0.3,
@@ -167,8 +147,7 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
                     'name' => '',
                     'variation' => '',
                     'type' => '',
-                    'is_coffret' => false,
-                    'search_keywords' => []
+                    'is_coffret' => false
                 ], $decodedData);
 
                 // Initialiser les champs de recherche manuelle
@@ -180,29 +159,28 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
                 // Post-traitement : nettoyer le type s'il contient des informations parasites
                 if (!empty($this->extractedData['type'])) {
                     $type = $this->extractedData['type'];
-                    
+
                     // Si le type contient le nom de la gamme, essayer de le nettoyer
                     if (!empty($this->extractedData['name'])) {
                         $name = $this->extractedData['name'];
                         // Enlever le nom de la gamme du type s'il y est
                         $type = trim(str_ireplace($name, '', $type));
                     }
-                    
+
                     // Enlever les tirets et espaces multiples
                     $type = preg_replace('/\s*-\s*/', ' ', $type);
                     $type = preg_replace('/\s+/', ' ', $type);
-                    
+
                     $this->extractedData['type'] = trim($type);
                     $this->manualType = $this->extractedData['type'];
                 }
 
-                \Log::info('Données extraites par OpenAI', [
+                \Log::info('Données extraites', [
                     'vendor' => $this->extractedData['vendor'] ?? '',
                     'name' => $this->extractedData['name'] ?? '',
                     'type' => $this->extractedData['type'] ?? '',
                     'variation' => $this->extractedData['variation'] ?? '',
-                    'is_coffret' => $this->extractedData['is_coffret'] ?? false,
-                    'search_keywords' => $this->extractedData['search_keywords'] ?? []
+                    'is_coffret' => $this->extractedData['is_coffret'] ?? false
                 ]);
 
                 // Rechercher les produits correspondants
@@ -247,16 +225,14 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
                 'name' => trim($this->manualName),
                 'type' => trim($this->manualType),
                 'variation' => trim($this->manualVariation),
-                'is_coffret' => $this->isCoffretFromString($this->manualName . ' ' . $this->manualType),
-                'search_keywords' => $this->extractKeywordsFromManual($this->manualName, $this->manualType)
+                'is_coffret' => $this->isCoffretFromString($this->manualName . ' ' . $this->manualType)
             ];
 
             \Log::info('Recherche manuelle', [
                 'vendor' => $this->extractedData['vendor'],
                 'name' => $this->extractedData['name'],
                 'type' => $this->extractedData['type'],
-                'variation' => $this->extractedData['variation'],
-                'search_keywords' => $this->extractedData['search_keywords']
+                'variation' => $this->extractedData['variation']
             ]);
 
             // Lancer la recherche
@@ -274,23 +250,6 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
     }
 
     /**
-     * Extrait les mots-clés pour la recherche manuelle
-     */
-    private function extractKeywordsFromManual(string $name, string $type): array
-    {
-        $combined = mb_strtolower($name . ' ' . $type);
-        $words = preg_split('/[\s\-\.]+/', $combined, -1, PREG_SPLIT_NO_EMPTY);
-        
-        $stopWords = ['de', 'la', 'le', 'les', 'des', 'du', 'un', 'une', 'et', 'ou', 'pour', 'avec', 'sans'];
-        
-        $keywords = array_filter($words, function ($word) use ($stopWords) {
-            return mb_strlen($word) >= 3 && !in_array($word, $stopWords) && !is_numeric($word);
-        });
-        
-        return array_values(array_unique($keywords));
-    }
-
-    /**
      * Activer/désactiver le mode de recherche manuelle
      */
     public function toggleManualSearch()
@@ -305,13 +264,13 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
     {
         $cofferKeywords = ['coffret', 'set', 'kit', 'duo', 'trio', 'collection'];
         $textLower = mb_strtolower($text);
-        
+
         foreach ($cofferKeywords as $keyword) {
             if (str_contains($textLower, $keyword)) {
                 return true;
             }
         }
-        
+
         return false;
     }
 
@@ -352,7 +311,13 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
 
     /**
      * LOGIQUE DE RECHERCHE OPTIMISÉE
-     * Utilise les search_keywords générés par OpenAI
+     * 1. Filtrer par VENDOR (obligatoire)
+     * 2. Filtrer par statut COFFRET
+     * 3. FILTRAGE STRICT par NAME : TOUS les mots du name (hors vendor) doivent être présents
+     *    Fallback progressif si filtrage strict ne donne rien
+     * 4. SCORER avec :
+     *    - BONUS ÉNORME (+500) si recherche coffret ET produit est coffret (PRIORITÉ ABSOLUE)
+     *    - Matching HIÉRARCHIQUE sur le TYPE : vérifier étape par étape
      */
     private function searchMatchingProducts()
     {
@@ -370,15 +335,13 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
             'name' => '',
             'variation' => '',
             'type' => '',
-            'is_coffret' => false,
-            'search_keywords' => []
+            'is_coffret' => false
         ], $this->extractedData);
 
         $vendor = $extractedData['vendor'] ?? '';
         $name = $extractedData['name'] ?? '';
         $type = $extractedData['type'] ?? '';
         $isCoffretSource = $extractedData['is_coffret'] ?? false;
-        $searchKeywords = $extractedData['search_keywords'] ?? [];
 
         // Si pas de vendor, on ne peut pas faire de recherche fiable
         if (empty($vendor)) {
@@ -389,12 +352,24 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
         // Extraire les parties du TYPE pour matching hiérarchique
         $typeParts = $this->extractTypeParts($type);
 
-        \Log::info('Mots-clés pour la recherche (générés par OpenAI)', [
+        // Extraire les mots du name EN EXCLUANT le vendor
+        $allNameWords = $this->extractKeywords($name);
+
+        // Retirer le vendor des mots du name pour éviter les faux positifs
+        $vendorWords = $this->extractKeywords($vendor);
+        $nameWordsFiltered = array_diff($allNameWords, $vendorWords);
+
+        // PRENDRE TOUS LES MOTS significatifs (pas seulement 2)
+        // Cela permet de capturer des mots importants comme "Purple" même s'ils sont loin dans le nom
+        $nameWords = array_values($nameWordsFiltered);
+
+        \Log::info('Mots-clés pour la recherche', [
             'vendor' => $vendor,
             'name' => $name,
+            'nameWords_brut' => $allNameWords,
+            'nameWords_filtres' => $nameWords,
             'type' => $type,
-            'type_parts' => $typeParts,
-            'search_keywords' => $searchKeywords
+            'type_parts' => $typeParts
         ]);
 
         // ÉTAPE 1: Recherche de base - UNIQUEMENT sur le vendor et les sites sélectionnés
@@ -428,7 +403,7 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
         // ÉTAPE 2.5: FILTRAGE STRICT PAR TYPE DE BASE
         // Exclure les produits qui ont un type de base différent (ex: déodorant vs eau de toilette)
         $typeFilteredProducts = $this->filterByBaseType($filteredProducts, $type);
-        
+
         if (empty($typeFilteredProducts)) {
             \Log::info('Aucun produit après filtrage par type de base, on garde tous les produits');
             $typeFilteredProducts = $filteredProducts;
@@ -440,92 +415,110 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
             $filteredProducts = $typeFilteredProducts;
         }
 
-        // ÉTAPE 2.6: FILTRAGE PROGRESSIF par les search_keywords d'OpenAI
-        $keywordFilteredProducts = $filteredProducts;
-        
-        if (!empty($searchKeywords)) {
-            // TENTATIVE 1: Au moins 80% des mots-clés doivent être présents
-            $minRequired = max(1, (int)ceil(count($searchKeywords) * 0.8));
-            
-            $mostKeywordsMatch = collect($filteredProducts)->filter(function ($product) use ($searchKeywords, $minRequired) {
-                $productText = mb_strtolower(($product['name'] ?? '') . ' ' . ($product['type'] ?? ''));
-                
+        // ÉTAPE 2.6: FILTRAGE PROGRESSIF par les mots du NAME
+        $nameFilteredProducts = $filteredProducts;
+
+        if (!empty($nameWords)) {
+            // TENTATIVE 1: TOUS les mots doivent être présents (filtrage le plus strict)
+            $allWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords) {
+                $productName = mb_strtolower($product['name'] ?? '');
+
                 $matchCount = 0;
-                foreach ($searchKeywords as $keyword) {
-                    $keywordLower = mb_strtolower($keyword);
-                    if (str_contains($productText, $keywordLower)) {
+                foreach ($nameWords as $word) {
+                    if (str_contains($productName, $word)) {
                         $matchCount++;
                     }
                 }
-                
-                return $matchCount >= $minRequired;
+
+                return $matchCount === count($nameWords);
             })->values()->toArray();
-            
-            if (!empty($mostKeywordsMatch)) {
-                $keywordFilteredProducts = $mostKeywordsMatch;
-                \Log::info('✅ Produits après filtrage 80% par search_keywords (au moins ' . $minRequired . ' mots sur ' . count($searchKeywords) . ')', [
-                    'count' => count($keywordFilteredProducts),
-                    'search_keywords' => $searchKeywords
+
+            if (!empty($allWordsMatch)) {
+                $nameFilteredProducts = $allWordsMatch;
+                \Log::info('✅ Produits après filtrage STRICT par NAME (TOUS les mots)', [
+                    'count' => count($nameFilteredProducts),
+                    'nameWords_required' => $nameWords
                 ]);
             } else {
-                // TENTATIVE 2: Au moins 50% des mots-clés doivent être présents
-                $minRequired = max(1, (int)ceil(count($searchKeywords) * 0.5));
-                
-                $halfKeywordsMatch = collect($filteredProducts)->filter(function ($product) use ($searchKeywords, $minRequired) {
-                    $productText = mb_strtolower(($product['name'] ?? '') . ' ' . ($product['type'] ?? ''));
-                    
+                // TENTATIVE 2: Au moins 80% des mots doivent être présents
+                $minRequired = max(1, (int) ceil(count($nameWords) * 0.8));
+
+                $mostWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $minRequired) {
+                    $productName = mb_strtolower($product['name'] ?? '');
+
                     $matchCount = 0;
-                    foreach ($searchKeywords as $keyword) {
-                        $keywordLower = mb_strtolower($keyword);
-                        if (str_contains($productText, $keywordLower)) {
+                    foreach ($nameWords as $word) {
+                        if (str_contains($productName, $word)) {
                             $matchCount++;
                         }
                     }
-                    
+
                     return $matchCount >= $minRequired;
                 })->values()->toArray();
-                
-                if (!empty($halfKeywordsMatch)) {
-                    $keywordFilteredProducts = $halfKeywordsMatch;
-                    \Log::info('⚠️ Produits après filtrage 50% par search_keywords (au moins ' . $minRequired . ' mots sur ' . count($searchKeywords) . ')', [
-                        'count' => count($keywordFilteredProducts),
-                        'search_keywords' => $searchKeywords
+
+                if (!empty($mostWordsMatch)) {
+                    $nameFilteredProducts = $mostWordsMatch;
+                    \Log::info('✅ Produits après filtrage 80% par NAME (au moins ' . $minRequired . ' mots sur ' . count($nameWords) . ')', [
+                        'count' => count($nameFilteredProducts),
+                        'nameWords_used' => $nameWords
                     ]);
                 } else {
-                    // FALLBACK FINAL: Au moins 1 mot-clé doit être présent
-                    $anyKeywordMatch = collect($filteredProducts)->filter(function ($product) use ($searchKeywords) {
-                        $productText = mb_strtolower(($product['name'] ?? '') . ' ' . ($product['type'] ?? ''));
-                        foreach ($searchKeywords as $keyword) {
-                            $keywordLower = mb_strtolower($keyword);
-                            if (str_contains($productText, $keywordLower)) {
-                                return true;
+                    // TENTATIVE 3: Au moins 50% des mots doivent être présents
+                    $minRequired = max(1, (int) ceil(count($nameWords) * 0.5));
+
+                    $halfWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $minRequired) {
+                        $productName = mb_strtolower($product['name'] ?? '');
+
+                        $matchCount = 0;
+                        foreach ($nameWords as $word) {
+                            if (str_contains($productName, $word)) {
+                                $matchCount++;
                             }
                         }
-                        return false;
+
+                        return $matchCount >= $minRequired;
                     })->values()->toArray();
-                    
-                    if (!empty($anyKeywordMatch)) {
-                        $keywordFilteredProducts = $anyKeywordMatch;
-                        \Log::info('⚠️ Produits après filtrage SOUPLE par search_keywords (au moins 1 mot)', [
-                            'count' => count($keywordFilteredProducts),
-                            'search_keywords' => $searchKeywords
+
+                    if (!empty($halfWordsMatch)) {
+                        $nameFilteredProducts = $halfWordsMatch;
+                        \Log::info('⚠️ Produits après filtrage 50% par NAME (au moins ' . $minRequired . ' mots sur ' . count($nameWords) . ')', [
+                            'count' => count($nameFilteredProducts),
+                            'nameWords_used' => $nameWords
                         ]);
                     } else {
-                        \Log::info('❌ Aucun produit après filtrage search_keywords, on garde tous les produits du vendor');
+                        // FALLBACK FINAL: Au moins 1 mot doit être présent
+                        $anyWordMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords) {
+                            $productName = mb_strtolower($product['name'] ?? '');
+                            foreach ($nameWords as $word) {
+                                if (str_contains($productName, $word)) {
+                                    return true;
+                                }
+                            }
+                            return false;
+                        })->values()->toArray();
+
+                        if (!empty($anyWordMatch)) {
+                            $nameFilteredProducts = $anyWordMatch;
+                            \Log::info('⚠️ Produits après filtrage SOUPLE par NAME (au moins 1 mot)', [
+                                'count' => count($nameFilteredProducts),
+                                'nameWords_used' => $nameWords
+                            ]);
+                        } else {
+                            \Log::info('❌ Aucun produit après filtrage NAME, on garde tous les produits du vendor');
+                        }
                     }
                 }
             }
-            
-            $filteredProducts = $keywordFilteredProducts;
+
+            $filteredProducts = $nameFilteredProducts;
         }
 
-        // ÉTAPE 3: Scoring hiérarchique basé sur le TYPE + BONUS COFFRET + BONUS SEARCH_KEYWORDS
-        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $type, $isCoffretSource, $searchKeywords) {
+        // ÉTAPE 3: Scoring hiérarchique basé sur le TYPE + BONUS COFFRET + BONUS NAME
+        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $type, $isCoffretSource, $nameWords) {
             $score = 0;
             $productType = mb_strtolower($product['type'] ?? '');
             $productName = mb_strtolower($product['name'] ?? '');
-            $productText = $productName . ' ' . $productType;
-            
+
             $matchedTypeParts = [];
             $typePartsCount = count($typeParts);
 
@@ -533,70 +526,41 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
             // PRIORITÉ ABSOLUE : BONUS COFFRET
             // ==========================================
             $productIsCoffret = $this->isCoffret($product);
-            
+
             // Si on cherche un coffret ET que le produit est un coffret, ÉNORME BONUS
             if ($isCoffretSource && $productIsCoffret) {
                 $score += 500; // MEGA BONUS pour prioriser les coffrets
             }
 
             // ==========================================
-            // BONUS SEARCH_KEYWORDS : Utilise les mots-clés générés par OpenAI
+            // BONUS NAME : Compter combien de mots du name sont présents
             // ==========================================
-            if (!empty($searchKeywords)) {
-                $keywordMatchCount = 0;
-                $nameOnlyMatchCount = 0;
-                
-                foreach ($searchKeywords as $keyword) {
-                    $keywordLower = mb_strtolower($keyword);
-                    
-                    // Vérifier dans le texte complet (name + type)
-                    if (str_contains($productText, $keywordLower)) {
-                        $keywordMatchCount++;
-                    }
-                    
-                    // Vérifier dans le name seulement
-                    if (str_contains($productName, $keywordLower)) {
-                        $nameOnlyMatchCount++;
+            if (!empty($nameWords)) {
+                $nameMatchCount = 0;
+                foreach ($nameWords as $word) {
+                    if (str_contains($productName, $word)) {
+                        $nameMatchCount++;
                     }
                 }
-                
-                // Bonus proportionnel au nombre de mots-clés matchés
-                $keywordMatchRatio = count($searchKeywords) > 0 ? ($keywordMatchCount / count($searchKeywords)) : 0;
-                $keywordBonus = (int)($keywordMatchRatio * 400); // Jusqu'à +400 points
-                $score += $keywordBonus;
-                
-                // BONUS ÉNORME si TOUS les mots-clés matchent
-                if ($keywordMatchCount === count($searchKeywords) && count($searchKeywords) > 0) {
-                    $score += 300; // +300 points supplémentaires pour match parfait
-                }
-                
-                // BONUS supplémentaire si les mots-clés sont dans le name (pas seulement le type)
-                if ($nameOnlyMatchCount > 0) {
-                    $nameOnlyBonus = (int)(($nameOnlyMatchCount / count($searchKeywords)) * 200); // Jusqu'à +200 points
-                    $score += $nameOnlyBonus;
-                }
-                
-                // BONUS supplémentaire si les mots-clés sont au début du name
-                $nameStartsWithKeyword = false;
-                foreach ($searchKeywords as $keyword) {
-                    $keywordLower = mb_strtolower($keyword);
-                    if (str_starts_with($productName, $keywordLower)) {
-                        $nameStartsWithKeyword = true;
-                        break;
-                    }
-                }
-                
-                if ($nameStartsWithKeyword) {
-                    $score += 150; // +150 points si le name commence par un mot-clé
+
+                // Bonus proportionnel au nombre de mots matchés
+                // Plus il y a de mots qui matchent, plus le score est élevé
+                $nameMatchRatio = count($nameWords) > 0 ? ($nameMatchCount / count($nameWords)) : 0;
+                $nameBonus = (int) ($nameMatchRatio * 300); // Jusqu'à +300 points
+                $score += $nameBonus;
+
+                // BONUS EXTRA si TOUS les mots matchent
+                if ($nameMatchCount === count($nameWords)) {
+                    $score += 200; // +200 points supplémentaires pour match parfait
                 }
             }
 
             // ==========================================
             // MATCHING HIÉRARCHIQUE SUR LE TYPE
             // ==========================================
-            
+
             $typeMatched = false; // Flag pour savoir si le type correspond
-            
+
             if (!empty($typeParts) && !empty($productType)) {
                 // BONUS CRITIQUE : Vérifier que le TYPE DE BASE correspond (ex: "Eau de Toilette" vs "Déodorant")
                 // C'est la partie la plus importante du type (généralement la première)
@@ -622,7 +586,7 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
                         ]);
                     }
                 }
-                
+
                 // Vérifier chaque partie du type dans l'ordre
                 foreach ($typeParts as $index => $part) {
                     $partLower = mb_strtolower(trim($part));
@@ -633,14 +597,14 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
                             // La première partie (la plus importante) donne plus de points
                             $partBonus = 100 - ($index * 20); // 100, 80, 60, 40, etc.
                             $partBonus = max($partBonus, 20); // Minimum 20 points
-                            
+
                             $score += $partBonus;
                             $matchedTypeParts[] = [
                                 'part' => $part,
                                 'bonus' => $partBonus,
                                 'position' => $index + 1
                             ];
-                            
+
                             // Si au moins une partie du type correspond, on considère que le type match
                             if ($index == 0 || $typeMatched) {
                                 $typeMatched = true;
@@ -648,19 +612,19 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
                         }
                     }
                 }
-                
+
                 // BONUS supplémentaire si TOUTES les parties du type correspondent
                 if (count($matchedTypeParts) === $typePartsCount && $typePartsCount > 0) {
                     $score += 150; // +150 points pour un match complet
                 }
-                
+
                 // BONUS MAXIMUM si le type complet est une sous-chaîne exacte
                 $typeLower = mb_strtolower(trim($type));
                 if (!empty($typeLower) && str_contains($productType, $typeLower)) {
                     $score += 200; // +200 points pour type exact dans le produit
                     $typeMatched = true;
                 }
-                
+
                 // BONUS supplémentaire si le type du produit commence par le type recherché
                 if (!empty($typeLower) && str_starts_with($productType, $typeLower)) {
                     $score += 100; // +100 points si le type est au début
@@ -674,83 +638,79 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
                 'all_type_parts_matched' => count($matchedTypeParts) === $typePartsCount,
                 'type_parts_count' => $typePartsCount,
                 'matched_count' => count($matchedTypeParts),
-                'type_matched' => $typeMatched,
+                'type_matched' => $typeMatched, // Nouveau flag
                 'is_coffret' => $productIsCoffret,
                 'coffret_bonus_applied' => ($isCoffretSource && $productIsCoffret),
-                'keyword_match_count' => !empty($searchKeywords) ? array_reduce($searchKeywords, function($count, $keyword) use ($productText) {
-                    return $count + (str_contains($productText, mb_strtolower($keyword)) ? 1 : 0);
+                'name_match_count' => !empty($nameWords) ? array_reduce($nameWords, function ($count, $word) use ($productName) {
+                    return $count + (str_contains($productName, $word) ? 1 : 0);
                 }, 0) : 0,
-                'name_only_match_count' => !empty($searchKeywords) ? array_reduce($searchKeywords, function($count, $keyword) use ($productName) {
-                    return $count + (str_contains($productName, mb_strtolower($keyword)) ? 1 : 0);
-                }, 0) : 0,
-                'keywords_total' => count($searchKeywords)
+                'name_words_total' => count($nameWords)
             ];
         })
-        // Trier par score décroissant
-        ->sortByDesc('score')
-        ->values();
+            // Trier par score décroissant (les coffrets et meilleurs matchs de nom auront le score le plus élevé)
+            ->sortByDesc('score')
+            ->values();
 
-        \Log::info('Scoring détaillé (TYPE HIÉRARCHIQUE + BONUS COFFRET + BONUS SEARCH_KEYWORDS OpenAI)', [
+        \Log::info('Scoring détaillé (TYPE HIÉRARCHIQUE + BONUS COFFRET + BONUS NAME)', [
             'total_products' => $scoredProducts->count(),
             'type_recherche' => $type,
             'type_parts' => $typeParts,
-            'search_keywords' => $searchKeywords,
+            'name_words' => $nameWords,
             'recherche_coffret' => $isCoffretSource,
-            'top_10_scores' => $scoredProducts->take(10)->map(function($item) {
+            'top_10_scores' => $scoredProducts->take(10)->map(function ($item) {
                 return [
                     'id' => $item['product']['id'] ?? 0,
                     'score' => $item['score'],
                     'is_coffret' => $item['is_coffret'],
                     'coffret_bonus' => $item['coffret_bonus_applied'],
-                    'keyword_match' => $item['keyword_match_count'] . '/' . $item['keywords_total'],
-                    'name_only_match' => $item['name_only_match_count'] . '/' . $item['keywords_total'],
+                    'name_match' => $item['name_match_count'] . '/' . $item['name_words_total'],
                     'type_match' => $item['type_matched'],
                     'name' => $item['product']['name'] ?? '',
                     'type' => $item['product']['type'] ?? '',
-                    'matched_type_parts' => array_map(function($part) {
+                    'matched_type_parts' => array_map(function ($part) {
                         return "{$part['part']} (+{$part['bonus']} pts)";
                     }, $item['matched_type_parts']),
                     'all_type_matched' => $item['all_type_parts_matched'],
-                    'match_ratio' => $item['type_parts_count'] > 0 
+                    'match_ratio' => $item['type_parts_count'] > 0
                         ? round(($item['matched_count'] / $item['type_parts_count']) * 100) . '%'
                         : '0%'
                 ];
             })->toArray()
         ]);
 
-        // FILTRAGE CRITIQUE : Ne garder QUE les produits qui matchent à la fois sur KEYWORDS et TYPE
-        $scoredProducts = $scoredProducts->filter(function($item) use ($searchKeywords) {
-            $hasKeywordMatch = !empty($searchKeywords) ? $item['keyword_match_count'] > 0 : true;
+        // FILTRAGE CRITIQUE : Ne garder QUE les produits qui matchent à la fois sur NAME et TYPE
+        $scoredProducts = $scoredProducts->filter(function ($item) use ($nameWords) {
+            $hasNameMatch = !empty($nameWords) ? $item['name_match_count'] > 0 : true;
             $hasTypeMatch = $item['type_matched'];
-            
-            $keepProduct = $item['score'] > 0 && $hasKeywordMatch && $hasTypeMatch;
-            
+
+            $keepProduct = $item['score'] > 0 && $hasNameMatch && $hasTypeMatch;
+
             if (!$keepProduct) {
-                \Log::debug('Produit exclu car ne match pas KEYWORDS ET TYPE', [
+                \Log::debug('Produit exclu car ne match pas NAME ET TYPE', [
                     'product_id' => $item['product']['id'] ?? 0,
                     'product_name' => $item['product']['name'] ?? '',
                     'product_type' => $item['product']['type'] ?? '',
                     'score' => $item['score'],
-                    'keyword_match' => $hasKeywordMatch,
+                    'name_match' => $hasNameMatch,
                     'type_match' => $hasTypeMatch,
-                    'keyword_match_count' => $item['keyword_match_count'],
-                    'keywords_total' => $item['keywords_total']
+                    'name_match_count' => $item['name_match_count'],
+                    'name_words_total' => $item['name_words_total']
                 ]);
             }
-            
+
             return $keepProduct;
         });
 
-        \Log::info('Après filtrage KEYWORDS ET TYPE obligatoires', [
+        \Log::info('Après filtrage NAME ET TYPE obligatoires', [
             'produits_restants' => $scoredProducts->count()
         ]);
 
         if ($scoredProducts->isEmpty()) {
-            \Log::info('Aucun produit après filtrage KEYWORDS ET TYPE', [
+            \Log::info('Aucun produit après filtrage NAME ET TYPE', [
                 'typeParts' => $typeParts,
-                'searchKeywords' => $searchKeywords
+                'nameWords' => $nameWords
             ]);
-            
+
             // Pas de fallback, on ne retourne aucun produit
             $this->matchingProducts = [];
             $this->groupedResults = [];
@@ -776,6 +736,7 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
 
     /**
      * Extrait les parties d'un type pour matching hiérarchique
+     * Exemple: "Eau de Parfum Intense Vaporisateur" => ["Eau de Parfum", "Intense", "Vaporisateur"]
      */
     private function extractTypeParts(string $type): array
     {
@@ -785,28 +746,28 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
 
         // Liste des séparateurs possibles
         $separators = [' - ', ' / ', ' + ', ', ', ' et ', ' & '];
-        
+
         // Remplacer les séparateurs par un séparateur unique
         $normalized = $type;
         foreach ($separators as $separator) {
             $normalized = str_replace($separator, '|', $normalized);
         }
-        
+
         // Séparer par espace mais garder les mots composés ensemble
         $parts = explode('|', $normalized);
-        
+
         // Nettoyer et filtrer les parties vides
         $parts = array_map('trim', $parts);
-        $parts = array_filter($parts, function($part) {
+        $parts = array_filter($parts, function ($part) {
             return !empty($part);
         });
-        
+
         // Si on n'a pas de séparateurs explicites, essayer de séparer par mots clés
         if (count($parts) === 1) {
             // Mots-clés hiérarchiques pour les parfums - ORDRE IMPORTANT
             $perfumeKeywords = [
                 'eau de parfum',
-                'eau de toilette', 
+                'eau de toilette',
                 'eau de cologne',
                 'extrait de parfum',
                 'eau fraiche',
@@ -814,13 +775,13 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
                 'extrait',
                 'cologne'
             ];
-            
+
             $intensityKeywords = ['intense', 'extrême', 'absolu', 'concentré', 'léger', 'doux', 'fort', 'puissant'];
             $formatKeywords = ['vaporisateur', 'spray', 'atomiseur', 'flacon', 'roller', 'stick', 'roll-on'];
-            
+
             $typeLower = mb_strtolower($type);
             $foundParts = [];
-            
+
             // Chercher d'abord le type de parfum (expressions composées d'abord)
             foreach ($perfumeKeywords as $keyword) {
                 if (str_contains($typeLower, $keyword)) {
@@ -828,13 +789,13 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
                     $startPos = mb_strpos($typeLower, $keyword);
                     $originalPart = mb_substr($type, $startPos, mb_strlen($keyword));
                     $foundParts[] = $originalPart;
-                    
+
                     // Retirer cette partie du type pour continuer la recherche
                     $typeLower = str_replace($keyword, '', $typeLower);
                     break;
                 }
             }
-            
+
             // Chercher l'intensité
             foreach ($intensityKeywords as $keyword) {
                 if (str_contains($typeLower, $keyword)) {
@@ -846,7 +807,7 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
                     break;
                 }
             }
-            
+
             // Chercher le format
             foreach ($formatKeywords as $keyword) {
                 if (str_contains($typeLower, $keyword)) {
@@ -858,7 +819,7 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
                     break;
                 }
             }
-            
+
             // Si on a trouvé des parties avec cette méthode, les utiliser
             if (!empty($foundParts)) {
                 \Log::info('Type décomposé en parties hiérarchiques', [
@@ -867,20 +828,21 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
                 ]);
                 return $foundParts;
             }
-            
+
             // Sinon, simplement diviser par espace et garder les mots significatifs
             $words = preg_split('/\s+/', $type);
-            $words = array_filter($words, function($word) {
+            $words = array_filter($words, function ($word) {
                 return mb_strlen($word) >= 3;
             });
             return array_values($words);
         }
-        
+
         return array_values($parts);
     }
 
     /**
      * Organise les résultats en ne gardant que le dernier scrape_reference_id par produit unique
+     * Critère d'unicité : vendor + name + type + variation + site
      */
     private function groupResultsByScrapeReference(array $products)
     {
@@ -954,7 +916,7 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
 
         // Grouper par scrape_reference pour les statistiques globales
         $grouped = $uniqueProducts->groupBy('scrape_reference');
-        
+
         $this->groupedResults = $grouped->map(function ($group, $reference) {
             $bySite = $group->groupBy('web_site_id')->map(function ($siteProducts) {
                 return [
@@ -1030,6 +992,7 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
 
     /**
      * Filtre les produits par type de base pour éviter les confusions
+     * Ex: Si on cherche "Eau de Toilette", on exclut les "Déodorant", "Crème", etc.
      */
     private function filterByBaseType(array $products, string $searchType): array
     {
@@ -1052,7 +1015,7 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
         ];
 
         $searchTypeLower = mb_strtolower(trim($searchType));
-        
+
         // Trouver la catégorie du type recherché
         $searchCategory = null;
         foreach ($typeCategories as $category => $keywords) {
@@ -1081,7 +1044,7 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
         // Filtrer les produits
         $filtered = collect($products)->filter(function ($product) use ($searchCategory, $typeCategories, $searchTypeLower) {
             $productType = mb_strtolower($product['type'] ?? '');
-            
+
             if (empty($productType)) {
                 return false;
             }
@@ -1104,7 +1067,7 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
 
             // Garder uniquement si même catégorie
             $match = ($productCategory === $searchCategory);
-            
+
             if (!$match) {
                 \Log::debug('Produit exclu par filtrage de type', [
                     'product_id' => $product['id'] ?? 0,
@@ -1114,7 +1077,7 @@ Retourne UNIQUEMENT l'objet JSON sans aucun texte supplémentaire."
                     'search_category' => $searchCategory
                 ]);
             }
-            
+
             return $match;
         })->values()->toArray();
 
@@ -1170,7 +1133,6 @@ Critères extraits :
 - Name: " . ($this->extractedData['name'] ?? 'N/A') . "
 - Type: " . ($this->extractedData['type'] ?? 'N/A') . "
 - Variation: " . ($this->extractedData['variation'] ?? 'N/A') . "
-- Search Keywords: " . implode(', ', $this->extractedData['search_keywords'] ?? []) . "
 
 Produits candidats :
 " . json_encode($productsInfo, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "
@@ -1188,7 +1150,7 @@ Analyse chaque candidat et détermine le meilleur match. Retourne au format JSON
 
 Critères de scoring :
 - Vendor exact = +40 points
-- Name similaire (inclus les mots-clés) = +30 points
+- Name similaire = +30 points
 - Type identique = +20 points
 - Variation identique = +10 points
 Score de confiance entre 0 et 1."
