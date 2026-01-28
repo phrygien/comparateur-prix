@@ -189,17 +189,8 @@ Exemple de format attendu :
         $vendor = $extractedData['vendor'] ?? '';
         $name = $extractedData['name'] ?? '';
         $type = $extractedData['type'] ?? '';
+        $variation = $extractedData['variation'] ?? '';
         $isCoffretSource = $extractedData['is_coffret'] ?? false;
-
-        // Normaliser les chaînes pour la recherche
-        $vendorLower = mb_strtolower($vendor);
-        $nameLower = mb_strtolower($name);
-        $typeLower = mb_strtolower($type);
-
-        // Extraire les mots clés
-        $vendorWords = $this->extractKeywords($vendor);
-        $nameWords = $this->extractKeywords($name);
-        $typeWords = $this->extractKeywords($type);
 
         // Si pas de vendor, abandonner la recherche
         if (empty($vendor)) {
@@ -207,168 +198,226 @@ Exemple de format attendu :
             return;
         }
 
-        // Si pas de name OU pas de type, abandonner la recherche
+        // Si pas de name ET pas de type, abandonner la recherche
         if (empty($name) && empty($type)) {
             \Log::warning('Ni name ni type extrait, recherche impossible');
             return;
         }
 
-        // Recherche UNIQUEMENT avec le vendor obligatoire + sites sélectionnés
-        $baseQuery = Product::query()
-            ->where(function ($q) use ($vendor, $vendorLower) {
-                // Recherche insensible à la casse avec plusieurs formats
-                $q->where('vendor', 'LIKE', "%{$vendor}%")
-                    ->orWhere('vendor', 'LIKE', "%" . mb_strtoupper($vendor) . "%")
-                    ->orWhere('vendor', 'LIKE', "%" . ucfirst($vendorLower) . "%")
-                    ->orWhereRaw('LOWER(vendor) LIKE ?', ['%' . $vendorLower . '%']);
-            })
-            ->when(!empty($this->selectedSites), function ($q) {
-                $q->whereIn('web_site_id', $this->selectedSites);
-            })
-            ->orderByDesc('scrap_reference_id')
-            ->orderByDesc('id');
+        // Extraire les mots clés
+        $vendorWords = $this->extractKeywords($vendor);
+        $nameWords = $this->extractKeywords($name);
+        $typeWords = $this->extractKeywords($type);
+        $variationWords = $this->extractKeywords($variation);
 
-        $allResults = collect();
+        // Construire la requête FULLTEXT en mode BOOLEAN
+        $searchTerms = [];
+        
+        // Ajouter les mots du vendor (obligatoires avec +)
+        foreach ($vendorWords as $word) {
+            if (mb_strlen($word) >= 2) {
+                $searchTerms[] = '+' . $word . '*';
+            }
+        }
+        
+        // Ajouter les mots du name (obligatoires avec +)
+        foreach ($nameWords as $word) {
+            if (mb_strlen($word) >= 2) {
+                $searchTerms[] = '+' . $word . '*';
+            }
+        }
+        
+        // Ajouter les mots du type (obligatoires avec +)
+        foreach ($typeWords as $word) {
+            if (mb_strlen($word) >= 2) {
+                $searchTerms[] = '+' . $word . '*';
+            }
+        }
 
-        // Stratégie 1: Vendor + Name + Type (exacte - meilleure correspondance)
-        if (!empty($name) && !empty($type)) {
-            $exactMatch = (clone $baseQuery)
-                ->where(function ($q) use ($name, $nameLower) {
+        // Si on a aussi une variation, l'ajouter (optionnelle sans +)
+        foreach ($variationWords as $word) {
+            if (mb_strlen($word) >= 2 && is_numeric($word) === false) {
+                $searchTerms[] = $word . '*';
+            }
+        }
+
+        // Construire la chaîne de recherche finale
+        $searchQuery = implode(' ', $searchTerms);
+
+        if (empty($searchQuery)) {
+            \Log::warning('Aucun terme de recherche valide construit');
+            return;
+        }
+
+        \Log::info('Recherche FULLTEXT', [
+            'search_query' => $searchQuery,
+            'vendor' => $vendor,
+            'name' => $name,
+            'type' => $type
+        ]);
+
+        try {
+            // Utiliser la vue last_price_scraped_product avec MATCH AGAINST
+            $results = \DB::table('last_price_scraped_product')
+                ->selectRaw('*')
+                ->whereRaw(
+                    "MATCH(name, vendor, type, variation) AGAINST (? IN BOOLEAN MODE)",
+                    [$searchQuery]
+                )
+                ->when(!empty($this->selectedSites), function ($q) {
+                    $q->whereIn('web_site_id', $this->selectedSites);
+                })
+                ->orderBy('created_at', 'DESC')
+                ->orderBy('scrap_reference_id', 'DESC')
+                ->limit(200)
+                ->get();
+
+            if ($results->isEmpty()) {
+                \Log::info('Aucun résultat avec FULLTEXT, tentative de recherche alternative');
+                
+                // Fallback: recherche moins stricte si aucun résultat
+                $searchTermsFallback = [];
+                
+                // Vendor obligatoire
+                foreach ($vendorWords as $word) {
+                    if (mb_strlen($word) >= 2) {
+                        $searchTermsFallback[] = '+' . $word . '*';
+                    }
+                }
+                
+                // Name ou Type (au moins un des deux)
+                $nameTypeTerms = [];
+                foreach ($nameWords as $word) {
+                    if (mb_strlen($word) >= 2) {
+                        $nameTypeTerms[] = $word . '*';
+                    }
+                }
+                foreach ($typeWords as $word) {
+                    if (mb_strlen($word) >= 2) {
+                        $nameTypeTerms[] = $word . '*';
+                    }
+                }
+                
+                if (!empty($nameTypeTerms)) {
+                    $searchTermsFallback = array_merge($searchTermsFallback, $nameTypeTerms);
+                }
+                
+                $searchQueryFallback = implode(' ', $searchTermsFallback);
+                
+                if (!empty($searchQueryFallback)) {
+                    $results = \DB::table('last_price_scraped_product')
+                        ->selectRaw('*')
+                        ->whereRaw(
+                            "MATCH(name, vendor, type, variation) AGAINST (? IN BOOLEAN MODE)",
+                            [$searchQueryFallback]
+                        )
+                        ->when(!empty($this->selectedSites), function ($q) {
+                            $q->whereIn('web_site_id', $this->selectedSites);
+                        })
+                        ->orderBy('created_at', 'DESC')
+                        ->orderBy('scrap_reference_id', 'DESC')
+                        ->limit(200)
+                        ->get();
+                }
+            }
+
+            // Convertir les résultats en array
+            $productsArray = $results->map(function ($item) {
+                return (array) $item;
+            })->toArray();
+
+            if (!empty($productsArray)) {
+                // Filtrer par statut coffret
+                $filtered = $this->filterByCoffretStatus(collect($productsArray), $isCoffretSource);
+                
+                if (!empty($filtered)) {
+                    $this->groupAllProductsWithoutDuplicates($filtered);
+                    $this->validateBestMatchWithAI();
+                } else {
+                    // Si le filtre coffret élimine tout, afficher quand même tous les résultats
+                    $this->groupAllProductsWithoutDuplicates($productsArray);
+                    $this->validateBestMatchWithAI();
+                }
+            }
+
+        } catch (\Exception $e) {
+            \Log::error('Erreur recherche FULLTEXT', [
+                'message' => $e->getMessage(),
+                'search_query' => $searchQuery ?? ''
+            ]);
+            
+            // Fallback sur recherche LIKE classique en cas d'erreur
+            $this->fallbackLikeSearch($vendor, $name, $type, $isCoffretSource);
+        }
+    }
+
+    /**
+     * Recherche de fallback utilisant LIKE si FULLTEXT échoue
+     */
+    private function fallbackLikeSearch($vendor, $name, $type, $isCoffretSource)
+    {
+        $vendorLower = mb_strtolower($vendor);
+        $nameLower = mb_strtolower($name);
+        $typeLower = mb_strtolower($type);
+
+        try {
+            $query = \DB::table('last_price_scraped_product')
+                ->where(function ($q) use ($vendor, $vendorLower) {
+                    $q->where('vendor', 'LIKE', "%{$vendor}%")
+                        ->orWhereRaw('LOWER(vendor) LIKE ?', ['%' . $vendorLower . '%']);
+                })
+                ->when(!empty($this->selectedSites), function ($q) {
+                    $q->whereIn('web_site_id', $this->selectedSites);
+                });
+
+            // Ajouter name ET/OU type
+            if (!empty($name) && !empty($type)) {
+                $query->where(function ($q) use ($name, $nameLower, $type, $typeLower) {
+                    $q->where(function ($subQ) use ($name, $nameLower) {
+                        $subQ->where('name', 'LIKE', "%{$name}%")
+                            ->orWhereRaw('LOWER(name) LIKE ?', ['%' . $nameLower . '%']);
+                    })
+                    ->where(function ($subQ) use ($type, $typeLower) {
+                        $subQ->where('type', 'LIKE', "%{$type}%")
+                            ->orWhereRaw('LOWER(type) LIKE ?', ['%' . $typeLower . '%']);
+                    });
+                });
+            } elseif (!empty($name)) {
+                $query->where(function ($q) use ($name, $nameLower) {
                     $q->where('name', 'LIKE', "%{$name}%")
-                        ->orWhere('name', 'LIKE', "%" . mb_strtoupper($name) . "%")
-                        ->orWhere('name', 'LIKE', "%" . ucfirst($nameLower) . "%")
                         ->orWhereRaw('LOWER(name) LIKE ?', ['%' . $nameLower . '%']);
-                })
-                ->where(function ($q) use ($type, $typeLower) {
+                });
+            } elseif (!empty($type)) {
+                $query->where(function ($q) use ($type, $typeLower) {
                     $q->where('type', 'LIKE', "%{$type}%")
-                        ->orWhere('type', 'LIKE', "%" . mb_strtoupper($type) . "%")
-                        ->orWhere('type', 'LIKE', "%" . ucfirst($typeLower) . "%")
                         ->orWhereRaw('LOWER(type) LIKE ?', ['%' . $typeLower . '%']);
-                })
+                });
+            }
+
+            $results = $query->orderBy('created_at', 'DESC')
+                ->orderBy('scrap_reference_id', 'DESC')
+                ->limit(200)
                 ->get();
 
-            if ($exactMatch->isNotEmpty()) {
-                $allResults = $allResults->merge($exactMatch);
+            $productsArray = $results->map(function ($item) {
+                return (array) $item;
+            })->toArray();
+
+            if (!empty($productsArray)) {
+                $filtered = $this->filterByCoffretStatus(collect($productsArray), $isCoffretSource);
+                
+                if (!empty($filtered)) {
+                    $this->groupAllProductsWithoutDuplicates($filtered);
+                    $this->validateBestMatchWithAI();
+                } else {
+                    $this->groupAllProductsWithoutDuplicates($productsArray);
+                    $this->validateBestMatchWithAI();
+                }
             }
-        }
-
-        // Stratégie 2: Vendor + mots-clés Name + Type exact
-        if (!empty($nameWords) && !empty($type)) {
-            $nameKeywordsWithType = (clone $baseQuery)
-                ->where(function ($q) use ($nameWords) {
-                    foreach ($nameWords as $word) {
-                        $wordLower = mb_strtolower($word);
-                        $q->orWhere('name', 'LIKE', "%{$word}%")
-                            ->orWhere('name', 'LIKE', "%" . mb_strtoupper($word) . "%")
-                            ->orWhereRaw('LOWER(name) LIKE ?', ['%' . $wordLower . '%']);
-                    }
-                })
-                ->where(function ($q) use ($type, $typeLower) {
-                    $q->where('type', 'LIKE', "%{$type}%")
-                        ->orWhere('type', 'LIKE', "%" . mb_strtoupper($type) . "%")
-                        ->orWhere('type', 'LIKE', "%" . ucfirst($typeLower) . "%")
-                        ->orWhereRaw('LOWER(type) LIKE ?', ['%' . $typeLower . '%']);
-                })
-                ->get();
-
-            if ($nameKeywordsWithType->isNotEmpty()) {
-                $allResults = $allResults->merge($nameKeywordsWithType);
-            }
-        }
-
-        // Stratégie 3: Vendor + Name exact + mots-clés Type
-        if (!empty($name) && !empty($typeWords)) {
-            $nameWithTypeKeywords = (clone $baseQuery)
-                ->where(function ($q) use ($name, $nameLower) {
-                    $q->where('name', 'LIKE', "%{$name}%")
-                        ->orWhere('name', 'LIKE', "%" . mb_strtoupper($name) . "%")
-                        ->orWhere('name', 'LIKE', "%" . ucfirst($nameLower) . "%")
-                        ->orWhereRaw('LOWER(name) LIKE ?', ['%' . $nameLower . '%']);
-                })
-                ->where(function ($q) use ($typeWords) {
-                    foreach ($typeWords as $word) {
-                        $wordLower = mb_strtolower($word);
-                        $q->orWhere('type', 'LIKE', "%{$word}%")
-                            ->orWhere('type', 'LIKE', "%" . mb_strtoupper($word) . "%")
-                            ->orWhereRaw('LOWER(type) LIKE ?', ['%' . $wordLower . '%']);
-                    }
-                })
-                ->get();
-
-            if ($nameWithTypeKeywords->isNotEmpty()) {
-                $allResults = $allResults->merge($nameWithTypeKeywords);
-            }
-        }
-
-        // Stratégie 4: Vendor + mots-clés Name + mots-clés Type
-        if (!empty($nameWords) && !empty($typeWords)) {
-            $keywordsMatch = (clone $baseQuery)
-                ->where(function ($q) use ($nameWords) {
-                    foreach ($nameWords as $word) {
-                        $wordLower = mb_strtolower($word);
-                        $q->orWhere('name', 'LIKE', "%{$word}%")
-                            ->orWhere('name', 'LIKE', "%" . mb_strtoupper($word) . "%")
-                            ->orWhereRaw('LOWER(name) LIKE ?', ['%' . $wordLower . '%']);
-                    }
-                })
-                ->where(function ($q) use ($typeWords) {
-                    foreach ($typeWords as $word) {
-                        $wordLower = mb_strtolower($word);
-                        $q->orWhere('type', 'LIKE', "%{$word}%")
-                            ->orWhere('type', 'LIKE', "%" . mb_strtoupper($word) . "%")
-                            ->orWhereRaw('LOWER(type) LIKE ?', ['%' . $wordLower . '%']);
-                    }
-                })
-                ->get();
-
-            if ($keywordsMatch->isNotEmpty()) {
-                $allResults = $allResults->merge($keywordsMatch);
-            }
-        }
-
-        // Stratégie 5: Si on a seulement le name, chercher Vendor + Name
-        if (!empty($name) && empty($type)) {
-            $vendorAndName = (clone $baseQuery)
-                ->where(function ($q) use ($name, $nameLower) {
-                    $q->where('name', 'LIKE', "%{$name}%")
-                        ->orWhere('name', 'LIKE', "%" . mb_strtoupper($name) . "%")
-                        ->orWhere('name', 'LIKE', "%" . ucfirst($nameLower) . "%")
-                        ->orWhereRaw('LOWER(name) LIKE ?', ['%' . $nameLower . '%']);
-                })
-                ->get();
-
-            if ($vendorAndName->isNotEmpty()) {
-                $allResults = $allResults->merge($vendorAndName);
-            }
-        }
-
-        // Stratégie 6: Si on a seulement le type, chercher Vendor + Type
-        if (empty($name) && !empty($type)) {
-            $vendorAndType = (clone $baseQuery)
-                ->where(function ($q) use ($type, $typeLower) {
-                    $q->where('type', 'LIKE', "%{$type}%")
-                        ->orWhere('type', 'LIKE', "%" . mb_strtoupper($type) . "%")
-                        ->orWhere('type', 'LIKE', "%" . ucfirst($typeLower) . "%")
-                        ->orWhereRaw('LOWER(type) LIKE ?', ['%' . $typeLower . '%']);
-                })
-                ->get();
-
-            if ($vendorAndType->isNotEmpty()) {
-                $allResults = $allResults->merge($vendorAndType);
-            }
-        }
-
-        // Filtrer par statut coffret et éliminer les doublons
-        if ($allResults->isNotEmpty()) {
-            $filtered = $this->filterByCoffretStatus($allResults, $isCoffretSource);
-            if (!empty($filtered)) {
-                $this->groupAllProductsWithoutDuplicates($filtered);
-                $this->validateBestMatchWithAI();
-            } else {
-                // Si le filtre coffret élimine tout, afficher quand même tous les résultats
-                $this->groupAllProductsWithoutDuplicates($allResults->toArray());
-                $this->validateBestMatchWithAI();
-            }
+        } catch (\Exception $e) {
+            \Log::error('Erreur recherche LIKE fallback', [
+                'message' => $e->getMessage()
+            ]);
         }
     }
 
