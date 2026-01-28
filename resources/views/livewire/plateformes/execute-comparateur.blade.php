@@ -167,9 +167,15 @@ Exemple de format attendu :
         return $nameCheck || $typeCheck;
     }
 
+    /**
+     * NOUVELLE LOGIQUE DE RECHERCHE SIMPLIFIÉE
+     * 1. Filtrer uniquement par vendor
+     * 2. Filtrer par statut coffret
+     * 3. Scorer les résultats en fonction des mots-clés du name et du type
+     */
     private function searchMatchingProducts()
     {
-        // Vérifier plus rigoureusement que extractedData est valide
+        // Vérifier que extractedData est valide
         if (empty($this->extractedData) || !is_array($this->extractedData)) {
             \Log::warning('searchMatchingProducts: extractedData invalide', [
                 'extractedData' => $this->extractedData
@@ -188,168 +194,117 @@ Exemple de format attendu :
 
         $vendor = $extractedData['vendor'] ?? '';
         $name = $extractedData['name'] ?? '';
-        $variation = $extractedData['variation'] ?? '';
         $type = $extractedData['type'] ?? '';
         $isCoffretSource = $extractedData['is_coffret'] ?? false;
 
-        // Extraire les mots clés
-        $vendorWords = $this->extractKeywords($vendor);
+        // Si pas de vendor, on ne peut pas faire de recherche fiable
+        if (empty($vendor)) {
+            \Log::warning('searchMatchingProducts: vendor vide');
+            return;
+        }
+
+        // Extraire les mots clés importants du name et du type
         $nameWords = $this->extractKeywords($name);
         $typeWords = $this->extractKeywords($type);
 
-        // Stratégie de recherche en cascade AVEC FILTRE VENDOR ET SITES
-        $query = Product::query()
-            ->when(!empty($vendor), function ($q) use ($vendor) {
-                $q->where('vendor', 'LIKE', "%{$vendor}%");
-            })
+        // ÉTAPE 1: Recherche de base - UNIQUEMENT sur le vendor et les sites sélectionnés
+        $baseQuery = Product::query()
+            ->where('vendor', 'LIKE', "%{$vendor}%")
             ->when(!empty($this->selectedSites), function ($q) {
                 $q->whereIn('web_site_id', $this->selectedSites);
             })
-            ->orderByDesc('id'); // Trier par le plus récent d'abord
+            ->orderByDesc('id');
 
-        // 1. Recherche exacte (tous les critères AVEC variation)
-        if (!empty($name)) {
-            $exactMatch = (clone $query)
-                ->where('name', 'LIKE', "%{$name}%")
-                ->when(!empty($variation), function ($q) use ($variation) {
-                    $q->where('variation', 'LIKE', "%{$variation}%");
-                })
-                ->when(!empty($type), function ($q) use ($type) {
-                    $q->where('type', 'LIKE', "%{$type}%");
-                })
-                ->get();
+        $vendorProducts = $baseQuery->get();
 
-            if ($exactMatch->isNotEmpty()) {
-                $filtered = $this->filterByCoffretStatus($exactMatch, $isCoffretSource);
-                if (!empty($filtered)) {
-                    $this->groupResultsByScrapeReference($filtered);
-                    $this->validateBestMatchWithAI();
-                    return;
+        if ($vendorProducts->isEmpty()) {
+            \Log::info('Aucun produit trouvé pour le vendor: ' . $vendor);
+            return;
+        }
+
+        \Log::info('Produits trouvés pour le vendor', [
+            'vendor' => $vendor,
+            'count' => $vendorProducts->count()
+        ]);
+
+        // ÉTAPE 2: Filtrer par statut coffret
+        $filteredProducts = $this->filterByCoffretStatus($vendorProducts, $isCoffretSource);
+
+        if (empty($filteredProducts)) {
+            \Log::info('Aucun produit après filtrage coffret');
+            return;
+        }
+
+        // ÉTAPE 3: Scoring des produits basé sur les mots-clés du name et du type
+        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($nameWords, $typeWords) {
+            $score = 0;
+            $productName = mb_strtolower($product['name'] ?? '');
+            $productType = mb_strtolower($product['type'] ?? '');
+            
+            $matchedNameWords = [];
+            $matchedTypeWords = [];
+
+            // Score basé sur les mots du name (plus important)
+            foreach ($nameWords as $word) {
+                if (str_contains($productName, $word)) {
+                    $score += 10; // Chaque mot du name trouvé = +10 points
+                    $matchedNameWords[] = $word;
                 }
             }
-        }
 
-        // 2. Recherche SANS variation (vendor + name + type)
-        if (!empty($name)) {
-            $withoutVariation = (clone $query)
-                ->where('name', 'LIKE', "%{$name}%")
-                ->when(!empty($type), function ($q) use ($type) {
-                    $q->where('type', 'LIKE', "%{$type}%");
-                })
-                ->get();
-
-            if ($withoutVariation->isNotEmpty()) {
-                $filtered = $this->filterByCoffretStatus($withoutVariation, $isCoffretSource);
-                if (!empty($filtered)) {
-                    $this->groupResultsByScrapeReference($filtered);
-                    $this->validateBestMatchWithAI();
-                    return;
+            // Score basé sur les mots du type (important aussi)
+            foreach ($typeWords as $word) {
+                if (str_contains($productType, $word)) {
+                    $score += 8; // Chaque mot du type trouvé = +8 points
+                    $matchedTypeWords[] = $word;
                 }
             }
-        }
 
-        // 3. Recherche vendor + name seulement (SANS variation et type)
-        if (!empty($name)) {
-            $vendorAndName = (clone $query)
-                ->where('name', 'LIKE', "%{$name}%")
-                ->get();
-
-            if ($vendorAndName->isNotEmpty()) {
-                $filtered = $this->filterByCoffretStatus($vendorAndName, $isCoffretSource);
-                if (!empty($filtered)) {
-                    $this->groupResultsByScrapeReference($filtered);
-                    $this->validateBestMatchWithAI();
-                    return;
-                }
+            // Bonus si le type correspond exactement
+            if (!empty($typeWords) && str_contains($productType, implode(' ', $typeWords))) {
+                $score += 15;
             }
+
+            return [
+                'product' => $product,
+                'score' => $score,
+                'matched_name_words' => $matchedNameWords,
+                'matched_type_words' => $matchedTypeWords
+            ];
+        })
+        // Trier par score décroissant
+        ->sortByDesc('score')
+        // Ne garder que ceux qui ont un score > 0
+        ->filter(fn($item) => $item['score'] > 0)
+        ->values();
+
+        if ($scoredProducts->isEmpty()) {
+            \Log::info('Aucun produit avec score > 0', [
+                'nameWords' => $nameWords,
+                'typeWords' => $typeWords
+            ]);
+            
+            // Fallback: si aucun match par mots-clés, on prend tous les produits du vendor
+            $this->matchingProducts = array_slice($filteredProducts, 0, 50);
+            $this->groupResultsByScrapeReference($this->matchingProducts);
+            $this->validateBestMatchWithAI();
+            return;
         }
 
-        // 4. Recherche flexible par mots-clés (SANS variation)
-        if (!empty($nameWords)) {
-            $keywordSearch = (clone $query)
-                ->where(function ($q) use ($nameWords) {
-                    foreach ($nameWords as $word) {
-                        $q->orWhere('name', 'LIKE', "%{$word}%");
-                    }
-                })
-                ->when(!empty($typeWords), function ($q) use ($typeWords) {
-                    $q->where(function ($subQ) use ($typeWords) {
-                        foreach ($typeWords as $word) {
-                            $subQ->orWhere('type', 'LIKE', "%{$word}%");
-                        }
-                    });
-                })
-                ->limit(100)
-                ->get();
+        // Extraire uniquement les produits des résultats scorés
+        $rankedProducts = $scoredProducts->pluck('product')->toArray();
 
-            if ($keywordSearch->isNotEmpty()) {
-                $filtered = $this->filterByCoffretStatus($keywordSearch, $isCoffretSource);
-                if (!empty($filtered)) {
-                    $this->groupResultsByScrapeReference($filtered);
-                    $this->validateBestMatchWithAI();
-                    return;
-                }
-            }
-        }
+        // Limiter à 50 résultats
+        $this->matchingProducts = array_slice($rankedProducts, 0, 50);
 
-        // 5. Recherche très large : vendor + n'importe quel mot du name
-        if (!empty($nameWords)) {
-            $broadSearch = (clone $query)
-                ->where(function ($q) use ($nameWords) {
-                    foreach ($nameWords as $word) {
-                        $q->orWhere('name', 'LIKE', "%{$word}%");
-                    }
-                })
-                ->limit(100)
-                ->get();
+        \Log::info('Produits après scoring', [
+            'count' => count($this->matchingProducts),
+            'top_scores' => $scoredProducts->take(5)->pluck('score')->toArray()
+        ]);
 
-            if ($broadSearch->isNotEmpty()) {
-                $filtered = $this->filterByCoffretStatus($broadSearch, $isCoffretSource);
-                if (!empty($filtered)) {
-                    $this->groupResultsByScrapeReference($filtered);
-                    $this->validateBestMatchWithAI();
-                    return;
-                }
-            }
-        }
-
-        // 6. Dernière tentative : vendor + type uniquement
-        if (!empty($typeWords)) {
-            $typeOnly = (clone $query)
-                ->where(function ($q) use ($typeWords) {
-                    foreach ($typeWords as $word) {
-                        $q->orWhere('type', 'LIKE', "%{$word}%");
-                    }
-                })
-                ->limit(100)
-                ->get();
-
-            $filtered = $this->filterByCoffretStatus($typeOnly, $isCoffretSource);
-            if (!empty($filtered)) {
-                $this->groupResultsByScrapeReference($filtered);
-                $this->validateBestMatchWithAI();
-            }
-        }
-
-        // Si aucun résultat n'a été trouvé, on peut tenter une recherche large par vendor seulement
-        if (empty($this->matchingProducts) && !empty($vendor)) {
-            $vendorOnly = Product::query()
-                ->where('vendor', 'LIKE', "%{$vendor}%")
-                ->when(!empty($this->selectedSites), function ($q) {
-                    $q->whereIn('web_site_id', $this->selectedSites);
-                })
-                ->orderByDesc('id')
-                ->limit(100)
-                ->get();
-
-            if ($vendorOnly->isNotEmpty()) {
-                $filtered = $this->filterByCoffretStatus($vendorOnly, $isCoffretSource);
-                if (!empty($filtered)) {
-                    $this->groupResultsByScrapeReference($filtered);
-                    $this->validateBestMatchWithAI();
-                }
-            }
-        }
+        // Grouper et valider avec l'IA
+        $this->groupResultsByScrapeReference($this->matchingProducts);
+        $this->validateBestMatchWithAI();
     }
 
     /**
@@ -545,11 +500,11 @@ Score de confiance entre 0 et 1."
                     if ($found) {
                         $this->bestMatch = $found;
                     } else {
-                        // Fallback sur le premier résultat (le plus récent)
+                        // Fallback sur le premier résultat (le mieux scoré)
                         $this->bestMatch = $this->matchingProducts[0] ?? null;
                     }
                 } else {
-                    // Fallback sur le premier résultat (le plus récent)
+                    // Fallback sur le premier résultat (le mieux scoré)
                     $this->bestMatch = $this->matchingProducts[0] ?? null;
                 }
             }
@@ -560,7 +515,7 @@ Score de confiance entre 0 et 1."
                 'product_name' => $this->productName
             ]);
 
-            // Fallback sur le premier résultat en cas d'erreur (le plus récent)
+            // Fallback sur le premier résultat en cas d'erreur (le mieux scoré)
             $this->bestMatch = $this->matchingProducts[0] ?? null;
         }
     }
@@ -685,7 +640,7 @@ Score de confiance entre 0 et 1."
         <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
             <p class="text-sm text-blue-800">
                 <span class="font-semibold">{{ count($groupedResults) }}</span> référence(s) unique(s) trouvée(s)
-                <span class="text-xs ml-2">(max 1 produit par référence affichée)</span>
+                <span class="text-xs ml-2">(résultats scorés par pertinence)</span>
             </p>
         </div>
     @endif
@@ -765,8 +720,7 @@ Score de confiance entre 0 et 1."
 
     @if($extractedData && empty($matchingProducts))
         <div class="mt-6 p-4 bg-yellow-50 border border-yellow-300 rounded">
-            <p class="text-yellow-800">❌ Aucun produit trouvé avec ces critères (même vendor:
-                {{ $extractedData['vendor'] }}, même statut coffret)</p>
+            <p class="text-yellow-800">❌ Aucun produit trouvé avec ces critères (vendor: {{ $extractedData['vendor'] }})</p>
         </div>
     @endif
 </div>
