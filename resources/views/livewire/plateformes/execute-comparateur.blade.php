@@ -50,25 +50,47 @@ new class extends Component {
                         'messages' => [
                             [
                                 'role' => 'system',
-                                'content' => 'Tu es un expert en extraction de données de produits cosmétiques. Tu dois extraire vendor, name, variation, type et détecter si c\'est un coffret. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
+                                'content' => 'Tu es un expert en extraction de données de produits cosmétiques. IMPORTANT: Le champ "type" doit contenir UNIQUEMENT la catégorie du produit (Crème, Huile, Sérum, Eau de Parfum, etc.), PAS le nom de la gamme. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
                             ],
                             [
                                 'role' => 'user',
                                 'content' => "Extrait les informations suivantes du nom de produit et retourne-les au format JSON strict :
-- vendor : la marque du produit
-- name : le nom de la gamme/ligne de produit
-- variation : la contenance/taille (ml, g, etc.)
-- type : le type de produit (Crème, Sérum, Concentré, etc.)
+
+RÈGLES IMPORTANTES :
+- vendor : la marque du produit (ex: Dior, Shiseido, Chanel)
+- name : le nom de la gamme/ligne de produit UNIQUEMENT (ex: \"J'adore\", \"Vital Perfection\", \"La Vie Est Belle\")
+- type : UNIQUEMENT la catégorie/type du produit (ex: \"Huile pour le corps\", \"Eau de Parfum\", \"Crème visage\", \"Sérum\")
+- variation : la contenance/taille avec unité (ex: \"200 ml\", \"50 ml\", \"30 g\")
 - is_coffret : true si c'est un coffret/set/kit, false sinon
 
 Nom du produit : {$this->productName}
 
-Exemple de format attendu :
+EXEMPLES DE FORMAT ATTENDU :
+
+Exemple 1 - Produit : \"Dior J'adore Les Adorables Huile Scintillante Huile pour le corps 200ml\"
+{
+  \"vendor\": \"Dior\",
+  \"name\": \"J'adore Les Adorables\",
+  \"type\": \"Huile pour le corps\",
+  \"variation\": \"200 ml\",
+  \"is_coffret\": false
+}
+
+Exemple 2 - Produit : \"Chanel N°5 Eau de Parfum Vaporisateur 100 ml\"
+{
+  \"vendor\": \"Chanel\",
+  \"name\": \"N°5\",
+  \"type\": \"Eau de Parfum\",
+  \"variation\": \"100 ml\",
+  \"is_coffret\": false
+}
+
+Exemple 3 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream Enriched 50ml\"
 {
   \"vendor\": \"Shiseido\",
-  \"name\": \"Vital Perfection\",
-  \"variation\": \"20 ml\",
-  \"type\": \"Concentré Correcteur Rides\",
+  \"name\": \"Vital Perfection Uplifting and Firming\",
+  \"type\": \"Crème visage\",
+  \"variation\": \"50 ml\",
   \"is_coffret\": false
 }"
                             ]
@@ -107,6 +129,32 @@ Exemple de format attendu :
                     'type' => '',
                     'is_coffret' => false
                 ], $decodedData);
+
+                // Post-traitement : nettoyer le type s'il contient des informations parasites
+                if (!empty($this->extractedData['type'])) {
+                    $type = $this->extractedData['type'];
+                    
+                    // Si le type contient le nom de la gamme, essayer de le nettoyer
+                    if (!empty($this->extractedData['name'])) {
+                        $name = $this->extractedData['name'];
+                        // Enlever le nom de la gamme du type s'il y est
+                        $type = trim(str_ireplace($name, '', $type));
+                    }
+                    
+                    // Enlever les tirets et espaces multiples
+                    $type = preg_replace('/\s*-\s*/', ' ', $type);
+                    $type = preg_replace('/\s+/', ' ', $type);
+                    
+                    $this->extractedData['type'] = trim($type);
+                }
+
+                \Log::info('Données extraites', [
+                    'vendor' => $this->extractedData['vendor'] ?? '',
+                    'name' => $this->extractedData['name'] ?? '',
+                    'type' => $this->extractedData['type'] ?? '',
+                    'variation' => $this->extractedData['variation'] ?? '',
+                    'is_coffret' => $this->extractedData['is_coffret'] ?? false
+                ]);
 
                 // Rechercher les produits correspondants
                 $this->searchMatchingProducts();
@@ -168,10 +216,11 @@ Exemple de format attendu :
     }
 
     /**
-     * NOUVELLE LOGIQUE DE RECHERCHE SIMPLIFIÉE
+     * LOGIQUE DE RECHERCHE OPTIMISÉE - MATCHING MAXIMUM SUR LE TYPE
      * 1. Filtrer uniquement par vendor
      * 2. Filtrer par statut coffret
-     * 3. Scorer les résultats en fonction des mots-clés du name et du type
+     * 3. Scorer les résultats UNIQUEMENT sur le TYPE (matching strict au maximum)
+     *    Le NAME est ignoré pour le scoring
      */
     private function searchMatchingProducts()
     {
@@ -203,9 +252,14 @@ Exemple de format attendu :
             return;
         }
 
-        // Extraire les mots clés importants du name et du type
-        $nameWords = $this->extractKeywords($name);
+        // Extraire TOUS les mots du type (SEUL critère de matching)
         $typeWords = $this->extractKeywords($type);
+
+        \Log::info('Mots-clés pour la recherche', [
+            'vendor' => $vendor,
+            'type' => $type,
+            'typeWords' => $typeWords
+        ]);
 
         // ÉTAPE 1: Recherche de base - UNIQUEMENT sur le vendor et les sites sélectionnés
         $baseQuery = Product::query()
@@ -235,56 +289,87 @@ Exemple de format attendu :
             return;
         }
 
-        // ÉTAPE 3: Scoring des produits basé sur les mots-clés du name et du type
-        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($nameWords, $typeWords) {
+        // ÉTAPE 3: Scoring basé UNIQUEMENT sur le TYPE
+        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeWords, $type) {
             $score = 0;
-            $productName = mb_strtolower($product['name'] ?? '');
             $productType = mb_strtolower($product['type'] ?? '');
             
-            $matchedNameWords = [];
             $matchedTypeWords = [];
 
-            // Score basé sur les mots du name (plus important)
-            foreach ($nameWords as $word) {
-                if (str_contains($productName, $word)) {
-                    $score += 10; // Chaque mot du name trouvé = +10 points
-                    $matchedNameWords[] = $word;
-                }
-            }
-
-            // Score basé sur les mots du type (important aussi)
+            // ==========================================
+            // MATCHING EXCLUSIF SUR LE TYPE
+            // ==========================================
+            
+            // Vérifier si TOUS les mots du type sont présents
+            $allTypeWordsMatched = true;
+            $typeWordsCount = count($typeWords);
+            
             foreach ($typeWords as $word) {
                 if (str_contains($productType, $word)) {
-                    $score += 8; // Chaque mot du type trouvé = +8 points
+                    $score += 30; // Chaque mot du type = +30 points
                     $matchedTypeWords[] = $word;
+                } else {
+                    $allTypeWordsMatched = false;
                 }
             }
-
-            // Bonus si le type correspond exactement
-            if (!empty($typeWords) && str_contains($productType, implode(' ', $typeWords))) {
-                $score += 15;
+            
+            // BONUS ÉNORME si tous les mots du type correspondent
+            if ($allTypeWordsMatched && $typeWordsCount > 0) {
+                $score += 100; // +100 points pour un match complet du type
+            }
+            
+            // BONUS MAXIMUM si le type complet est une sous-chaîne exacte
+            $typeLower = mb_strtolower(trim($type));
+            if (!empty($typeLower) && str_contains($productType, $typeLower)) {
+                $score += 150; // +150 points pour type exact dans le produit
+            }
+            
+            // BONUS supplémentaire si le type du produit commence par le type recherché
+            if (!empty($typeLower) && str_starts_with($productType, $typeLower)) {
+                $score += 50; // +50 points si le type est au début
             }
 
             return [
                 'product' => $product,
                 'score' => $score,
-                'matched_name_words' => $matchedNameWords,
-                'matched_type_words' => $matchedTypeWords
+                'matched_type_words' => $matchedTypeWords,
+                'all_type_words_matched' => $allTypeWordsMatched,
+                'type_words_count' => $typeWordsCount,
+                'matched_count' => count($matchedTypeWords)
             ];
         })
         // Trier par score décroissant
         ->sortByDesc('score')
-        // Ne garder que ceux qui ont un score > 0
-        ->filter(fn($item) => $item['score'] > 0)
         ->values();
+
+        \Log::info('Scoring détaillé (TYPE UNIQUEMENT)', [
+            'total_products' => $scoredProducts->count(),
+            'type_recherche' => $type,
+            'type_words' => $typeWords,
+            'top_10_scores' => $scoredProducts->take(10)->map(function($item) {
+                return [
+                    'id' => $item['product']['id'] ?? 0,
+                    'score' => $item['score'],
+                    'name' => $item['product']['name'] ?? '',
+                    'type' => $item['product']['type'] ?? '',
+                    'matched_type' => $item['matched_type_words'],
+                    'all_type_matched' => $item['all_type_words_matched'],
+                    'match_ratio' => $item['type_words_count'] > 0 
+                        ? round(($item['matched_count'] / $item['type_words_count']) * 100) . '%'
+                        : '0%'
+                ];
+            })->toArray()
+        ]);
+
+        // Ne garder que ceux qui ont un score > 0
+        $scoredProducts = $scoredProducts->filter(fn($item) => $item['score'] > 0);
 
         if ($scoredProducts->isEmpty()) {
             \Log::info('Aucun produit avec score > 0', [
-                'nameWords' => $nameWords,
                 'typeWords' => $typeWords
             ]);
             
-            // Fallback: si aucun match par mots-clés, on prend tous les produits du vendor
+            // Fallback: si aucun match par type, on prend les 50 premiers produits du vendor
             $this->matchingProducts = array_slice($filteredProducts, 0, 50);
             $this->groupResultsByScrapeReference($this->matchingProducts);
             $this->validateBestMatchWithAI();
@@ -299,7 +384,8 @@ Exemple de format attendu :
 
         \Log::info('Produits après scoring', [
             'count' => count($this->matchingProducts),
-            'top_scores' => $scoredProducts->take(5)->pluck('score')->toArray()
+            'best_score' => $scoredProducts->first()['score'] ?? 0,
+            'worst_score' => $scoredProducts->last()['score'] ?? 0
         ]);
 
         // Grouper et valider avec l'IA
