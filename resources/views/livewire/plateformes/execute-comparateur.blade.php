@@ -753,6 +753,14 @@ Score de confiance entre 0 et 1."
         }
     }
 
+    /*
+    * get details product cosmashop
+    */
+    public function getDetails()
+    {
+
+    }
+    
 }; ?>
 
 <div class="bg-white">
@@ -767,6 +775,8 @@ Score de confiance entre 0 et 1."
             </button>
         </div>
     </div>
+
+    <livewire:plateformes.detail :id="$id" />
 
     <!-- Filtres par site -->
     @if(!empty($availableSites))
