@@ -806,164 +806,96 @@ Score de confiance entre 0 et 1."
         </div>
     @endif
 
-    <!-- Layout 2 colonnes -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 p-6">
-        
-        <!-- Colonne gauche : Informations du produit recherché -->
-        <div class="lg:col-span-1">
-            <div class="bg-white rounded-lg shadow border border-gray-200">
-                <div class="px-4 sm:px-6 py-5 border-b border-gray-200">
-                    <h3 class="text-base font-semibold text-gray-900">Produit recherché</h3>
-                    <p class="mt-1 text-sm text-gray-500">Informations extraites</p>
-                </div>
-                
-                <div class="border-t border-gray-100">
-                    <dl class="divide-y divide-gray-100">
-                        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                            <dt class="text-sm font-medium text-gray-900">Nom complet</dt>
-                            <dd class="mt-1 text-sm text-gray-700 sm:col-span-2 sm:mt-0">{{ $productName }}</dd>
-                        </div>
-                        
-                        @if($extractedData)
-                            <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                                <dt class="text-sm font-medium text-gray-900">Marque</dt>
-                                <dd class="mt-1 text-sm text-gray-700 sm:col-span-2 sm:mt-0">
-                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
-                                        {{ $extractedData['vendor'] ?? 'N/A' }}
-                                    </span>
-                                </dd>
-                            </div>
-                            
-                            <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                                <dt class="text-sm font-medium text-gray-900">Gamme</dt>
-                                <dd class="mt-1 text-sm text-gray-700 sm:col-span-2 sm:mt-0">{{ $extractedData['name'] ?? 'N/A' }}</dd>
-                            </div>
-                            
-                            <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                                <dt class="text-sm font-medium text-gray-900">Type</dt>
-                                <dd class="mt-1 text-sm text-gray-700 sm:col-span-2 sm:mt-0">
-                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                        {{ $extractedData['type'] ?? 'N/A' }}
-                                    </span>
-                                </dd>
-                            </div>
-                            
-                            <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                                <dt class="text-sm font-medium text-gray-900">Contenance</dt>
-                                <dd class="mt-1 text-sm text-gray-700 sm:col-span-2 sm:mt-0">{{ $extractedData['variation'] ?? 'N/A' }}</dd>
-                            </div>
-                            
-                            <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                                <dt class="text-sm font-medium text-gray-900">Coffret</dt>
-                                <dd class="mt-1 text-sm text-gray-700 sm:col-span-2 sm:mt-0">
-                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ ($extractedData['is_coffret'] ?? false) ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800' }}">
-                                        {{ ($extractedData['is_coffret'] ?? false) ? '🎁 Oui' : 'Non' }}
-                                    </span>
-                                </dd>
-                            </div>
-                        @else
-                            <div class="px-4 py-4 sm:px-6">
-                                <p class="text-sm text-gray-500 italic">Cliquez sur "Extraire et rechercher" pour analyser le produit</p>
-                            </div>
-                        @endif
-                    </dl>
-                </div>
-
-                @if($aiValidation)
-                    <div class="px-4 py-4 sm:px-6 bg-blue-50 border-t border-blue-200">
-                        <h4 class="text-sm font-semibold text-blue-900 mb-2">🤖 Validation IA</h4>
-                        <p class="text-xs text-blue-800 mb-1">
-                            <span class="font-semibold">Confiance:</span>
-                            <span class="text-base font-bold {{ $aiValidation['confidence_score'] >= 0.8 ? 'text-green-600' : ($aiValidation['confidence_score'] >= 0.6 ? 'text-yellow-600' : 'text-red-600') }}">
-                                {{ number_format($aiValidation['confidence_score'] * 100, 0) }}%
-                            </span>
-                        </p>
-                        <p class="text-xs text-gray-700">{{ $aiValidation['reasoning'] ?? 'N/A' }}</p>
+    <!-- Contenu principal -->
+    <div class="p-6">
+        <!-- Statistiques -->
+        @if(!empty($groupedResults))
+            <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <p class="text-sm text-blue-800">
+                    <span class="font-semibold">{{ count($matchingProducts) }}</span> produit(s) trouvé(s)
+                </p>
+                @if(isset($groupedResults['_site_stats']))
+                    <div class="mt-2 flex flex-wrap gap-2">
+                        @foreach($groupedResults['_site_stats'] as $siteId => $stats)
+                            @php
+                                $siteInfo = collect($availableSites)->firstWhere('id', $siteId);
+                            @endphp
+                            @if($siteInfo)
+                                <span class="px-2 py-1 bg-white border border-blue-300 rounded text-xs">
+                                    <span class="font-semibold">{{ $siteInfo['name'] }}</span>: 
+                                    <span class="text-blue-700 font-bold">{{ $stats['total_products'] }}</span>
+                                </span>
+                            @endif
+                        @endforeach
                     </div>
                 @endif
             </div>
-        </div>
+        @endif
 
-        <!-- Colonne droite : Résultats en cards -->
-        <div class="lg:col-span-2">
-            @if(!empty($groupedResults))
-                <div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                    <p class="text-sm text-blue-800">
-                        <span class="font-semibold">{{ count($matchingProducts) }}</span> produit(s) trouvé(s)
-                    </p>
-                    @if(isset($groupedResults['_site_stats']))
-                        <div class="mt-2 flex flex-wrap gap-2">
-                            @foreach($groupedResults['_site_stats'] as $siteId => $stats)
-                                @php
-                                    $siteInfo = collect($availableSites)->firstWhere('id', $siteId);
-                                @endphp
-                                @if($siteInfo)
-                                    <span class="px-2 py-1 bg-white border border-blue-300 rounded text-xs">
-                                        <span class="font-semibold">{{ $siteInfo['name'] }}</span>: 
-                                        <span class="text-blue-700 font-bold">{{ $stats['total_products'] }}</span>
-                                    </span>
-                                @endif
-                            @endforeach
-                        </div>
-                    @endif
-                </div>
-            @endif
+        <!-- Section des produits -->
+        @if(!empty($matchingProducts))
+            <div class="mx-auto max-w-7xl overflow-hidden sm:px-6 lg:px-8">
+                <h2 class="sr-only">Produits</h2>
 
-            @if(!empty($matchingProducts))
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="-mx-px grid grid-cols-2 border-l border-gray-200 sm:mx-0 md:grid-cols-3 lg:grid-cols-4">
                     @foreach($matchingProducts as $product)
                         <div wire:click="selectProduct({{ $product['id'] }})" 
-                            class="relative flex items-center space-x-3 rounded-lg border {{ $bestMatch && $bestMatch['id'] === $product['id'] ? 'border-indigo-500 ring-2 ring-indigo-500 bg-indigo-50' : 'border-gray-300 bg-white' }} px-4 py-4 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 focus-within:ring-offset-2 hover:border-indigo-400 cursor-pointer transition">
+                            class="group relative border-r border-b border-gray-200 p-4 sm:p-6 cursor-pointer transition hover:bg-gray-50 {{ $bestMatch && $bestMatch['id'] === $product['id'] ? 'ring-2 ring-indigo-500 bg-indigo-50' : '' }}">
                             
-                            <div class="shrink-0">
-                                @if(!empty($product['image_url']))
-                                    <img class="h-12 w-12 rounded-lg object-cover" 
-                                         src="{{ $product['image_url'] }}" 
-                                         alt="{{ $product['name'] }}"
-                                         onerror="this.src='https://placehold.co/600x400/e5e7eb/9ca3af?text=No+Image'">
-                                @else
-                                    <img class="h-12 w-12 rounded-lg object-cover" 
-                                         src="https://placehold.co/600x400/e5e7eb/9ca3af?text=No+Image" 
-                                         alt="Image non disponible">
+                            <!-- Image du produit -->
+                            @if(!empty($product['image_url']))
+                                <img src="{{ $product['image_url'] }}" 
+                                     alt="{{ $product['name'] }}"
+                                     class="aspect-square rounded-lg bg-gray-200 object-cover group-hover:opacity-75"
+                                     onerror="this.src='https://placehold.co/600x400/e5e7eb/9ca3af?text=No+Image'">
+                            @else
+                                <img src="https://placehold.co/600x400/e5e7eb/9ca3af?text=No+Image" 
+                                     alt="Image non disponible"
+                                     class="aspect-square rounded-lg bg-gray-200 object-cover group-hover:opacity-75">
+                            @endif
+
+                            <div class="pt-4 pb-4 text-center">
+                                <!-- Badge coffret -->
+                                @if($product['name'] && (str_contains(strtolower($product['name']), 'coffret') || str_contains(strtolower($product['name']), 'set') || str_contains(strtolower($product['type'] ?? ''), 'coffret')))
+                                    <div class="mb-2">
+                                        <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800">🎁 Coffret</span>
+                                    </div>
                                 @endif
-                            </div>
-                            
-                            <div class="min-w-0 flex-1">
-                                <a href="#" class="focus:outline-hidden">
-                                    <span class="absolute inset-0" aria-hidden="true"></span>
-                                    
-                                    <div class="flex items-center gap-1 mb-1">
-                                        <p class="text-sm font-semibold text-gray-900 truncate">{{ $product['vendor'] }}</p>
-                                        @if($product['name'] && (str_contains(strtolower($product['name']), 'coffret') || str_contains(strtolower($product['name']), 'set') || str_contains(strtolower($product['type'] ?? ''), 'coffret')))
-                                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">🎁</span>
-                                        @endif
+
+                                <!-- Nom du produit -->
+                                <h3 class="text-sm font-medium text-gray-900">
+                                    <a href="#">
+                                        <span aria-hidden="true" class="absolute inset-0"></span>
+                                        {{ $product['vendor'] }}
+                                    </a>
+                                </h3>
+                                <p class="text-xs text-gray-600 mt-1 truncate">{{ $product['name'] }}</p>
+                                <p class="text-xs text-gray-500 truncate">{{ $product['type'] }}</p>
+                                <p class="text-xs text-gray-400 mt-1">{{ $product['variation'] }}</p>
+
+                                <!-- Site -->
+                                @php
+                                    $siteInfo = collect($availableSites)->firstWhere('id', $product['web_site_id']);
+                                @endphp
+                                @if($siteInfo)
+                                    <div class="mt-2">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                            {{ $siteInfo['name'] }}
+                                        </span>
                                     </div>
-                                    
-                                    <p class="text-xs text-gray-900 truncate font-medium">{{ $product['name'] }}</p>
-                                    <p class="text-xs text-gray-500 truncate">{{ $product['type'] }} | {{ $product['variation'] }}</p>
-                                    
-                                    <div class="flex items-center gap-2 mt-1">
-                                        <p class="text-sm font-bold text-indigo-600">{{ number_format((float)($product['prix_ht'] ?? 0), 2) }} €</p>
-                                        @php
-                                            $siteInfo = collect($availableSites)->firstWhere('id', $product['web_site_id']);
-                                        @endphp
-                                        @if($siteInfo)
-                                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                                {{ $siteInfo['name'] }}
-                                            </span>
-                                        @endif
-                                    </div>
-                                    
-                                    @if(isset($product['scrape_reference_id']))
-                                        <p class="text-xs text-gray-400 mt-1">ID: {{ $product['scrape_reference_id'] }}</p>
-                                    @endif
-                                </a>
-                                
+                                @endif
+
+                                <!-- Prix -->
+                                <p class="mt-4 text-base font-medium text-gray-900">
+                                    {{ number_format((float)($product['prix_ht'] ?? 0), 2) }} €
+                                </p>
+
+                                <!-- Bouton voir produit -->
                                 @if($product['url'] ?? false)
                                     <div class="mt-2">
                                         <a href="{{ $product['url'] }}" target="_blank" 
                                            onclick="event.stopPropagation()"
-                                           class="inline-flex items-center text-xs font-medium text-indigo-600 hover:text-indigo-500 relative z-10">
+                                           class="inline-flex items-center text-xs font-medium text-indigo-600 hover:text-indigo-500">
                                             Voir produit
                                             <svg class="ml-1 h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -971,27 +903,34 @@ Score de confiance entre 0 et 1."
                                         </a>
                                     </div>
                                 @endif
+
+                                <!-- ID scrape -->
+                                @if(isset($product['scrape_reference_id']))
+                                    <p class="text-xs text-gray-400 mt-2">ID: {{ $product['scrape_reference_id'] }}</p>
+                                @endif
                             </div>
                         </div>
                     @endforeach
                 </div>
-            @elseif($extractedData)
-                <div class="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <h3 class="mt-2 text-sm font-medium text-gray-900">Aucun produit trouvé</h3>
-                    <p class="mt-1 text-sm text-gray-500">Essayez de modifier les filtres par site</p>
-                </div>
-            @else
-                <div class="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                    <h3 class="mt-2 text-sm font-medium text-gray-900">Prêt à rechercher</h3>
-                    <p class="mt-1 text-sm text-gray-500">Cliquez sur "Extraire et rechercher" pour commencer</p>
-                </div>
-            @endif
-        </div>
+            </div>
+        @elseif($extractedData)
+            <!-- Aucun résultat -->
+            <div class="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <h3 class="mt-2 text-sm font-medium text-gray-900">Aucun produit trouvé</h3>
+                <p class="mt-1 text-sm text-gray-500">Essayez de modifier les filtres par site</p>
+            </div>
+        @else
+            <!-- État initial -->
+            <div class="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <h3 class="mt-2 text-sm font-medium text-gray-900">Prêt à rechercher</h3>
+                <p class="mt-1 text-sm text-gray-500">Cliquez sur "Extraire et rechercher" pour commencer</p>
+            </div>
+        @endif
     </div>
 </div>
