@@ -479,9 +479,38 @@ class Boutique extends Component
                     $subQuery .= "
                         $and LOWER(
                             REGEXP_REPLACE(
-                                CONCAT(product_char.name, ' ', COALESCE(options.attribute_value, '')) COLLATE utf8mb4_unicode_ci,
-                                '[^a-z0-9 ]',
-                                ''
+                                REPLACE(
+                                REPLACE(
+                                REPLACE(
+                                REPLACE(
+                                REPLACE(
+                                REPLACE(
+                                REPLACE(
+                                REPLACE(
+                                REPLACE(
+                                REPLACE(
+                                    CONCAT(product_char.name, ' ', COALESCE(options.attribute_value, '')),
+                                    'é','e'
+                                ),
+                                    'è','e'
+                                ),
+                                    'ê','e'
+                                ),
+                                    'ë','e'
+                                ),
+                                    'à','a'
+                                ),
+                                    'â','a'
+                                ),
+                                    'î','i'
+                                ),
+                                    'ï','i'
+                                ),
+                                    'ô','o'
+                                ),
+                                    'û','u'
+                                ),
+                                '[^a-z0-9 ]',''
                             )
                         ) LIKE ?
                     ";
@@ -491,7 +520,40 @@ class Boutique extends Component
 
                 $subQuery .= "
                     OR LOWER(
-                        REGEXP_REPLACE(produit.sku COLLATE utf8mb4_unicode_ci, '[^a-z0-9 ]', '')
+                        REGEXP_REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                                produit.sku,
+                                'é','e'
+                            ),
+                                'è','e'
+                            ),
+                                'ê','e'
+                            ),
+                                'ë','e'
+                            ),
+                                'à','a'
+                            ),
+                                'â','a'
+                            ),
+                                'î','i'
+                            ),
+                                'ï','i'
+                            ),
+                                'ô','o'
+                            ),
+                                'û','u'
+                            ), 
+                            '[^a-z0-9 ]', ''
+                        )
                     ) LIKE ?
                 )";
                 $params[] = "%{$searchNormalized}%";
@@ -506,7 +568,40 @@ class Boutique extends Component
             if (!empty($this->filterName)) {
                 $subQuery .= "
                     AND LOWER(
-                        REGEXP_REPLACE(product_char.name COLLATE utf8mb4_unicode_ci, '[^a-z0-9 ]', '')
+                        REGEXP_REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                                product_char.name ,
+                                'é','e'
+                            ),
+                                'è','e'
+                            ),
+                                'ê','e'
+                            ),
+                                'ë','e'
+                            ),
+                                'à','a'
+                            ),
+                                'â','a'
+                            ),
+                                'î','i'
+                            ),
+                                'ï','i'
+                            ),
+                                'ô','o'
+                            ),
+                                'û','u'
+                            ),  
+                            '[^a-z0-9 ]', ''
+                        )
                     ) LIKE ?
                 ";
                 $params[] = '%' . $this->normalizeSearch($this->filterName) . '%';
@@ -516,9 +611,38 @@ class Boutique extends Component
                 $subQuery .= "
                     AND LOWER(
                         REGEXP_REPLACE(
-                            SUBSTRING_INDEX(product_char.name COLLATE utf8mb4_unicode_ci, ' - ', 1),
-                            '[^a-z0-9 ]',
-                            ''
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                                SUBSTRING_INDEX(product_char.name , ' - ', 1),
+                                'é','e'
+                            ),
+                                'è','e'
+                            ),
+                                'ê','e'
+                            ),
+                                'ë','e'
+                            ),
+                                'à','a'
+                            ),
+                                'â','a'
+                            ),
+                                'î','i'
+                            ),
+                                'ï','i'
+                            ),
+                                'ô','o'
+                            ),
+                                'û','u'
+                            ),
+                            '[^a-z0-9 ]', ''
                         )
                     ) LIKE ?
                 ";
@@ -529,9 +653,38 @@ class Boutique extends Component
                 $subQuery .= "
                     AND LOWER(
                         REGEXP_REPLACE(
-                            SUBSTRING_INDEX(eas.attribute_set_name COLLATE utf8mb4_unicode_ci, '_', -1),
-                            '[^a-z0-9 ]',
-                            ''
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                                SUBSTRING_INDEX(eas.attribute_set_name , '_', -1),
+                                'é','e'
+                            ),
+                                'è','e'
+                            ),
+                                'ê','e'
+                            ),
+                                'ë','e'
+                            ),
+                                'à','a'
+                            ),
+                                'â','a'
+                            ),
+                                'î','i'
+                            ),
+                                'ï','i'
+                            ),
+                                'ô','o'
+                            ),
+                                'û','u'
+                            ),
+                            '[^a-z0-9 ]',''
                         )
                     ) LIKE ?
                 ";
@@ -541,7 +694,40 @@ class Boutique extends Component
             if (!empty($this->filterEAN)) {
                 $subQuery .= "
                     AND LOWER(
-                        REGEXP_REPLACE(produit.sku COLLATE utf8mb4_unicode_ci, '[^a-z0-9 ]', '')
+                        REGEXP_REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                            REPLACE(
+                                produit.sku ,
+                                'é','e'
+                            ),
+                                'è','e'
+                            ),
+                                'ê','e'
+                            ),
+                                'ë','e'
+                            ),
+                                'à','a'
+                            ),
+                                'â','a'
+                            ),
+                                'î','i'
+                            ),
+                                'ï','i'
+                            ),
+                                'ô','o'
+                            ),
+                                'û','u'
+                            ), 
+                            '[^a-z0-9 ]', ''
+                        )
                     ) LIKE ?
                 ";
                 $params[] = '%' . $this->normalizeSearch($this->filterEAN) . '%';
