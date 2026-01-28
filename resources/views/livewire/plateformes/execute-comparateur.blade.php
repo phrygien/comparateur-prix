@@ -30,6 +30,9 @@ new class extends Component {
 
         // Par défaut, tous les sites sont sélectionnés
         $this->selectedSites = collect($this->availableSites)->pluck('id')->toArray();
+        
+        // Lancer automatiquement l'extraction au chargement
+        $this->extractSearchTerme();
     }
 
     public function extractSearchTerme()
@@ -856,13 +859,13 @@ Score de confiance entre 0 et 1."
 }; ?>
 
 <div class="bg-white">
-    <!-- Header avec le bouton de recherche -->
+    <!-- Header avec le bouton de recherche (maintenant optionnel) -->
     <div class="px-6 py-4 border-b border-gray-200">
         <div class="flex items-center justify-between">
             <h2 class="text-xl font-bold text-gray-900">Recherche de produit</h2>
             <button wire:click="extractSearchTerme" wire:loading.attr="disabled"
                 class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium shadow-sm">
-                <span wire:loading.remove>Extraire et rechercher</span>
+                <span wire:loading.remove>Rechercher à nouveau</span>
                 <span wire:loading>Extraction en cours...</span>
             </button>
         </div>
@@ -908,8 +911,20 @@ Score de confiance entre 0 et 1."
 
     <!-- Contenu principal -->
     <div class="p-6">
-        <!-- Statistiques -->
-        @if(!empty($groupedResults))
+        <!-- Indicateur de chargement -->
+        @if($isLoading)
+            <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div class="flex items-center space-x-3">
+                    <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-600"></div>
+                    <p class="text-sm text-blue-800">
+                        Extraction et recherche en cours pour "<span class="font-semibold">{{ $productName }}</span>"...
+                    </p>
+                </div>
+            </div>
+        @endif
+
+        <!-- Statistiques (quand la recherche est terminée) -->
+        @if(!empty($groupedResults) && !$isLoading)
             <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                 <p class="text-sm text-blue-800">
                     <span class="font-semibold">{{ count($matchingProducts) }}</span> produit(s) trouvé(s)
@@ -933,7 +948,7 @@ Score de confiance entre 0 et 1."
         @endif
 
         <!-- Section des produits -->
-        @if(!empty($matchingProducts))
+        @if(!empty($matchingProducts) && !$isLoading)
             <div class="mx-auto max-w-7xl overflow-hidden sm:px-6 lg:px-8">
                 <h2 class="sr-only">Produits</h2>
 
@@ -1032,7 +1047,14 @@ Score de confiance entre 0 et 1."
                     @endforeach
                 </div>
             </div>
-        @elseif($extractedData)
+        @elseif($isLoading)
+            <!-- État de chargement -->
+            <div class="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+                <h3 class="mt-4 text-sm font-medium text-gray-900">Extraction en cours</h3>
+                <p class="mt-1 text-sm text-gray-500">Analyse du produit et recherche des correspondances...</p>
+            </div>
+        @elseif($extractedData && empty($matchingProducts))
             <!-- Aucun résultat -->
             <div class="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
                 <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1042,13 +1064,13 @@ Score de confiance entre 0 et 1."
                 <p class="mt-1 text-sm text-gray-500">Essayez de modifier les filtres par site</p>
             </div>
         @else
-            <!-- État initial -->
+            <!-- État initial (avant chargement) -->
             <div class="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
                 <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
                 <h3 class="mt-2 text-sm font-medium text-gray-900">Prêt à rechercher</h3>
-                <p class="mt-1 text-sm text-gray-500">Cliquez sur "Extraire et rechercher" pour commencer</p>
+                <p class="mt-1 text-sm text-gray-500">L'extraction démarre automatiquement...</p>
             </div>
         @endif
     </div>
