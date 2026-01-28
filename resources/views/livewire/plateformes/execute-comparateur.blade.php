@@ -776,7 +776,7 @@ Score de confiance entre 0 et 1."
         </div>
     </div>
 
-    <livewire:plateformes.detail :id="$id" />
+    <livewire:plateformes.detail :id="$productId" />
 
     <!-- Filtres par site -->
     @if(!empty($availableSites))
