@@ -374,7 +374,7 @@ Exemple de format attendu :
 
     /**
      * Groupe les résultats par site et garde tous les produits UNIQUES par site
-     * Élimine les doublons basés sur vendor + name + type + variation
+     * Élimine les doublons basés sur scrap_reference_id (garde le plus récent)
      */
     private function groupAllProductsWithoutDuplicates(array $products)
     {
@@ -398,25 +398,29 @@ Exemple de format attendu :
         // 1. Grouper par site
         $groupedBySite = $productsCollection->groupBy('web_site_id');
 
-        // 2. Pour chaque site, éliminer les doublons (même vendor + name + type + variation)
+        // 2. Pour chaque site, éliminer les doublons basés sur scrap_reference_id
         $uniqueProductsBySite = $groupedBySite->map(function ($siteProducts, $siteId) {
             $uniqueProducts = collect();
-            $seenKeys = [];
+            $seenRefIds = [];
 
-            foreach ($siteProducts as $product) {
-                // Créer une clé unique basée sur les attributs du produit
-                $key = $this->createProductUniqueKey($product);
+            // Trier par scrap_reference_id décroissant et created_at décroissant pour prendre le plus récent
+            $sortedProducts = $siteProducts->sortByDesc('scrap_reference_id')
+                ->sortByDesc('created_at');
+
+            foreach ($sortedProducts as $product) {
+                $scrapRefId = $product['scrap_reference_id'] ?? 0;
                 
-                if (!isset($seenKeys[$key])) {
-                    $seenKeys[$key] = true;
+                // Si scrap_reference_id est 0, utiliser l'ID du produit comme clé
+                $uniqueKey = $scrapRefId > 0 ? 'scrap_' . $scrapRefId : 'id_' . ($product['id'] ?? uniqid());
+                
+                // Ne garder que le premier (le plus récent) de chaque scrap_reference_id
+                if (!isset($seenRefIds[$uniqueKey])) {
+                    $seenRefIds[$uniqueKey] = true;
                     $uniqueProducts->push($product);
                 }
             }
 
-            // Trier par scrap_reference_id décroissant et date décroissante
-            return $uniqueProducts->sortByDesc('scrap_reference_id')
-                ->sortByDesc('created_at')
-                ->values();
+            return $uniqueProducts->values();
         });
 
         // 3. Aplatir tous les produits uniques de tous les sites
@@ -433,14 +437,20 @@ Exemple de format attendu :
         $this->groupedResults = $groupedBySite->map(function ($siteProducts, $siteId) {
             $totalProducts = $siteProducts->count();
             
-            // Éliminer les doublons pour les statistiques
+            // Éliminer les doublons pour les statistiques basés sur scrap_reference_id
             $uniqueProducts = collect();
-            $seenKeys = [];
+            $seenRefIds = [];
             
-            foreach ($siteProducts as $product) {
-                $key = $this->createProductUniqueKey($product);
-                if (!isset($seenKeys[$key])) {
-                    $seenKeys[$key] = true;
+            // Trier par scrap_reference_id décroissant et created_at décroissant
+            $sortedProducts = $siteProducts->sortByDesc('scrap_reference_id')
+                ->sortByDesc('created_at');
+            
+            foreach ($sortedProducts as $product) {
+                $scrapRefId = $product['scrap_reference_id'] ?? 0;
+                $uniqueKey = $scrapRefId > 0 ? 'scrap_' . $scrapRefId : 'id_' . ($product['id'] ?? uniqid());
+                
+                if (!isset($seenRefIds[$uniqueKey])) {
+                    $seenRefIds[$uniqueKey] = true;
                     $uniqueProducts->push($product);
                 }
             }
@@ -451,7 +461,7 @@ Exemple de format attendu :
                 'site_id' => $siteId,
                 'total_products' => $totalProducts,
                 'unique_products' => $uniqueCount,
-                'all_products' => $siteProducts->map(function ($product) {
+                'all_products' => $uniqueProducts->map(function ($product) {
                     return [
                         'id' => $product['id'] ?? 0,
                         'scrap_reference_id' => $product['scrap_reference_id'] ?? 0,
@@ -465,22 +475,25 @@ Exemple de format attendu :
                         'url' => $product['url'] ?? null,
                         'image_url' => $product['image_url'] ?? null
                     ];
-                })->sortByDesc('scrap_reference_id')->values()->toArray()
+                })->values()->toArray()
             ];
         })->toArray();
     }
 
     /**
-     * Crée une clé unique pour un produit basée sur ses attributs
+     * Crée une clé unique pour un produit basée sur scrap_reference_id
      */
     private function createProductUniqueKey(array $product): string
     {
-        $vendor = mb_strtolower(trim($product['vendor'] ?? ''));
-        $name = mb_strtolower(trim($product['name'] ?? ''));
-        $type = mb_strtolower(trim($product['type'] ?? ''));
-        $variation = mb_strtolower(trim($product['variation'] ?? ''));
+        // Utiliser scrap_reference_id comme clé unique principale
+        $scrapRefId = $product['scrap_reference_id'] ?? 0;
         
-        return md5($vendor . '|' . $name . '|' . $type . '|' . $variation);
+        // Si scrap_reference_id est 0 ou null, utiliser l'ID du produit
+        if (empty($scrapRefId)) {
+            return 'id_' . ($product['id'] ?? uniqid());
+        }
+        
+        return 'scrap_' . $scrapRefId;
     }
 
     /**
