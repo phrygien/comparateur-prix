@@ -475,8 +475,8 @@ Exemple 3 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream En
     }
 
     /**
-     * Groupe les résultats par SITE en ne gardant qu'UN SEUL produit par site
-     * Priorité : le produit avec le PLUS GRAND scrape_reference_id (le plus récent)
+     * Organise les résultats pour afficher TOUS les produits qui matchent par site
+     * Tri : par scrape_reference_id décroissant (les plus récents en premier)
      */
     private function groupResultsByScrapeReference(array $products)
     {
@@ -496,52 +496,48 @@ Exemple 3 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream En
             ], $product);
         });
 
-        \Log::info('Avant groupement par site', [
-            'total_produits' => $productsCollection->count(),
-            'exemple_produits' => $productsCollection->take(3)->map(fn($p) => [
-                'id' => $p['id'],
-                'site_id' => $p['web_site_id'],
-                'scrape_ref_id' => $p['scrape_reference_id'],
-                'name' => $p['name']
-            ])->toArray()
+        \Log::info('Avant tri des résultats', [
+            'total_produits' => $productsCollection->count()
         ]);
 
-        // ÉTAPE 1: Grouper par SITE et garder le produit avec le PLUS GRAND scrape_reference_id
-        $uniqueBySite = $productsCollection
-            ->groupBy('web_site_id')
-            ->map(function ($siteProducts) {
-                // Pour chaque site, trier par scrape_reference_id décroissant et prendre le premier
-                return $siteProducts->sortByDesc('scrape_reference_id')->first();
-            })
+        // GARDER TOUS LES PRODUITS, juste les trier par scrape_reference_id décroissant
+        // Cela met les produits les plus récents en premier pour chaque site
+        $sortedProducts = $productsCollection
+            ->sortByDesc('scrape_reference_id')
             ->values();
 
-        // Limiter à 50 résultats maximum
-        $this->matchingProducts = $uniqueBySite->take(50)->toArray();
+        // Limiter à 100 résultats maximum pour éviter la surcharge
+        $this->matchingProducts = $sortedProducts->take(100)->toArray();
 
-        \Log::info('Résultats après groupement par site (MAX scrape_reference_id)', [
-            'total_produits_avant' => $productsCollection->count(),
-            'sites_uniques' => $uniqueBySite->count(),
-            'produits_finaux' => count($this->matchingProducts),
-            'produits_selectionnes' => collect($this->matchingProducts)->map(fn($p) => [
-                'id' => $p['id'],
-                'site_id' => $p['web_site_id'],
-                'scrape_ref_id' => $p['scrape_reference_id'],
-                'name' => $p['name']
-            ])->toArray()
+        \Log::info('Résultats après tri par scrape_reference_id', [
+            'total_produits' => count($this->matchingProducts),
+            'par_site' => $sortedProducts->groupBy('web_site_id')->map(fn($group) => $group->count())->toArray()
         ]);
 
         // ÉTAPE 2: Grouper par scrape_reference pour les statistiques
         $grouped = $productsCollection->groupBy('scrape_reference');
 
+        // Grouper aussi par site pour les statistiques
+        $bySiteStats = $productsCollection->groupBy('web_site_id')->map(function ($siteProducts, $siteId) {
+            return [
+                'site_id' => $siteId,
+                'total_products' => $siteProducts->count(),
+                'max_scrape_ref_id' => $siteProducts->max('scrape_reference_id'),
+                'min_scrape_ref_id' => $siteProducts->min('scrape_reference_id'),
+                'products' => $siteProducts->sortByDesc('scrape_reference_id')->values()->toArray()
+            ];
+        });
+
         // Stocker les résultats groupés pour l'affichage des statistiques
         $this->groupedResults = $grouped->map(function ($group, $reference) {
             // Groupe par site pour les statistiques
             $bySite = $group->groupBy('web_site_id')->map(function ($siteProducts) {
-                // Pour chaque site, garde le produit avec le plus grand scrape_reference_id
-                $bestProduct = $siteProducts->sortByDesc('scrape_reference_id')->first();
+                // Pour chaque site, garde tous les produits triés par scrape_reference_id
+                $sortedSiteProducts = $siteProducts->sortByDesc('scrape_reference_id')->values();
                 return [
                     'count' => $siteProducts->count(),
-                    'best_product' => $bestProduct,
+                    'products' => $sortedSiteProducts->toArray(),
+                    'max_scrape_ref_id' => $siteProducts->max('scrape_reference_id'),
                     'lowest_price' => $siteProducts->min('prix_ht'),
                     'highest_price' => $siteProducts->max('prix_ht'),
                 ];
@@ -552,19 +548,24 @@ Exemple 3 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream En
                 'total_count' => $group->count(),
                 'sites_count' => $bySite->count(),
                 'sites' => $bySite->map(function ($siteData, $siteId) {
-                    $bestProduct = $siteData['best_product'] ?? [];
                     return [
                         'site_id' => $siteId,
-                        'product_id' => $bestProduct['id'] ?? null,
-                        'scrape_reference_id' => $bestProduct['scrape_reference_id'] ?? null,
-                        'price' => $bestProduct['prix_ht'] ?? null,
-                        'variations_count' => $siteData['count'] ?? 0
+                        'products_count' => $siteData['count'],
+                        'max_scrape_ref_id' => $siteData['max_scrape_ref_id'],
+                        'price_range' => [
+                            'min' => $siteData['lowest_price'],
+                            'max' => $siteData['highest_price']
+                        ],
+                        'variations_count' => $siteData['count']
                     ];
                 })->values()->toArray(),
                 'best_price' => $group->min('prix_ht'),
                 'site_ids' => $group->pluck('web_site_id')->unique()->values()->toArray()
             ];
         })->toArray();
+
+        // Ajouter les stats par site
+        $this->groupedResults['_site_stats'] = $bySiteStats->toArray();
     }
 
     /**
@@ -832,12 +833,24 @@ Score de confiance entre 0 et 1."
     @if(!empty($groupedResults))
         <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
             <p class="text-sm text-blue-800">
-                <span class="font-semibold">{{ count($matchingProducts) }}</span> résultat(s) trouvé(s)
-                <span class="text-xs ml-2">(1 produit par site, classés par pertinence)</span>
+                <span class="font-semibold">{{ count($matchingProducts) }}</span> produit(s) trouvé(s)
+                <span class="text-xs ml-2">(tous les produits matchant les critères, triés par scrape_reference_id)</span>
             </p>
-            <p class="text-xs text-gray-600 mt-1">
-                <span class="font-semibold">{{ count($groupedResults) }}</span> référence(s) unique(s) disponible(s)
-            </p>
+            @if(isset($groupedResults['_site_stats']))
+                <div class="mt-2 flex flex-wrap gap-2">
+                    @foreach($groupedResults['_site_stats'] as $siteId => $stats)
+                        @php
+                            $siteInfo = collect($availableSites)->firstWhere('id', $siteId);
+                        @endphp
+                        @if($siteInfo)
+                            <span class="px-2 py-1 bg-white border border-blue-300 rounded text-xs">
+                                <span class="font-semibold">{{ $siteInfo['name'] }}</span>: 
+                                <span class="text-blue-700 font-bold">{{ $stats['total_products'] }}</span> produit(s)
+                            </span>
+                        @endif
+                    @endforeach
+                </div>
+            @endif
         </div>
     @endif
 
@@ -904,8 +917,11 @@ Score de confiance entre 0 et 1."
 
     @if(!empty($matchingProducts) && count($matchingProducts) > 1)
         <div class="mt-6">
-            <h3 class="font-bold mb-3">Autres résultats par site ({{ count($matchingProducts) }}) :</h3>
-            <div class="space-y-2 max-h-96 overflow-y-auto">
+            <h3 class="font-bold mb-3">
+                Tous les résultats correspondants ({{ count($matchingProducts) }})
+                <span class="text-sm font-normal text-gray-600">- Triés par scrape_reference_id (plus récent en premier)</span>
+            </h3>
+            <div class="space-y-2 max-h-[600px] overflow-y-auto">
                 @foreach($matchingProducts as $product)
                     <div wire:click="selectProduct({{ $product['id'] }})"
                         class="p-3 border rounded hover:bg-blue-50 cursor-pointer transition {{ $bestMatch && $bestMatch['id'] === $product['id'] ? 'bg-blue-100 border-blue-500' : 'bg-white' }}">
