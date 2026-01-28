@@ -313,11 +313,11 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
      * LOGIQUE DE RECHERCHE OPTIMISÉE
      * 1. Filtrer par VENDOR (obligatoire)
      * 2. Filtrer par statut COFFRET
-     * 3. FILTRAGE PROGRESSIF par NAME : TOUS les mots du name (hors vendor) doivent être présents
+     * 3. FILTRAGE STRICT par NAME : TOUS les mots du name (hors vendor) doivent être présents
      *    Fallback progressif si filtrage strict ne donne rien
      * 4. SCORER avec :
      *    - BONUS ÉNORME (+500) si recherche coffret ET produit est coffret (PRIORITÉ ABSOLUE)
-     *    - Matching SOUPLE sur le TYPE : favoriser mais ne pas exclure
+     *    - Matching HIÉRARCHIQUE sur le TYPE : vérifier étape par étape
      */
     private function searchMatchingProducts()
     {
@@ -400,13 +400,20 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             return;
         }
 
-        // ÉTAPE 2.5: PAS DE FILTRAGE STRICT PAR TYPE
-        // On va plutôt utiliser le scoring pour favoriser les types similaires
-        // sans exclure complètement les autres
-        \Log::info('Pas de filtrage strict par type, tous les produits passent au scoring', [
-            'count' => count($filteredProducts),
-            'type_recherché' => $type
-        ]);
+        // ÉTAPE 2.5: FILTRAGE STRICT PAR TYPE DE BASE
+        // Exclure les produits qui ont un type de base différent (ex: déodorant vs eau de toilette)
+        $typeFilteredProducts = $this->filterByBaseType($filteredProducts, $type);
+        
+        if (empty($typeFilteredProducts)) {
+            \Log::info('Aucun produit après filtrage par type de base, on garde tous les produits');
+            $typeFilteredProducts = $filteredProducts;
+        } else {
+            \Log::info('✅ Produits après filtrage par TYPE DE BASE', [
+                'count' => count($typeFilteredProducts),
+                'type_recherché' => $type
+            ]);
+            $filteredProducts = $typeFilteredProducts;
+        }
 
         // ÉTAPE 2.6: FILTRAGE PROGRESSIF par les mots du NAME
         $nameFilteredProducts = $filteredProducts;
@@ -549,38 +556,36 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             }
 
             // ==========================================
-            // SCORING SOUPLE SUR LE TYPE (pas d'exclusion)
+            // MATCHING HIÉRARCHIQUE SUR LE TYPE
             // ==========================================
             
-            $typeMatched = false;
-            $baseTypeBonus = 0;
+            $typeMatched = false; // Flag pour savoir si le type correspond
             
             if (!empty($typeParts) && !empty($productType)) {
-                // BONUS pour correspondance du type de base (mais pas exclusif)
+                // BONUS CRITIQUE : Vérifier que le TYPE DE BASE correspond (ex: "Eau de Toilette" vs "Déodorant")
+                // C'est la partie la plus importante du type (généralement la première)
                 if (!empty($typeParts[0])) {
                     $baseTypeLower = mb_strtolower(trim($typeParts[0]));
                     if (str_contains($productType, $baseTypeLower)) {
-                        $baseTypeBonus = 300; // GROS BONUS pour correspondance
-                        $typeMatched = true;
+                        $score += 300; // ÉNORME BONUS pour correspondance du type de base
+                        $typeMatched = true; // Le type de base correspond
                         \Log::debug('BONUS TYPE DE BASE correspondant', [
                             'product_id' => $product['id'] ?? 0,
                             'base_type_recherché' => $baseTypeLower,
                             'product_type' => $productType,
-                            'bonus' => $baseTypeBonus
+                            'bonus' => 300
                         ]);
                     } else {
-                        // PETIT MALUS (pas énorme) si le type de base ne correspond pas
-                        $baseTypeBonus = -50; // Réduit de -200 à -50
-                        \Log::debug('MALUS LÉGER TYPE DE BASE non correspondant', [
+                        // MALUS si le type de base ne correspond pas
+                        $score -= 200;
+                        \Log::debug('MALUS TYPE DE BASE non correspondant', [
                             'product_id' => $product['id'] ?? 0,
                             'base_type_recherché' => $baseTypeLower,
                             'product_type' => $productType,
-                            'malus' => $baseTypeBonus
+                            'malus' => -200
                         ]);
                     }
                 }
-                
-                $score += $baseTypeBonus;
                 
                 // Vérifier chaque partie du type dans l'ordre
                 foreach ($typeParts as $index => $part) {
@@ -589,8 +594,9 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                         // Vérifier si cette partie du type est présente dans le type du produit
                         if (str_contains($productType, $partLower)) {
                             // Bonus décroissant selon la position dans la hiérarchie
-                            $partBonus = 80 - ($index * 15); // Réduit de 100-20 à 80-15
-                            $partBonus = max($partBonus, 15);
+                            // La première partie (la plus importante) donne plus de points
+                            $partBonus = 100 - ($index * 20); // 100, 80, 60, 40, etc.
+                            $partBonus = max($partBonus, 20); // Minimum 20 points
                             
                             $score += $partBonus;
                             $matchedTypeParts[] = [
@@ -609,19 +615,19 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 
                 // BONUS supplémentaire si TOUTES les parties du type correspondent
                 if (count($matchedTypeParts) === $typePartsCount && $typePartsCount > 0) {
-                    $score += 100; // Réduit de 150 à 100
+                    $score += 150; // +150 points pour un match complet
                 }
                 
                 // BONUS MAXIMUM si le type complet est une sous-chaîne exacte
                 $typeLower = mb_strtolower(trim($type));
                 if (!empty($typeLower) && str_contains($productType, $typeLower)) {
-                    $score += 150; // Réduit de 200 à 150
+                    $score += 200; // +200 points pour type exact dans le produit
                     $typeMatched = true;
                 }
                 
                 // BONUS supplémentaire si le type du produit commence par le type recherché
                 if (!empty($typeLower) && str_starts_with($productType, $typeLower)) {
-                    $score += 80; // Réduit de 100 à 80
+                    $score += 100; // +100 points si le type est au début
                 }
             }
 
@@ -632,7 +638,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'all_type_parts_matched' => count($matchedTypeParts) === $typePartsCount,
                 'type_parts_count' => $typePartsCount,
                 'matched_count' => count($matchedTypeParts),
-                'type_matched' => $typeMatched,
+                'type_matched' => $typeMatched, // Nouveau flag
                 'is_coffret' => $productIsCoffret,
                 'coffret_bonus_applied' => ($isCoffretSource && $productIsCoffret),
                 'name_match_count' => !empty($nameWords) ? array_reduce($nameWords, function($count, $word) use ($productName) {
@@ -645,7 +651,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         ->sortByDesc('score')
         ->values();
 
-        \Log::info('Scoring détaillé (TYPE SOUPLE + BONUS COFFRET + BONUS NAME)', [
+        \Log::info('Scoring détaillé (TYPE HIÉRARCHIQUE + BONUS COFFRET + BONUS NAME)', [
             'total_products' => $scoredProducts->count(),
             'type_recherche' => $type,
             'type_parts' => $typeParts,
@@ -672,27 +678,21 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             })->toArray()
         ]);
 
-        // FILTRAGE SOUPLE : Favoriser les produits qui matchent NAME et/ou TYPE avec un score positif
+        // FILTRAGE CRITIQUE : Ne garder QUE les produits qui matchent à la fois sur NAME et TYPE
         $scoredProducts = $scoredProducts->filter(function($item) use ($nameWords) {
             $hasNameMatch = !empty($nameWords) ? $item['name_match_count'] > 0 : true;
+            $hasTypeMatch = $item['type_matched'];
             
-            // Garder les produits qui ont :
-            // 1. Un score positif ET au moins un match sur NAME
-            // 2. OU un score très élevé (même sans type match parfait)
-            $keepProduct = $item['score'] > 0 && (
-                $hasNameMatch || // Match sur le nom
-                $item['score'] >= 200 || // Score élevé (probablement coffret ou excellent match)
-                ($hasNameMatch && $item['score'] >= 50) // Match partiel acceptable
-            );
+            $keepProduct = $item['score'] > 0 && $hasNameMatch && $hasTypeMatch;
             
             if (!$keepProduct) {
-                \Log::debug('Produit exclu (score trop faible ou pas de match)', [
+                \Log::debug('Produit exclu car ne match pas NAME ET TYPE', [
                     'product_id' => $item['product']['id'] ?? 0,
                     'product_name' => $item['product']['name'] ?? '',
                     'product_type' => $item['product']['type'] ?? '',
                     'score' => $item['score'],
                     'name_match' => $hasNameMatch,
-                    'type_match' => $item['type_matched'],
+                    'type_match' => $hasTypeMatch,
                     'name_match_count' => $item['name_match_count'],
                     'name_words_total' => $item['name_words_total']
                 ]);
@@ -701,12 +701,12 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             return $keepProduct;
         });
 
-        \Log::info('Après filtrage SOUPLE (score positif + match NAME ou score élevé)', [
+        \Log::info('Après filtrage NAME ET TYPE obligatoires', [
             'produits_restants' => $scoredProducts->count()
         ]);
 
         if ($scoredProducts->isEmpty()) {
-            \Log::info('Aucun produit après filtrage souple', [
+            \Log::info('Aucun produit après filtrage NAME ET TYPE', [
                 'typeParts' => $typeParts,
                 'nameWords' => $nameWords
             ]);
@@ -988,6 +988,106 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             // Si la source n'est pas un coffret, exclure les coffrets
             return $sourceisCoffret ? $productIsCoffret : !$productIsCoffret;
         })->values()->toArray();
+    }
+
+    /**
+     * Filtre les produits par type de base pour éviter les confusions
+     * Ex: Si on cherche "Eau de Toilette", on exclut les "Déodorant", "Crème", etc.
+     */
+    private function filterByBaseType(array $products, string $searchType): array
+    {
+        if (empty($searchType)) {
+            return $products;
+        }
+
+        // Définir les catégories de types incompatibles
+        $typeCategories = [
+            'parfum' => ['eau de parfum', 'parfum', 'eau de toilette', 'eau de cologne', 'eau fraiche', 'extrait de parfum', 'extrait', 'cologne'],
+            'déodorant' => ['déodorant', 'deodorant', 'deo', 'anti-transpirant', 'antitranspirant'],
+            'crème' => ['crème', 'creme', 'baume', 'gel', 'lotion', 'fluide', 'soin'],
+            'huile' => ['huile', 'oil'],
+            'sérum' => ['sérum', 'serum', 'concentrate', 'concentré'],
+            'masque' => ['masque', 'mask', 'patch'],
+            'shampooing' => ['shampooing', 'shampoing', 'shampoo'],
+            'après-shampooing' => ['après-shampooing', 'conditioner', 'après shampooing'],
+            'savon' => ['savon', 'soap', 'gel douche', 'mousse'],
+            'maquillage' => ['fond de teint', 'rouge à lèvres', 'mascara', 'eye-liner', 'fard', 'poudre'],
+        ];
+
+        $searchTypeLower = mb_strtolower(trim($searchType));
+        
+        // Trouver la catégorie du type recherché
+        $searchCategory = null;
+        foreach ($typeCategories as $category => $keywords) {
+            foreach ($keywords as $keyword) {
+                if (str_contains($searchTypeLower, $keyword)) {
+                    $searchCategory = $category;
+                    break 2;
+                }
+            }
+        }
+
+        // Si on n'a pas trouvé de catégorie, pas de filtrage
+        if (!$searchCategory) {
+            \Log::info('Type de recherche non catégorisé, pas de filtrage par type de base', [
+                'type' => $searchType
+            ]);
+            return $products;
+        }
+
+        \Log::info('Filtrage par catégorie de type', [
+            'type_recherché' => $searchType,
+            'catégorie' => $searchCategory,
+            'mots_clés_catégorie' => $typeCategories[$searchCategory]
+        ]);
+
+        // Filtrer les produits
+        $filtered = collect($products)->filter(function ($product) use ($searchCategory, $typeCategories, $searchTypeLower) {
+            $productType = mb_strtolower($product['type'] ?? '');
+            
+            if (empty($productType)) {
+                return false;
+            }
+
+            // Vérifier si le produit appartient à la même catégorie
+            $productCategory = null;
+            foreach ($typeCategories as $category => $keywords) {
+                foreach ($keywords as $keyword) {
+                    if (str_contains($productType, $keyword)) {
+                        $productCategory = $category;
+                        break 2;
+                    }
+                }
+            }
+
+            // Si le produit n'a pas de catégorie identifiée, on le garde par sécurité
+            if (!$productCategory) {
+                return true;
+            }
+
+            // Garder uniquement si même catégorie
+            $match = ($productCategory === $searchCategory);
+            
+            if (!$match) {
+                \Log::debug('Produit exclu par filtrage de type', [
+                    'product_id' => $product['id'] ?? 0,
+                    'product_name' => $product['name'] ?? '',
+                    'product_type' => $productType,
+                    'product_category' => $productCategory,
+                    'search_category' => $searchCategory
+                ]);
+            }
+            
+            return $match;
+        })->values()->toArray();
+
+        \Log::info('Résultat du filtrage par type de base', [
+            'produits_avant' => count($products),
+            'produits_après' => count($filtered),
+            'produits_exclus' => count($products) - count($filtered)
+        ]);
+
+        return $filtered;
     }
 
     /**
