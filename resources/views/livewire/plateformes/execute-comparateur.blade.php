@@ -755,18 +755,25 @@ Score de confiance entre 0 et 1."
 
 }; ?>
 
-<div class="p-6 bg-white rounded-lg shadow">
-    <div class="mb-4">
-        <h2 class="text-xl font-bold mb-2">Extraction et recherche de produit</h2>
-        <p class="text-gray-600">Produit: {{ $productName }}</p>
+<div class="bg-white">
+    <!-- Header avec le bouton de recherche -->
+    <div class="px-6 py-4 border-b border-gray-200">
+        <div class="flex items-center justify-between">
+            <h2 class="text-xl font-bold text-gray-900">Recherche de produit</h2>
+            <button wire:click="extractSearchTerme" wire:loading.attr="disabled"
+                class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium shadow-sm">
+                <span wire:loading.remove>Extraire et rechercher</span>
+                <span wire:loading>Extraction en cours...</span>
+            </button>
+        </div>
     </div>
 
     <!-- Filtres par site -->
     @if(!empty($availableSites))
-        <div class="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+        <div class="px-6 py-4 bg-gray-50 border-b border-gray-200">
             <div class="flex items-center justify-between mb-3">
                 <h3 class="font-semibold text-gray-700">Filtrer par site</h3>
-                <button wire:click="toggleAllSites" class="text-sm text-blue-600 hover:text-blue-800 font-medium">
+                <button wire:click="toggleAllSites" class="text-sm text-indigo-600 hover:text-indigo-800 font-medium">
                     {{ count($selectedSites) === count($availableSites) ? 'Tout désélectionner' : 'Tout sélectionner' }}
                 </button>
             </div>
@@ -774,7 +781,7 @@ Score de confiance entre 0 et 1."
                 @foreach($availableSites as $site)
                     <label class="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 p-2 rounded">
                         <input type="checkbox" wire:model.live="selectedSites" value="{{ $site['id'] }}"
-                            class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                            class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
                         <span class="text-sm">{{ $site['name'] }}</span>
                     </label>
                 @endforeach
@@ -785,190 +792,203 @@ Score de confiance entre 0 et 1."
         </div>
     @endif
 
-    <button wire:click="extractSearchTerme" wire:loading.attr="disabled"
-        class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50">
-        <span wire:loading.remove>Extraire et rechercher</span>
-        <span wire:loading>Extraction en cours...</span>
-    </button>
-
     @if(session('error'))
-        <div class="mt-4 p-4 bg-red-100 text-red-700 rounded">
+        <div class="mx-6 mt-4 p-4 bg-red-100 text-red-700 rounded-lg">
             {{ session('error') }}
         </div>
     @endif
 
     @if(session('success'))
-        <div class="mt-4 p-4 bg-green-100 text-green-700 rounded">
+        <div class="mx-6 mt-4 p-4 bg-green-100 text-green-700 rounded-lg">
             {{ session('success') }}
         </div>
     @endif
 
-    @if($extractedData)
-        <div class="mt-6 p-4 bg-gray-50 rounded">
-            <h3 class="font-bold mb-3">Critères extraits :</h3>
-            <div class="grid grid-cols-2 gap-4">
-                <div>
-                    <span class="font-semibold">Vendor:</span> {{ $extractedData['vendor'] ?? 'N/A' }}
+    <!-- Layout 2 colonnes -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 p-6">
+        
+        <!-- Colonne gauche : Informations du produit recherché -->
+        <div class="lg:col-span-1">
+            <div class="bg-white rounded-lg shadow border border-gray-200">
+                <div class="px-4 sm:px-6 py-5 border-b border-gray-200">
+                    <h3 class="text-base font-semibold text-gray-900">Produit recherché</h3>
+                    <p class="mt-1 text-sm text-gray-500">Informations extraites</p>
                 </div>
-                <div>
-                    <span class="font-semibold">Name:</span> {{ $extractedData['name'] ?? 'N/A' }}
+                
+                <div class="border-t border-gray-100">
+                    <dl class="divide-y divide-gray-100">
+                        <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                            <dt class="text-sm font-medium text-gray-900">Nom complet</dt>
+                            <dd class="mt-1 text-sm text-gray-700 sm:col-span-2 sm:mt-0">{{ $productName }}</dd>
+                        </div>
+                        
+                        @if($extractedData)
+                            <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                                <dt class="text-sm font-medium text-gray-900">Marque</dt>
+                                <dd class="mt-1 text-sm text-gray-700 sm:col-span-2 sm:mt-0">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                                        {{ $extractedData['vendor'] ?? 'N/A' }}
+                                    </span>
+                                </dd>
+                            </div>
+                            
+                            <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                                <dt class="text-sm font-medium text-gray-900">Gamme</dt>
+                                <dd class="mt-1 text-sm text-gray-700 sm:col-span-2 sm:mt-0">{{ $extractedData['name'] ?? 'N/A' }}</dd>
+                            </div>
+                            
+                            <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                                <dt class="text-sm font-medium text-gray-900">Type</dt>
+                                <dd class="mt-1 text-sm text-gray-700 sm:col-span-2 sm:mt-0">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                        {{ $extractedData['type'] ?? 'N/A' }}
+                                    </span>
+                                </dd>
+                            </div>
+                            
+                            <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                                <dt class="text-sm font-medium text-gray-900">Contenance</dt>
+                                <dd class="mt-1 text-sm text-gray-700 sm:col-span-2 sm:mt-0">{{ $extractedData['variation'] ?? 'N/A' }}</dd>
+                            </div>
+                            
+                            <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                                <dt class="text-sm font-medium text-gray-900">Coffret</dt>
+                                <dd class="mt-1 text-sm text-gray-700 sm:col-span-2 sm:mt-0">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ ($extractedData['is_coffret'] ?? false) ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800' }}">
+                                        {{ ($extractedData['is_coffret'] ?? false) ? '🎁 Oui' : 'Non' }}
+                                    </span>
+                                </dd>
+                            </div>
+                        @else
+                            <div class="px-4 py-4 sm:px-6">
+                                <p class="text-sm text-gray-500 italic">Cliquez sur "Extraire et rechercher" pour analyser le produit</p>
+                            </div>
+                        @endif
+                    </dl>
                 </div>
-                <div>
-                    <span class="font-semibold">Variation:</span> {{ $extractedData['variation'] ?? 'N/A' }}
-                </div>
-                <div>
-                    <span class="font-semibold">Type:</span> {{ $extractedData['type'] ?? 'N/A' }}
-                </div>
-                <div class="col-span-2">
-                    <span class="font-semibold">Est un coffret:</span>
-                    <span
-                        class="px-2 py-1 rounded text-sm {{ ($extractedData['is_coffret'] ?? false) ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800' }}">
-                        {{ ($extractedData['is_coffret'] ?? false) ? 'Oui' : 'Non' }}
-                    </span>
-                </div>
+
+                @if($aiValidation)
+                    <div class="px-4 py-4 sm:px-6 bg-blue-50 border-t border-blue-200">
+                        <h4 class="text-sm font-semibold text-blue-900 mb-2">🤖 Validation IA</h4>
+                        <p class="text-xs text-blue-800 mb-1">
+                            <span class="font-semibold">Confiance:</span>
+                            <span class="text-base font-bold {{ $aiValidation['confidence_score'] >= 0.8 ? 'text-green-600' : ($aiValidation['confidence_score'] >= 0.6 ? 'text-yellow-600' : 'text-red-600') }}">
+                                {{ number_format($aiValidation['confidence_score'] * 100, 0) }}%
+                            </span>
+                        </p>
+                        <p class="text-xs text-gray-700">{{ $aiValidation['reasoning'] ?? 'N/A' }}</p>
+                    </div>
+                @endif
             </div>
         </div>
-    @endif
 
-    @if(!empty($groupedResults))
-        <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
-            <p class="text-sm text-blue-800">
-                <span class="font-semibold">{{ count($matchingProducts) }}</span> produit(s) trouvé(s)
-                <span class="text-xs ml-2">(tous les produits matchant les critères, triés par scrape_reference_id)</span>
-            </p>
-            @if(isset($groupedResults['_site_stats']))
-                <div class="mt-2 flex flex-wrap gap-2">
-                    @foreach($groupedResults['_site_stats'] as $siteId => $stats)
-                        @php
-                            $siteInfo = collect($availableSites)->firstWhere('id', $siteId);
-                        @endphp
-                        @if($siteInfo)
-                            <span class="px-2 py-1 bg-white border border-blue-300 rounded text-xs">
-                                <span class="font-semibold">{{ $siteInfo['name'] }}</span>: 
-                                <span class="text-blue-700 font-bold">{{ $stats['total_products'] }}</span> produit(s)
-                            </span>
-                        @endif
+        <!-- Colonne droite : Résultats en cards -->
+        <div class="lg:col-span-2">
+            @if(!empty($groupedResults))
+                <div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p class="text-sm text-blue-800">
+                        <span class="font-semibold">{{ count($matchingProducts) }}</span> produit(s) trouvé(s)
+                    </p>
+                    @if(isset($groupedResults['_site_stats']))
+                        <div class="mt-2 flex flex-wrap gap-2">
+                            @foreach($groupedResults['_site_stats'] as $siteId => $stats)
+                                @php
+                                    $siteInfo = collect($availableSites)->firstWhere('id', $siteId);
+                                @endphp
+                                @if($siteInfo)
+                                    <span class="px-2 py-1 bg-white border border-blue-300 rounded text-xs">
+                                        <span class="font-semibold">{{ $siteInfo['name'] }}</span>: 
+                                        <span class="text-blue-700 font-bold">{{ $stats['total_products'] }}</span>
+                                    </span>
+                                @endif
+                            @endforeach
+                        </div>
+                    @endif
+                </div>
+            @endif
+
+            @if(!empty($matchingProducts))
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    @foreach($matchingProducts as $product)
+                        <div wire:click="selectProduct({{ $product['id'] }})" 
+                            class="relative flex items-center space-x-3 rounded-lg border {{ $bestMatch && $bestMatch['id'] === $product['id'] ? 'border-indigo-500 ring-2 ring-indigo-500 bg-indigo-50' : 'border-gray-300 bg-white' }} px-4 py-4 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 focus-within:ring-offset-2 hover:border-indigo-400 cursor-pointer transition">
+                            
+                            <div class="shrink-0">
+                                @if($product['image_url'] ?? false)
+                                    <img class="h-12 w-12 rounded-lg object-cover" src="{{ $product['image_url'] }}" alt="{{ $product['name'] }}">
+                                @else
+                                    <div class="h-12 w-12 rounded-lg bg-gray-200 flex items-center justify-center">
+                                        <svg class="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                        </svg>
+                                    </div>
+                                @endif
+                            </div>
+                            
+                            <div class="min-w-0 flex-1">
+                                <a href="#" class="focus:outline-hidden">
+                                    <span class="absolute inset-0" aria-hidden="true"></span>
+                                    
+                                    <div class="flex items-center gap-1 mb-1">
+                                        <p class="text-sm font-semibold text-gray-900 truncate">{{ $product['vendor'] }}</p>
+                                        @if($product['name'] && (str_contains(strtolower($product['name']), 'coffret') || str_contains(strtolower($product['name']), 'set') || str_contains(strtolower($product['type'] ?? ''), 'coffret')))
+                                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">🎁</span>
+                                        @endif
+                                    </div>
+                                    
+                                    <p class="text-xs text-gray-900 truncate font-medium">{{ $product['name'] }}</p>
+                                    <p class="text-xs text-gray-500 truncate">{{ $product['type'] }} | {{ $product['variation'] }}</p>
+                                    
+                                    <div class="flex items-center gap-2 mt-1">
+                                        <p class="text-sm font-bold text-indigo-600">{{ number_format($product['prix_ht'], 2) }} €</p>
+                                        @php
+                                            $siteInfo = collect($availableSites)->firstWhere('id', $product['web_site_id']);
+                                        @endphp
+                                        @if($siteInfo)
+                                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                                {{ $siteInfo['name'] }}
+                                            </span>
+                                        @endif
+                                    </div>
+                                    
+                                    @if(isset($product['scrape_reference_id']))
+                                        <p class="text-xs text-gray-400 mt-1">ID: {{ $product['scrape_reference_id'] }}</p>
+                                    @endif
+                                </a>
+                                
+                                @if($product['url'] ?? false)
+                                    <div class="mt-2">
+                                        <a href="{{ $product['url'] }}" target="_blank" 
+                                           onclick="event.stopPropagation()"
+                                           class="inline-flex items-center text-xs font-medium text-indigo-600 hover:text-indigo-500 relative z-10">
+                                            Voir produit
+                                            <svg class="ml-1 h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                            </svg>
+                                        </a>
+                                    </div>
+                                @endif
+                            </div>
+                        </div>
                     @endforeach
+                </div>
+            @elseif($extractedData)
+                <div class="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <h3 class="mt-2 text-sm font-medium text-gray-900">Aucun produit trouvé</h3>
+                    <p class="mt-1 text-sm text-gray-500">Essayez de modifier les filtres par site</p>
+                </div>
+            @else
+                <div class="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <h3 class="mt-2 text-sm font-medium text-gray-900">Prêt à rechercher</h3>
+                    <p class="mt-1 text-sm text-gray-500">Cliquez sur "Extraire et rechercher" pour commencer</p>
                 </div>
             @endif
         </div>
-    @endif
-
-    @if($aiValidation)
-        <div class="mt-4 p-4 bg-blue-50 border border-blue-300 rounded">
-            <h3 class="font-bold text-blue-700 mb-2">🤖 Validation IA :</h3>
-            <p class="text-sm mb-1">
-                <span class="font-semibold">Score de confiance:</span>
-                <span
-                    class="text-lg font-bold {{ $aiValidation['confidence_score'] >= 0.8 ? 'text-green-600' : ($aiValidation['confidence_score'] >= 0.6 ? 'text-yellow-600' : 'text-red-600') }}">
-                    {{ number_format($aiValidation['confidence_score'] * 100, 0) }}%
-                </span>
-            </p>
-            <p class="text-sm text-gray-700">
-                <span class="font-semibold">Analyse:</span> {{ $aiValidation['reasoning'] ?? 'N/A' }}
-            </p>
-        </div>
-    @endif
-
-    @if($bestMatch)
-        <div class="mt-6 p-4 bg-green-50 border-2 border-green-500 rounded">
-            <h3 class="font-bold text-green-700 mb-3 flex items-center justify-between">
-                <span>
-                    ✓ Meilleur résultat :
-                    @if($bestMatch['name'] && (str_contains(strtolower($bestMatch['name']), 'coffret') || str_contains(strtolower($bestMatch['name']), 'set') || str_contains(strtolower($bestMatch['name']), 'kit') || str_contains(strtolower($bestMatch['type'] ?? ''), 'coffret') || str_contains(strtolower($bestMatch['type'] ?? ''), 'set') || str_contains(strtolower($bestMatch['type'] ?? ''), 'kit')))
-                        <span class="ml-2 px-3 py-1 bg-purple-500 text-white text-xs rounded-full font-bold">🎁 COFFRET</span>
-                    @endif
-                </span>
-                @php
-                    $bestMatchSite = collect($availableSites)->firstWhere('id', $bestMatch['web_site_id']);
-                @endphp
-                @if($bestMatchSite)
-                    <span class="px-3 py-1 bg-blue-500 text-white text-sm rounded-lg font-semibold">
-                        📍 {{ $bestMatchSite['name'] }}
-                    </span>
-                @endif
-            </h3>
-            <div class="flex items-start gap-4">
-                @if($bestMatch['image_url'] ?? false)
-                    <img src="{{ $bestMatch['image_url'] }}" alt="{{ $bestMatch['name'] }}"
-                        class="w-20 h-20 object-cover rounded">
-                @endif
-                <div class="flex-1">
-                    <p class="font-semibold">{{ $bestMatch['vendor'] }} - {{ $bestMatch['name'] }}</p>
-                    <p class="text-sm text-gray-600">{{ $bestMatch['type'] }} | {{ $bestMatch['variation'] }}</p>
-                    <p class="text-xs text-gray-500 mt-1">
-                        Ref: {{ $bestMatch['scrape_reference'] ?? 'N/A' }}
-                        @if(isset($bestMatch['scrape_reference_id']))
-                            <span class="ml-2 px-2 py-0.5 bg-gray-200 text-gray-700 rounded font-mono text-xs">
-                                ID: {{ $bestMatch['scrape_reference_id'] }}
-                            </span>
-                        @endif
-                    </p>
-                    <p class="text-sm font-bold text-green-600 mt-1">{{ $bestMatch['prix_ht'] }}
-                        {{ $bestMatch['currency'] }}</p>
-                    @if($bestMatch['url'] ?? false)
-                        <a href="{{ $bestMatch['url'] }}" target="_blank" class="text-xs text-blue-500 hover:underline">Voir le
-                            produit</a>
-                    @endif
-                </div>
-            </div>
-        </div>
-    @endif
-
-    @if(!empty($matchingProducts) && count($matchingProducts) > 1)
-        <div class="mt-6">
-            <h3 class="font-bold mb-3">
-                Tous les résultats correspondants ({{ count($matchingProducts) }})
-                <span class="text-sm font-normal text-gray-600">- Triés par scrape_reference_id (plus récent en premier)</span>
-            </h3>
-            <div class="space-y-2 max-h-[600px] overflow-y-auto">
-                @foreach($matchingProducts as $product)
-                    <div wire:click="selectProduct({{ $product['id'] }})"
-                        class="p-3 border rounded hover:bg-blue-50 cursor-pointer transition {{ $bestMatch && $bestMatch['id'] === $product['id'] ? 'bg-blue-100 border-blue-500' : 'bg-white' }}">
-                        <div class="flex items-center gap-3">
-                            @if($product['image_url'] ?? false)
-                                <img src="{{ $product['image_url'] }}" alt="{{ $product['name'] }}"
-                                    class="w-12 h-12 object-cover rounded">
-                            @endif
-                            <div class="flex-1">
-                                <div class="flex items-center gap-2 mb-1">
-                                    <p class="font-medium text-sm">{{ $product['vendor'] }} - {{ $product['name'] }}</p>
-                                    @if($product['name'] && (str_contains(strtolower($product['name']), 'coffret') || str_contains(strtolower($product['name']), 'set') || str_contains(strtolower($product['name']), 'kit') || str_contains(strtolower($product['type'] ?? ''), 'coffret') || str_contains(strtolower($product['type'] ?? ''), 'set') || str_contains(strtolower($product['type'] ?? ''), 'kit')))
-                                        <span class="px-2 py-0.5 bg-purple-500 text-white text-xs rounded-full font-bold">🎁</span>
-                                    @endif
-                                </div>
-                                <p class="text-xs text-gray-500">{{ $product['type'] }} | {{ $product['variation'] }}</p>
-                                <div class="flex items-center gap-2 mt-1">
-                                    <p class="text-xs text-gray-400">Ref: {{ $product['scrape_reference'] ?? 'N/A' }}</p>
-                                    @if(isset($product['scrape_reference_id']))
-                                        <span class="px-1.5 py-0.5 bg-gray-200 text-gray-700 rounded font-mono text-xs">
-                                            ID: {{ $product['scrape_reference_id'] }}
-                                        </span>
-                                    @endif
-                                    @php
-                                        $siteInfo = collect($availableSites)->firstWhere('id', $product['web_site_id']);
-                                    @endphp
-                                    @if($siteInfo)
-                                        <span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded font-semibold border border-blue-300">
-                                            📍 {{ $siteInfo['name'] }}
-                                        </span>
-                                    @endif
-                                </div>
-                            </div>
-                            <div class="text-right">
-                                <p class="font-bold text-sm">{{ $product['prix_ht'] }} {{ $product['currency'] }}</p>
-                                <p class="text-xs text-gray-500">ID: {{ $product['id'] }}</p>
-                            </div>
-                        </div>
-                    </div>
-                @endforeach
-            </div>
-        </div>
-    @endif
-
-    @if($extractedData && empty($matchingProducts))
-        <div class="mt-6 p-4 bg-yellow-50 border border-yellow-300 rounded">
-            <p class="text-yellow-800">❌ Aucun produit trouvé avec ces critères (vendor: {{ $extractedData['vendor'] }})</p>
-        </div>
-    @endif
+    </div>
 </div>
