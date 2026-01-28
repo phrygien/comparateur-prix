@@ -3997,7 +3997,7 @@ PROMPT;
         }
     }
 
-};
+}; ?>
 
 <div>
     <!-- Overlay de chargement global - Uniquement visible lors d'une action Livewire -->
