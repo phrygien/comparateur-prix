@@ -559,6 +559,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             // MATCHING HIÉRARCHIQUE SUR LE TYPE
             // ==========================================
             
+            $typeMatched = false; // Flag pour savoir si le type correspond
+            
             if (!empty($typeParts) && !empty($productType)) {
                 // BONUS CRITIQUE : Vérifier que le TYPE DE BASE correspond (ex: "Eau de Toilette" vs "Déodorant")
                 // C'est la partie la plus importante du type (généralement la première)
@@ -566,6 +568,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     $baseTypeLower = mb_strtolower(trim($typeParts[0]));
                     if (str_contains($productType, $baseTypeLower)) {
                         $score += 300; // ÉNORME BONUS pour correspondance du type de base
+                        $typeMatched = true; // Le type de base correspond
                         \Log::debug('BONUS TYPE DE BASE correspondant', [
                             'product_id' => $product['id'] ?? 0,
                             'base_type_recherché' => $baseTypeLower,
@@ -601,6 +604,11 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                                 'bonus' => $partBonus,
                                 'position' => $index + 1
                             ];
+                            
+                            // Si au moins une partie du type correspond, on considère que le type match
+                            if ($index == 0 || $typeMatched) {
+                                $typeMatched = true;
+                            }
                         }
                     }
                 }
@@ -614,6 +622,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 $typeLower = mb_strtolower(trim($type));
                 if (!empty($typeLower) && str_contains($productType, $typeLower)) {
                     $score += 200; // +200 points pour type exact dans le produit
+                    $typeMatched = true;
                 }
                 
                 // BONUS supplémentaire si le type du produit commence par le type recherché
@@ -629,6 +638,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'all_type_parts_matched' => count($matchedTypeParts) === $typePartsCount,
                 'type_parts_count' => $typePartsCount,
                 'matched_count' => count($matchedTypeParts),
+                'type_matched' => $typeMatched, // Nouveau flag
                 'is_coffret' => $productIsCoffret,
                 'coffret_bonus_applied' => ($isCoffretSource && $productIsCoffret),
                 'name_match_count' => !empty($nameWords) ? array_reduce($nameWords, function($count, $word) use ($productName) {
@@ -654,6 +664,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     'is_coffret' => $item['is_coffret'],
                     'coffret_bonus' => $item['coffret_bonus_applied'],
                     'name_match' => $item['name_match_count'] . '/' . $item['name_words_total'],
+                    'type_match' => $item['type_matched'],
                     'name' => $item['product']['name'] ?? '',
                     'type' => $item['product']['type'] ?? '',
                     'matched_type_parts' => array_map(function($part) {
@@ -667,19 +678,42 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             })->toArray()
         ]);
 
-        // Ne garder que ceux qui ont un score > 0
-        $scoredProducts = $scoredProducts->filter(fn($item) => $item['score'] > 0);
+        // FILTRAGE CRITIQUE : Ne garder QUE les produits qui matchent à la fois sur NAME et TYPE
+        $scoredProducts = $scoredProducts->filter(function($item) use ($nameWords) {
+            $hasNameMatch = !empty($nameWords) ? $item['name_match_count'] > 0 : true;
+            $hasTypeMatch = $item['type_matched'];
+            
+            $keepProduct = $item['score'] > 0 && $hasNameMatch && $hasTypeMatch;
+            
+            if (!$keepProduct) {
+                \Log::debug('Produit exclu car ne match pas NAME ET TYPE', [
+                    'product_id' => $item['product']['id'] ?? 0,
+                    'product_name' => $item['product']['name'] ?? '',
+                    'product_type' => $item['product']['type'] ?? '',
+                    'score' => $item['score'],
+                    'name_match' => $hasNameMatch,
+                    'type_match' => $hasTypeMatch,
+                    'name_match_count' => $item['name_match_count'],
+                    'name_words_total' => $item['name_words_total']
+                ]);
+            }
+            
+            return $keepProduct;
+        });
+
+        \Log::info('Après filtrage NAME ET TYPE obligatoires', [
+            'produits_restants' => $scoredProducts->count()
+        ]);
 
         if ($scoredProducts->isEmpty()) {
-            \Log::info('Aucun produit avec score > 0', [
+            \Log::info('Aucun produit après filtrage NAME ET TYPE', [
                 'typeParts' => $typeParts,
                 'nameWords' => $nameWords
             ]);
             
-            // Fallback: si aucun match par type, on prend les premiers produits du vendor
-            $this->matchingProducts = array_slice($filteredProducts, 0, 200);
-            $this->groupResultsByScrapeReference($this->matchingProducts);
-            $this->validateBestMatchWithAI();
+            // Pas de fallback, on ne retourne aucun produit
+            $this->matchingProducts = [];
+            $this->groupedResults = [];
             return;
         }
 
@@ -1386,6 +1420,39 @@ Score de confiance entre 0 et 1."
                             @endif
 
                             <div class="pt-4 pb-4 text-center">
+                                <!-- Badges de matching -->
+                                <div class="mb-2 flex justify-center gap-1">
+                                    @php
+                                        // Vérifier si le name matche
+                                        $nameMatches = false;
+                                        if (!empty($extractedData['name'])) {
+                                            $searchNameLower = mb_strtolower($extractedData['name']);
+                                            $productNameLower = mb_strtolower($product['name'] ?? '');
+                                            $nameMatches = str_contains($productNameLower, $searchNameLower);
+                                        }
+                                        
+                                        // Vérifier si le type matche
+                                        $typeMatches = false;
+                                        if (!empty($extractedData['type'])) {
+                                            $searchTypeLower = mb_strtolower($extractedData['type']);
+                                            $productTypeLower = mb_strtolower($product['type'] ?? '');
+                                            $typeMatches = str_contains($productTypeLower, $searchTypeLower);
+                                        }
+                                    @endphp
+                                    
+                                    @if($nameMatches)
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                            ✓ Name
+                                        </span>
+                                    @endif
+                                    
+                                    @if($typeMatches)
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                            ✓ Type
+                                        </span>
+                                    @endif
+                                </div>
+
                                 <!-- Badge coffret -->
                                 @if($product['name'] && (str_contains(strtolower($product['name']), 'coffret') || str_contains(strtolower($product['name']), 'set') || str_contains(strtolower($product['type'] ?? ''), 'coffret')))
                                     <div class="mb-2">
