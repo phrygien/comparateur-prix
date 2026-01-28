@@ -219,7 +219,8 @@ Exemple 3 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream En
      * LOGIQUE DE RECHERCHE OPTIMISÉE
      * 1. Filtrer par VENDOR (obligatoire)
      * 2. Filtrer par statut COFFRET
-     * 3. FILTRER par NAME (au moins 1 des 2 premiers mots doit matcher)
+     * 3. FILTRAGE STRICT par NAME : TOUS les mots du name (hors vendor) doivent être présents
+     *    Fallback : au moins 1 mot si filtrage strict ne donne rien
      * 4. SCORER uniquement sur le TYPE (matching maximum)
      */
     private function searchMatchingProducts()
@@ -255,14 +256,21 @@ Exemple 3 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream En
         // Extraire TOUS les mots du type (pour le scoring)
         $typeWords = $this->extractKeywords($type);
         
-        // Extraire les 2 premiers mots du name (pour le filtrage)
+        // Extraire les mots du name EN EXCLUANT le vendor
         $allNameWords = $this->extractKeywords($name);
-        $nameWords = array_slice($allNameWords, 0, 2);
+        
+        // Retirer le vendor des mots du name pour éviter les faux positifs
+        $vendorWords = $this->extractKeywords($vendor);
+        $nameWordsFiltered = array_diff($allNameWords, $vendorWords);
+        
+        // Prendre les 2 premiers mots APRÈS avoir retiré le vendor
+        $nameWords = array_slice(array_values($nameWordsFiltered), 0, 2);
 
         \Log::info('Mots-clés pour la recherche', [
             'vendor' => $vendor,
             'name' => $name,
-            'nameWords' => $nameWords,
+            'nameWords_brut' => $allNameWords,
+            'nameWords_filtres' => $nameWords,
             'type' => $type,
             'typeWords' => $typeWords
         ]);
@@ -295,31 +303,53 @@ Exemple 3 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream En
             return;
         }
 
-        // ÉTAPE 2.5: FILTRAGE par les mots du NAME
-        // Si on a des mots du name, on filtre d'abord pour garder seulement les produits pertinents
+        // ÉTAPE 2.5: FILTRAGE STRICT par les mots du NAME
+        // Si on a des mots du name, on filtre pour garder seulement les produits qui contiennent TOUS les mots
         if (!empty($nameWords)) {
             $nameFilteredProducts = collect($filteredProducts)->filter(function ($product) use ($nameWords) {
                 $productName = mb_strtolower($product['name'] ?? '');
                 
-                // Le produit doit contenir AU MOINS UN des mots du name
+                // Le produit doit contenir TOUS les mots du name (pas juste 1)
+                $matchCount = 0;
                 foreach ($nameWords as $word) {
                     if (str_contains($productName, $word)) {
-                        return true;
+                        $matchCount++;
                     }
                 }
-                return false;
+                
+                // Retourner true seulement si TOUS les mots sont trouvés
+                return $matchCount === count($nameWords);
             })->values()->toArray();
 
-            // Si on a des résultats après filtrage par name, on utilise ces résultats
-            // Sinon on garde tous les produits du vendor (fallback)
+            // Si on a des résultats après filtrage strict par name, on utilise ces résultats
+            // Sinon essayer un filtrage plus souple (au moins 1 mot)
             if (!empty($nameFilteredProducts)) {
                 $filteredProducts = $nameFilteredProducts;
-                \Log::info('Produits après filtrage par NAME', [
+                \Log::info('Produits après filtrage STRICT par NAME (tous les mots)', [
                     'count' => count($filteredProducts),
-                    'nameWords_used' => $nameWords
+                    'nameWords_required' => $nameWords
                 ]);
             } else {
-                \Log::info('Aucun produit après filtrage NAME, on garde tous les produits du vendor');
+                // Fallback : au moins 1 mot du name doit être présent
+                $nameFilteredProductsSoft = collect($filteredProducts)->filter(function ($product) use ($nameWords) {
+                    $productName = mb_strtolower($product['name'] ?? '');
+                    foreach ($nameWords as $word) {
+                        if (str_contains($productName, $word)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                })->values()->toArray();
+                
+                if (!empty($nameFilteredProductsSoft)) {
+                    $filteredProducts = $nameFilteredProductsSoft;
+                    \Log::info('Produits après filtrage SOUPLE par NAME (au moins 1 mot)', [
+                        'count' => count($filteredProducts),
+                        'nameWords_used' => $nameWords
+                    ]);
+                } else {
+                    \Log::info('Aucun produit après filtrage NAME, on garde tous les produits du vendor');
+                }
             }
         }
 
