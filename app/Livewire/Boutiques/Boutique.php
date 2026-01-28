@@ -629,6 +629,8 @@ class Boutique extends Component
                 LIMIT ? OFFSET ?
             ";
 
+            dd($dataQuery);
+
             $params[] = $perPage;
             $params[] = $offset;
 
