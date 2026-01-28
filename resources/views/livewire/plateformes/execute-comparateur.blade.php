@@ -201,16 +201,20 @@ Exemple de format attendu :
         $nameWords = $this->extractKeywords($name);
         $typeWords = $this->extractKeywords($type);
 
-        // Stratégie de recherche en cascade AVEC FILTRE VENDOR ET SITES
-        $query = Product::query()
-            ->when(!empty($vendor), function ($q) use ($vendor, $vendorLower) {
+        // Si pas de vendor, abandonner la recherche
+        if (empty($vendor)) {
+            \Log::warning('Aucun vendor extrait, recherche impossible');
+            return;
+        }
+
+        // Recherche UNIQUEMENT avec le vendor obligatoire + sites sélectionnés
+        $baseQuery = Product::query()
+            ->where(function ($q) use ($vendor, $vendorLower) {
                 // Recherche insensible à la casse avec plusieurs formats
-                $q->where(function ($subQ) use ($vendor, $vendorLower) {
-                    $subQ->where('vendor', 'LIKE', "%{$vendor}%")
-                        ->orWhere('vendor', 'LIKE', "%" . mb_strtoupper($vendor) . "%")
-                        ->orWhere('vendor', 'LIKE', "%" . ucfirst($vendorLower) . "%")
-                        ->orWhereRaw('LOWER(vendor) LIKE ?', ['%' . $vendorLower . '%']);
-                });
+                $q->where('vendor', 'LIKE', "%{$vendor}%")
+                    ->orWhere('vendor', 'LIKE', "%" . mb_strtoupper($vendor) . "%")
+                    ->orWhere('vendor', 'LIKE', "%" . ucfirst($vendorLower) . "%")
+                    ->orWhereRaw('LOWER(vendor) LIKE ?', ['%' . $vendorLower . '%']);
             })
             ->when(!empty($this->selectedSites), function ($q) {
                 $q->whereIn('web_site_id', $this->selectedSites);
@@ -218,42 +222,34 @@ Exemple de format attendu :
             ->orderByDesc('scrap_reference_id')
             ->orderByDesc('id');
 
-        // 1. Recherche exacte (vendor + name + type) - SANS variation
-        if (!empty($name)) {
-            $exactMatch = (clone $query)
+        $allResults = collect();
+
+        // 1. Recherche vendor + name + type (meilleure correspondance)
+        if (!empty($name) && !empty($type)) {
+            $exactMatch = (clone $baseQuery)
                 ->where(function ($q) use ($name, $nameLower) {
-                    // Recherche insensible à la casse pour le name
                     $q->where('name', 'LIKE', "%{$name}%")
                         ->orWhere('name', 'LIKE', "%" . mb_strtoupper($name) . "%")
                         ->orWhere('name', 'LIKE', "%" . ucfirst($nameLower) . "%")
                         ->orWhereRaw('LOWER(name) LIKE ?', ['%' . $nameLower . '%']);
                 })
-                ->when(!empty($type), function ($q) use ($type, $typeLower) {
-                    $q->where(function ($subQ) use ($type, $typeLower) {
-                        // Recherche insensible à la casse pour le type
-                        $subQ->where('type', 'LIKE', "%{$type}%")
-                            ->orWhere('type', 'LIKE', "%" . mb_strtoupper($type) . "%")
-                            ->orWhere('type', 'LIKE', "%" . ucfirst($typeLower) . "%")
-                            ->orWhereRaw('LOWER(type) LIKE ?', ['%' . $typeLower . '%']);
-                    });
+                ->where(function ($q) use ($type, $typeLower) {
+                    $q->where('type', 'LIKE', "%{$type}%")
+                        ->orWhere('type', 'LIKE', "%" . mb_strtoupper($type) . "%")
+                        ->orWhere('type', 'LIKE', "%" . ucfirst($typeLower) . "%")
+                        ->orWhereRaw('LOWER(type) LIKE ?', ['%' . $typeLower . '%']);
                 })
                 ->get();
 
             if ($exactMatch->isNotEmpty()) {
-                $filtered = $this->filterByCoffretStatus($exactMatch, $isCoffretSource);
-                if (!empty($filtered)) {
-                    $this->groupAllProductsWithoutDuplicates($filtered);
-                    $this->validateBestMatchWithAI();
-                    return;
-                }
+                $allResults = $allResults->merge($exactMatch);
             }
         }
 
         // 2. Recherche vendor + name seulement
         if (!empty($name)) {
-            $vendorAndName = (clone $query)
+            $vendorAndName = (clone $baseQuery)
                 ->where(function ($q) use ($name, $nameLower) {
-                    // Recherche insensible à la casse pour le name
                     $q->where('name', 'LIKE', "%{$name}%")
                         ->orWhere('name', 'LIKE', "%" . mb_strtoupper($name) . "%")
                         ->orWhere('name', 'LIKE', "%" . ucfirst($nameLower) . "%")
@@ -262,78 +258,47 @@ Exemple de format attendu :
                 ->get();
 
             if ($vendorAndName->isNotEmpty()) {
-                $filtered = $this->filterByCoffretStatus($vendorAndName, $isCoffretSource);
-                if (!empty($filtered)) {
-                    $this->groupAllProductsWithoutDuplicates($filtered);
-                    $this->validateBestMatchWithAI();
-                    return;
-                }
+                $allResults = $allResults->merge($vendorAndName);
             }
         }
 
-        // 3. Recherche par mots-clés du name
+        // 3. Recherche vendor + type seulement
+        if (!empty($type)) {
+            $vendorAndType = (clone $baseQuery)
+                ->where(function ($q) use ($type, $typeLower) {
+                    $q->where('type', 'LIKE', "%{$type}%")
+                        ->orWhere('type', 'LIKE', "%" . mb_strtoupper($type) . "%")
+                        ->orWhere('type', 'LIKE', "%" . ucfirst($typeLower) . "%")
+                        ->orWhereRaw('LOWER(type) LIKE ?', ['%' . $typeLower . '%']);
+                })
+                ->get();
+
+            if ($vendorAndType->isNotEmpty()) {
+                $allResults = $allResults->merge($vendorAndType);
+            }
+        }
+
+        // 4. Recherche par mots-clés du name
         if (!empty($nameWords)) {
-            $keywordSearch = (clone $query)
+            $keywordSearch = (clone $baseQuery)
                 ->where(function ($q) use ($nameWords) {
                     foreach ($nameWords as $word) {
-                        // Recherche insensible à la casse pour chaque mot-clé
                         $wordLower = mb_strtolower($word);
                         $q->orWhere('name', 'LIKE', "%{$word}%")
                             ->orWhere('name', 'LIKE', "%" . mb_strtoupper($word) . "%")
                             ->orWhereRaw('LOWER(name) LIKE ?', ['%' . $wordLower . '%']);
                     }
                 })
-                ->when(!empty($typeWords), function ($q) use ($typeWords) {
-                    $q->where(function ($subQ) use ($typeWords) {
-                        foreach ($typeWords as $word) {
-                            // Recherche insensible à la casse pour chaque mot-clé du type
-                            $wordLower = mb_strtolower($word);
-                            $subQ->orWhere('type', 'LIKE', "%{$word}%")
-                                ->orWhere('type', 'LIKE', "%" . mb_strtoupper($word) . "%")
-                                ->orWhereRaw('LOWER(type) LIKE ?', ['%' . $wordLower . '%']);
-                        }
-                    });
-                })
-                ->limit(100)
                 ->get();
 
             if ($keywordSearch->isNotEmpty()) {
-                $filtered = $this->filterByCoffretStatus($keywordSearch, $isCoffretSource);
-                if (!empty($filtered)) {
-                    $this->groupAllProductsWithoutDuplicates($filtered);
-                    $this->validateBestMatchWithAI();
-                    return;
-                }
+                $allResults = $allResults->merge($keywordSearch);
             }
         }
 
-        // 4. Recherche très large : n'importe quel mot du name
-        if (!empty($nameWords)) {
-            $broadSearch = (clone $query)
-                ->where(function ($q) use ($nameWords) {
-                    foreach ($nameWords as $word) {
-                        $wordLower = mb_strtolower($word);
-                        $q->orWhere('name', 'LIKE', "%{$word}%")
-                            ->orWhere('name', 'LIKE', "%" . mb_strtoupper($word) . "%")
-                            ->orWhereRaw('LOWER(name) LIKE ?', ['%' . $wordLower . '%']);
-                    }
-                })
-                ->limit(100)
-                ->get();
-
-            if ($broadSearch->isNotEmpty()) {
-                $filtered = $this->filterByCoffretStatus($broadSearch, $isCoffretSource);
-                if (!empty($filtered)) {
-                    $this->groupAllProductsWithoutDuplicates($filtered);
-                    $this->validateBestMatchWithAI();
-                    return;
-                }
-            }
-        }
-
-        // 5. Recherche par type uniquement
+        // 5. Recherche par mots-clés du type
         if (!empty($typeWords)) {
-            $typeOnly = (clone $query)
+            $typeKeywordSearch = (clone $baseQuery)
                 ->where(function ($q) use ($typeWords) {
                     foreach ($typeWords as $word) {
                         $wordLower = mb_strtolower($word);
@@ -342,68 +307,31 @@ Exemple de format attendu :
                             ->orWhereRaw('LOWER(type) LIKE ?', ['%' . $wordLower . '%']);
                     }
                 })
-                ->limit(100)
                 ->get();
 
-            $filtered = $this->filterByCoffretStatus($typeOnly, $isCoffretSource);
+            if ($typeKeywordSearch->isNotEmpty()) {
+                $allResults = $allResults->merge($typeKeywordSearch);
+            }
+        }
+
+        // 6. Si toujours rien, récupérer TOUS les produits du vendor
+        if ($allResults->isEmpty()) {
+            $allVendorProducts = $baseQuery->limit(200)->get();
+            if ($allVendorProducts->isNotEmpty()) {
+                $allResults = $allResults->merge($allVendorProducts);
+            }
+        }
+
+        // Filtrer par statut coffret et éliminer les doublons
+        if ($allResults->isNotEmpty()) {
+            $filtered = $this->filterByCoffretStatus($allResults, $isCoffretSource);
             if (!empty($filtered)) {
                 $this->groupAllProductsWithoutDuplicates($filtered);
                 $this->validateBestMatchWithAI();
-                return;
-            }
-        }
-
-        // 6. Recherche par vendor seulement (dernière tentative)
-        if (empty($this->matchingProducts) && !empty($vendor)) {
-            $vendorOnly = Product::query()
-                ->where(function ($q) use ($vendor, $vendorLower) {
-                    $q->where('vendor', 'LIKE', "%{$vendor}%")
-                        ->orWhere('vendor', 'LIKE', "%" . mb_strtoupper($vendor) . "%")
-                        ->orWhere('vendor', 'LIKE', "%" . ucfirst($vendorLower) . "%")
-                        ->orWhereRaw('LOWER(vendor) LIKE ?', ['%' . $vendorLower . '%']);
-                })
-                ->when(!empty($this->selectedSites), function ($q) {
-                    $q->whereIn('web_site_id', $this->selectedSites);
-                })
-                ->orderByDesc('scrap_reference_id')
-                ->orderByDesc('id')
-                ->limit(100)
-                ->get();
-
-            if ($vendorOnly->isNotEmpty()) {
-                $filtered = $this->filterByCoffretStatus($vendorOnly, $isCoffretSource);
-                if (!empty($filtered)) {
-                    $this->groupAllProductsWithoutDuplicates($filtered);
-                    $this->validateBestMatchWithAI();
-                }
-            }
-        }
-
-        // 7. Recherche sans vendor si toujours rien trouvé
-        if (empty($this->matchingProducts) && !empty($nameWords)) {
-            $noVendorSearch = Product::query()
-                ->when(!empty($this->selectedSites), function ($q) {
-                    $q->whereIn('web_site_id', $this->selectedSites);
-                })
-                ->where(function ($q) use ($nameWords) {
-                    foreach ($nameWords as $word) {
-                        $wordLower = mb_strtolower($word);
-                        $q->orWhere('name', 'LIKE', "%{$word}%")
-                            ->orWhere('name', 'LIKE', "%" . mb_strtoupper($word) . "%")
-                            ->orWhereRaw('LOWER(name) LIKE ?', ['%' . $wordLower . '%']);
-                    }
-                })
-                ->orderByDesc('scrap_reference_id')
-                ->orderByDesc('id')
-                ->limit(100)
-                ->get();
-
-            if ($noVendorSearch->isNotEmpty()) {
-                $filtered = $this->filterByCoffretStatus($noVendorSearch, $isCoffretSource);
-                if (!empty($filtered)) {
-                    $this->groupAllProductsWithoutDuplicates($filtered);
-                    $this->validateBestMatchWithAI();
-                }
+            } else {
+                // Si le filtre coffret élimine tout, afficher quand même tous les résultats
+                $this->groupAllProductsWithoutDuplicates($allResults->toArray());
+                $this->validateBestMatchWithAI();
             }
         }
     }
@@ -547,16 +475,24 @@ Exemple de format attendu :
 
     /**
      * Filtre les produits selon leur statut coffret
+     * Retourne les produits filtrés, ou tous les produits si le filtre élimine tout
      */
     private function filterByCoffretStatus($products, bool $sourceisCoffret): array
     {
-        return $products->filter(function ($product) use ($sourceisCoffret) {
+        $filtered = $products->filter(function ($product) use ($sourceisCoffret) {
             $productIsCoffret = $this->isCoffret($product->toArray());
 
             // Si la source est un coffret, garder seulement les coffrets
             // Si la source n'est pas un coffret, exclure les coffrets
             return $sourceisCoffret ? $productIsCoffret : !$productIsCoffret;
         })->values()->toArray();
+
+        // Si le filtre élimine tout, retourner tous les produits originaux
+        if (empty($filtered)) {
+            return $products->toArray();
+        }
+
+        return $filtered;
     }
 
     /**
@@ -568,8 +504,8 @@ Exemple de format attendu :
             return;
         }
 
-        // Préparer les données pour l'IA
-        $candidateProducts = array_slice($this->matchingProducts, 0, 5); // Max 5 produits
+        // Préparer les données pour l'IA - prendre plus de candidats
+        $candidateProducts = array_slice($this->matchingProducts, 0, 10); // Max 10 produits
 
         $productsInfo = array_map(function ($product) {
             return [
@@ -591,7 +527,7 @@ Exemple de format attendu :
                         'messages' => [
                             [
                                 'role' => 'system',
-                                'content' => 'Tu es un expert en matching de produits cosmétiques. Tu dois analyser la correspondance entre un produit source et une liste de candidats, puis retourner l\'ID du meilleur match avec un score de confiance. Réponds UNIQUEMENT avec un objet JSON.'
+                                'content' => 'Tu es un expert en matching de produits cosmétiques. Tu dois analyser la correspondance entre un produit source et une liste de candidats, puis retourner l\'ID du meilleur match avec un score de confiance. IMPORTANT: Tu dois toujours retourner un résultat, même si le score est faible. Réponds UNIQUEMENT avec un objet JSON.'
                             ],
                             [
                                 'role' => 'user',
@@ -609,11 +545,11 @@ Produits candidats :
 Analyse chaque candidat et détermine le meilleur match. Retourne au format JSON :
 {
   \"best_match_id\": 123,
-  \"confidence_score\": 0.95,
+  \"confidence_score\": 0.45,
   \"reasoning\": \"Explication courte du choix\",
   \"all_scores\": [
-    {\"id\": 123, \"score\": 0.95, \"reason\": \"...\"},
-    {\"id\": 124, \"score\": 0.60, \"reason\": \"...\"}
+    {\"id\": 123, \"score\": 0.45, \"reason\": \"...\"},
+    {\"id\": 124, \"score\": 0.30, \"reason\": \"...\"}
   ]
 }
 
@@ -622,11 +558,13 @@ Critères de scoring :
 - Name similaire = +30 points
 - Type identique = +20 points
 - Variation identique = +10 points
-Score de confiance entre 0 et 1."
+Score de confiance entre 0 et 1.
+
+IMPORTANT: Retourne TOUJOURS le meilleur candidat disponible, même si le score est faible (0.1, 0.2, etc.). Ne refuse jamais de retourner un résultat."
                             ]
                         ],
                         'temperature' => 0.2,
-                        'max_tokens' => 800
+                        'max_tokens' => 1000
                     ]);
 
             if ($response->successful()) {
@@ -654,6 +592,9 @@ Score de confiance entre 0 et 1."
                     // Fallback sur le premier résultat
                     $this->bestMatch = $this->matchingProducts[0] ?? null;
                 }
+            } else {
+                // En cas d'erreur API, toujours prendre le premier résultat
+                $this->bestMatch = $this->matchingProducts[0] ?? null;
             }
 
         } catch (\Exception $e) {
@@ -933,7 +874,7 @@ Score de confiance entre 0 et 1."
                                                             </p>
                                                         </div>
                                                         <p class="font-bold text-base text-green-600 whitespace-nowrap">
-                                                            {{ number_format($product['price'] ?? 0, 2) }} €
+                                                            {{ number_format((float)($product['price'] ?? 0), 2) }} €
                                                         </p>
                                                     </div>
                                                     
