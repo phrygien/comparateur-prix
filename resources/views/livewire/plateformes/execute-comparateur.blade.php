@@ -50,25 +50,43 @@ new class extends Component {
                         'messages' => [
                             [
                                 'role' => 'system',
-                                'content' => 'Tu es un expert en extraction de données de produits cosmétiques. Tu dois extraire vendor, name, variation, type et détecter si c\'est un coffret. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
+                                'content' => 'Tu es un expert en extraction de données de produits cosmétiques. Tu dois extraire vendor, name, variation, type et détecter si c\'est un coffret. 
+
+RÈGLES IMPORTANTES:
+1. vendor = UNIQUEMENT la marque principale (ex: "Shiseido", "Dior", "Lancôme")
+2. name = la gamme/ligne ET les descripteurs (ex: "Men Revitalisant Total", "Sauvage", "Rénergie Multi-Lift")
+3. type = le type de produit (ex: "Crème", "Sérum", "Eau de Toilette", "Recharge")
+4. variation = contenance avec unité (ex: "50 ml", "100 ml", "30 g")
+
+NE PAS inclure des termes comme "Men", "Femme", "Homme" dans le vendor - ils vont dans le name.
+
+Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
                             ],
                             [
                                 'role' => 'user',
                                 'content' => "Extrait les informations suivantes du nom de produit et retourne-les au format JSON strict :
-- vendor : la marque du produit
-- name : le nom de la gamme/ligne de produit
-- variation : la contenance/taille (ml, g, etc.)
-- type : le type de produit (Crème, Sérum, Concentré, etc.)
+- vendor : la marque UNIQUEMENT (sans descripteurs comme Men, Homme, Femme)
+- name : le nom complet de la gamme + tous les descripteurs (inclure Men, Homme, Femme ici)
+- variation : la contenance/taille avec unité (ml, g, etc.)
+- type : le type de produit (Crème, Sérum, Lotion, Recharge, etc.)
 - is_coffret : true si c'est un coffret/set/kit, false sinon
 
 Nom du produit : {$this->productName}
 
-Exemple de format attendu :
+Exemples de format attendu :
 {
   \"vendor\": \"Shiseido\",
-  \"name\": \"Vital Perfection\",
-  \"variation\": \"20 ml\",
-  \"type\": \"Concentré Correcteur Rides\",
+  \"name\": \"Men Revitalisant Total\",
+  \"variation\": \"50 ml\",
+  \"type\": \"Crème Recharge\",
+  \"is_coffret\": false
+}
+
+{
+  \"vendor\": \"Dior\",
+  \"name\": \"Sauvage\",
+  \"variation\": \"100 ml\",
+  \"type\": \"Eau de Toilette\",
   \"is_coffret\": false
 }"
                             ]
@@ -204,150 +222,170 @@ Exemple de format attendu :
             return;
         }
 
-        // Extraire les mots clés
+        // Extraire les mots clés (plus agressif pour le matching)
         $vendorWords = $this->extractKeywords($vendor);
         $nameWords = $this->extractKeywords($name);
         $typeWords = $this->extractKeywords($type);
         $variationWords = $this->extractKeywords($variation);
 
-        // Construire la requête FULLTEXT en mode BOOLEAN
-        $searchTerms = [];
-        
-        // Ajouter les mots du vendor (obligatoires avec +)
+        \Log::info('Mots extraits pour recherche', [
+            'vendor_words' => $vendorWords,
+            'name_words' => $nameWords,
+            'type_words' => $typeWords,
+            'variation_words' => $variationWords
+        ]);
+
+        // Construire plusieurs requêtes avec différents niveaux de strictesse
+        $searchQueries = [];
+
+        // NIVEAU 1: Recherche STRICTE - Vendor + TOUS les mots du name + Type
+        $strictTerms = [];
         foreach ($vendorWords as $word) {
             if (mb_strlen($word) >= 2) {
-                $searchTerms[] = '+' . $word . '*';
+                $strictTerms[] = '+' . $word . '*';
             }
         }
-        
-        // Ajouter les mots du name (obligatoires avec +)
         foreach ($nameWords as $word) {
             if (mb_strlen($word) >= 2) {
-                $searchTerms[] = '+' . $word . '*';
+                $strictTerms[] = '+' . $word . '*';
             }
         }
-        
-        // Ajouter les mots du type (obligatoires avec +)
         foreach ($typeWords as $word) {
             if (mb_strlen($word) >= 2) {
-                $searchTerms[] = '+' . $word . '*';
+                $strictTerms[] = '+' . $word . '*';
+            }
+        }
+        if (!empty($strictTerms)) {
+            $searchQueries['strict'] = implode(' ', $strictTerms);
+        }
+
+        // NIVEAU 2: Recherche MOYENNE - Vendor obligatoire + Au moins UN mot du name + Type
+        $mediumTerms = [];
+        foreach ($vendorWords as $word) {
+            if (mb_strlen($word) >= 2) {
+                $mediumTerms[] = '+' . $word . '*';
+            }
+        }
+        // Name words en optionnel (sans +) pour que au moins un match
+        foreach ($nameWords as $word) {
+            if (mb_strlen($word) >= 2) {
+                $mediumTerms[] = $word . '*';
+            }
+        }
+        foreach ($typeWords as $word) {
+            if (mb_strlen($word) >= 2) {
+                $mediumTerms[] = '+' . $word . '*';
+            }
+        }
+        if (!empty($mediumTerms)) {
+            $searchQueries['medium'] = implode(' ', $mediumTerms);
+        }
+
+        // NIVEAU 3: Recherche SOUPLE - Vendor + Type obligatoires, name optionnel
+        $flexibleTerms = [];
+        foreach ($vendorWords as $word) {
+            if (mb_strlen($word) >= 2) {
+                $flexibleTerms[] = '+' . $word . '*';
+            }
+        }
+        foreach ($typeWords as $word) {
+            if (mb_strlen($word) >= 2) {
+                $flexibleTerms[] = '+' . $word . '*';
+            }
+        }
+        foreach ($nameWords as $word) {
+            if (mb_strlen($word) >= 2) {
+                $flexibleTerms[] = $word . '*';
+            }
+        }
+        if (!empty($flexibleTerms)) {
+            $searchQueries['flexible'] = implode(' ', $flexibleTerms);
+        }
+
+        // NIVEAU 4: Recherche LARGE - Vendor obligatoire seulement
+        $wideTerms = [];
+        foreach ($vendorWords as $word) {
+            if (mb_strlen($word) >= 2) {
+                $wideTerms[] = '+' . $word . '*';
+            }
+        }
+        foreach (array_merge($nameWords, $typeWords) as $word) {
+            if (mb_strlen($word) >= 2) {
+                $wideTerms[] = $word . '*';
+            }
+        }
+        if (!empty($wideTerms)) {
+            $searchQueries['wide'] = implode(' ', $wideTerms);
+        }
+
+        // Essayer chaque niveau de recherche jusqu'à trouver des résultats
+        $allResults = collect();
+        
+        foreach ($searchQueries as $level => $searchQuery) {
+            \Log::info("Tentative recherche niveau: {$level}", [
+                'query' => $searchQuery
+            ]);
+
+            try {
+                $results = \DB::table('last_price_scraped_product')
+                    ->selectRaw('*')
+                    ->whereRaw(
+                        "MATCH(name, vendor, type, variation) AGAINST (? IN BOOLEAN MODE)",
+                        [$searchQuery]
+                    )
+                    ->when(!empty($this->selectedSites), function ($q) {
+                        $q->whereIn('web_site_id', $this->selectedSites);
+                    })
+                    ->orderBy('created_at', 'DESC')
+                    ->orderBy('scrap_reference_id', 'DESC')
+                    ->limit(200)
+                    ->get();
+
+                if ($results->isNotEmpty()) {
+                    \Log::info("Résultats trouvés au niveau {$level}: " . $results->count());
+                    $allResults = $allResults->merge($results);
+                    
+                    // Si on a trouvé des résultats au niveau strict ou medium, on peut s'arrêter
+                    if (in_array($level, ['strict', 'medium']) && $results->count() >= 5) {
+                        break;
+                    }
+                }
+            } catch (\Exception $e) {
+                \Log::error("Erreur recherche FULLTEXT niveau {$level}", [
+                    'message' => $e->getMessage(),
+                    'query' => $searchQuery
+                ]);
             }
         }
 
-        // Si on a aussi une variation, l'ajouter (optionnelle sans +)
-        foreach ($variationWords as $word) {
-            if (mb_strlen($word) >= 2 && is_numeric($word) === false) {
-                $searchTerms[] = $word . '*';
-            }
-        }
-
-        // Construire la chaîne de recherche finale
-        $searchQuery = implode(' ', $searchTerms);
-
-        if (empty($searchQuery)) {
-            \Log::warning('Aucun terme de recherche valide construit');
+        // Si toujours aucun résultat, fallback sur LIKE
+        if ($allResults->isEmpty()) {
+            \Log::info('Aucun résultat FULLTEXT, tentative LIKE fallback');
+            $this->fallbackLikeSearch($vendor, $name, $type, $isCoffretSource);
             return;
         }
 
-        \Log::info('Recherche FULLTEXT', [
-            'search_query' => $searchQuery,
-            'vendor' => $vendor,
-            'name' => $name,
-            'type' => $type
-        ]);
+        // Convertir les résultats en array et éliminer les doublons
+        $uniqueResults = $allResults->unique('id');
+        
+        $productsArray = $uniqueResults->map(function ($item) {
+            return (array) $item;
+        })->toArray();
 
-        try {
-            // Utiliser la vue last_price_scraped_product avec MATCH AGAINST
-            $results = \DB::table('last_price_scraped_product')
-                ->selectRaw('*')
-                ->whereRaw(
-                    "MATCH(name, vendor, type, variation) AGAINST (? IN BOOLEAN MODE)",
-                    [$searchQuery]
-                )
-                ->when(!empty($this->selectedSites), function ($q) {
-                    $q->whereIn('web_site_id', $this->selectedSites);
-                })
-                ->orderBy('created_at', 'DESC')
-                ->orderBy('scrap_reference_id', 'DESC')
-                ->limit(200)
-                ->get();
+        \Log::info('Total résultats uniques: ' . count($productsArray));
 
-            if ($results->isEmpty()) {
-                \Log::info('Aucun résultat avec FULLTEXT, tentative de recherche alternative');
-                
-                // Fallback: recherche moins stricte si aucun résultat
-                $searchTermsFallback = [];
-                
-                // Vendor obligatoire
-                foreach ($vendorWords as $word) {
-                    if (mb_strlen($word) >= 2) {
-                        $searchTermsFallback[] = '+' . $word . '*';
-                    }
-                }
-                
-                // Name ou Type (au moins un des deux)
-                $nameTypeTerms = [];
-                foreach ($nameWords as $word) {
-                    if (mb_strlen($word) >= 2) {
-                        $nameTypeTerms[] = $word . '*';
-                    }
-                }
-                foreach ($typeWords as $word) {
-                    if (mb_strlen($word) >= 2) {
-                        $nameTypeTerms[] = $word . '*';
-                    }
-                }
-                
-                if (!empty($nameTypeTerms)) {
-                    $searchTermsFallback = array_merge($searchTermsFallback, $nameTypeTerms);
-                }
-                
-                $searchQueryFallback = implode(' ', $searchTermsFallback);
-                
-                if (!empty($searchQueryFallback)) {
-                    $results = \DB::table('last_price_scraped_product')
-                        ->selectRaw('*')
-                        ->whereRaw(
-                            "MATCH(name, vendor, type, variation) AGAINST (? IN BOOLEAN MODE)",
-                            [$searchQueryFallback]
-                        )
-                        ->when(!empty($this->selectedSites), function ($q) {
-                            $q->whereIn('web_site_id', $this->selectedSites);
-                        })
-                        ->orderBy('created_at', 'DESC')
-                        ->orderBy('scrap_reference_id', 'DESC')
-                        ->limit(200)
-                        ->get();
-                }
-            }
-
-            // Convertir les résultats en array
-            $productsArray = $results->map(function ($item) {
-                return (array) $item;
-            })->toArray();
-
-            if (!empty($productsArray)) {
-                // Filtrer par statut coffret
-                $filtered = $this->filterByCoffretStatus(collect($productsArray), $isCoffretSource);
-                
-                if (!empty($filtered)) {
-                    $this->groupAllProductsWithoutDuplicates($filtered);
-                    $this->validateBestMatchWithAI();
-                } else {
-                    // Si le filtre coffret élimine tout, afficher quand même tous les résultats
-                    $this->groupAllProductsWithoutDuplicates($productsArray);
-                    $this->validateBestMatchWithAI();
-                }
-            }
-
-        } catch (\Exception $e) {
-            \Log::error('Erreur recherche FULLTEXT', [
-                'message' => $e->getMessage(),
-                'search_query' => $searchQuery ?? ''
-            ]);
+        if (!empty($productsArray)) {
+            // Filtrer par statut coffret
+            $filtered = $this->filterByCoffretStatus($productsArray, $isCoffretSource);
             
-            // Fallback sur recherche LIKE classique en cas d'erreur
-            $this->fallbackLikeSearch($vendor, $name, $type, $isCoffretSource);
+            if (!empty($filtered)) {
+                $this->groupAllProductsWithoutDuplicates($filtered);
+                $this->validateBestMatchWithAI();
+            } else {
+                // Si le filtre coffret élimine tout, afficher quand même tous les résultats
+                $this->groupAllProductsWithoutDuplicates($productsArray);
+                $this->validateBestMatchWithAI();
+            }
         }
     }
 
