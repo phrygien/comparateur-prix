@@ -400,22 +400,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             return;
         }
 
-        // ÉTAPE 2.5: FILTRAGE STRICT PAR TYPE DE BASE
-        // Exclure les produits qui ont un type de base différent (ex: déodorant vs eau de toilette)
-        $typeFilteredProducts = $this->filterByBaseType($filteredProducts, $type);
-        
-        if (empty($typeFilteredProducts)) {
-            \Log::info('Aucun produit après filtrage par type de base, on garde tous les produits');
-            $typeFilteredProducts = $filteredProducts;
-        } else {
-            \Log::info('✅ Produits après filtrage par TYPE DE BASE', [
-                'count' => count($typeFilteredProducts),
-                'type_recherché' => $type
-            ]);
-            $filteredProducts = $typeFilteredProducts;
-        }
-
-        // ÉTAPE 2.6: FILTRAGE PROGRESSIF par les mots du NAME
+        // ÉTAPE 2.5: FILTRAGE PROGRESSIF par les mots du NAME
         $nameFilteredProducts = $filteredProducts;
         
         if (!empty($nameWords)) {
@@ -560,30 +545,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             // ==========================================
             
             if (!empty($typeParts) && !empty($productType)) {
-                // BONUS CRITIQUE : Vérifier que le TYPE DE BASE correspond (ex: "Eau de Toilette" vs "Déodorant")
-                // C'est la partie la plus importante du type (généralement la première)
-                if (!empty($typeParts[0])) {
-                    $baseTypeLower = mb_strtolower(trim($typeParts[0]));
-                    if (str_contains($productType, $baseTypeLower)) {
-                        $score += 300; // ÉNORME BONUS pour correspondance du type de base
-                        \Log::debug('BONUS TYPE DE BASE correspondant', [
-                            'product_id' => $product['id'] ?? 0,
-                            'base_type_recherché' => $baseTypeLower,
-                            'product_type' => $productType,
-                            'bonus' => 300
-                        ]);
-                    } else {
-                        // MALUS si le type de base ne correspond pas
-                        $score -= 200;
-                        \Log::debug('MALUS TYPE DE BASE non correspondant', [
-                            'product_id' => $product['id'] ?? 0,
-                            'base_type_recherché' => $baseTypeLower,
-                            'product_type' => $productType,
-                            'malus' => -200
-                        ]);
-                    }
-                }
-                
                 // Vérifier chaque partie du type dans l'ordre
                 foreach ($typeParts as $index => $part) {
                     $partLower = mb_strtolower(trim($part));
@@ -730,34 +691,18 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         
         // Si on n'a pas de séparateurs explicites, essayer de séparer par mots clés
         if (count($parts) === 1) {
-            // Mots-clés hiérarchiques pour les parfums - ORDRE IMPORTANT
-            $perfumeKeywords = [
-                'eau de parfum',
-                'eau de toilette', 
-                'eau de cologne',
-                'extrait de parfum',
-                'eau fraiche',
-                'parfum',
-                'extrait',
-                'cologne'
-            ];
-            
-            $intensityKeywords = ['intense', 'extrême', 'absolu', 'concentré', 'léger', 'doux', 'fort', 'puissant'];
-            $formatKeywords = ['vaporisateur', 'spray', 'atomiseur', 'flacon', 'roller', 'stick', 'roll-on'];
+            // Mots-clés hiérarchiques pour les parfums
+            $perfumeKeywords = ['eau de parfum', 'eau de toilette', 'parfum', 'eau fraiche', 'extrait'];
+            $intensityKeywords = ['intense', 'extrême', 'absolu', 'concentré', 'léger', 'doux'];
+            $formatKeywords = ['vaporisateur', 'spray', 'atomiseur', 'flacon', 'roller', 'stick'];
             
             $typeLower = mb_strtolower($type);
             $foundParts = [];
             
-            // Chercher d'abord le type de parfum (expressions composées d'abord)
+            // Chercher d'abord le type de parfum
             foreach ($perfumeKeywords as $keyword) {
                 if (str_contains($typeLower, $keyword)) {
-                    // Garder la capitalisation originale si possible
-                    $startPos = mb_strpos($typeLower, $keyword);
-                    $originalPart = mb_substr($type, $startPos, mb_strlen($keyword));
-                    $foundParts[] = $originalPart;
-                    
-                    // Retirer cette partie du type pour continuer la recherche
-                    $typeLower = str_replace($keyword, '', $typeLower);
+                    $foundParts[] = ucfirst($keyword);
                     break;
                 }
             }
@@ -765,11 +710,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             // Chercher l'intensité
             foreach ($intensityKeywords as $keyword) {
                 if (str_contains($typeLower, $keyword)) {
-                    $startPos = mb_strpos($typeLower, $keyword);
-                    if ($startPos !== false) {
-                        $originalPart = mb_substr($type, $startPos, mb_strlen($keyword));
-                        $foundParts[] = ucfirst($originalPart);
-                    }
+                    $foundParts[] = ucfirst($keyword);
                     break;
                 }
             }
@@ -777,21 +718,13 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             // Chercher le format
             foreach ($formatKeywords as $keyword) {
                 if (str_contains($typeLower, $keyword)) {
-                    $startPos = mb_strpos($typeLower, $keyword);
-                    if ($startPos !== false) {
-                        $originalPart = mb_substr($type, $startPos, mb_strlen($keyword));
-                        $foundParts[] = ucfirst($originalPart);
-                    }
+                    $foundParts[] = ucfirst($keyword);
                     break;
                 }
             }
             
             // Si on a trouvé des parties avec cette méthode, les utiliser
             if (!empty($foundParts)) {
-                \Log::info('Type décomposé en parties hiérarchiques', [
-                    'type_original' => $type,
-                    'parties' => $foundParts
-                ]);
                 return $foundParts;
             }
             
@@ -954,106 +887,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             // Si la source n'est pas un coffret, exclure les coffrets
             return $sourceisCoffret ? $productIsCoffret : !$productIsCoffret;
         })->values()->toArray();
-    }
-
-    /**
-     * Filtre les produits par type de base pour éviter les confusions
-     * Ex: Si on cherche "Eau de Toilette", on exclut les "Déodorant", "Crème", etc.
-     */
-    private function filterByBaseType(array $products, string $searchType): array
-    {
-        if (empty($searchType)) {
-            return $products;
-        }
-
-        // Définir les catégories de types incompatibles
-        $typeCategories = [
-            'parfum' => ['eau de parfum', 'parfum', 'eau de toilette', 'eau de cologne', 'eau fraiche', 'extrait de parfum', 'extrait', 'cologne'],
-            'déodorant' => ['déodorant', 'deodorant', 'deo', 'anti-transpirant', 'antitranspirant'],
-            'crème' => ['crème', 'creme', 'baume', 'gel', 'lotion', 'fluide', 'soin'],
-            'huile' => ['huile', 'oil'],
-            'sérum' => ['sérum', 'serum', 'concentrate', 'concentré'],
-            'masque' => ['masque', 'mask', 'patch'],
-            'shampooing' => ['shampooing', 'shampoing', 'shampoo'],
-            'après-shampooing' => ['après-shampooing', 'conditioner', 'après shampooing'],
-            'savon' => ['savon', 'soap', 'gel douche', 'mousse'],
-            'maquillage' => ['fond de teint', 'rouge à lèvres', 'mascara', 'eye-liner', 'fard', 'poudre'],
-        ];
-
-        $searchTypeLower = mb_strtolower(trim($searchType));
-        
-        // Trouver la catégorie du type recherché
-        $searchCategory = null;
-        foreach ($typeCategories as $category => $keywords) {
-            foreach ($keywords as $keyword) {
-                if (str_contains($searchTypeLower, $keyword)) {
-                    $searchCategory = $category;
-                    break 2;
-                }
-            }
-        }
-
-        // Si on n'a pas trouvé de catégorie, pas de filtrage
-        if (!$searchCategory) {
-            \Log::info('Type de recherche non catégorisé, pas de filtrage par type de base', [
-                'type' => $searchType
-            ]);
-            return $products;
-        }
-
-        \Log::info('Filtrage par catégorie de type', [
-            'type_recherché' => $searchType,
-            'catégorie' => $searchCategory,
-            'mots_clés_catégorie' => $typeCategories[$searchCategory]
-        ]);
-
-        // Filtrer les produits
-        $filtered = collect($products)->filter(function ($product) use ($searchCategory, $typeCategories, $searchTypeLower) {
-            $productType = mb_strtolower($product['type'] ?? '');
-            
-            if (empty($productType)) {
-                return false;
-            }
-
-            // Vérifier si le produit appartient à la même catégorie
-            $productCategory = null;
-            foreach ($typeCategories as $category => $keywords) {
-                foreach ($keywords as $keyword) {
-                    if (str_contains($productType, $keyword)) {
-                        $productCategory = $category;
-                        break 2;
-                    }
-                }
-            }
-
-            // Si le produit n'a pas de catégorie identifiée, on le garde par sécurité
-            if (!$productCategory) {
-                return true;
-            }
-
-            // Garder uniquement si même catégorie
-            $match = ($productCategory === $searchCategory);
-            
-            if (!$match) {
-                \Log::debug('Produit exclu par filtrage de type', [
-                    'product_id' => $product['id'] ?? 0,
-                    'product_name' => $product['name'] ?? '',
-                    'product_type' => $productType,
-                    'product_category' => $productCategory,
-                    'search_category' => $searchCategory
-                ]);
-            }
-            
-            return $match;
-        })->values()->toArray();
-
-        \Log::info('Résultat du filtrage par type de base', [
-            'produits_avant' => count($products),
-            'produits_après' => count($filtered),
-            'produits_exclus' => count($products) - count($filtered)
-        ]);
-
-        return $filtered;
     }
 
     /**
@@ -1398,29 +1231,7 @@ Score de confiance entre 0 et 1."
                                     {{ $product['vendor'] }}
                                 </h3>
                                 <p class="text-xs text-gray-600 mt-1 truncate">{{ $product['name'] }}</p>
-                                
-                                <!-- Type avec badge coloré -->
-                                @php
-                                    $productTypeLower = strtolower($product['type'] ?? '');
-                                    $badgeColor = 'bg-gray-100 text-gray-800';
-                                    
-                                    if (str_contains($productTypeLower, 'eau de toilette') || str_contains($productTypeLower, 'eau de parfum')) {
-                                        $badgeColor = 'bg-purple-100 text-purple-800';
-                                    } elseif (str_contains($productTypeLower, 'déodorant') || str_contains($productTypeLower, 'deodorant')) {
-                                        $badgeColor = 'bg-green-100 text-green-800';
-                                    } elseif (str_contains($productTypeLower, 'crème') || str_contains($productTypeLower, 'creme')) {
-                                        $badgeColor = 'bg-pink-100 text-pink-800';
-                                    } elseif (str_contains($productTypeLower, 'huile')) {
-                                        $badgeColor = 'bg-yellow-100 text-yellow-800';
-                                    }
-                                @endphp
-                                
-                                <div class="mt-1">
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ $badgeColor }}">
-                                        {{ $product['type'] }}
-                                    </span>
-                                </div>
-                                
+                                <p class="text-xs text-gray-500 truncate">{{ $product['type'] }}</p>
                                 <p class="text-xs text-gray-400 mt-1">{{ $product['variation'] }}</p>
 
                                 <!-- Site -->
