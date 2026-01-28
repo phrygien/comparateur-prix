@@ -232,7 +232,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
      * 1. Filtrer par VENDOR (obligatoire)
      * 2. Filtrer par statut COFFRET
      * 3. FILTRAGE STRICT par NAME : TOUS les mots du name (hors vendor) doivent être présents
-     *    Fallback : au moins 1 mot si filtrage strict ne donne rien
+     *    Fallback progressif si filtrage strict ne donne rien
      * 4. SCORER avec :
      *    - BONUS ÉNORME (+500) si recherche coffret ET produit est coffret (PRIORITÉ ABSOLUE)
      *    - Matching HIÉRARCHIQUE sur le TYPE : vérifier étape par étape
@@ -277,8 +277,9 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         $vendorWords = $this->extractKeywords($vendor);
         $nameWordsFiltered = array_diff($allNameWords, $vendorWords);
         
-        // Prendre les 2 premiers mots APRÈS avoir retiré le vendor
-        $nameWords = array_slice(array_values($nameWordsFiltered), 0, 2);
+        // PRENDRE TOUS LES MOTS significatifs (pas seulement 2)
+        // Cela permet de capturer des mots importants comme "Purple" même s'ils sont loin dans le nom
+        $nameWords = array_values($nameWordsFiltered);
 
         \Log::info('Mots-clés pour la recherche', [
             'vendor' => $vendor,
@@ -317,13 +318,14 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             return;
         }
 
-        // ÉTAPE 2.5: FILTRAGE STRICT par les mots du NAME
-        // Si on a des mots du name, on filtre pour garder seulement les produits qui contiennent TOUS les mots
+        // ÉTAPE 2.5: FILTRAGE PROGRESSIF par les mots du NAME
+        $nameFilteredProducts = $filteredProducts;
+        
         if (!empty($nameWords)) {
-            $nameFilteredProducts = collect($filteredProducts)->filter(function ($product) use ($nameWords) {
+            // TENTATIVE 1: TOUS les mots doivent être présents (filtrage le plus strict)
+            $allWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords) {
                 $productName = mb_strtolower($product['name'] ?? '');
                 
-                // Le produit doit contenir TOUS les mots du name (pas juste 1)
                 $matchCount = 0;
                 foreach ($nameWords as $word) {
                     if (str_contains($productName, $word)) {
@@ -331,46 +333,94 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     }
                 }
                 
-                // Retourner true seulement si TOUS les mots sont trouvés
                 return $matchCount === count($nameWords);
             })->values()->toArray();
 
-            // Si on a des résultats après filtrage strict par name, on utilise ces résultats
-            // Sinon essayer un filtrage plus souple (au moins 1 mot)
-            if (!empty($nameFilteredProducts)) {
-                $filteredProducts = $nameFilteredProducts;
-                \Log::info('Produits après filtrage STRICT par NAME (tous les mots)', [
-                    'count' => count($filteredProducts),
+            if (!empty($allWordsMatch)) {
+                $nameFilteredProducts = $allWordsMatch;
+                \Log::info('✅ Produits après filtrage STRICT par NAME (TOUS les mots)', [
+                    'count' => count($nameFilteredProducts),
                     'nameWords_required' => $nameWords
                 ]);
             } else {
-                // Fallback : au moins 1 mot du name doit être présent
-                $nameFilteredProductsSoft = collect($filteredProducts)->filter(function ($product) use ($nameWords) {
+                // TENTATIVE 2: Au moins 80% des mots doivent être présents
+                $minRequired = max(1, (int)ceil(count($nameWords) * 0.8));
+                
+                $mostWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $minRequired) {
                     $productName = mb_strtolower($product['name'] ?? '');
+                    
+                    $matchCount = 0;
                     foreach ($nameWords as $word) {
                         if (str_contains($productName, $word)) {
-                            return true;
+                            $matchCount++;
                         }
                     }
-                    return false;
+                    
+                    return $matchCount >= $minRequired;
                 })->values()->toArray();
                 
-                if (!empty($nameFilteredProductsSoft)) {
-                    $filteredProducts = $nameFilteredProductsSoft;
-                    \Log::info('Produits après filtrage SOUPLE par NAME (au moins 1 mot)', [
-                        'count' => count($filteredProducts),
+                if (!empty($mostWordsMatch)) {
+                    $nameFilteredProducts = $mostWordsMatch;
+                    \Log::info('✅ Produits après filtrage 80% par NAME (au moins ' . $minRequired . ' mots sur ' . count($nameWords) . ')', [
+                        'count' => count($nameFilteredProducts),
                         'nameWords_used' => $nameWords
                     ]);
                 } else {
-                    \Log::info('Aucun produit après filtrage NAME, on garde tous les produits du vendor');
+                    // TENTATIVE 3: Au moins 50% des mots doivent être présents
+                    $minRequired = max(1, (int)ceil(count($nameWords) * 0.5));
+                    
+                    $halfWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $minRequired) {
+                        $productName = mb_strtolower($product['name'] ?? '');
+                        
+                        $matchCount = 0;
+                        foreach ($nameWords as $word) {
+                            if (str_contains($productName, $word)) {
+                                $matchCount++;
+                            }
+                        }
+                        
+                        return $matchCount >= $minRequired;
+                    })->values()->toArray();
+                    
+                    if (!empty($halfWordsMatch)) {
+                        $nameFilteredProducts = $halfWordsMatch;
+                        \Log::info('⚠️ Produits après filtrage 50% par NAME (au moins ' . $minRequired . ' mots sur ' . count($nameWords) . ')', [
+                            'count' => count($nameFilteredProducts),
+                            'nameWords_used' => $nameWords
+                        ]);
+                    } else {
+                        // FALLBACK FINAL: Au moins 1 mot doit être présent
+                        $anyWordMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords) {
+                            $productName = mb_strtolower($product['name'] ?? '');
+                            foreach ($nameWords as $word) {
+                                if (str_contains($productName, $word)) {
+                                    return true;
+                                }
+                            }
+                            return false;
+                        })->values()->toArray();
+                        
+                        if (!empty($anyWordMatch)) {
+                            $nameFilteredProducts = $anyWordMatch;
+                            \Log::info('⚠️ Produits après filtrage SOUPLE par NAME (au moins 1 mot)', [
+                                'count' => count($nameFilteredProducts),
+                                'nameWords_used' => $nameWords
+                            ]);
+                        } else {
+                            \Log::info('❌ Aucun produit après filtrage NAME, on garde tous les produits du vendor');
+                        }
+                    }
                 }
             }
+            
+            $filteredProducts = $nameFilteredProducts;
         }
 
-        // ÉTAPE 3: Scoring hiérarchique basé sur le TYPE + BONUS COFFRET
-        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $type, $isCoffretSource) {
+        // ÉTAPE 3: Scoring hiérarchique basé sur le TYPE + BONUS COFFRET + BONUS NAME
+        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $type, $isCoffretSource, $nameWords) {
             $score = 0;
             $productType = mb_strtolower($product['type'] ?? '');
+            $productName = mb_strtolower($product['name'] ?? '');
             
             $matchedTypeParts = [];
             $typePartsCount = count($typeParts);
@@ -383,6 +433,29 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             // Si on cherche un coffret ET que le produit est un coffret, ÉNORME BONUS
             if ($isCoffretSource && $productIsCoffret) {
                 $score += 500; // MEGA BONUS pour prioriser les coffrets
+            }
+
+            // ==========================================
+            // BONUS NAME : Compter combien de mots du name sont présents
+            // ==========================================
+            if (!empty($nameWords)) {
+                $nameMatchCount = 0;
+                foreach ($nameWords as $word) {
+                    if (str_contains($productName, $word)) {
+                        $nameMatchCount++;
+                    }
+                }
+                
+                // Bonus proportionnel au nombre de mots matchés
+                // Plus il y a de mots qui matchent, plus le score est élevé
+                $nameMatchRatio = count($nameWords) > 0 ? ($nameMatchCount / count($nameWords)) : 0;
+                $nameBonus = (int)($nameMatchRatio * 300); // Jusqu'à +300 points
+                $score += $nameBonus;
+                
+                // BONUS EXTRA si TOUS les mots matchent
+                if ($nameMatchCount === count($nameWords)) {
+                    $score += 200; // +200 points supplémentaires pour match parfait
+                }
             }
 
             // ==========================================
@@ -436,17 +509,22 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'type_parts_count' => $typePartsCount,
                 'matched_count' => count($matchedTypeParts),
                 'is_coffret' => $productIsCoffret,
-                'coffret_bonus_applied' => ($isCoffretSource && $productIsCoffret)
+                'coffret_bonus_applied' => ($isCoffretSource && $productIsCoffret),
+                'name_match_count' => !empty($nameWords) ? array_reduce($nameWords, function($count, $word) use ($productName) {
+                    return $count + (str_contains($productName, $word) ? 1 : 0);
+                }, 0) : 0,
+                'name_words_total' => count($nameWords)
             ];
         })
-        // Trier par score décroissant (les coffrets auront le score le plus élevé)
+        // Trier par score décroissant (les coffrets et meilleurs matchs de nom auront le score le plus élevé)
         ->sortByDesc('score')
         ->values();
 
-        \Log::info('Scoring détaillé (TYPE HIÉRARCHIQUE + BONUS COFFRET)', [
+        \Log::info('Scoring détaillé (TYPE HIÉRARCHIQUE + BONUS COFFRET + BONUS NAME)', [
             'total_products' => $scoredProducts->count(),
             'type_recherche' => $type,
             'type_parts' => $typeParts,
+            'name_words' => $nameWords,
             'recherche_coffret' => $isCoffretSource,
             'top_10_scores' => $scoredProducts->take(10)->map(function($item) {
                 return [
@@ -454,6 +532,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     'score' => $item['score'],
                     'is_coffret' => $item['is_coffret'],
                     'coffret_bonus' => $item['coffret_bonus_applied'],
+                    'name_match' => $item['name_match_count'] . '/' . $item['name_words_total'],
                     'name' => $item['product']['name'] ?? '',
                     'type' => $item['product']['type'] ?? '',
                     'matched_type_parts' => array_map(function($part) {
@@ -472,7 +551,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
         if ($scoredProducts->isEmpty()) {
             \Log::info('Aucun produit avec score > 0', [
-                'typeParts' => $typeParts
+                'typeParts' => $typeParts,
+                'nameWords' => $nameWords
             ]);
             
             // Fallback: si aucun match par type, on prend les 50 premiers produits du vendor
