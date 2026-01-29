@@ -44,6 +44,7 @@ class Boutique extends Component
     {
         // Reset à la première page quand un filtre change
         if (in_array($property, ['search', 'filterName', 'filterMarque', 'filterType', 'filterEAN', 'filterCapacity', 'perPage'])) {
+            dd($this->normalizeSearch($property['search']));
             $this->resetPage();
         }
     }
