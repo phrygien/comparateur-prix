@@ -68,11 +68,17 @@ new class extends Component {
                                 'content' => "Extrait les informations suivantes du nom de produit et retourne-les au format JSON strict :
 
 RÈGLES IMPORTANTES :
-- vendor : la marque du produit (ex: Dior, Shiseido, Chanel)
-- name : le nom de la gamme/ligne de produit UNIQUEMENT (ex: \"J'adore\", \"Vital Perfection\", \"La Vie Est Belle\")
-- type : UNIQUEMENT la catégorie/type du produit (ex: \"Huile pour le corps\", \"Eau de Parfum\", \"Crème visage\", \"Sérum\")
+- vendor : la marque du produit (ex: Dior, Shiseido, Chanel, Clarins)
+- name : le nom de la gamme/ligne de produit UNIQUEMENT - C'EST LE PLUS IMPORTANT (ex: \"J'adore\", \"Vital Perfection\", \"Multi-Intensive\", \"Les essentiels\")
+- type : UNIQUEMENT la catégorie/type du produit (ex: \"Huile pour le corps\", \"Eau de Parfum\", \"Crème visage\", \"Coffret\")
 - variation : la contenance/taille avec unité (ex: \"200 ml\", \"50 ml\", \"30 g\")
 - is_coffret : true si c'est un coffret/set/kit, false sinon
+
+RÈGLE CRITIQUE POUR LE 'name' :
+- Le 'name' doit être le NOM COMMERCIAL/GAMME du produit, PAS une description
+- Cherche le nom propre ou la ligne de produit (souvent en majuscules ou après un tiret)
+- Exemples : \"Multi-Intensive\", \"Les essentiels\", \"ClarinsMen\", \"J'adore\", \"N°5\"
+- NE PAS mettre de descriptions génériques comme \"Crème visage\" dans le name
 
 Nom du produit : {$this->productName}
 
@@ -111,6 +117,33 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
   \"name\": \"La Nuit Trésor Rouge Drama\",
   \"type\": \"Eau de Parfum Intense Vaporisateur\",
   \"variation\": \"30 ml\",
+  \"is_coffret\": false
+}
+
+Exemple 5 - Produit : \"Clarins - Les essentiels ClarinsMen\"
+{
+  \"vendor\": \"Clarins\",
+  \"name\": \"Les essentiels ClarinsMen\",
+  \"type\": \"Coffret\",
+  \"variation\": \"\",
+  \"is_coffret\": true
+}
+
+Exemple 6 - Produit : \"Clarins - Coffret Multi-Intensive Crème visage anti-rides\"
+{
+  \"vendor\": \"Clarins\",
+  \"name\": \"Multi-Intensive\",
+  \"type\": \"Coffret Crème visage\",
+  \"variation\": \"\",
+  \"is_coffret\": true
+}
+
+Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instantané 50ml\"
+{
+  \"vendor\": \"Clarins\",
+  \"name\": \"Baume Beauté Éclair\",
+  \"type\": \"Soin illuminateur\",
+  \"variation\": \"50 ml\",
   \"is_coffret\": false
 }"
                             ]
@@ -182,6 +215,27 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     'variation' => $this->extractedData['variation'] ?? '',
                     'is_coffret' => $this->extractedData['is_coffret'] ?? false
                 ]);
+
+                // ✨ NOUVEAU CLARINS : Post-traitement du name pour Clarins
+                if (!empty($this->extractedData['vendor']) && 
+                    str_contains(mb_strtolower($this->extractedData['vendor']), 'clarins')) {
+                    
+                    $originalName = $this->extractedData['name'];
+                    $this->extractedData['name'] = $this->cleanClarinsName(
+                        $this->extractedData['name'], 
+                        $this->extractedData['type']
+                    );
+                    
+                    // Mettre à jour le champ manuel aussi
+                    $this->manualName = $this->extractedData['name'];
+                    
+                    if ($originalName !== $this->extractedData['name']) {
+                        \Log::info('📝 CLARINS - Name modifié après nettoyage', [
+                            'name_avant' => $originalName,
+                            'name_après' => $this->extractedData['name']
+                        ]);
+                    }
+                }
 
                 // Rechercher les produits correspondants
                 $this->searchMatchingProducts();
@@ -255,6 +309,87 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
     public function toggleManualSearch()
     {
         $this->manualSearchMode = !$this->manualSearchMode;
+    }
+
+    /**
+     * ✨ NOUVEAU CLARINS : Nettoie le nom extrait pour les produits Clarins
+     * Enlève les mots génériques qui ne devraient pas être dans le name
+     */
+    private function cleanClarinsName(string $name, string $type): string
+    {
+        $nameLower = mb_strtolower(trim($name));
+        
+        // Mots à enlever du name s'ils y sont (ce sont des mots de TYPE, pas de NAME)
+        $typeWords = [
+            'coffret',
+            'set',
+            'kit',
+            'crème',
+            'creme',
+            'soin',
+            'huile',
+            'sérum',
+            'serum',
+            'lotion',
+            'gel',
+            'masque',
+            'baume',
+            'eau',
+            'parfum',
+            'visage',
+            'corps',
+            'yeux',
+            'anti-rides',
+            'anti-âge',
+            'hydratant',
+            'nourrissant'
+        ];
+        
+        // Ne pas nettoyer si le name contient "essentiels" (c'est un vrai nom de gamme)
+        $essentielsKeywords = ['essentiels', 'essentials', 'essentiel', 'essential'];
+        foreach ($essentielsKeywords as $keyword) {
+            if (str_contains($nameLower, $keyword)) {
+                \Log::info('✅ CLARINS - Name contient "essentiels", pas de nettoyage', [
+                    'name_original' => $name
+                ]);
+                return $name;
+            }
+        }
+        
+        // Nettoyer le name
+        $cleanedName = $name;
+        $originalName = $name;
+        $modified = false;
+        
+        foreach ($typeWords as $word) {
+            $pattern = '/\b' . preg_quote($word, '/') . '\b/i';
+            $beforeClean = $cleanedName;
+            $cleanedName = preg_replace($pattern, '', $cleanedName);
+            $cleanedName = preg_replace('/\s+/', ' ', $cleanedName); // Nettoyer espaces multiples
+            $cleanedName = trim($cleanedName);
+            
+            if ($beforeClean !== $cleanedName) {
+                $modified = true;
+            }
+        }
+        
+        // Si le name a été vidé, garder l'original
+        if (empty($cleanedName) || mb_strlen($cleanedName) < 3) {
+            \Log::warning('⚠️ CLARINS - Nettoyage aurait vidé le name, conservation de l\'original', [
+                'name_original' => $originalName,
+                'name_nettoyé' => $cleanedName
+            ]);
+            return $originalName;
+        }
+        
+        if ($modified) {
+            \Log::info('✅ CLARINS - Name nettoyé', [
+                'name_original' => $originalName,
+                'name_nettoyé' => $cleanedName
+            ]);
+        }
+        
+        return $cleanedName;
     }
 
     /**
@@ -1823,7 +1958,6 @@ Score de confiance entre 0 et 1."
     }
 
 }; ?>
-
 
 <div class="bg-white">
     <!-- Header avec le bouton de recherche -->
