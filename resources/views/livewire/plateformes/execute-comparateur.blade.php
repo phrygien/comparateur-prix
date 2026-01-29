@@ -349,6 +349,93 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
     }
     
     /**
+     * ✨ NOUVEAU : Vérifie si le produit est "La Petite Robe Noire"
+     */
+    private function isPetiteRobeNoireProduct(string $name, string $vendor): bool
+    {
+        $nameLower = mb_strtolower($name);
+        $vendorLower = mb_strtolower($vendor);
+        
+        // Doit être Guerlain ET contenir "petite robe noire"
+        if (!str_contains($vendorLower, 'guerlain')) {
+            return false;
+        }
+        
+        // Mots-clés pour identifier La Petite Robe Noire
+        $robeNoireKeywords = ['petite robe noire', 'robe noire'];
+        
+        foreach ($robeNoireKeywords as $keyword) {
+            if (str_contains($nameLower, $keyword)) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * ✨ NOUVEAU : Extrait le type exact pour La Petite Robe Noire
+     * Pour ce produit spécifique, on cherche "Parfum Vaporisateur" OU "Eau de Parfum Absolue"
+     */
+    private function getExactTypeForPetiteRobeNoire(string $type): string
+    {
+        $typeLower = mb_strtolower($type);
+        
+        // Si le type contient "eau de parfum absolue", on le garde tel quel
+        if (str_contains($typeLower, 'eau de parfum absolue')) {
+            return $type;
+        }
+        
+        // Si le type contient "parfum absolue", on retourne "Eau de Parfum Absolue"
+        if (str_contains($typeLower, 'parfum') && str_contains($typeLower, 'absolue')) {
+            return 'Eau de Parfum Absolue';
+        }
+        
+        // Si le type contient "parfum" ET "vaporisateur", on retourne exactement ça
+        if (str_contains($typeLower, 'parfum') && str_contains($typeLower, 'vaporisateur')) {
+            return 'Parfum Vaporisateur';
+        }
+        
+        // Si c'est juste "parfum", on retourne "Parfum Vaporisateur"
+        if (str_contains($typeLower, 'parfum') && !str_contains($typeLower, 'eau de')) {
+            return 'Parfum Vaporisateur';
+        }
+        
+        return $type;
+    }
+    
+    /**
+     * ✨ NOUVEAU : Vérifie si le type du produit correspond aux types acceptés pour La Petite Robe Noire
+     */
+    private function isAcceptedPetiteRobeNoireType(string $productType): bool
+    {
+        $productTypeLower = mb_strtolower($productType);
+        
+        // Types acceptés pour La Petite Robe Noire
+        $acceptedTypes = [
+            'parfum vaporisateur',
+            'eau de parfum absolue'
+        ];
+        
+        foreach ($acceptedTypes as $acceptedType) {
+            if (str_contains($productTypeLower, $acceptedType)) {
+                return true;
+            }
+        }
+        
+        // Vérifier aussi les combinaisons de mots
+        if ((str_contains($productTypeLower, 'parfum') && str_contains($productTypeLower, 'vaporisateur') && !str_contains($productTypeLower, 'eau de'))) {
+            return true;
+        }
+        
+        if (str_contains($productTypeLower, 'parfum') && str_contains($productTypeLower, 'absolue')) {
+            return true;
+        }
+        
+        return false;
+    }
+    
+    /**
      * ✨ NOUVEAU : Vérifie si c'est une édition limitée/spéciale
      */
     private function isLimitedEdition(string $name, string $type): bool
@@ -386,6 +473,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
      * ✨ NOUVEAU : Traitement spécial pour :
      * - VALENTINO + COFFRETS
      * - MÉTÉORITES (Guerlain) + ÉDITIONS LIMITÉES
+     * - LA PETITE ROBE NOIRE (Guerlain) - Types acceptés: "Parfum Vaporisateur" OU "Eau de Parfum Absolue"
      */
     private function searchMatchingProducts()
     {
@@ -423,14 +511,28 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         // ✨ NOUVEAU : Détecter si c'est un produit Météorites (Guerlain)
         $isMeteoritesProduct = $this->isMeteoritesProduct($name, $type);
         
+        // ✨ NOUVEAU : Détecter si c'est La Petite Robe Noire (Guerlain)
+        $isPetiteRobeNoire = $this->isPetiteRobeNoireProduct($name, $vendor);
+        
         // ✨ NOUVEAU : Détecter si c'est une édition limitée
         $isLimitedEdition = $this->isLimitedEdition($name, $type);
         
-        if ($isSpecialVendor || $isMeteoritesProduct) {
+        // ✨ NOUVEAU : Pour La Petite Robe Noire, ajuster le type à chercher
+        if ($isPetiteRobeNoire) {
+            $type = $this->getExactTypeForPetiteRobeNoire($type);
+            \Log::info('🎯 LA PETITE ROBE NOIRE DÉTECTÉE - Type ajusté', [
+                'vendor' => $vendor,
+                'name' => $name,
+                'type_ajusté' => $type
+            ]);
+        }
+        
+        if ($isSpecialVendor || $isMeteoritesProduct || $isPetiteRobeNoire) {
             \Log::info('🎯 PRODUIT SPÉCIAL DÉTECTÉ', [
                 'vendor' => $vendor,
                 'is_valentino' => $isSpecialVendor,
                 'is_meteorites' => $isMeteoritesProduct,
+                'is_petite_robe_noire' => $isPetiteRobeNoire,
                 'is_coffret' => $isCoffretSource,
                 'is_limited_edition' => $isLimitedEdition
             ]);
@@ -676,6 +778,23 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     $score += 400; // MEGA BONUS pour Météorites éditions limitées
                 }
             }
+            
+            // ✨ NOUVEAU : BONUS SPÉCIAL pour La Petite Robe Noire avec types acceptés
+            // Types acceptés: "Parfum Vaporisateur" OU "Eau de Parfum Absolue"
+            if ($isPetiteRobeNoire) {
+                $productIsPetiteRobeNoire = $this->isPetiteRobeNoireProduct($product['name'] ?? '', $product['vendor'] ?? '');
+                
+                // Si le produit est La Petite Robe Noire ET a un type accepté
+                if ($productIsPetiteRobeNoire && $this->isAcceptedPetiteRobeNoireType($product['type'] ?? '')) {
+                    $score += 500; // MEGA BONUS pour type accepté
+                    
+                    \Log::debug('✅ LA PETITE ROBE NOIRE avec type accepté', [
+                        'product_id' => $product['id'] ?? 0,
+                        'product_type' => $product['type'] ?? '',
+                        'bonus' => 500
+                    ]);
+                }
+            }
 
             // ==========================================
             // BONUS NAME : PRIORITÉ PRINCIPALE
@@ -801,7 +920,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'matched_name_words' => $matchedNameWords,
                 'is_special_case' => $shouldSkipTypeFilter,
                 'is_meteorites' => $isMeteoritesProduct,
-                'is_limited_edition' => $isLimitedEdition
+                'is_limited_edition' => $isLimitedEdition,
+                'is_petite_robe_noire' => $isPetiteRobeNoire
             ];
         })
         ->sortByDesc('score')
@@ -816,6 +936,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             'is_special_case' => $shouldSkipTypeFilter,
             'is_meteorites' => $isMeteoritesProduct,
             'is_limited_edition' => $isLimitedEdition,
+            'is_petite_robe_noire' => $isPetiteRobeNoire,
             'top_10_scores' => $scoredProducts->take(10)->map(function($item) {
                 return [
                     'id' => $item['product']['id'] ?? 0,
@@ -824,6 +945,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     'is_special_case' => $item['is_special_case'],
                     'is_meteorites' => $item['is_meteorites'],
                     'is_limited_edition' => $item['is_limited_edition'],
+                    'is_petite_robe_noire' => $item['is_petite_robe_noire'] ?? false,
                     'coffret_bonus' => $item['coffret_bonus_applied'],
                     'name_match' => $item['name_match_count'] . '/' . $item['name_words_total'],
                     'matched_words' => $item['matched_name_words'] ?? [],
@@ -1364,7 +1486,6 @@ Score de confiance entre 0 et 1."
     }
 
 }; ?>
-
 
 
 <div class="bg-white">
