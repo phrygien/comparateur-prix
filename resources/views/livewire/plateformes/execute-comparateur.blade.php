@@ -314,11 +314,59 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
      */
     private function isSpecialVendor(string $vendor): bool
     {
-        $specialVendors = ['valentino', 'valent'];
+        $specialVendors = ['valentino', 'valent', 'guerlain'];
         $vendorLower = mb_strtolower(trim($vendor));
         
         foreach ($specialVendors as $special) {
             if (str_contains($vendorLower, $special)) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * ✨ NOUVEAU : Vérifie si le produit est un produit Météorites (éditions spéciales)
+     */
+    private function isMeteoritesProduct(string $name, string $type): bool
+    {
+        $nameLower = mb_strtolower($name);
+        $typeLower = mb_strtolower($type);
+        
+        // Mots-clés pour identifier les Météorites
+        $meteoritesKeywords = ['meteorites', 'météorites'];
+        
+        foreach ($meteoritesKeywords as $keyword) {
+            if (str_contains($nameLower, $keyword) || str_contains($typeLower, $keyword)) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * ✨ NOUVEAU : Vérifie si c'est une édition limitée/spéciale
+     */
+    private function isLimitedEdition(string $name, string $type): bool
+    {
+        $combinedText = mb_strtolower($name . ' ' . $type);
+        
+        $limitedKeywords = [
+            'édition limitée',
+            'edition limitée',
+            'édition limite',
+            'limited edition',
+            'édition spéciale',
+            'special edition',
+            'blooming glow',
+            'midnight glow',
+            'phoenix'
+        ];
+        
+        foreach ($limitedKeywords as $keyword) {
+            if (str_contains($combinedText, $keyword)) {
                 return true;
             }
         }
@@ -333,7 +381,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
      * 3. FILTRAGE PROGRESSIF par NAME : Plus de mots matchent, mieux c'est
      * 4. SCORING ÉQUILIBRÉ entre NAME et TYPE
      * 
-     * ✨ NOUVEAU : Traitement spécial pour VALENTINO
+     * ✨ NOUVEAU : Traitement spécial pour VALENTINO et MÉTÉORITES
      */
     private function searchMatchingProducts()
     {
@@ -365,13 +413,21 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             return;
         }
 
-        // ✨ NOUVEAU : Détecter si c'est un vendor spécial (Valentino)
+        // ✨ NOUVEAU : Détecter si c'est un vendor spécial (Valentino, Guerlain)
         $isSpecialVendor = $this->isSpecialVendor($vendor);
         
+        // ✨ NOUVEAU : Détecter si c'est un produit Météorites
+        $isMeteoritesProduct = $this->isMeteoritesProduct($name, $type);
+        
+        // ✨ NOUVEAU : Détecter si c'est une édition limitée
+        $isLimitedEdition = $this->isLimitedEdition($name, $type);
+        
         if ($isSpecialVendor) {
-            \Log::info('🎯 VENDOR SPÉCIAL DÉTECTÉ - Utilisation de la logique Valentino', [
+            \Log::info('🎯 VENDOR SPÉCIAL DÉTECTÉ', [
                 'vendor' => $vendor,
-                'is_coffret' => $isCoffretSource
+                'is_coffret' => $isCoffretSource,
+                'is_meteorites' => $isMeteoritesProduct,
+                'is_limited_edition' => $isLimitedEdition
             ]);
         }
 
@@ -391,6 +447,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         \Log::info('Mots-clés pour la recherche', [
             'vendor' => $vendor,
             'is_special_vendor' => $isSpecialVendor,
+            'is_meteorites' => $isMeteoritesProduct,
+            'is_limited_edition' => $isLimitedEdition,
             'name' => $name,
             'nameWords_brut' => $allNameWords,
             'nameWords_filtres' => $nameWords,
@@ -426,9 +484,13 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             return;
         }
 
-        // ✨ ÉTAPE 2.5 MODIFIÉE : Filtrage par TYPE de base (SKIP pour vendors spéciaux + coffrets)
-        if (!$isSpecialVendor || !$isCoffretSource) {
-            // Pour les produits normaux OU vendors non-spéciaux, on garde le filtrage strict par type
+        // ✨ ÉTAPE 2.5 MODIFIÉE : Filtrage par TYPE de base 
+        // SKIP pour vendors spéciaux + coffrets OU Météorites + éditions limitées
+        $shouldSkipTypeFilter = ($isSpecialVendor && $isCoffretSource) || 
+                                ($isMeteoritesProduct && $isLimitedEdition);
+        
+        if (!$shouldSkipTypeFilter) {
+            // Pour les produits normaux, on garde le filtrage strict par type
             $typeFilteredProducts = $this->filterByBaseType($filteredProducts, $type);
             
             if (!empty($typeFilteredProducts)) {
@@ -441,11 +503,13 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 \Log::info('Aucun produit après filtrage par type de base, on garde tous les produits');
             }
         } else {
-            // ✨ Pour VALENTINO + COFFRETS, on SKIP le filtrage strict par type
-            \Log::info('⚠️ VENDOR SPÉCIAL + COFFRET - Skip du filtrage strict par TYPE', [
+            // ✨ Pour cas spéciaux, on SKIP le filtrage strict par type
+            \Log::info('⚠️ CAS SPÉCIAL DÉTECTÉ - Skip du filtrage strict par TYPE', [
                 'vendor' => $vendor,
                 'type_recherché' => $type,
-                'is_coffret' => true,
+                'is_coffret' => $isCoffretSource,
+                'is_meteorites' => $isMeteoritesProduct,
+                'is_limited_edition' => $isLimitedEdition,
                 'produits_conservés' => count($filteredProducts)
             ]);
         }
@@ -455,15 +519,15 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         
         if (!empty($nameWords)) {
             // TENTATIVE 1: TOUS les mots doivent être présents (filtrage le plus strict)
-            $allWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $isSpecialVendor, $isCoffretSource) {
+            $allWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $shouldSkipTypeFilter) {
                 $productName = mb_strtolower($product['name'] ?? '');
                 $productType = mb_strtolower($product['type'] ?? '');
                 
                 $matchCount = 0;
                 foreach ($nameWords as $word) {
-                    // ✨ Pour Valentino + coffrets, chercher aussi dans le TYPE
+                    // ✨ Pour cas spéciaux, chercher aussi dans le TYPE
                     if (str_contains($productName, $word) || 
-                        ($isSpecialVendor && $isCoffretSource && str_contains($productType, $word))) {
+                        ($shouldSkipTypeFilter && str_contains($productType, $word))) {
                         $matchCount++;
                     }
                 }
@@ -481,14 +545,14 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 // TENTATIVE 2: Au moins 80% des mots doivent être présents
                 $minRequired = max(1, (int)ceil(count($nameWords) * 0.8));
                 
-                $mostWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $minRequired, $isSpecialVendor, $isCoffretSource) {
+                $mostWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $minRequired, $shouldSkipTypeFilter) {
                     $productName = mb_strtolower($product['name'] ?? '');
                     $productType = mb_strtolower($product['type'] ?? '');
                     
                     $matchCount = 0;
                     foreach ($nameWords as $word) {
                         if (str_contains($productName, $word) || 
-                            ($isSpecialVendor && $isCoffretSource && str_contains($productType, $word))) {
+                            ($shouldSkipTypeFilter && str_contains($productType, $word))) {
                             $matchCount++;
                         }
                     }
@@ -503,12 +567,10 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                         'nameWords_used' => $nameWords
                     ]);
                 } else {
-                    // ✨ TENTATIVE 3: Pour vendors spéciaux, 50% suffit
-                    $minRequired = $isSpecialVendor 
-                        ? max(1, (int)ceil(count($nameWords) * 0.5))
-                        : max(1, (int)ceil(count($nameWords) * 0.5));
+                    // ✨ TENTATIVE 3: Pour cas spéciaux, 50% suffit
+                    $minRequired = max(1, (int)ceil(count($nameWords) * 0.5));
                     
-                    $halfWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $minRequired, $isSpecialVendor, $isCoffretSource) {
+                    $halfWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $minRequired, $shouldSkipTypeFilter, $isMeteoritesProduct) {
                         $productName = mb_strtolower($product['name'] ?? '');
                         $productType = mb_strtolower($product['type'] ?? '');
                         
@@ -517,21 +579,22 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                         
                         foreach ($nameWords as $word) {
                             if (str_contains($productName, $word) || 
-                                ($isSpecialVendor && $isCoffretSource && str_contains($productType, $word))) {
+                                ($shouldSkipTypeFilter && str_contains($productType, $word))) {
                                 $matchCount++;
                                 $matchedWords[] = $word;
                             }
                         }
                         
-                        // Log pour vendors spéciaux
-                        if ($isSpecialVendor && $matchCount > 0) {
-                            \Log::debug('🎯 VENDOR SPÉCIAL - Matching partiel', [
+                        // Log pour cas spéciaux
+                        if ($shouldSkipTypeFilter && $matchCount > 0) {
+                            \Log::debug('🎯 CAS SPÉCIAL - Matching partiel', [
                                 'product_id' => $product['id'] ?? 0,
                                 'product_name' => $product['name'] ?? '',
                                 'product_type' => $product['type'] ?? '',
                                 'matched_words' => $matchedWords,
                                 'match_count' => $matchCount,
                                 'required' => $minRequired,
+                                'is_meteorites' => $isMeteoritesProduct,
                                 'passes' => $matchCount >= $minRequired
                             ]);
                         }
@@ -544,17 +607,17 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                         \Log::info('✅ Produits après filtrage 50% par NAME', [
                             'count' => count($nameFilteredProducts),
                             'nameWords_used' => $nameWords,
-                            'is_special_vendor' => $isSpecialVendor
+                            'is_special_case' => $shouldSkipTypeFilter
                         ]);
                     } else {
                         // FALLBACK FINAL: Au moins 1 mot
-                        $anyWordMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $isSpecialVendor, $isCoffretSource) {
+                        $anyWordMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $shouldSkipTypeFilter) {
                             $productName = mb_strtolower($product['name'] ?? '');
                             $productType = mb_strtolower($product['type'] ?? '');
                             
                             foreach ($nameWords as $word) {
                                 if (str_contains($productName, $word) || 
-                                    ($isSpecialVendor && $isCoffretSource && str_contains($productType, $word))) {
+                                    ($shouldSkipTypeFilter && str_contains($productType, $word))) {
                                     return true;
                                 }
                             }
@@ -576,7 +639,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         }
 
         // ÉTAPE 3: Scoring avec PRIORITÉ sur le NAME
-        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $type, $isCoffretSource, $nameWords, $isSpecialVendor) {
+        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $type, $isCoffretSource, $nameWords, $shouldSkipTypeFilter, $isMeteoritesProduct, $isLimitedEdition) {
             $score = 0;
             $productType = mb_strtolower($product['type'] ?? '');
             $productName = mb_strtolower($product['name'] ?? '');
@@ -592,9 +655,19 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             if ($isCoffretSource && $productIsCoffret) {
                 $score += 500; // MEGA BONUS pour coffrets
                 
-                // ✨ BONUS SUPPLÉMENTAIRE pour vendors spéciaux
-                if ($isSpecialVendor) {
+                // ✨ BONUS SUPPLÉMENTAIRE pour cas spéciaux
+                if ($shouldSkipTypeFilter) {
                     $score += 100;
+                }
+            }
+            
+            // ✨ NOUVEAU : BONUS SPÉCIAL pour Météorites + édition limitée
+            if ($isMeteoritesProduct && $isLimitedEdition) {
+                $productIsMeteoritesEdition = $this->isMeteoritesProduct($product['name'] ?? '', $product['type'] ?? '') &&
+                                             $this->isLimitedEdition($product['name'] ?? '', $product['type'] ?? '');
+                
+                if ($productIsMeteoritesEdition) {
+                    $score += 400; // MEGA BONUS pour Météorites éditions limitées
                 }
             }
 
@@ -606,9 +679,9 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             
             if (!empty($nameWords)) {
                 foreach ($nameWords as $word) {
-                    // ✨ Pour vendors spéciaux + coffrets, chercher aussi dans TYPE
+                    // ✨ Pour cas spéciaux, chercher aussi dans TYPE
                     if (str_contains($productName, $word) || 
-                        ($isSpecialVendor && $isCoffretSource && str_contains($productType, $word))) {
+                        ($shouldSkipTypeFilter && str_contains($productType, $word))) {
                         $nameMatchCount++;
                         $matchedNameWords[] = $word;
                     }
@@ -626,14 +699,14 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             }
 
             // ==========================================
-            // MATCHING TYPE : Obligatoire mais flexible
+            // MATCHING TYPE : Obligatoire mais flexible pour cas spéciaux
             // ==========================================
             
             $typeMatched = false;
             $hasStrongNameMatch = $nameMatchCount >= 2; // Au moins 2 mots du NAME
             
             if (!empty($typeParts) && !empty($productType)) {
-                // Vérifier le type de base (OBLIGATOIRE pour être considéré)
+                // Vérifier le type de base (OBLIGATOIRE pour être considéré, sauf cas spéciaux)
                 if (!empty($typeParts[0])) {
                     $baseTypeLower = mb_strtolower(trim($typeParts[0]));
                     
@@ -648,8 +721,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                             'bonus' => 300
                         ]);
                     } else {
-                        // ✨ MALUS réduit pour vendors spéciaux + coffrets
-                        if ($isSpecialVendor && $isCoffretSource) {
+                        // ✨ MALUS réduit pour cas spéciaux
+                        if ($shouldSkipTypeFilter) {
                             $score -= 50; // Malus léger
                         } else {
                             $score -= 200; // Malus normal
@@ -659,9 +732,9 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                             'product_id' => $product['id'] ?? 0,
                             'base_type_recherché' => $baseTypeLower,
                             'product_type' => $productType,
-                            'is_special_vendor' => $isSpecialVendor,
+                            'is_special_case' => $shouldSkipTypeFilter,
                             'name_match_count' => $nameMatchCount,
-                            'malus' => $isSpecialVendor && $isCoffretSource ? -50 : -200
+                            'malus' => $shouldSkipTypeFilter ? -50 : -200
                         ]);
                     }
                 }
@@ -720,25 +793,31 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'name_match_count' => $nameMatchCount,
                 'name_words_total' => count($nameWords),
                 'matched_name_words' => $matchedNameWords,
-                'is_special_vendor' => $isSpecialVendor
+                'is_special_case' => $shouldSkipTypeFilter,
+                'is_meteorites' => $isMeteoritesProduct,
+                'is_limited_edition' => $isLimitedEdition
             ];
         })
         ->sortByDesc('score')
         ->values();
 
-        \Log::info('Scoring détaillé (NAME ET TYPE OBLIGATOIRES)', [
+        \Log::info('Scoring détaillé (NAME ET TYPE OBLIGATOIRES sauf cas spéciaux)', [
             'total_products' => $scoredProducts->count(),
             'type_recherche' => $type,
             'type_parts' => $typeParts,
             'name_words' => $nameWords,
             'recherche_coffret' => $isCoffretSource,
-            'is_special_vendor' => $isSpecialVendor,
+            'is_special_case' => $shouldSkipTypeFilter,
+            'is_meteorites' => $isMeteoritesProduct,
+            'is_limited_edition' => $isLimitedEdition,
             'top_10_scores' => $scoredProducts->take(10)->map(function($item) {
                 return [
                     'id' => $item['product']['id'] ?? 0,
                     'score' => $item['score'],
                     'is_coffret' => $item['is_coffret'],
-                    'is_special_vendor' => $item['is_special_vendor'],
+                    'is_special_case' => $item['is_special_case'],
+                    'is_meteorites' => $item['is_meteorites'],
+                    'is_limited_edition' => $item['is_limited_edition'],
                     'coffret_bonus' => $item['coffret_bonus_applied'],
                     'name_match' => $item['name_match_count'] . '/' . $item['name_words_total'],
                     'matched_words' => $item['matched_name_words'] ?? [],
@@ -758,16 +837,16 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         ]);
 
         // ✨ FILTRAGE STRICT : NAME ET TYPE doivent TOUS LES DEUX matcher
-        // SAUF pour vendors spéciaux + coffrets
-        $scoredProducts = $scoredProducts->filter(function($item) use ($nameWords, $isSpecialVendor, $isCoffretSource) {
+        // SAUF pour cas spéciaux (Valentino + coffrets OU Météorites + éditions limitées)
+        $scoredProducts = $scoredProducts->filter(function($item) use ($nameWords, $shouldSkipTypeFilter) {
             $hasNameMatch = !empty($nameWords) ? $item['name_match_count'] > 0 : true;
             $hasStrongNameMatch = $item['has_strong_name_match']; // 2+ mots du NAME
             $hasTypeMatch = $item['type_matched']; // Au moins le type de base matche
             
-            // ✨ RÈGLE ASSOUPLIE pour vendors spéciaux (Valentino) + coffrets :
-            // - Pour Valentino + coffrets : NAME doit matcher, TYPE est optionnel
+            // ✨ RÈGLE ASSOUPLIE pour cas spéciaux :
+            // - Pour cas spéciaux : NAME doit matcher, TYPE est optionnel
             // - Pour les autres : NAME ET TYPE doivent matcher
-            if ($isSpecialVendor && $isCoffretSource) {
+            if ($shouldSkipTypeFilter) {
                 $keepProduct = $item['score'] > 0 && $hasNameMatch;
             } else {
                 $keepProduct = $item['score'] > 0 && $hasNameMatch && $hasTypeMatch;
@@ -779,24 +858,24 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     'product_name' => $item['product']['name'] ?? '',
                     'product_type' => $item['product']['type'] ?? '',
                     'score' => $item['score'],
-                    'is_special_vendor' => $isSpecialVendor,
-                    'is_coffret' => $isCoffretSource,
+                    'is_special_case' => $shouldSkipTypeFilter,
+                    'is_meteorites' => $item['is_meteorites'] ?? false,
+                    'is_limited_edition' => $item['is_limited_edition'] ?? false,
                     'name_match' => $hasNameMatch,
                     'strong_name_match' => $hasStrongNameMatch,
                     'type_match' => $hasTypeMatch,
                     'name_match_count' => $item['name_match_count'],
                     'name_words_total' => $item['name_words_total'],
-                    'raison' => !$hasNameMatch ? 'NAME ne matche pas' : (!$hasTypeMatch && !($isSpecialVendor && $isCoffretSource) ? 'TYPE ne matche pas' : 'Score trop faible')
+                    'raison' => !$hasNameMatch ? 'NAME ne matche pas' : (!$hasTypeMatch && !$shouldSkipTypeFilter ? 'TYPE ne matche pas' : 'Score trop faible')
                 ]);
             }
             
             return $keepProduct;
         });
 
-        \Log::info('Après filtrage (NAME ET TYPE OBLIGATOIRES sauf Valentino+Coffrets)', [
+        \Log::info('Après filtrage (NAME ET TYPE OBLIGATOIRES sauf cas spéciaux)', [
             'produits_restants' => $scoredProducts->count(),
-            'is_special_vendor' => $isSpecialVendor,
-            'is_coffret' => $isCoffretSource
+            'is_special_case' => $shouldSkipTypeFilter
         ]);
 
         if ($scoredProducts->isEmpty()) {
@@ -1015,7 +1094,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
     /**
      * ✨ VERSION AMÉLIORÉE : Extrait les mots-clés significatifs
-     * Pour vendors spéciaux (Valentino), les mots-clés "coffret", "set", "kit" sont exclus
+     * Pour vendors spéciaux (Valentino, Guerlain), les mots-clés "coffret", "set", "kit" sont exclus
      */
     private function extractKeywords(string $text, bool $isSpecialVendor = false): array
     {
@@ -1026,7 +1105,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         // Stop words de base
         $stopWords = ['de', 'la', 'le', 'les', 'des', 'du', 'un', 'une', 'et', 'ou', 'pour', 'avec', 'sans'];
         
-        // ✨ Pour vendors spéciaux (Valentino), ajouter les mots-clés coffret aux stop words
+        // ✨ Pour vendors spéciaux (Valentino, Guerlain), ajouter les mots-clés coffret aux stop words
         if ($isSpecialVendor) {
             $stopWords = array_merge($stopWords, ['coffret', 'set', 'kit', 'duo', 'trio', 'collection']);
         }
