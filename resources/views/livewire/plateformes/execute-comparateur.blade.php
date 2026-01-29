@@ -376,7 +376,11 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
     /**
      * ✨ NOUVEAU : Vérifie si le nom du produit est valide pour un cas Valentino avec un seul mot
-     * Si le nom recherché est un seul mot, le nom du produit ne doit pas contenir de mots supplémentaires significatifs
+     * Si le nom recherché est un seul mot, le nom du produit ne doit contenir QUE ce mot (pas de mots supplémentaires)
+     * 
+     * RÈGLE STRICTE : 
+     * - Recherché : "Uomo" → Accepté : "Uomo" uniquement
+     * - Recherché : "Uomo" → Rejeté : "Uomo Born in Roma" (contient "Born", "Roma")
      */
     private function isValidValentinoSingleWordMatch(string $searchName, string $productName, string $productType): bool
     {
@@ -388,47 +392,47 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             return true;
         }
         
-        // Si c'est un seul mot, vérifier que le nom du produit ne contient pas de mots supplémentaires
+        // Si c'est un seul mot, le nom du produit doit contenir EXACTEMENT ce mot et RIEN D'AUTRE
         $searchWordLower = mb_strtolower($searchWords[0]);
-        $productNameLower = mb_strtolower($productName);
-        $productTypeLower = mb_strtolower($productType);
+        $productNameLower = mb_strtolower(trim($productName));
         
-        // Extraire tous les mots du nom du produit
-        $productWords = $this->extractKeywords($productName, true);
+        // Extraire TOUS les mots significatifs du nom du produit (≥3 caractères)
+        // SANS utiliser extractKeywords qui a des exclusions
+        $productNameWords = preg_split('/[\s\-]+/', $productNameLower, -1, PREG_SPLIT_NO_EMPTY);
+        $productNameWords = array_filter($productNameWords, function($word) {
+            return mb_strlen($word) >= 3;
+        });
+        $productNameWords = array_values($productNameWords);
         
-        // Définir les mots autorisés (types de produits, formats, etc.)
-        $allowedWords = [
-            'eau', 'de', 'parfum', 'toilette', 'cologne',
-            'vaporisateur', 'spray', 'vapo', 'atomiseur',
-            'intense', 'extreme', 'absolu', 'concentre',
-            'homme', 'femme', 'uomo', 'donna',
-            'ml', 'flacon', 'rechargeable',
-            'born', 'in', 'roma' // Mots spécifiques Valentino qui font partie du TYPE, pas du NAME
-        ];
-        
-        // Compter combien de mots du produit sont "supplémentaires" (pas dans allowedWords et pas le mot recherché)
-        $extraWords = [];
-        foreach ($productWords as $word) {
-            if ($word !== $searchWordLower && !in_array($word, $allowedWords)) {
-                $extraWords[] = $word;
-            }
-        }
-        
-        // Si le nom du produit contient des mots supplémentaires significatifs, c'est un produit différent
-        if (!empty($extraWords)) {
-            \Log::debug('❌ VALENTINO - Nom avec mots supplémentaires rejeté', [
+        // RÈGLE STRICTE : Le nom du produit doit contenir EXACTEMENT 1 mot significatif
+        if (count($productNameWords) !== 1) {
+            \Log::debug('❌ VALENTINO - Nom avec plusieurs mots rejeté', [
                 'nom_recherché' => $searchName,
                 'nom_produit' => $productName,
                 'mot_recherché' => $searchWordLower,
-                'mots_supplémentaires' => $extraWords,
-                'raison' => 'Le produit contient des mots supplémentaires non autorisés'
+                'mots_dans_nom_produit' => $productNameWords,
+                'nombre_mots' => count($productNameWords),
+                'raison' => 'Le nom du produit contient ' . count($productNameWords) . ' mots au lieu de 1'
             ]);
             return false;
         }
         
-        \Log::debug('✅ VALENTINO - Nom validé (pas de mots supplémentaires)', [
+        // Vérifier que le seul mot du produit correspond au mot recherché
+        if ($productNameWords[0] !== $searchWordLower) {
+            \Log::debug('❌ VALENTINO - Mot différent rejeté', [
+                'nom_recherché' => $searchName,
+                'nom_produit' => $productName,
+                'mot_recherché' => $searchWordLower,
+                'mot_produit' => $productNameWords[0],
+                'raison' => 'Le mot du produit ne correspond pas au mot recherché'
+            ]);
+            return false;
+        }
+        
+        \Log::debug('✅ VALENTINO - Nom validé (exactement 1 mot correspondant)', [
             'nom_recherché' => $searchName,
-            'nom_produit' => $productName
+            'nom_produit' => $productName,
+            'mot_vérifié' => $searchWordLower
         ]);
         
         return true;
@@ -1447,6 +1451,7 @@ Score de confiance entre 0 et 1."
     }
 
 }; ?>
+
 
 <div class="bg-white">
     <!-- Header avec le bouton de recherche -->
