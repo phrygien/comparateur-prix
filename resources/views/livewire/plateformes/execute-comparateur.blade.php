@@ -1616,7 +1616,6 @@ Score de confiance entre 0 et 1."
 
 }; ?>
 
-
 <div class="bg-white">
     <!-- Header avec le bouton de recherche -->
     <div class="px-6 py-4 border-b border-gray-200">
