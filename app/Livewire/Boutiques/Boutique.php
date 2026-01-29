@@ -44,6 +44,8 @@ class Boutique extends Component
     {
         // Reset à la première page quand un filtre change
         if (in_array($property, ['search', 'filterName', 'filterMarque', 'filterType', 'filterEAN', 'filterCapacity', 'perPage'])) {
+            $this->normalizeSearch($property);
+            dd($property);
             $this->resetPage();
         }
     }
@@ -292,7 +294,7 @@ class Boutique extends Component
         $value = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
         $value = preg_replace('/[^a-z0-9 ]/', ' ', $value);
 
-        dd($value);
+        var_dump($value);
 
         return trim($value);
     }
