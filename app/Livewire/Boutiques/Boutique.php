@@ -290,7 +290,9 @@ class Boutique extends Component
     {
         $value = mb_strtolower($value, 'UTF-8');
         $value = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
-        $value = preg_replace('/[^a-z0-9 ]/', '', $value);
+        $value = preg_replace('/[^a-z0-9 ]/', ' ', $value);
+
+        dd($value);
 
         return trim($value);
     }
