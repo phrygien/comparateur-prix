@@ -46,8 +46,6 @@ class Boutique extends Component
         if (in_array($property, ['search', 'filterName', 'filterMarque', 'filterType', 'filterEAN', 'filterCapacity', 'perPage'])) {
             $this->resetPage();
         }
-
-        dd($this->normalizeSearch($this->search));
     }
 
     public function applyFilters()
