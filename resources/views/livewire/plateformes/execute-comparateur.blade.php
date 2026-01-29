@@ -1205,7 +1205,7 @@ Score de confiance entre 0 et 1."
     <!-- Formulaire de recherche manuelle -->
     @if($manualSearchMode)
         <div class="px-6 py-4 bg-blue-50 border-b border-blue-200">
-            <h3 class="font-semibold text-gray-900 mb-3">🔍 Recherche Manuelle</h3>
+            <h3 class="font-semibold text-gray-900 mb-3">Recherche Manuelle</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <!-- Vendor (readonly) -->
                 <div>
@@ -1242,7 +1242,7 @@ Score de confiance entre 0 et 1."
             <div class="mt-4 flex justify-end">
                 <button wire:click="manualSearch" wire:loading.attr="disabled"
                     class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium shadow-sm">
-                    <span wire:loading.remove>🔎 Lancer la recherche</span>
+                    <span wire:loading.remove>Lancer la recherche</span>
                     <span wire:loading>Recherche en cours...</span>
                 </button>
             </div>
@@ -1346,9 +1346,9 @@ Score de confiance entre 0 et 1."
                         <div class="flex items-center justify-between mb-4 pb-3 border-b-2 border-gray-300">
                             <h3 class="text-lg font-bold text-gray-900">
                                 @if($siteInfo)
-                                    🌐 {{ $siteInfo['name'] }}
+                                    {{ $siteInfo['name'] }}
                                 @else
-                                    🌐 Site inconnu
+                                    Site inconnu
                                 @endif
                             </h3>
                             <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-indigo-100 text-indigo-800">
