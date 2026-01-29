@@ -409,3 +409,332 @@ private function filterProductsByNameAndType($scoredProducts, $nameWords)
 }
 
 ?>
+
+<div class="bg-white">
+    <!-- Header avec le bouton de recherche -->
+    <div class="px-6 py-4 border-b border-gray-200">
+        <div class="flex items-center justify-between">
+            <h2 class="text-xl font-bold text-gray-900">Recherche de produit</h2>
+            <div class="flex gap-2">
+                <button wire:click="toggleManualSearch"
+                    class="px-4 py-2 {{ $manualSearchMode ? 'bg-gray-600' : 'bg-green-600' }} text-white rounded-lg hover:opacity-90 font-medium shadow-sm">
+                    {{ $manualSearchMode ? 'Mode Auto' : 'Recherche Manuelle' }}
+                </button>
+                <button wire:click="extractSearchTerme" wire:loading.attr="disabled"
+                    class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium shadow-sm">
+                    <span wire:loading.remove>Rechercher à nouveau</span>
+                    <span wire:loading>Extraction en cours...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <livewire:plateformes.detail :id="$productId" />
+
+    <!-- Formulaire de recherche manuelle -->
+    @if($manualSearchMode)
+        <div class="px-6 py-4 bg-blue-50 border-b border-blue-200">
+            <h3 class="font-semibold text-gray-900 mb-3">🔍 Recherche Manuelle</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Vendor (readonly) -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Marque (Vendor)</label>
+                    <input type="text" wire:model="manualVendor" readonly
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-600 cursor-not-allowed">
+                </div>
+
+                <!-- Name -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Nom de la gamme</label>
+                    <input type="text" wire:model="manualName"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        placeholder="Ex: J'adore, N°5, Vital Perfection">
+                </div>
+
+                <!-- Type -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Type de produit</label>
+                    <input type="text" wire:model="manualType"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        placeholder="Ex: Eau de Parfum, Crème visage">
+                </div>
+
+                <!-- Variation -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Contenance</label>
+                    <input type="text" wire:model="manualVariation"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        placeholder="Ex: 50 ml, 200 ml">
+                </div>
+            </div>
+
+            <div class="mt-4 flex justify-end">
+                <button wire:click="manualSearch" wire:loading.attr="disabled"
+                    class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium shadow-sm">
+                    <span wire:loading.remove>🔎 Lancer la recherche</span>
+                    <span wire:loading>Recherche en cours...</span>
+                </button>
+            </div>
+        </div>
+    @endif
+
+    <!-- Filtres par site -->
+    @if(!empty($availableSites))
+        <div class="px-6 py-4 bg-gray-50 border-b border-gray-200">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="font-semibold text-gray-700">Filtrer par site</h3>
+                <button wire:click="toggleAllSites" class="text-sm text-indigo-600 hover:text-indigo-800 font-medium">
+                    {{ count($selectedSites) === count($availableSites) ? 'Tout désélectionner' : 'Tout sélectionner' }}
+                </button>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                @foreach($availableSites as $site)
+                    <label class="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 p-2 rounded">
+                        <input type="checkbox" wire:model.live="selectedSites" value="{{ $site['id'] }}"
+                            class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                        <span class="text-sm">{{ $site['name'] }}</span>
+                    </label>
+                @endforeach
+            </div>
+            <p class="text-xs text-gray-500 mt-2">
+                {{ count($selectedSites) }} site(s) sélectionné(s)
+            </p>
+        </div>
+    @endif
+
+    @if(session('error'))
+        <div class="mx-6 mt-4 p-4 bg-red-100 text-red-700 rounded-lg">
+            {{ session('error') }}
+        </div>
+    @endif
+
+    @if(session('success'))
+        <div class="mx-6 mt-4 p-4 bg-green-100 text-green-700 rounded-lg">
+            {{ session('success') }}
+        </div>
+    @endif
+
+    <!-- Contenu principal -->
+    <div class="p-6">
+        <!-- Indicateur de chargement -->
+        @if($isLoading)
+            <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div class="flex items-center space-x-3">
+                    <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-600"></div>
+                    <p class="text-sm text-blue-800">
+                        Extraction et recherche en cours pour "<span class="font-semibold">{{ $productName }}</span>"...
+                    </p>
+                </div>
+            </div>
+        @endif
+
+        <!-- Statistiques (quand la recherche est terminée) -->
+        @if(!empty($groupedResults) && !$isLoading)
+            <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <p class="text-sm text-blue-800">
+                    <span class="font-semibold">{{ count($matchingProducts) }}</span> produit(s) unique(s) trouvé(s)
+                    @if(isset($groupedResults['_site_stats']))
+                        (après déduplication)
+                    @endif
+                </p>
+                @if(isset($groupedResults['_site_stats']))
+                    <div class="mt-2 flex flex-wrap gap-2">
+                        @foreach($groupedResults['_site_stats'] as $siteId => $stats)
+                            @php
+                                $siteInfo = collect($availableSites)->firstWhere('id', $siteId);
+                            @endphp
+                            @if($siteInfo)
+                                <span class="px-2 py-1 bg-white border border-blue-300 rounded text-xs">
+                                    <span class="font-semibold">{{ $siteInfo['name'] }}</span>: 
+                                    <span class="text-blue-700 font-bold">{{ $stats['total_products'] }}</span>
+                                </span>
+                            @endif
+                        @endforeach
+                    </div>
+                @endif
+            </div>
+        @endif
+
+        <!-- Section des produits -->
+        @if(!empty($matchingProducts) && !$isLoading)
+            <div class="mx-auto max-w-7xl overflow-hidden sm:px-6 lg:px-8">
+                <h2 class="sr-only">Produits</h2>
+
+                <div class="-mx-px grid grid-cols-2 border-l border-gray-200 sm:mx-0 md:grid-cols-3 lg:grid-cols-4">
+                    @foreach($matchingProducts as $product)
+                        @php
+                            $hasUrl = !empty($product['url']);
+                            $isBestMatch = $bestMatch && $bestMatch['id'] === $product['id'];
+                            $cardClass = "group relative border-r border-b border-gray-200 p-4 sm:p-6 cursor-pointer transition hover:bg-gray-50";
+                            if ($isBestMatch) {
+                                $cardClass .= " ring-2 ring-indigo-500 bg-indigo-50";
+                            }
+                        @endphp
+
+                        @if($hasUrl)
+                            <a href="{{ $product['url'] }}" target="_blank" rel="noopener noreferrer" 
+                               class="{{ $cardClass }}">
+                        @else
+                            <div class="{{ $cardClass }}">
+                        @endif
+
+                            <!-- Image du produit -->
+                            @if(!empty($product['image_url']))
+                                <img src="{{ $product['image_url'] }}" 
+                                     alt="{{ $product['name'] }}"
+                                     class="aspect-square rounded-lg bg-gray-200 object-cover group-hover:opacity-75"
+                                     onerror="this.src='https://placehold.co/600x400/e5e7eb/9ca3af?text=No+Image'">
+                            @else
+                                <img src="https://placehold.co/600x400/e5e7eb/9ca3af?text=No+Image" 
+                                     alt="Image non disponible"
+                                     class="aspect-square rounded-lg bg-gray-200 object-cover group-hover:opacity-75">
+                            @endif
+
+                            <div class="pt-4 pb-4 text-center">
+                                <!-- Badges de matching -->
+                                <div class="mb-2 flex justify-center gap-1">
+                                    @php
+                                        // Vérifier si le name matche
+                                        $nameMatches = false;
+                                        if (!empty($extractedData['name'])) {
+                                            $searchNameLower = mb_strtolower($extractedData['name']);
+                                            $productNameLower = mb_strtolower($product['name'] ?? '');
+                                            $nameMatches = str_contains($productNameLower, $searchNameLower);
+                                        }
+
+                                        // Vérifier si le type matche
+                                        $typeMatches = false;
+                                        if (!empty($extractedData['type'])) {
+                                            $searchTypeLower = mb_strtolower($extractedData['type']);
+                                            $productTypeLower = mb_strtolower($product['type'] ?? '');
+                                            $typeMatches = str_contains($productTypeLower, $searchTypeLower);
+                                        }
+                                    @endphp
+
+                                    @if($nameMatches)
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                            ✓ Name
+                                        </span>
+                                    @endif
+
+                                    @if($typeMatches)
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                            ✓ Type
+                                        </span>
+                                    @endif
+                                </div>
+
+                                <!-- Badge coffret -->
+                                @if($product['name'] && (str_contains(strtolower($product['name']), 'coffret') || str_contains(strtolower($product['name']), 'set') || str_contains(strtolower($product['type'] ?? ''), 'coffret')))
+                                    <div class="mb-2">
+                                        <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800">🎁 Coffret</span>
+                                    </div>
+                                @endif
+
+                                <!-- Nom du produit -->
+                                <h3 class="text-sm font-medium text-gray-900">
+                                    {{ $product['vendor'] }}
+                                </h3>
+                                <p class="text-xs text-gray-600 mt-1 truncate">{{ $product['name'] }}</p>
+
+                                <!-- Type avec badge coloré -->
+                                @php
+                                    $productTypeLower = strtolower($product['type'] ?? '');
+                                    $badgeColor = 'bg-gray-100 text-gray-800';
+
+                                    if (str_contains($productTypeLower, 'eau de toilette') || str_contains($productTypeLower, 'eau de parfum')) {
+                                        $badgeColor = 'bg-purple-100 text-purple-800';
+                                    } elseif (str_contains($productTypeLower, 'déodorant') || str_contains($productTypeLower, 'deodorant')) {
+                                        $badgeColor = 'bg-green-100 text-green-800';
+                                    } elseif (str_contains($productTypeLower, 'crème') || str_contains($productTypeLower, 'creme')) {
+                                        $badgeColor = 'bg-pink-100 text-pink-800';
+                                    } elseif (str_contains($productTypeLower, 'huile')) {
+                                        $badgeColor = 'bg-yellow-100 text-yellow-800';
+                                    }
+                                @endphp
+
+                                <div class="mt-1">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ $badgeColor }}">
+                                        {{ $product['type'] }}
+                                    </span>
+                                </div>
+
+                                <p class="text-xs text-gray-400 mt-1">{{ $product['variation'] }}</p>
+
+                                <!-- Site -->
+                                @php
+                                    $siteInfo = collect($availableSites)->firstWhere('id', $product['web_site_id']);
+                                @endphp
+                                @if($siteInfo)
+                                    <div class="mt-2">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                            {{ $siteInfo['name'] }}
+                                        </span>
+                                    </div>
+                                @endif
+
+                                <!-- Prix -->
+                                <p class="mt-4 text-base font-medium text-gray-900">
+                                    {{ number_format((float) ($product['prix_ht'] ?? 0), 2) }} €
+                                </p>
+
+                                <!-- Bouton voir produit -->
+                                @if($hasUrl)
+                                    <div class="mt-2">
+                                        <span class="inline-flex items-center text-xs font-medium text-indigo-600">
+                                            Ouvrir dans un nouvel onglet
+                                            <svg class="ml-1 h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                            </svg>
+                                        </span>
+                                    </div>
+                                @else
+                                    <div class="mt-2">
+                                        <span class="inline-flex items-center text-xs font-medium text-gray-400">
+                                            URL non disponible
+                                        </span>
+                                    </div>
+                                @endif
+
+                                <!-- ID scrape -->
+                                @if(isset($product['scrape_reference_id']))
+                                    <p class="text-xs text-gray-400 mt-2">Scrape ID: {{ $product['scrape_reference_id'] }}</p>
+                                @endif
+                            </div>
+
+                        @if($hasUrl)
+                            </a>
+                        @else
+                            </div>
+                        @endif
+                    @endforeach
+                </div>
+            </div>
+        @elseif($isLoading)
+            <!-- État de chargement -->
+            <div class="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+                <h3 class="mt-4 text-sm font-medium text-gray-900">Extraction en cours</h3>
+                <p class="mt-1 text-sm text-gray-500">Analyse du produit et recherche des correspondances...</p>
+            </div>
+        @elseif($extractedData && empty($matchingProducts))
+            <!-- Aucun résultat -->
+            <div class="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <h3 class="mt-2 text-sm font-medium text-gray-900">Aucun produit trouvé</h3>
+                <p class="mt-1 text-sm text-gray-500">Essayez de modifier les filtres par site ou utilisez la recherche manuelle</p>
+            </div>
+        @else
+            <!-- État initial (avant chargement) -->
+            <div class="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <h3 class="mt-2 text-sm font-medium text-gray-900">Prêt à rechercher</h3>
+                <p class="mt-1 text-sm text-gray-500">L'extraction démarre automatiquement...</p>
+            </div>
+        @endif
+    </div>
+</div>
