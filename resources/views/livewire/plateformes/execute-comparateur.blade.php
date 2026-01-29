@@ -444,6 +444,36 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
     }
     
     /**
+     * ✨ NOUVEAU CLARINS : Vérifie si c'est un produit Clarins "Essentiels"
+     */
+    private function isClarinsEssentielsProduct(string $name, string $vendor): bool
+    {
+        $nameLower = mb_strtolower(trim($name));
+        $vendorLower = mb_strtolower(trim($vendor));
+        
+        // Doit être Clarins
+        if (!str_contains($vendorLower, 'clarins')) {
+            return false;
+        }
+        
+        // Mots-clés pour identifier les produits "Essentiels"
+        $essentielsKeywords = ['essentiels', 'essentials', 'essentiel', 'essential'];
+        
+        foreach ($essentielsKeywords as $keyword) {
+            if (str_contains($nameLower, $keyword)) {
+                \Log::info('✅ CLARINS ESSENTIELS détecté', [
+                    'name' => $name,
+                    'vendor' => $vendor,
+                    'keyword_matched' => $keyword
+                ]);
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
      * ✨ NOUVEAU : Vérifie si le nom du produit est valide pour "La Petite Robe Noire" CLASSIQUE
      * RÈGLE STRICTE : Le nom du produit doit contenir EXACTEMENT "La Petite Robe Noire" sans mots supplémentaires
      */
@@ -581,6 +611,82 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
     }
 
     /**
+     * ✨ NOUVEAU CLARINS : Vérifie si le produit correspond à "Clarins Essentiels"
+     */
+    private function isClarinsEssentielsMatch(string $searchName, string $productName, string $productType): bool
+    {
+        $searchNameLower = mb_strtolower(trim($searchName));
+        $productNameLower = mb_strtolower(trim($productName));
+        $productTypeLower = mb_strtolower(trim($productType));
+        
+        // Vérifier que la recherche contient "essentiels"
+        $essentielsKeywords = ['essentiels', 'essentials', 'essentiel', 'essential'];
+        $hasEssentiels = false;
+        
+        foreach ($essentielsKeywords as $keyword) {
+            if (str_contains($searchNameLower, $keyword)) {
+                $hasEssentiels = true;
+                break;
+            }
+        }
+        
+        if (!$hasEssentiels) {
+            return true; // Pas un produit "Essentiels", pas de validation spéciale
+        }
+        
+        // Vérifier que le produit contient aussi "essentiels" (dans name OU type)
+        $productHasEssentiels = false;
+        foreach ($essentielsKeywords as $keyword) {
+            if (str_contains($productNameLower, $keyword) || str_contains($productTypeLower, $keyword)) {
+                $productHasEssentiels = true;
+                break;
+            }
+        }
+        
+        if (!$productHasEssentiels) {
+            \Log::debug('❌ CLARINS ESSENTIELS - Produit sans "essentiels" rejeté', [
+                'nom_recherché' => $searchName,
+                'nom_produit' => $productName,
+                'type_produit' => $productType
+            ]);
+            return false;
+        }
+        
+        // Extraire les autres mots significatifs (ex: "clarinsmen")
+        $searchWords = preg_split('/[\s\-]+/', $searchNameLower, -1, PREG_SPLIT_NO_EMPTY);
+        $searchWords = array_filter($searchWords, function($word) use ($essentielsKeywords) {
+            // Garder les mots >= 3 lettres ET qui ne sont pas "essentiels" (déjà vérifié)
+            return mb_strlen($word) >= 3 && 
+                   !in_array($word, $essentielsKeywords) &&
+                   !in_array($word, ['les', 'le', 'la', 'de', 'des', 'du', 'clarins']);
+        });
+        $searchWords = array_values($searchWords);
+        
+        // Vérifier que les autres mots-clés sont présents
+        foreach ($searchWords as $word) {
+            // Chercher dans name ET type pour plus de flexibilité
+            if (!str_contains($productNameLower, $word) && !str_contains($productTypeLower, $word)) {
+                \Log::debug('❌ CLARINS ESSENTIELS - Mot-clé manquant', [
+                    'nom_recherché' => $searchName,
+                    'nom_produit' => $productName,
+                    'type_produit' => $productType,
+                    'mot_manquant' => $word
+                ]);
+                return false;
+            }
+        }
+        
+        \Log::debug('✅ CLARINS ESSENTIELS - Match validé', [
+            'nom_recherché' => $searchName,
+            'nom_produit' => $productName,
+            'type_produit' => $productType,
+            'mots_vérifiés' => $searchWords
+        ]);
+        
+        return true;
+    }
+
+    /**
      * LOGIQUE DE RECHERCHE OPTIMISÉE
      * 1. Filtrer par VENDOR (obligatoire)
      * 2. Filtrer par statut COFFRET
@@ -591,6 +697,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
      * - VALENTINO + COFFRETS (matching flexible)
      * - VALENTINO + NOM D'UN SEUL MOT (validation stricte contre les mots supplémentaires)
      * - MÉTÉORITES (Guerlain) + ÉDITIONS LIMITÉES (matching flexible)
+     * - CLARINS + "ESSENTIELS" (matching flexible)
      */
     private function searchMatchingProducts()
     {
@@ -631,15 +738,19 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         // ✨ NOUVEAU : Détecter si c'est La Petite Robe Noire CLASSIQUE (Guerlain)
         $isPetiteRobeNoire = $this->isPetiteRobeNoireProduct($name, $vendor);
         
+        // ✨ NOUVEAU CLARINS : Détecter si c'est un produit Clarins "Essentiels"
+        $isClarinsEssentiels = $this->isClarinsEssentielsProduct($name, $vendor);
+        
         // ✨ NOUVEAU : Détecter si c'est une édition limitée
         $isLimitedEdition = $this->isLimitedEdition($name, $type);
         
-        if ($isSpecialVendor || $isMeteoritesProduct || $isPetiteRobeNoire) {
+        if ($isSpecialVendor || $isMeteoritesProduct || $isPetiteRobeNoire || $isClarinsEssentiels) {
             \Log::info('🎯 PRODUIT SPÉCIAL DÉTECTÉ', [
                 'vendor' => $vendor,
                 'is_valentino' => $isSpecialVendor,
                 'is_meteorites' => $isMeteoritesProduct,
                 'is_petite_robe_noire' => $isPetiteRobeNoire,
+                'is_clarins_essentiels' => $isClarinsEssentiels,
                 'is_coffret' => $isCoffretSource,
                 'is_limited_edition' => $isLimitedEdition
             ]);
@@ -649,10 +760,10 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         $typeParts = $this->extractTypeParts($type);
         
         // Extraire les mots du name EN EXCLUANT le vendor
-        $allNameWords = $this->extractKeywords($name, $isSpecialVendor);
+        $allNameWords = $this->extractKeywords($name, $isSpecialVendor, $isClarinsEssentiels);
         
         // Retirer le vendor des mots du name pour éviter les faux positifs
-        $vendorWords = $this->extractKeywords($vendor, false);
+        $vendorWords = $this->extractKeywords($vendor, false, false);
         $nameWordsFiltered = array_diff($allNameWords, $vendorWords);
         
         // PRENDRE TOUS LES MOTS significatifs
@@ -662,6 +773,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             'vendor' => $vendor,
             'is_special_vendor' => $isSpecialVendor,
             'is_meteorites' => $isMeteoritesProduct,
+            'is_clarins_essentiels' => $isClarinsEssentiels,
             'is_limited_edition' => $isLimitedEdition,
             'name' => $name,
             'nameWords_brut' => $allNameWords,
@@ -702,8 +814,10 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         // SKIP pour:
         // 1. Valentino + coffrets
         // 2. Météorites (Guerlain) + éditions limitées
+        // 3. Clarins + Essentiels
         $shouldSkipTypeFilter = ($isSpecialVendor && $isCoffretSource) || 
-                                ($isMeteoritesProduct && $isLimitedEdition);
+                                ($isMeteoritesProduct && $isLimitedEdition) ||
+                                $isClarinsEssentiels;
         
         if (!$shouldSkipTypeFilter) {
             $typeFilteredProducts = $this->filterByBaseType($filteredProducts, $type);
@@ -723,6 +837,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'type_recherché' => $type,
                 'is_valentino_coffret' => ($isSpecialVendor && $isCoffretSource),
                 'is_meteorites_limited' => ($isMeteoritesProduct && $isLimitedEdition),
+                'is_clarins_essentiels' => $isClarinsEssentiels,
                 'produits_conservés' => count($filteredProducts)
             ]);
         }
@@ -900,8 +1015,32 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             }
         }
 
+        // ✨ ÉTAPE 2.67: FILTRAGE pour Clarins Essentiels
+        if ($isClarinsEssentiels && !empty($filteredProducts)) {
+            $clarinsFiltered = collect($filteredProducts)->filter(function ($product) use ($name) {
+                return $this->isClarinsEssentielsMatch(
+                    $name,
+                    $product['name'] ?? '',
+                    $product['type'] ?? ''
+                );
+            })->values()->toArray();
+            
+            if (!empty($clarinsFiltered)) {
+                \Log::info('✅ CLARINS ESSENTIELS - Filtrage appliqué', [
+                    'produits_avant' => count($filteredProducts),
+                    'produits_après' => count($clarinsFiltered),
+                    'nom_recherché' => $name
+                ]);
+                $filteredProducts = $clarinsFiltered;
+            } else {
+                \Log::warning('⚠️ CLARINS ESSENTIELS - Aucun produit après filtrage, conservation des résultats précédents', [
+                    'nom_recherché' => $name
+                ]);
+            }
+        }
+
         // ÉTAPE 3: Scoring avec PRIORITÉ sur le NAME
-        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $type, $isCoffretSource, $nameWords, $shouldSkipTypeFilter, $isMeteoritesProduct, $isLimitedEdition, $isPetiteRobeNoire) {
+        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $type, $isCoffretSource, $nameWords, $shouldSkipTypeFilter, $isMeteoritesProduct, $isLimitedEdition, $isPetiteRobeNoire, $isClarinsEssentiels) {
             $score = 0;
             $productType = mb_strtolower($product['type'] ?? '');
             $productName = mb_strtolower($product['name'] ?? '');
@@ -946,6 +1085,35 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                         'product_type' => $product['type'] ?? '',
                         'bonus' => 600
                     ]);
+                }
+            }
+
+            // ✨ BONUS SPÉCIAL pour Clarins Essentiels
+            if ($isClarinsEssentiels) {
+                $productIsClarinsEssentiels = $this->isClarinsEssentielsProduct($product['name'] ?? '', $product['vendor'] ?? '');
+                
+                if ($productIsClarinsEssentiels) {
+                    // Vérifier si "essentiels" est présent dans name OU type
+                    $essentielsInName = false;
+                    $essentielsKeywords = ['essentiels', 'essentials', 'essentiel', 'essential'];
+                    
+                    foreach ($essentielsKeywords as $keyword) {
+                        if (str_contains($productName, $keyword) || str_contains($productType, $keyword)) {
+                            $essentielsInName = true;
+                            break;
+                        }
+                    }
+                    
+                    if ($essentielsInName) {
+                        $score += 500; // MEGA BONUS pour Clarins Essentiels
+                        
+                        \Log::debug('✅ CLARINS ESSENTIELS avec bonus', [
+                            'product_id' => $product['id'] ?? 0,
+                            'product_name' => $product['name'] ?? '',
+                            'product_type' => $product['type'] ?? '',
+                            'bonus' => 500
+                        ]);
+                    }
                 }
             }
 
@@ -1074,7 +1242,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'is_special_case' => $shouldSkipTypeFilter,
                 'is_meteorites' => $isMeteoritesProduct,
                 'is_limited_edition' => $isLimitedEdition,
-                'is_petite_robe_noire' => $isPetiteRobeNoire
+                'is_petite_robe_noire' => $isPetiteRobeNoire,
+                'is_clarins_essentiels' => $isClarinsEssentiels
             ];
         })
         ->sortByDesc('score')
@@ -1090,6 +1259,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             'is_meteorites' => $isMeteoritesProduct,
             'is_limited_edition' => $isLimitedEdition,
             'is_petite_robe_noire' => $isPetiteRobeNoire,
+            'is_clarins_essentiels' => $isClarinsEssentiels,
             'top_10_scores' => $scoredProducts->take(10)->map(function($item) {
                 return [
                     'id' => $item['product']['id'] ?? 0,
@@ -1099,6 +1269,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     'is_meteorites' => $item['is_meteorites'],
                     'is_limited_edition' => $item['is_limited_edition'],
                     'is_petite_robe_noire' => $item['is_petite_robe_noire'] ?? false,
+                    'is_clarins_essentiels' => $item['is_clarins_essentiels'] ?? false,
                     'coffret_bonus' => $item['coffret_bonus_applied'],
                     'name_match' => $item['name_match_count'] . '/' . $item['name_words_total'],
                     'matched_words' => $item['matched_name_words'] ?? [],
@@ -1118,7 +1289,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         ]);
 
         // ✨ FILTRAGE STRICT : NAME ET TYPE doivent TOUS LES DEUX matcher
-        // SAUF pour cas spéciaux (Valentino + coffrets OU Météorites + éditions limitées)
+        // SAUF pour cas spéciaux (Valentino + coffrets OU Météorites + éditions limitées OU Clarins Essentiels)
         $scoredProducts = $scoredProducts->filter(function($item) use ($nameWords, $shouldSkipTypeFilter) {
             $hasNameMatch = !empty($nameWords) ? $item['name_match_count'] > 0 : true;
             $hasStrongNameMatch = $item['has_strong_name_match']; // 2+ mots du NAME
@@ -1142,6 +1313,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     'is_special_case' => $shouldSkipTypeFilter,
                     'is_meteorites' => $item['is_meteorites'] ?? false,
                     'is_limited_edition' => $item['is_limited_edition'] ?? false,
+                    'is_clarins_essentiels' => $item['is_clarins_essentiels'] ?? false,
                     'name_match' => $hasNameMatch,
                     'strong_name_match' => $hasStrongNameMatch,
                     'type_match' => $hasTypeMatch,
@@ -1377,8 +1549,9 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
      * ✨ VERSION AMÉLIORÉE : Extrait les mots-clés significatifs
      * Pour Valentino, les mots-clés "coffret", "set", "kit" sont exclus
      * Pour Météorites (Guerlain), le traitement spécial est géré ailleurs (via isMeteoritesProduct)
+     * ✨ NOUVEAU CLARINS : Pour Clarins Essentiels, garde le mot "essentiels"
      */
-    private function extractKeywords(string $text, bool $isSpecialVendor = false): array
+    private function extractKeywords(string $text, bool $isSpecialVendor = false, bool $isClarinsEssentiels = false): array
     {
         if (empty($text)) {
             return [];
@@ -1391,11 +1564,22 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         if ($isSpecialVendor) {
             $stopWords = array_merge($stopWords, ['coffret', 'set', 'kit', 'duo', 'trio', 'collection']);
         }
+        
+        // ✨ NOUVEAU CLARINS : Pour Clarins Essentiels, NE PAS exclure "essentiels"
+        // On veut garder ce mot-clé crucial pour le matching
 
         $text = mb_strtolower($text);
         $words = preg_split('/[\s\-]+/', $text, -1, PREG_SPLIT_NO_EMPTY);
 
-        $keywords = array_filter($words, function ($word) use ($stopWords) {
+        $keywords = array_filter($words, function ($word) use ($stopWords, $isClarinsEssentiels) {
+            // ✨ Pour Clarins Essentiels, toujours garder "essentiels" même si < 3 lettres après traitement
+            if ($isClarinsEssentiels) {
+                $essentielsVariants = ['essentiels', 'essentials', 'essentiel', 'essential'];
+                if (in_array($word, $essentielsVariants)) {
+                    return true;
+                }
+            }
+            
             return mb_strlen($word) >= 3 && !in_array($word, $stopWords);
         });
 
@@ -1639,7 +1823,6 @@ Score de confiance entre 0 et 1."
     }
 
 }; ?>
-
 
 
 <div class="bg-white">
