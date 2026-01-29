@@ -61,7 +61,7 @@ new class extends Component {
                         'messages' => [
                             [
                                 'role' => 'system',
-                                'content' => 'Tu es un expert en extraction de données de produits cosmétiques. IMPORTANT: Le champ "type" doit contenir UNIQUEMENT la catégorie du produit (Crème, Huile, Sérum, Eau de Parfum, Baume, etc.), PAS le nom de la gamme. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
+                                'content' => 'Tu es un expert en extraction de données de produits cosmétiques. IMPORTANT: Le champ "type" doit contenir UNIQUEMENT la catégorie du produit (Crème, Huile, Sérum, Eau de Parfum, etc.), PAS le nom de la gamme. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
                             ],
                             [
                                 'role' => 'user',
@@ -70,7 +70,7 @@ new class extends Component {
 RÈGLES IMPORTANTES :
 - vendor : la marque du produit (ex: Dior, Shiseido, Chanel, Clarins)
 - name : le nom de la gamme/ligne de produit UNIQUEMENT - C'EST LE PLUS IMPORTANT (ex: \"J'adore\", \"Vital Perfection\", \"Multi-Intensive\", \"Les essentiels\")
-- type : UNIQUEMENT la catégorie/type du produit (ex: \"Huile pour le corps\", \"Eau de Parfum\", \"Crème visage\", \"Baume lèvres\", \"Coffret\")
+- type : UNIQUEMENT la catégorie/type du produit (ex: \"Huile pour le corps\", \"Eau de Parfum\", \"Crème visage\", \"Coffret\")
 - variation : la contenance/taille avec unité (ex: \"200 ml\", \"50 ml\", \"30 g\")
 - is_coffret : true si c'est un coffret/set/kit, false sinon
 
@@ -79,12 +79,6 @@ RÈGLE CRITIQUE POUR LE 'name' :
 - Cherche le nom propre ou la ligne de produit (souvent en majuscules ou après un tiret)
 - Exemples : \"Multi-Intensive\", \"Les essentiels\", \"ClarinsMen\", \"J'adore\", \"N°5\"
 - NE PAS mettre de descriptions génériques comme \"Crème visage\" dans le name
-
-RÈGLE IMPORTANTE POUR CLARINS :
-- Pour Clarins, le \"name\" doit être le nom de la gamme sans les mots génériques
-- Exemple : \"Clarins - Body Fit Active 200 ml\" → name: \"Body Fit Active\" (garder les 3 mots)
-- Exemple : \"Clarins Body Fit Anti-Eau Soin minceur\" → name: \"Body Fit Anti-Eau\"
-- Ne pas raccourcir les noms composés de plusieurs mots
 
 Nom du produit : {$this->productName}
 
@@ -151,42 +145,6 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
   \"type\": \"Soin illuminateur\",
   \"variation\": \"50 ml\",
   \"is_coffret\": false
-}
-
-Exemple 8 - Produit : \"Clarins - Hydra-Essentiel [HA²+ PEPTIDE] - Baume lèvres réparateur 15 ml\"
-{
-  \"vendor\": \"Clarins\",
-  \"name\": \"Hydra-Essentiel [HA²+ PEPTIDE]\",
-  \"type\": \"Baume lèvres réparateur\",
-  \"variation\": \"15 ml\",
-  \"is_coffret\": false
-}
-
-Exemple 9 - Produit : \"Clarins Baume Corps Eclat Suprême 200 ml\"
-{
-  \"vendor\": \"Clarins\",
-  \"name\": \"Eclat Suprême\",
-  \"type\": \"Baume Corps\",
-  \"variation\": \"200 ml\",
-  \"is_coffret\": false
-}
-
-Exemple 10 - Produit : \"Clarins - Body Fit Active 200 ml\"
-{
-  \"vendor\": \"Clarins\",
-  \"name\": \"Body Fit Active\",
-  \"type\": \"Soin corps\",
-  \"variation\": \"200 ml\",
-  \"is_coffret\": false
-}
-
-Exemple 11 - Produit : \"Clarins Body Fit Anti-Eau Soin minceur 200ml\"
-{
-  \"vendor\": \"Clarins\",
-  \"name\": \"Body Fit Anti-Eau\",
-  \"type\": \"Soin minceur\",
-  \"variation\": \"200 ml\",
-  \"is_coffret\": false
 }"
                             ]
                         ],
@@ -231,22 +189,23 @@ Exemple 11 - Produit : \"Clarins Body Fit Anti-Eau Soin minceur 200ml\"
                 $this->manualType = $this->extractedData['type'] ?? '';
                 $this->manualVariation = $this->extractedData['variation'] ?? '';
 
-                // Post-traitement : Correction spécifique pour les baumes
+                // Post-traitement : nettoyer le type s'il contient des informations parasites
                 if (!empty($this->extractedData['type'])) {
-                    // Correction spécifique pour les baumes
-                    $this->extractedData['type'] = $this->correctProductType(
-                        $this->extractedData['type'],
-                        $this->productName
-                    );
+                    $type = $this->extractedData['type'];
                     
-                    // Mettre à jour le champ manuel aussi
+                    // Si le type contient le nom de la gamme, essayer de le nettoyer
+                    if (!empty($this->extractedData['name'])) {
+                        $name = $this->extractedData['name'];
+                        // Enlever le nom de la gamme du type s'il y est
+                        $type = trim(str_ireplace($name, '', $type));
+                    }
+                    
+                    // Enlever les tirets et espaces multiples
+                    $type = preg_replace('/\s*-\s*/', ' ', $type);
+                    $type = preg_replace('/\s+/', ' ', $type);
+                    
+                    $this->extractedData['type'] = trim($type);
                     $this->manualType = $this->extractedData['type'];
-                    
-                    \Log::info('Type après correction', [
-                        'type_original' => $this->extractedData['type'] ?? '',
-                        'type_corrigé' => $this->extractedData['type'] ?? '',
-                        'product_name' => $this->productName
-                    ]);
                 }
 
                 \Log::info('Données extraites', [
@@ -374,7 +333,7 @@ Exemple 11 - Produit : \"Clarins Body Fit Anti-Eau Soin minceur 200ml\"
             'lotion',
             'gel',
             'masque',
-            // 'baume', // NE PAS ENLEVER "baume" - il fait partie du type, pas du name
+            'baume',
             'eau',
             'parfum',
             'visage',
@@ -486,7 +445,394 @@ Exemple 11 - Produit : \"Clarins Body Fit Anti-Eau Soin minceur 200ml\"
     }
 
     /**
-     * LOGIQUE DE RECHERCHE STRICTE : NAME ET TYPE doivent matcher
+     * ✨ NOUVEAU : Vérifie si le vendor nécessite un traitement spécial
+     */
+    private function isSpecialVendor(string $vendor): bool
+    {
+        $specialVendors = ['valentino', 'valent'];
+        $vendorLower = mb_strtolower(trim($vendor));
+        
+        foreach ($specialVendors as $special) {
+            if (str_contains($vendorLower, $special)) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * ✨ NOUVEAU : Vérifie si le produit est un produit Météorites (éditions spéciales)
+     */
+    private function isMeteoritesProduct(string $name, string $type): bool
+    {
+        $nameLower = mb_strtolower($name);
+        $typeLower = mb_strtolower($type);
+        
+        // Mots-clés pour identifier les Météorites
+        $meteoritesKeywords = ['meteorites', 'météorites'];
+        
+        foreach ($meteoritesKeywords as $keyword) {
+            if (str_contains($nameLower, $keyword) || str_contains($typeLower, $keyword)) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * ✨ NOUVEAU : Vérifie si c'est une édition limitée/spéciale
+     */
+    private function isLimitedEdition(string $name, string $type): bool
+    {
+        $combinedText = mb_strtolower($name . ' ' . $type);
+        
+        $limitedKeywords = [
+            'édition limitée',
+            'edition limitée',
+            'édition limite',
+            'limited edition',
+            'édition spéciale',
+            'special edition',
+            'blooming glow',
+            'midnight glow',
+            'phoenix'
+        ];
+        
+        foreach ($limitedKeywords as $keyword) {
+            if (str_contains($combinedText, $keyword)) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * ✨ NOUVEAU : Vérifie si le produit est "La Petite Robe Noire" CLASSIQUE
+     * Détection ULTRA STRICTE: uniquement le produit de base, AUCUNE déclinaison
+     * 
+     * RÈGLE STRICTE similaire à Valentino :
+     * - Recherché : "La Petite Robe Noire" → Accepté : "La Petite Robe Noire" uniquement
+     * - Recherché : "La Petite Robe Noire" → Rejeté : "La Petite Robe Noire Velours" (contient "Velours")
+     */
+    private function isPetiteRobeNoireProduct(string $name, string $vendor): bool
+    {
+        $nameLower = mb_strtolower(trim($name));
+        $vendorLower = mb_strtolower(trim($vendor));
+        
+        // Doit être Guerlain
+        if (!str_contains($vendorLower, 'guerlain')) {
+            return false;
+        }
+        
+        // Doit contenir "la petite robe noire" ou "petite robe noire"
+        $hasBaseName = str_contains($nameLower, 'la petite robe noire') || 
+                       str_contains($nameLower, 'petite robe noire');
+        
+        if (!$hasBaseName) {
+            return false;
+        }
+        
+        // EXCLUSIONS: Si le name contient un de ces mots, ce n'est PAS le produit classique
+        $exclusions = [
+            'ma petite robe',           // Ma Petite Robe Noire
+            'ma robe',                  // Ma Robe
+            'petales',                  // Ma Robe Petales
+            'pétales',                  // Ma Robe Pétales
+            'velours',                  // ❌ VELOURS (déclinaison)
+            'sous le vent',             // Ma Robe Sous le Vent
+            'couture',                  // Couture
+            'intense',                  // Intense
+            'legere',                   // Legere
+            'légère',                   // Légère
+            'fraiche',                  // Fraiche
+            'fraîche',                  // Fraîche
+            'black perfecto',           // Black Perfecto
+            'sexy',                     // Sexy
+            'intensa',                  // Intensa
+            'elixir',                   // Elixir
+            'absolu',                   // Absolu (mais pas "absolue" qui est un type)
+            'flanelle',                 // Flanelle
+            'dentelle',                 // Dentelle
+            'born',                     // Born in Roma style
+            'purple',                   // Purple
+            'melancholia'               // Melancholia
+        ];
+        
+        foreach ($exclusions as $exclusion) {
+            if (str_contains($nameLower, $exclusion)) {
+                \Log::debug('❌ LA PETITE ROBE NOIRE - Déclinaison détectée et exclue', [
+                    'name' => $name,
+                    'exclusion_trouvée' => $exclusion
+                ]);
+                return false;
+            }
+        }
+        
+        \Log::info('✅ LA PETITE ROBE NOIRE CLASSIQUE détectée (sans déclinaison)', [
+            'name' => $name
+        ]);
+        
+        return true;
+    }
+    
+    /**
+     * ✨ NOUVEAU CLARINS : Vérifie si c'est un produit Clarins "Essentiels"
+     */
+    private function isClarinsEssentielsProduct(string $name, string $vendor): bool
+    {
+        $nameLower = mb_strtolower(trim($name));
+        $vendorLower = mb_strtolower(trim($vendor));
+        
+        // Doit être Clarins
+        if (!str_contains($vendorLower, 'clarins')) {
+            return false;
+        }
+        
+        // Mots-clés pour identifier les produits "Essentiels"
+        $essentielsKeywords = ['essentiels', 'essentials', 'essentiel', 'essential'];
+        
+        foreach ($essentielsKeywords as $keyword) {
+            if (str_contains($nameLower, $keyword)) {
+                \Log::info('✅ CLARINS ESSENTIELS détecté', [
+                    'name' => $name,
+                    'vendor' => $vendor,
+                    'keyword_matched' => $keyword
+                ]);
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * ✨ NOUVEAU : Vérifie si le nom du produit est valide pour "La Petite Robe Noire" CLASSIQUE
+     * RÈGLE STRICTE : Le nom du produit doit contenir EXACTEMENT "La Petite Robe Noire" sans mots supplémentaires
+     */
+    private function isValidPetiteRobeNoireSingleMatch(string $searchName, string $productName): bool
+    {
+        $searchNameLower = mb_strtolower(trim($searchName));
+        $productNameLower = mb_strtolower(trim($productName));
+        
+        // Vérifier que le nom recherché contient "petite robe noire"
+        if (!str_contains($searchNameLower, 'petite robe noire')) {
+            return true; // Pas La Petite Robe Noire, pas de validation spéciale
+        }
+        
+        // Compter les mots significatifs dans le nom recherché (sans "la", "de", etc.)
+        $searchWords = preg_split('/[\s\-]+/', $searchNameLower, -1, PREG_SPLIT_NO_EMPTY);
+        $searchWords = array_filter($searchWords, function($word) {
+            $stopWords = ['la', 'le', 'les', 'de', 'des', 'du'];
+            return mb_strlen($word) >= 3 && !in_array($word, $stopWords);
+        });
+        $searchWordsCount = count($searchWords);
+        
+        // Compter les mots significatifs dans le nom du produit
+        $productWords = preg_split('/[\s\-]+/', $productNameLower, -1, PREG_SPLIT_NO_EMPTY);
+        $productWords = array_filter($productWords, function($word) {
+            $stopWords = ['la', 'le', 'les', 'de', 'des', 'du'];
+            return mb_strlen($word) >= 3 && !in_array($word, $stopWords);
+        });
+        $productWordsCount = count($productWords);
+        
+        // RÈGLE STRICTE : Le produit ne doit pas avoir PLUS de mots que le nom recherché
+        if ($productWordsCount > $searchWordsCount) {
+            \Log::debug('❌ LA PETITE ROBE NOIRE - Nom avec mots supplémentaires rejeté', [
+                'nom_recherché' => $searchName,
+                'nom_produit' => $productName,
+                'mots_recherchés' => $searchWordsCount,
+                'mots_produit' => $productWordsCount,
+                'mots_recherchés_liste' => array_values($searchWords),
+                'mots_produit_liste' => array_values($productWords),
+                'raison' => 'Le nom du produit contient plus de mots que le nom recherché'
+            ]);
+            return false;
+        }
+        
+        // Vérifier que tous les mots du nom recherché sont présents dans le produit
+        foreach ($searchWords as $searchWord) {
+            $found = false;
+            foreach ($productWords as $productWord) {
+                if (str_contains($productWord, $searchWord) || str_contains($searchWord, $productWord)) {
+                    $found = true;
+                    break;
+                }
+            }
+            if (!$found) {
+                \Log::debug('❌ LA PETITE ROBE NOIRE - Mot manquant', [
+                    'nom_recherché' => $searchName,
+                    'nom_produit' => $productName,
+                    'mot_manquant' => $searchWord
+                ]);
+                return false;
+            }
+        }
+        
+        \Log::debug('✅ LA PETITE ROBE NOIRE - Nom validé (pas de mots supplémentaires)', [
+            'nom_recherché' => $searchName,
+            'nom_produit' => $productName,
+            'mots_recherchés' => $searchWordsCount,
+            'mots_produit' => $productWordsCount
+        ]);
+        
+        return true;
+    }
+
+    /**
+     * ✨ NOUVEAU : Vérifie si le nom du produit est valide pour un cas Valentino avec un seul mot
+     * Si le nom recherché est un seul mot, le nom du produit ne doit contenir QUE ce mot (pas de mots supplémentaires)
+     * 
+     * RÈGLE STRICTE : 
+     * - Recherché : "Uomo" → Accepté : "Uomo" uniquement
+     * - Recherché : "Uomo" → Rejeté : "Uomo Born in Roma" (contient "Born", "Roma")
+     */
+    private function isValidValentinoSingleWordMatch(string $searchName, string $productName, string $productType): bool
+    {
+        // Extraire les mots du nom recherché (sans le vendor)
+        $searchWords = $this->extractKeywords($searchName, true);
+        
+        // Si le nom recherché contient plus d'un mot, pas de validation spéciale
+        if (count($searchWords) > 1) {
+            return true;
+        }
+        
+        // Si c'est un seul mot, le nom du produit doit contenir EXACTEMENT ce mot et RIEN D'AUTRE
+        $searchWordLower = mb_strtolower($searchWords[0]);
+        $productNameLower = mb_strtolower(trim($productName));
+        
+        // Extraire TOUS les mots significatifs du nom du produit (≥3 caractères)
+        // SANS utiliser extractKeywords qui a des exclusions
+        $productNameWords = preg_split('/[\s\-]+/', $productNameLower, -1, PREG_SPLIT_NO_EMPTY);
+        $productNameWords = array_filter($productNameWords, function($word) {
+            return mb_strlen($word) >= 3;
+        });
+        $productNameWords = array_values($productNameWords);
+        
+        // RÈGLE STRICTE : Le nom du produit doit contenir EXACTEMENT 1 mot significatif
+        if (count($productNameWords) !== 1) {
+            \Log::debug('❌ VALENTINO - Nom avec plusieurs mots rejeté', [
+                'nom_recherché' => $searchName,
+                'nom_produit' => $productName,
+                'mot_recherché' => $searchWordLower,
+                'mots_dans_nom_produit' => $productNameWords,
+                'nombre_mots' => count($productNameWords),
+                'raison' => 'Le nom du produit contient ' . count($productNameWords) . ' mots au lieu de 1'
+            ]);
+            return false;
+        }
+        
+        // Vérifier que le seul mot du produit correspond au mot recherché
+        if ($productNameWords[0] !== $searchWordLower) {
+            \Log::debug('❌ VALENTINO - Mot différent rejeté', [
+                'nom_recherché' => $searchName,
+                'nom_produit' => $productName,
+                'mot_recherché' => $searchWordLower,
+                'mot_produit' => $productNameWords[0],
+                'raison' => 'Le mot du produit ne correspond pas au mot recherché'
+            ]);
+            return false;
+        }
+        
+        \Log::debug('✅ VALENTINO - Nom validé (exactement 1 mot correspondant)', [
+            'nom_recherché' => $searchName,
+            'nom_produit' => $productName,
+            'mot_vérifié' => $searchWordLower
+        ]);
+        
+        return true;
+    }
+
+    /**
+     * ✨ NOUVEAU CLARINS : Vérifie si le produit correspond à "Clarins Essentiels"
+     */
+    private function isClarinsEssentielsMatch(string $searchName, string $productName, string $productType): bool
+    {
+        $searchNameLower = mb_strtolower(trim($searchName));
+        $productNameLower = mb_strtolower(trim($productName));
+        $productTypeLower = mb_strtolower(trim($productType));
+        
+        // Vérifier que la recherche contient "essentiels"
+        $essentielsKeywords = ['essentiels', 'essentials', 'essentiel', 'essential'];
+        $hasEssentiels = false;
+        
+        foreach ($essentielsKeywords as $keyword) {
+            if (str_contains($searchNameLower, $keyword)) {
+                $hasEssentiels = true;
+                break;
+            }
+        }
+        
+        if (!$hasEssentiels) {
+            return true; // Pas un produit "Essentiels", pas de validation spéciale
+        }
+        
+        // Vérifier que le produit contient aussi "essentiels" (dans name OU type)
+        $productHasEssentiels = false;
+        foreach ($essentielsKeywords as $keyword) {
+            if (str_contains($productNameLower, $keyword) || str_contains($productTypeLower, $keyword)) {
+                $productHasEssentiels = true;
+                break;
+            }
+        }
+        
+        if (!$productHasEssentiels) {
+            \Log::debug('❌ CLARINS ESSENTIELS - Produit sans "essentiels" rejeté', [
+                'nom_recherché' => $searchName,
+                'nom_produit' => $productName,
+                'type_produit' => $productType
+            ]);
+            return false;
+        }
+        
+        // Extraire les autres mots significatifs (ex: "clarinsmen")
+        $searchWords = preg_split('/[\s\-]+/', $searchNameLower, -1, PREG_SPLIT_NO_EMPTY);
+        $searchWords = array_filter($searchWords, function($word) use ($essentielsKeywords) {
+            // Garder les mots >= 3 lettres ET qui ne sont pas "essentiels" (déjà vérifié)
+            return mb_strlen($word) >= 3 && 
+                   !in_array($word, $essentielsKeywords) &&
+                   !in_array($word, ['les', 'le', 'la', 'de', 'des', 'du', 'clarins']);
+        });
+        $searchWords = array_values($searchWords);
+        
+        // Vérifier que les autres mots-clés sont présents
+        foreach ($searchWords as $word) {
+            // Chercher dans name ET type pour plus de flexibilité
+            if (!str_contains($productNameLower, $word) && !str_contains($productTypeLower, $word)) {
+                \Log::debug('❌ CLARINS ESSENTIELS - Mot-clé manquant', [
+                    'nom_recherché' => $searchName,
+                    'nom_produit' => $productName,
+                    'type_produit' => $productType,
+                    'mot_manquant' => $word
+                ]);
+                return false;
+            }
+        }
+        
+        \Log::debug('✅ CLARINS ESSENTIELS - Match validé', [
+            'nom_recherché' => $searchName,
+            'nom_produit' => $productName,
+            'type_produit' => $productType,
+            'mots_vérifiés' => $searchWords
+        ]);
+        
+        return true;
+    }
+
+    /**
+     * LOGIQUE DE RECHERCHE OPTIMISÉE
+     * 1. Filtrer par VENDOR (obligatoire)
+     * 2. Filtrer par statut COFFRET
+     * 3. FILTRAGE PROGRESSIF par NAME : Plus de mots matchent, mieux c'est
+     * 4. SCORING ÉQUILIBRÉ entre NAME et TYPE
+     * 
+     * ✨ NOUVEAU : Traitement spécial pour :
+     * - VALENTINO + COFFRETS (matching flexible)
+     * - VALENTINO + NOM D'UN SEUL MOT (validation stricte contre les mots supplémentaires)
+     * - MÉTÉORITES (Guerlain) + ÉDITIONS LIMITÉES (matching flexible)
+     * - CLARINS + "ESSENTIELS" (matching flexible)
      */
     private function searchMatchingProducts()
     {
@@ -518,24 +864,57 @@ Exemple 11 - Produit : \"Clarins Body Fit Anti-Eau Soin minceur 200ml\"
             return;
         }
 
-        // Normaliser le type
-        $normalizedType = $this->normalizeProductType($type);
+        // ✨ NOUVEAU : Détecter si c'est un vendor spécial (Valentino)
+        $isSpecialVendor = $this->isSpecialVendor($vendor);
         
-        // Extraire les mots-clés du name
-        $nameWords = $this->extractKeywords($name, false, false);
+        // ✨ NOUVEAU : Détecter si c'est un produit Météorites (Guerlain)
+        $isMeteoritesProduct = $this->isMeteoritesProduct($name, $type);
         
-        // Extraire les parties du type pour matching
-        $typeParts = $this->extractTypeParts($normalizedType);
+        // ✨ NOUVEAU : Détecter si c'est La Petite Robe Noire CLASSIQUE (Guerlain)
+        $isPetiteRobeNoire = $this->isPetiteRobeNoireProduct($name, $vendor);
+        
+        // ✨ NOUVEAU CLARINS : Détecter si c'est un produit Clarins "Essentiels"
+        $isClarinsEssentiels = $this->isClarinsEssentielsProduct($name, $vendor);
+        
+        // ✨ NOUVEAU : Détecter si c'est une édition limitée
+        $isLimitedEdition = $this->isLimitedEdition($name, $type);
+        
+        if ($isSpecialVendor || $isMeteoritesProduct || $isPetiteRobeNoire || $isClarinsEssentiels) {
+            \Log::info('🎯 PRODUIT SPÉCIAL DÉTECTÉ', [
+                'vendor' => $vendor,
+                'is_valentino' => $isSpecialVendor,
+                'is_meteorites' => $isMeteoritesProduct,
+                'is_petite_robe_noire' => $isPetiteRobeNoire,
+                'is_clarins_essentiels' => $isClarinsEssentiels,
+                'is_coffret' => $isCoffretSource,
+                'is_limited_edition' => $isLimitedEdition
+            ]);
+        }
 
-        \Log::info('🔍 RECHERCHE STRICTE - NAME ET TYPE OBLIGATOIRES', [
-            'product_name_source' => $this->productName,
+        // Extraire les parties du TYPE pour matching hiérarchique
+        $typeParts = $this->extractTypeParts($type);
+        
+        // Extraire les mots du name EN EXCLUANT le vendor
+        $allNameWords = $this->extractKeywords($name, $isSpecialVendor, $isClarinsEssentiels);
+        
+        // Retirer le vendor des mots du name pour éviter les faux positifs
+        $vendorWords = $this->extractKeywords($vendor, false, false);
+        $nameWordsFiltered = array_diff($allNameWords, $vendorWords);
+        
+        // PRENDRE TOUS LES MOTS significatifs
+        $nameWords = array_values($nameWordsFiltered);
+
+        \Log::info('Mots-clés pour la recherche', [
             'vendor' => $vendor,
+            'is_special_vendor' => $isSpecialVendor,
+            'is_meteorites' => $isMeteoritesProduct,
+            'is_clarins_essentiels' => $isClarinsEssentiels,
+            'is_limited_edition' => $isLimitedEdition,
             'name' => $name,
-            'name_words' => $nameWords,
+            'nameWords_brut' => $allNameWords,
+            'nameWords_filtres' => $nameWords,
             'type' => $type,
-            'normalized_type' => $normalizedType,
-            'type_parts' => $typeParts,
-            'is_coffret' => $isCoffretSource
+            'type_parts' => $typeParts
         ]);
 
         // ÉTAPE 1: Recherche de base - UNIQUEMENT sur le vendor et les sites sélectionnés
@@ -550,7 +929,6 @@ Exemple 11 - Produit : \"Clarins Body Fit Anti-Eau Soin minceur 200ml\"
 
         if ($vendorProducts->isEmpty()) {
             \Log::info('Aucun produit trouvé pour le vendor: ' . $vendor);
-            $this->matchingProducts = [];
             return;
         }
 
@@ -559,264 +937,549 @@ Exemple 11 - Produit : \"Clarins Body Fit Anti-Eau Soin minceur 200ml\"
             'count' => $vendorProducts->count()
         ]);
 
-        // ÉTAPE 2: Filtrer par statut coffret (OBLIGATOIRE)
+        // ÉTAPE 2: Filtrer par statut coffret
         $filteredProducts = $this->filterByCoffretStatus($vendorProducts, $isCoffretSource);
 
         if (empty($filteredProducts)) {
             \Log::info('Aucun produit après filtrage coffret');
-            $this->matchingProducts = [];
             return;
         }
 
-        \Log::info('Produits après filtrage coffret', [
-            'count' => count($filteredProducts),
-            'recherche_coffret' => $isCoffretSource
-        ]);
+        // ✨ ÉTAPE 2.5 MODIFIÉE : Filtrage par TYPE de base 
+        // SKIP pour:
+        // 1. Valentino + coffrets
+        // 2. Météorites (Guerlain) + éditions limitées
+        // 3. Clarins + Essentiels
+        $shouldSkipTypeFilter = ($isSpecialVendor && $isCoffretSource) || 
+                                ($isMeteoritesProduct && $isLimitedEdition) ||
+                                $isClarinsEssentiels;
+        
+        if (!$shouldSkipTypeFilter) {
+            $typeFilteredProducts = $this->filterByBaseType($filteredProducts, $type);
+            
+            if (!empty($typeFilteredProducts)) {
+                \Log::info('✅ Produits après filtrage par TYPE DE BASE', [
+                    'count' => count($typeFilteredProducts),
+                    'type_recherché' => $type
+                ]);
+                $filteredProducts = $typeFilteredProducts;
+            } else {
+                \Log::info('Aucun produit après filtrage par type de base, on garde tous les produits');
+            }
+        } else {
+            \Log::info('⚠️ CAS SPÉCIAL DÉTECTÉ - Skip du filtrage strict par TYPE', [
+                'vendor' => $vendor,
+                'type_recherché' => $type,
+                'is_valentino_coffret' => ($isSpecialVendor && $isCoffretSource),
+                'is_meteorites_limited' => ($isMeteoritesProduct && $isLimitedEdition),
+                'is_clarins_essentiels' => $isClarinsEssentiels,
+                'produits_conservés' => count($filteredProducts)
+            ]);
+        }
 
-        // ÉTAPE 3: FILTRAGE STRICT par NAME (OBLIGATOIRE)
-        $nameFilteredProducts = [];
+        // ÉTAPE 2.6: FILTRAGE PROGRESSIF par les mots du NAME
+        $nameFilteredProducts = $filteredProducts;
         
         if (!empty($nameWords)) {
-            // RÈGLE STRICTE : TOUS les mots du name doivent matcher
-            $nameFilteredProducts = collect($filteredProducts)->filter(function ($product) use ($nameWords) {
+            // TENTATIVE 1: TOUS les mots doivent être présents (filtrage le plus strict)
+            $allWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $shouldSkipTypeFilter) {
                 $productName = mb_strtolower($product['name'] ?? '');
+                $productType = mb_strtolower($product['type'] ?? '');
                 
-                // Vérifier que TOUS les mots du name sont présents
-                $allWordsMatch = true;
+                $matchCount = 0;
                 foreach ($nameWords as $word) {
-                    if (!str_contains($productName, $word)) {
-                        $allWordsMatch = false;
-                        break;
+                    // ✨ Pour cas spéciaux, chercher aussi dans le TYPE
+                    if (str_contains($productName, $word) || 
+                        ($shouldSkipTypeFilter && str_contains($productType, $word))) {
+                        $matchCount++;
                     }
                 }
                 
-                return $allWordsMatch;
+                return $matchCount === count($nameWords);
             })->values()->toArray();
-            
-            \Log::info('Produits après filtrage STRICT par NAME', [
-                'count' => count($nameFilteredProducts),
-                'name_words_requis' => $nameWords,
-                'name_recherché' => $name
-            ]);
-            
-            $filteredProducts = $nameFilteredProducts;
-        } else {
-            \Log::warning('Aucun mot-clé de name à rechercher');
-            $this->matchingProducts = [];
-            return;
-        }
 
-        if (empty($filteredProducts)) {
-            \Log::info('Aucun produit après filtrage strict par NAME');
-            $this->matchingProducts = [];
-            return;
-        }
-
-        // ÉTAPE 4: FILTRAGE STRICT par TYPE (OBLIGATOIRE)
-        $typeFilteredProducts = [];
-        
-        if (!empty($normalizedType)) {
-            // RÈGLE STRICTE : Le type doit matcher
-            $typeFilteredProducts = collect($filteredProducts)->filter(function ($product) use ($normalizedType, $typeParts) {
-                $productType = mb_strtolower($product['type'] ?? '');
-                $searchTypeLower = mb_strtolower($normalizedType);
+            if (!empty($allWordsMatch)) {
+                $nameFilteredProducts = $allWordsMatch;
+                \Log::info('✅ Produits après filtrage STRICT par NAME (TOUS les mots)', [
+                    'count' => count($nameFilteredProducts),
+                    'nameWords_required' => $nameWords
+                ]);
+            } else {
+                // TENTATIVE 2: Au moins 80% des mots doivent être présents
+                $minRequired = max(1, (int)ceil(count($nameWords) * 0.8));
                 
-                // Vérification 1: Type exact ou contenu
-                $typeMatches = str_contains($productType, $searchTypeLower) || 
-                               str_contains($searchTypeLower, $productType);
-                
-                // Vérification 2: Toutes les parties du type doivent matcher
-                if (!$typeMatches && !empty($typeParts)) {
-                    $allPartsMatch = true;
-                    foreach ($typeParts as $part) {
-                        $partLower = mb_strtolower(trim($part));
-                        if (!empty($partLower) && !str_contains($productType, $partLower)) {
-                            $allPartsMatch = false;
-                            break;
+                $mostWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $minRequired, $shouldSkipTypeFilter) {
+                    $productName = mb_strtolower($product['name'] ?? '');
+                    $productType = mb_strtolower($product['type'] ?? '');
+                    
+                    $matchCount = 0;
+                    foreach ($nameWords as $word) {
+                        if (str_contains($productName, $word) || 
+                            ($shouldSkipTypeFilter && str_contains($productType, $word))) {
+                            $matchCount++;
                         }
                     }
-                    $typeMatches = $allPartsMatch;
-                }
+                    
+                    return $matchCount >= $minRequired;
+                })->values()->toArray();
                 
-                // Log détaillé pour le débogage
-                if (!$typeMatches) {
-                    \Log::debug('Produit exclu par TYPE', [
-                        'product_id' => $product['id'] ?? 0,
-                        'product_name' => $product['name'] ?? '',
-                        'product_type' => $product['type'] ?? '',
-                        'type_recherché' => $normalizedType,
-                        'type_parts_recherchés' => $typeParts,
-                        'product_type_lower' => $productType,
-                        'search_type_lower' => $searchTypeLower,
-                        'contains_check' => str_contains($productType, $searchTypeLower),
-                        'reverse_check' => str_contains($searchTypeLower, $productType)
+                if (!empty($mostWordsMatch)) {
+                    $nameFilteredProducts = $mostWordsMatch;
+                    \Log::info('✅ Produits après filtrage 80% par NAME', [
+                        'count' => count($nameFilteredProducts),
+                        'nameWords_used' => $nameWords
                     ]);
+                } else {
+                    // ✨ TENTATIVE 3: Pour cas spéciaux, 50% suffit
+                    $minRequired = max(1, (int)ceil(count($nameWords) * 0.5));
+                    
+                    $halfWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $minRequired, $shouldSkipTypeFilter, $isMeteoritesProduct) {
+                        $productName = mb_strtolower($product['name'] ?? '');
+                        $productType = mb_strtolower($product['type'] ?? '');
+                        
+                        $matchCount = 0;
+                        $matchedWords = [];
+                        
+                        foreach ($nameWords as $word) {
+                            if (str_contains($productName, $word) || 
+                                ($shouldSkipTypeFilter && str_contains($productType, $word))) {
+                                $matchCount++;
+                                $matchedWords[] = $word;
+                            }
+                        }
+                        
+                        // Log pour cas spéciaux
+                        if ($shouldSkipTypeFilter && $matchCount > 0) {
+                            \Log::debug('🎯 CAS SPÉCIAL - Matching partiel', [
+                                'product_id' => $product['id'] ?? 0,
+                                'product_name' => $product['name'] ?? '',
+                                'product_type' => $product['type'] ?? '',
+                                'matched_words' => $matchedWords,
+                                'match_count' => $matchCount,
+                                'required' => $minRequired,
+                                'is_meteorites' => $isMeteoritesProduct,
+                                'passes' => $matchCount >= $minRequired
+                            ]);
+                        }
+                        
+                        return $matchCount >= $minRequired;
+                    })->values()->toArray();
+                    
+                    if (!empty($halfWordsMatch)) {
+                        $nameFilteredProducts = $halfWordsMatch;
+                        \Log::info('✅ Produits après filtrage 50% par NAME', [
+                            'count' => count($nameFilteredProducts),
+                            'nameWords_used' => $nameWords,
+                            'is_special_case' => $shouldSkipTypeFilter
+                        ]);
+                    } else {
+                        // FALLBACK FINAL: Au moins 1 mot
+                        $anyWordMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $shouldSkipTypeFilter) {
+                            $productName = mb_strtolower($product['name'] ?? '');
+                            $productType = mb_strtolower($product['type'] ?? '');
+                            
+                            foreach ($nameWords as $word) {
+                                if (str_contains($productName, $word) || 
+                                    ($shouldSkipTypeFilter && str_contains($productType, $word))) {
+                                    return true;
+                                }
+                            }
+                            return false;
+                        })->values()->toArray();
+                        
+                        if (!empty($anyWordMatch)) {
+                            $nameFilteredProducts = $anyWordMatch;
+                            \Log::info('⚠️ Produits après filtrage SOUPLE par NAME', [
+                                'count' => count($nameFilteredProducts),
+                                'nameWords_used' => $nameWords
+                            ]);
+                        }
+                    }
                 }
-                
-                return $typeMatches;
+            }
+            
+            $filteredProducts = $nameFilteredProducts;
+        }
+
+        // ✨ ÉTAPE 2.65: FILTRAGE STRICT pour Valentino avec nom d'un seul mot
+        if ($isSpecialVendor && !empty($nameWords) && count($nameWords) === 1 && !empty($filteredProducts)) {
+            $valentinStrictFiltered = collect($filteredProducts)->filter(function ($product) use ($name) {
+                return $this->isValidValentinoSingleWordMatch(
+                    $name,
+                    $product['name'] ?? '',
+                    $product['type'] ?? ''
+                );
             })->values()->toArray();
             
-            \Log::info('Produits après filtrage STRICT par TYPE', [
-                'count' => count($typeFilteredProducts),
-                'type_recherché' => $normalizedType,
-                'type_parts' => $typeParts
-            ]);
+            if (!empty($valentinStrictFiltered)) {
+                \Log::info('✅ VALENTINO - Filtrage strict appliqué (nom d\'un seul mot)', [
+                    'produits_avant' => count($filteredProducts),
+                    'produits_après' => count($valentinStrictFiltered),
+                    'nom_recherché' => $name,
+                    'nombre_mots' => count($nameWords)
+                ]);
+                $filteredProducts = $valentinStrictFiltered;
+            } else {
+                \Log::warning('⚠️ VALENTINO - Aucun produit après filtrage strict, conservation des résultats précédents', [
+                    'nom_recherché' => $name,
+                    'nombre_mots' => count($nameWords)
+                ]);
+            }
+        }
+
+        // ✨ ÉTAPE 2.66: FILTRAGE STRICT pour La Petite Robe Noire
+        if ($isPetiteRobeNoire && !empty($filteredProducts)) {
+            $petiteRobeStrictFiltered = collect($filteredProducts)->filter(function ($product) use ($name) {
+                return $this->isValidPetiteRobeNoireSingleMatch(
+                    $name,
+                    $product['name'] ?? ''
+                );
+            })->values()->toArray();
             
-            $filteredProducts = $typeFilteredProducts;
-        } else {
-            \Log::warning('Type non spécifié pour la recherche');
-            $this->matchingProducts = [];
-            return;
+            if (!empty($petiteRobeStrictFiltered)) {
+                \Log::info('✅ LA PETITE ROBE NOIRE - Filtrage strict appliqué', [
+                    'produits_avant' => count($filteredProducts),
+                    'produits_après' => count($petiteRobeStrictFiltered),
+                    'nom_recherché' => $name
+                ]);
+                $filteredProducts = $petiteRobeStrictFiltered;
+            } else {
+                \Log::warning('⚠️ LA PETITE ROBE NOIRE - Aucun produit après filtrage strict, conservation des résultats précédents', [
+                    'nom_recherché' => $name
+                ]);
+            }
         }
 
-        if (empty($filteredProducts)) {
-            \Log::info('Aucun produit après filtrage strict par TYPE');
-            $this->matchingProducts = [];
-            return;
+        // ✨ ÉTAPE 2.67: FILTRAGE pour Clarins Essentiels
+        if ($isClarinsEssentiels && !empty($filteredProducts)) {
+            $clarinsFiltered = collect($filteredProducts)->filter(function ($product) use ($name) {
+                return $this->isClarinsEssentielsMatch(
+                    $name,
+                    $product['name'] ?? '',
+                    $product['type'] ?? ''
+                );
+            })->values()->toArray();
+            
+            if (!empty($clarinsFiltered)) {
+                \Log::info('✅ CLARINS ESSENTIELS - Filtrage appliqué', [
+                    'produits_avant' => count($filteredProducts),
+                    'produits_après' => count($clarinsFiltered),
+                    'nom_recherché' => $name
+                ]);
+                $filteredProducts = $clarinsFiltered;
+            } else {
+                \Log::warning('⚠️ CLARINS ESSENTIELS - Aucun produit après filtrage, conservation des résultats précédents', [
+                    'nom_recherché' => $name
+                ]);
+            }
         }
 
-        // ÉTAPE 5: SCORING pour classer les résultats
-        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($vendor, $nameWords, $normalizedType, $typeParts, $isCoffretSource) {
+        // ÉTAPE 3: Scoring avec PRIORITÉ sur le NAME
+        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $type, $isCoffretSource, $nameWords, $shouldSkipTypeFilter, $isMeteoritesProduct, $isLimitedEdition, $isPetiteRobeNoire, $isClarinsEssentiels) {
             $score = 0;
             $productType = mb_strtolower($product['type'] ?? '');
             $productName = mb_strtolower($product['name'] ?? '');
-            $searchTypeLower = mb_strtolower($normalizedType);
             
-            // ==========================================
-            // BONUS NAME : TOUS les mots doivent déjà matcher (pré-filtré)
-            // ==========================================
-            $nameMatchCount = 0;
-            $matchedNameWords = [];
-            
-            foreach ($nameWords as $word) {
-                if (str_contains($productName, $word)) {
-                    $nameMatchCount++;
-                    $matchedNameWords[] = $word;
-                }
-            }
-            
-            // Bonus proportionnel (déjà tous matchés, donc max)
-            $nameBonus = 300;
-            $score += $nameBonus;
-            
-            // Bonus supplémentaire pour match exact du name
-            $normalizedProductName = $this->normalizeProductName($product['name'] ?? '');
-            $normalizedSearchName = $this->normalizeProductName($this->extractedData['name'] ?? '');
-            
-            if ($normalizedProductName === $normalizedSearchName) {
-                $score += 200;
-            }
+            $matchedTypeParts = [];
+            $typePartsCount = count($typeParts);
 
             // ==========================================
-            // BONUS TYPE : Le type doit déjà matcher (pré-filtré)
-            // ==========================================
-            $typeMatchBonus = 0;
-            
-            // Bonus pour type exact
-            if ($productType === $searchTypeLower) {
-                $typeMatchBonus += 300;
-            } 
-            // Bonus pour type contenu
-            else if (str_contains($productType, $searchTypeLower) || str_contains($searchTypeLower, $productType)) {
-                $typeMatchBonus += 200;
-            }
-            
-            // Bonus pour chaque partie du type qui match
-            foreach ($typeParts as $index => $part) {
-                $partLower = mb_strtolower(trim($part));
-                if (!empty($partLower) && str_contains($productType, $partLower)) {
-                    $typeMatchBonus += 100 - ($index * 20);
-                }
-            }
-            
-            $score += $typeMatchBonus;
-
-            // ==========================================
-            // BONUS COFFRET
+            // PRIORITÉ ABSOLUE : BONUS COFFRET
             // ==========================================
             $productIsCoffret = $this->isCoffret($product);
             
             if ($isCoffretSource && $productIsCoffret) {
-                $score += 500;
-            } else if (!$isCoffretSource && !$productIsCoffret) {
-                $score += 100;
+                $score += 500; // MEGA BONUS pour coffrets
+                
+                // ✨ BONUS SUPPLÉMENTAIRE pour cas spéciaux
+                if ($shouldSkipTypeFilter) {
+                    $score += 100;
+                }
+            }
+            
+            // ✨ BONUS SPÉCIAL pour Météorites + édition limitée
+            if ($isMeteoritesProduct && $isLimitedEdition) {
+                $productIsMeteoritesEdition = $this->isMeteoritesProduct($product['name'] ?? '', $product['type'] ?? '') &&
+                                             $this->isLimitedEdition($product['name'] ?? '', $product['type'] ?? '');
+                
+                if ($productIsMeteoritesEdition) {
+                    $score += 400; // MEGA BONUS pour Météorites éditions limitées
+                }
+            }
+            
+            // ✨ BONUS SPÉCIAL pour La Petite Robe Noire CLASSIQUE
+            if ($isPetiteRobeNoire) {
+                $productIsPetiteRobeNoire = $this->isPetiteRobeNoireProduct($product['name'] ?? '', $product['vendor'] ?? '');
+                
+                if ($productIsPetiteRobeNoire) {
+                    $score += 600; // MEGA BONUS pour La Petite Robe Noire classique validé
+                    
+                    \Log::debug('✅ LA PETITE ROBE NOIRE CLASSIQUE avec bonus', [
+                        'product_id' => $product['id'] ?? 0,
+                        'product_name' => $product['name'] ?? '',
+                        'product_type' => $product['type'] ?? '',
+                        'bonus' => 600
+                    ]);
+                }
+            }
+
+            // ✨ BONUS SPÉCIAL pour Clarins Essentiels
+            if ($isClarinsEssentiels) {
+                $productIsClarinsEssentiels = $this->isClarinsEssentielsProduct($product['name'] ?? '', $product['vendor'] ?? '');
+                
+                if ($productIsClarinsEssentiels) {
+                    // Vérifier si "essentiels" est présent dans name OU type
+                    $essentielsInName = false;
+                    $essentielsKeywords = ['essentiels', 'essentials', 'essentiel', 'essential'];
+                    
+                    foreach ($essentielsKeywords as $keyword) {
+                        if (str_contains($productName, $keyword) || str_contains($productType, $keyword)) {
+                            $essentielsInName = true;
+                            break;
+                        }
+                    }
+                    
+                    if ($essentielsInName) {
+                        $score += 500; // MEGA BONUS pour Clarins Essentiels
+                        
+                        \Log::debug('✅ CLARINS ESSENTIELS avec bonus', [
+                            'product_id' => $product['id'] ?? 0,
+                            'product_name' => $product['name'] ?? '',
+                            'product_type' => $product['type'] ?? '',
+                            'bonus' => 500
+                        ]);
+                    }
+                }
             }
 
             // ==========================================
-            // BONUS SPÉCIFIQUES
+            // BONUS NAME : PRIORITÉ PRINCIPALE
             // ==========================================
-            // Bonus pour les baumes
-            $isBaumeType = str_contains($searchTypeLower, 'baume');
-            $productIsBaumeType = str_contains($productType, 'baume');
+            $nameMatchCount = 0;
+            $matchedNameWords = [];
             
-            if ($isBaumeType && $productIsBaumeType) {
-                $score += 150;
+            if (!empty($nameWords)) {
+                foreach ($nameWords as $word) {
+                    // ✨ Pour cas spéciaux, chercher aussi dans TYPE
+                    if (str_contains($productName, $word) || 
+                        ($shouldSkipTypeFilter && str_contains($productType, $word))) {
+                        $nameMatchCount++;
+                        $matchedNameWords[] = $word;
+                    }
+                }
+                
+                // Bonus proportionnel
+                $nameMatchRatio = count($nameWords) > 0 ? ($nameMatchCount / count($nameWords)) : 0;
+                $nameBonus = (int)($nameMatchRatio * 300);
+                $score += $nameBonus;
+                
+                // BONUS EXTRA si TOUS les mots matchent
+                if ($nameMatchCount === count($nameWords)) {
+                    $score += 200;
+                }
             }
+
+            // ==========================================
+            // MATCHING TYPE : Obligatoire mais flexible pour cas spéciaux
+            // ==========================================
             
-            // Bonus pour Body Fit
-            $isBodyFit = str_contains(mb_strtolower($this->extractedData['name'] ?? ''), 'body fit');
-            $productIsBodyFit = str_contains($productName, 'body fit');
+            $typeMatched = false;
+            $hasStrongNameMatch = $nameMatchCount >= 2; // Au moins 2 mots du NAME
             
-            if ($isBodyFit && $productIsBodyFit) {
-                $score += 200;
-            }
-            
-            // Bonus pour Clarins
-            if (str_contains(mb_strtolower($vendor), 'clarins') && 
-                str_contains(mb_strtolower($product['vendor'] ?? ''), 'clarins')) {
-                $score += 50;
+            if (!empty($typeParts) && !empty($productType)) {
+                // Vérifier le type de base (OBLIGATOIRE pour être considéré, sauf cas spéciaux)
+                if (!empty($typeParts[0])) {
+                    $baseTypeLower = mb_strtolower(trim($typeParts[0]));
+                    
+                    if (str_contains($productType, $baseTypeLower)) {
+                        $score += 300;
+                        $typeMatched = true;
+                        
+                        \Log::debug('✅ TYPE DE BASE correspondant', [
+                            'product_id' => $product['id'] ?? 0,
+                            'base_type_recherché' => $baseTypeLower,
+                            'product_type' => $productType,
+                            'bonus' => 300
+                        ]);
+                    } else {
+                        // ✨ MALUS réduit pour cas spéciaux
+                        if ($shouldSkipTypeFilter) {
+                            $score -= 50; // Malus léger
+                        } else {
+                            $score -= 200; // Malus normal
+                        }
+                        
+                        \Log::debug('❌ TYPE DE BASE non correspondant', [
+                            'product_id' => $product['id'] ?? 0,
+                            'base_type_recherché' => $baseTypeLower,
+                            'product_type' => $productType,
+                            'is_special_case' => $shouldSkipTypeFilter,
+                            'name_match_count' => $nameMatchCount,
+                            'malus' => $shouldSkipTypeFilter ? -50 : -200
+                        ]);
+                    }
+                }
+                
+                // Vérifier chaque partie du type
+                foreach ($typeParts as $index => $part) {
+                    $partLower = mb_strtolower(trim($part));
+                    if (!empty($partLower)) {
+                        if (str_contains($productType, $partLower)) {
+                            $partBonus = 100 - ($index * 20);
+                            $partBonus = max($partBonus, 20);
+                            
+                            $score += $partBonus;
+                            $matchedTypeParts[] = [
+                                'part' => $part,
+                                'bonus' => $partBonus,
+                                'position' => $index + 1
+                            ];
+                            
+                            if ($index == 0 || $typeMatched) {
+                                $typeMatched = true;
+                            }
+                        }
+                    }
+                }
+                
+                // Bonus pour match complet du type
+                if (count($matchedTypeParts) === $typePartsCount && $typePartsCount > 0) {
+                    $score += 150;
+                }
+                
+                // Bonus pour type exact
+                $typeLower = mb_strtolower(trim($type));
+                if (!empty($typeLower) && str_contains($productType, $typeLower)) {
+                    $score += 200;
+                    $typeMatched = true;
+                }
+                
+                // Bonus si le type commence par le type recherché
+                if (!empty($typeLower) && str_starts_with($productType, $typeLower)) {
+                    $score += 100;
+                }
             }
 
             return [
                 'product' => $product,
                 'score' => $score,
+                'matched_type_parts' => $matchedTypeParts,
+                'all_type_parts_matched' => count($matchedTypeParts) === $typePartsCount,
+                'type_parts_count' => $typePartsCount,
+                'matched_count' => count($matchedTypeParts),
+                'type_matched' => $typeMatched,
+                'has_strong_name_match' => $hasStrongNameMatch,
+                'is_coffret' => $productIsCoffret,
+                'coffret_bonus_applied' => ($isCoffretSource && $productIsCoffret),
                 'name_match_count' => $nameMatchCount,
                 'name_words_total' => count($nameWords),
                 'matched_name_words' => $matchedNameWords,
-                'type_match_bonus' => $typeMatchBonus,
-                'is_coffret' => $productIsCoffret,
-                'coffret_match' => ($isCoffretSource && $productIsCoffret) || (!$isCoffretSource && !$productIsCoffret)
+                'is_special_case' => $shouldSkipTypeFilter,
+                'is_meteorites' => $isMeteoritesProduct,
+                'is_limited_edition' => $isLimitedEdition,
+                'is_petite_robe_noire' => $isPetiteRobeNoire,
+                'is_clarins_essentiels' => $isClarinsEssentiels
             ];
         })
         ->sortByDesc('score')
         ->values();
 
-        \Log::info('Scoring final (NAME ET TYPE OBLIGATOIRES)', [
+        \Log::info('Scoring détaillé (NAME ET TYPE OBLIGATOIRES sauf cas spéciaux)', [
             'total_products' => $scoredProducts->count(),
-            'type_recherche' => $normalizedType,
+            'type_recherche' => $type,
+            'type_parts' => $typeParts,
             'name_words' => $nameWords,
-            'top_scores' => $scoredProducts->take(5)->map(function($item) {
+            'recherche_coffret' => $isCoffretSource,
+            'is_special_case' => $shouldSkipTypeFilter,
+            'is_meteorites' => $isMeteoritesProduct,
+            'is_limited_edition' => $isLimitedEdition,
+            'is_petite_robe_noire' => $isPetiteRobeNoire,
+            'is_clarins_essentiels' => $isClarinsEssentiels,
+            'top_10_scores' => $scoredProducts->take(10)->map(function($item) {
                 return [
                     'id' => $item['product']['id'] ?? 0,
                     'score' => $item['score'],
+                    'is_coffret' => $item['is_coffret'],
+                    'is_special_case' => $item['is_special_case'],
+                    'is_meteorites' => $item['is_meteorites'],
+                    'is_limited_edition' => $item['is_limited_edition'],
+                    'is_petite_robe_noire' => $item['is_petite_robe_noire'] ?? false,
+                    'is_clarins_essentiels' => $item['is_clarins_essentiels'] ?? false,
+                    'coffret_bonus' => $item['coffret_bonus_applied'],
+                    'name_match' => $item['name_match_count'] . '/' . $item['name_words_total'],
+                    'matched_words' => $item['matched_name_words'] ?? [],
+                    'has_strong_name' => $item['has_strong_name_match'],
+                    'type_match' => $item['type_matched'],
                     'name' => $item['product']['name'] ?? '',
                     'type' => $item['product']['type'] ?? '',
-                    'name_match' => $item['name_match_count'] . '/' . $item['name_words_total'],
-                    'type_bonus' => $item['type_match_bonus'],
-                    'coffret_match' => $item['coffret_match']
+                    'matched_type_parts' => array_map(function($part) {
+                        return "{$part['part']} (+{$part['bonus']} pts)";
+                    }, $item['matched_type_parts']),
+                    'all_type_matched' => $item['all_type_parts_matched'],
+                    'match_ratio' => $item['type_parts_count'] > 0 
+                        ? round(($item['matched_count'] / $item['type_parts_count']) * 100) . '%'
+                        : '0%'
                 ];
             })->toArray()
         ]);
 
-        // FILTRAGE FINAL : Score minimum requis
-        $finalProducts = $scoredProducts->filter(function($item) {
-            // Score minimum pour être considéré
-            return $item['score'] >= 400; // Score minimum ajustable
+        // ✨ FILTRAGE STRICT : NAME ET TYPE doivent TOUS LES DEUX matcher
+        // SAUF pour cas spéciaux (Valentino + coffrets OU Météorites + éditions limitées OU Clarins Essentiels)
+        $scoredProducts = $scoredProducts->filter(function($item) use ($nameWords, $shouldSkipTypeFilter) {
+            $hasNameMatch = !empty($nameWords) ? $item['name_match_count'] > 0 : true;
+            $hasStrongNameMatch = $item['has_strong_name_match']; // 2+ mots du NAME
+            $hasTypeMatch = $item['type_matched']; // Au moins le type de base matche
+            
+            // ✨ RÈGLE ASSOUPLIE pour cas spéciaux :
+            // - Pour cas spéciaux : NAME doit matcher, TYPE est optionnel
+            // - Pour les autres : NAME ET TYPE doivent matcher
+            if ($shouldSkipTypeFilter) {
+                $keepProduct = $item['score'] > 0 && $hasNameMatch;
+            } else {
+                $keepProduct = $item['score'] > 0 && $hasNameMatch && $hasTypeMatch;
+            }
+            
+            if (!$keepProduct) {
+                \Log::debug('Produit exclu', [
+                    'product_id' => $item['product']['id'] ?? 0,
+                    'product_name' => $item['product']['name'] ?? '',
+                    'product_type' => $item['product']['type'] ?? '',
+                    'score' => $item['score'],
+                    'is_special_case' => $shouldSkipTypeFilter,
+                    'is_meteorites' => $item['is_meteorites'] ?? false,
+                    'is_limited_edition' => $item['is_limited_edition'] ?? false,
+                    'is_clarins_essentiels' => $item['is_clarins_essentiels'] ?? false,
+                    'name_match' => $hasNameMatch,
+                    'strong_name_match' => $hasStrongNameMatch,
+                    'type_match' => $hasTypeMatch,
+                    'name_match_count' => $item['name_match_count'],
+                    'name_words_total' => $item['name_words_total'],
+                    'raison' => !$hasNameMatch ? 'NAME ne matche pas' : (!$hasTypeMatch && !$shouldSkipTypeFilter ? 'TYPE ne matche pas' : 'Score trop faible')
+                ]);
+            }
+            
+            return $keepProduct;
         });
 
-        if ($finalProducts->isEmpty()) {
-            \Log::info('Aucun produit avec score suffisant');
+        \Log::info('Après filtrage (NAME ET TYPE OBLIGATOIRES sauf cas spéciaux)', [
+            'produits_restants' => $scoredProducts->count(),
+            'is_special_case' => $shouldSkipTypeFilter
+        ]);
+
+        if ($scoredProducts->isEmpty()) {
+            \Log::info('Aucun produit après filtrage');
             $this->matchingProducts = [];
             $this->groupedResults = [];
             return;
         }
 
-        $rankedProducts = $finalProducts->pluck('product')->toArray();
+        $rankedProducts = $scoredProducts->pluck('product')->toArray();
         $this->matchingProducts = $rankedProducts;
 
-        \Log::info('Produits finaux après filtrage strict', [
+        \Log::info('Produits après scoring (avant déduplication)', [
             'count' => count($this->matchingProducts),
-            'best_score' => $finalProducts->first()['score'] ?? 0
+            'best_score' => $scoredProducts->first()['score'] ?? 0,
+            'worst_score' => $scoredProducts->last()['score'] ?? 0
         ]);
 
         $this->groupResultsByScrapeReference($this->matchingProducts);
@@ -844,6 +1507,71 @@ Exemple 11 - Produit : \"Clarins Body Fit Anti-Eau Soin minceur 200ml\"
         $parts = array_filter($parts, function($part) {
             return !empty($part);
         });
+        
+        if (count($parts) === 1) {
+            $perfumeKeywords = [
+                'eau de parfum',
+                'eau de toilette', 
+                'eau de cologne',
+                'extrait de parfum',
+                'eau fraiche',
+                'parfum',
+                'extrait',
+                'cologne'
+            ];
+            
+            $intensityKeywords = ['intense', 'extrême', 'absolu', 'concentré', 'léger', 'doux', 'fort', 'puissant'];
+            $formatKeywords = ['vaporisateur', 'spray', 'atomiseur', 'flacon', 'roller', 'stick', 'roll-on'];
+            
+            $typeLower = mb_strtolower($type);
+            $foundParts = [];
+            
+            foreach ($perfumeKeywords as $keyword) {
+                if (str_contains($typeLower, $keyword)) {
+                    $startPos = mb_strpos($typeLower, $keyword);
+                    $originalPart = mb_substr($type, $startPos, mb_strlen($keyword));
+                    $foundParts[] = $originalPart;
+                    $typeLower = str_replace($keyword, '', $typeLower);
+                    break;
+                }
+            }
+            
+            foreach ($intensityKeywords as $keyword) {
+                if (str_contains($typeLower, $keyword)) {
+                    $startPos = mb_strpos($typeLower, $keyword);
+                    if ($startPos !== false) {
+                        $originalPart = mb_substr($type, $startPos, mb_strlen($keyword));
+                        $foundParts[] = ucfirst($originalPart);
+                    }
+                    break;
+                }
+            }
+            
+            foreach ($formatKeywords as $keyword) {
+                if (str_contains($typeLower, $keyword)) {
+                    $startPos = mb_strpos($typeLower, $keyword);
+                    if ($startPos !== false) {
+                        $originalPart = mb_substr($type, $startPos, mb_strlen($keyword));
+                        $foundParts[] = ucfirst($originalPart);
+                    }
+                    break;
+                }
+            }
+            
+            if (!empty($foundParts)) {
+                \Log::info('Type décomposé en parties hiérarchiques', [
+                    'type_original' => $type,
+                    'parties' => $foundParts
+                ]);
+                return $foundParts;
+            }
+            
+            $words = preg_split('/\s+/', $type);
+            $words = array_filter($words, function($word) {
+                return mb_strlen($word) >= 3;
+            });
+            return array_values($words);
+        }
         
         return array_values($parts);
     }
@@ -905,6 +1633,16 @@ Exemple 11 - Produit : \"Clarins Body Fit Anti-Eau Soin minceur 200ml\"
             'par_site' => $uniqueProducts->groupBy('web_site_id')->map(fn($group) => $group->count())->toArray()
         ]);
 
+        $bySiteStats = $uniqueProducts->groupBy('web_site_id')->map(function ($siteProducts, $siteId) {
+            return [
+                'site_id' => $siteId,
+                'total_products' => $siteProducts->count(),
+                'max_scrape_ref_id' => $siteProducts->max('scrape_reference_id'),
+                'min_scrape_ref_id' => $siteProducts->min('scrape_reference_id'),
+                'products' => $siteProducts->values()->toArray()
+            ];
+        });
+
         $grouped = $uniqueProducts->groupBy('scrape_reference');
         
         $this->groupedResults = $grouped->map(function ($group, $reference) {
@@ -938,10 +1676,15 @@ Exemple 11 - Produit : \"Clarins Body Fit Anti-Eau Soin minceur 200ml\"
                 'site_ids' => $group->pluck('web_site_id')->unique()->values()->toArray()
             ];
         })->toArray();
+
+        $this->groupedResults['_site_stats'] = $bySiteStats->toArray();
     }
 
     /**
-     * Extrait les mots-clés significatifs
+     * ✨ VERSION AMÉLIORÉE : Extrait les mots-clés significatifs
+     * Pour Valentino, les mots-clés "coffret", "set", "kit" sont exclus
+     * Pour Météorites (Guerlain), le traitement spécial est géré ailleurs (via isMeteoritesProduct)
+     * ✨ NOUVEAU CLARINS : Pour Clarins Essentiels, garde le mot "essentiels"
      */
     private function extractKeywords(string $text, bool $isSpecialVendor = false, bool $isClarinsEssentiels = false): array
     {
@@ -952,11 +1695,19 @@ Exemple 11 - Produit : \"Clarins Body Fit Anti-Eau Soin minceur 200ml\"
         // Stop words de base
         $stopWords = ['de', 'la', 'le', 'les', 'des', 'du', 'un', 'une', 'et', 'ou', 'pour', 'avec', 'sans'];
         
+        // ✨ Pour Valentino uniquement, ajouter les mots-clés coffret aux stop words
+        if ($isSpecialVendor) {
+            $stopWords = array_merge($stopWords, ['coffret', 'set', 'kit', 'duo', 'trio', 'collection']);
+        }
+        
+        // ✨ NOUVEAU CLARINS : Pour Clarins Essentiels, NE PAS exclure "essentiels"
+        // On veut garder ce mot-clé crucial pour le matching
+
         $text = mb_strtolower($text);
         $words = preg_split('/[\s\-]+/', $text, -1, PREG_SPLIT_NO_EMPTY);
 
         $keywords = array_filter($words, function ($word) use ($stopWords, $isClarinsEssentiels) {
-            // ✨ Pour Clarins Essentiels, toujours garder "essentiels"
+            // ✨ Pour Clarins Essentiels, toujours garder "essentiels" même si < 3 lettres après traitement
             if ($isClarinsEssentiels) {
                 $essentielsVariants = ['essentiels', 'essentials', 'essentiel', 'essential'];
                 if (in_array($word, $essentielsVariants)) {
@@ -979,6 +1730,98 @@ Exemple 11 - Produit : \"Clarins Body Fit Anti-Eau Soin minceur 200ml\"
             $productIsCoffret = $this->isCoffret($product->toArray());
             return $sourceisCoffret ? $productIsCoffret : !$productIsCoffret;
         })->values()->toArray();
+    }
+
+    /**
+     * Filtre les produits par type de base
+     */
+    private function filterByBaseType(array $products, string $searchType): array
+    {
+        if (empty($searchType)) {
+            return $products;
+        }
+
+        $typeCategories = [
+            'parfum' => ['eau de parfum', 'parfum', 'eau de toilette', 'eau de cologne', 'eau fraiche', 'extrait de parfum', 'extrait', 'cologne'],
+            'déodorant' => ['déodorant', 'deodorant', 'deo', 'anti-transpirant', 'antitranspirant'],
+            'crème' => ['crème', 'creme', 'baume', 'gel', 'lotion', 'fluide', 'soin'],
+            'huile' => ['huile', 'oil'],
+            'sérum' => ['sérum', 'serum', 'concentrate', 'concentré'],
+            'masque' => ['masque', 'mask', 'patch'],
+            'shampooing' => ['shampooing', 'shampoing', 'shampoo'],
+            'après-shampooing' => ['après-shampooing', 'conditioner', 'après shampooing'],
+            'savon' => ['savon', 'soap', 'gel douche', 'mousse'],
+            'maquillage' => ['fond de teint', 'rouge à lèvres', 'mascara', 'eye-liner', 'fard', 'poudre'],
+        ];
+
+        $searchTypeLower = mb_strtolower(trim($searchType));
+        
+        $searchCategory = null;
+        foreach ($typeCategories as $category => $keywords) {
+            foreach ($keywords as $keyword) {
+                if (str_contains($searchTypeLower, $keyword)) {
+                    $searchCategory = $category;
+                    break 2;
+                }
+            }
+        }
+
+        if (!$searchCategory) {
+            \Log::info('Type de recherche non catégorisé, pas de filtrage par type de base', [
+                'type' => $searchType
+            ]);
+            return $products;
+        }
+
+        \Log::info('Filtrage par catégorie de type', [
+            'type_recherché' => $searchType,
+            'catégorie' => $searchCategory,
+            'mots_clés_catégorie' => $typeCategories[$searchCategory]
+        ]);
+
+        $filtered = collect($products)->filter(function ($product) use ($searchCategory, $typeCategories) {
+            $productType = mb_strtolower($product['type'] ?? '');
+            
+            if (empty($productType)) {
+                return false;
+            }
+
+            $productCategory = null;
+            foreach ($typeCategories as $category => $keywords) {
+                foreach ($keywords as $keyword) {
+                    if (str_contains($productType, $keyword)) {
+                        $productCategory = $category;
+                        break 2;
+                    }
+                }
+            }
+
+            if (!$productCategory) {
+                return true;
+            }
+
+            $match = ($productCategory === $searchCategory);
+            
+            if (!$match) {
+                \Log::debug('Produit exclu par filtrage de type', [
+                    'product_id' => $product['id'] ?? 0,
+                    'product_name' => $product['name'] ?? '',
+                    'product_type' => $productType,
+                    'product_category' => $productCategory,
+                    'search_category' => $searchCategory
+                ]);
+            }
+            
+            return $match;
+        })->values()->toArray();
+
+        \Log::info('Résultat du filtrage par type de base', [
+            'produits_avant' => count($products),
+            'produits_après' => count($filtered),
+            'produits_exclus' => count($products) - count($filtered)
+        ]);
+
+        return $filtered;
     }
 
     /**
@@ -1081,157 +1924,6 @@ Score de confiance entre 0 et 1."
 
             $this->bestMatch = $this->matchingProducts[0] ?? null;
         }
-    }
-
-    /**
-     * ✨ NOUVEAU : Correction spécifique pour le type de produit
-     */
-    private function correctProductType(string $type, string $productName): string
-    {
-        $typeLower = mb_strtolower(trim($type));
-        $productNameLower = mb_strtolower(trim($productName));
-        
-        // Détecter les baumes à lèvres
-        $lipBaumeKeywords = ['lèvres', 'levres', 'lip'];
-        $isLipBaume = false;
-        
-        foreach ($lipBaumeKeywords as $keyword) {
-            if (str_contains($productNameLower, $keyword) && 
-                (str_contains($typeLower, 'baume') || str_contains($typeLower, 'crème') || str_contains($typeLower, 'soin'))) {
-                $isLipBaume = true;
-                break;
-            }
-        }
-        
-        if ($isLipBaume) {
-            // S'assurer que le type contient "Baume lèvres"
-            if (!str_contains($typeLower, 'baume')) {
-                $type = 'Baume lèvres';
-                
-                if (str_contains($productNameLower, 'réparateur') || str_contains($productNameLower, 'reparateur')) {
-                    $type .= ' réparateur';
-                } elseif (str_contains($productNameLower, 'nourrissant')) {
-                    $type .= ' nourrissant';
-                } elseif (str_contains($productNameLower, 'hydratant')) {
-                    $type .= ' hydratant';
-                }
-            }
-        }
-        
-        // Détecter les baumes corps
-        $bodyBaumeKeywords = ['corps', 'body'];
-        $isBodyBaume = false;
-        
-        foreach ($bodyBaumeKeywords as $keyword) {
-            if (str_contains($productNameLower, $keyword) && 
-                (str_contains($typeLower, 'baume') || str_contains($typeLower, 'crème') || str_contains($typeLower, 'soin'))) {
-                $isBodyBaume = true;
-                break;
-            }
-        }
-        
-        if ($isBodyBaume) {
-            if (!str_contains($typeLower, 'baume')) {
-                $type = 'Baume corps';
-                
-                if (str_contains($productNameLower, 'hydratant')) {
-                    $type .= ' hydratant';
-                } elseif (str_contains($productNameLower, 'nourrissant')) {
-                    $type .= ' nourrissant';
-                } elseif (str_contains($productNameLower, 'apaisant')) {
-                    $type .= ' apaisant';
-                }
-            }
-        }
-        
-        // Détecter Body Fit
-        if (str_contains($productNameLower, 'body fit')) {
-            if (!str_contains($typeLower, 'soin') && !str_contains($typeLower, 'crème') && !str_contains($typeLower, 'baume')) {
-                $type = 'Soin corps';
-                
-                if (str_contains($productNameLower, 'minceur') || str_contains($productNameLower, 'anti-capitons')) {
-                    $type = 'Soin minceur';
-                }
-            }
-        }
-        
-        // Normalisation
-        $type = $this->normalizeProductType($type);
-        
-        return $type;
-    }
-
-    /**
-     * ✨ NOUVEAU : Normalise les types de produits
-     */
-    private function normalizeProductType(string $type): string
-    {
-        $typeLower = mb_strtolower(trim($type));
-        
-        // Mapping des types similaires
-        $typeMapping = [
-            'crème' => ['creme', 'cream'],
-            'baume' => ['balm', 'balsam'],
-            'sérum' => ['serum'],
-            'lotion' => ['lotion', 'tonique'],
-            'gel' => ['gel', 'jelly'],
-            'eau' => ['water', 'eau'],
-            'parfum' => ['perfume', 'fragrance'],
-            'lèvres' => ['levres', 'lip'],
-            'corps' => ['body'],
-            'visage' => ['face'],
-            'yeux' => ['eye'],
-            'mains' => ['hand'],
-            'soin' => ['care', 'treatment'],
-        ];
-        
-        $normalizedType = $type;
-        
-        foreach ($typeMapping as $normalized => $variants) {
-            foreach ($variants as $variant) {
-                if (str_contains($typeLower, $variant)) {
-                    $pattern = '/\b' . preg_quote($variant, '/') . '\b/i';
-                    $normalizedType = preg_replace($pattern, $normalized, $normalizedType);
-                    break;
-                }
-            }
-        }
-        
-        // Capitaliser les mots importants
-        $words = explode(' ', $normalizedType);
-        $words = array_map(function($word) {
-            if (in_array(mb_strtolower($word), ['de', 'pour', 'et', 'avec', 'sans', 'le', 'la', 'les'])) {
-                return $word;
-            }
-            return mb_convert_case($word, MB_CASE_TITLE, 'UTF-8');
-        }, $words);
-        
-        $normalizedType = implode(' ', $words);
-        
-        if ($normalizedType !== $type) {
-            \Log::info('Type normalisé', [
-                'type_original' => $type,
-                'type_normalisé' => $normalizedType
-            ]);
-        }
-        
-        return $normalizedType;
-    }
-
-    /**
-     * Normalise un nom de produit pour la comparaison
-     */
-    private function normalizeProductName(string $name): string
-    {
-        $name = mb_strtolower(trim($name));
-        
-        // Enlever les caractères spéciaux
-        $name = preg_replace('/[^\w\s\-]/', '', $name);
-        
-        // Enlever les espaces multiples
-        $name = preg_replace('/\s+/', ' ', $name);
-        
-        return trim($name);
     }
 
     public function selectProduct($productId)
