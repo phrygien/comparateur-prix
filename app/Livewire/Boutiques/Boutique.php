@@ -290,7 +290,7 @@ class Boutique extends Component
     {
         $value = mb_strtolower($value, 'UTF-8');
         $value = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
-        $value = preg_replace('/[^a-z0-9 ]/', ' ', $value);
+        $value = preg_replace('/[^a-z0-9 ]/', '', $value);
 
         return trim($value);
     }
@@ -479,7 +479,7 @@ class Boutique extends Component
                     $subQuery .= "
                         $and LOWER(
                             REGEXP_REPLACE(
-                                CONCAT(product_char.normalized_name, ' ', COALESCE(options.attribute_value, '')) ,
+                                CONCAT(product_char.name, ' ', COALESCE(options.attribute_value, '')) ,
                                 '[^a-z0-9 ]',
                                 ''
                             )
@@ -506,7 +506,7 @@ class Boutique extends Component
             if (!empty($this->filterName)) {
                 $subQuery .= "
                     AND LOWER(
-                        REGEXP_REPLACE(product_char.normalized_name , '[^a-z0-9 ]', '')
+                        REGEXP_REPLACE(product_char.name , '[^a-z0-9 ]', '')
                     ) LIKE ?
                 ";
                 $params[] = '%' . $this->normalizeSearch($this->filterName) . '%';
@@ -516,7 +516,7 @@ class Boutique extends Component
                 $subQuery .= "
                     AND LOWER(
                         REGEXP_REPLACE(
-                            SUBSTRING_INDEX(product_char.normalized_name , '   ', 1),
+                            SUBSTRING_INDEX(product_char.name , ' - ', 1),
                             '[^a-z0-9 ]',
                             ''
                         )
