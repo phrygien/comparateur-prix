@@ -151,8 +151,8 @@ new class extends Component {
 
         $competitors = $this->competitorResults[$sku]['competitors'];
 
-        // Filtrer par niveau de similarité (≥ 0.6)
-        $goodCompetitors = array_filter($competitors, fn($c) => ($c->similarity_score ?? 0) >= 0.6);
+        // Filtrer uniquement les résultats "excellent" et "très bon" (≥ 0.7)
+        $goodCompetitors = array_filter($competitors, fn($c) => ($c->similarity_score ?? 0) >= 0.7);
 
         // Appliquer le filtre par site si des sites sont sélectionnés
         if (isset($this->selectedSitesByProduct[$sku]) && !empty($this->selectedSitesByProduct[$sku])) {
@@ -177,7 +177,7 @@ new class extends Component {
         }
 
         $competitors = $this->competitorResults[$sku]['competitors'];
-        $goodCompetitors = array_filter($competitors, fn($c) => ($c->similarity_score ?? 0) >= 0.6);
+        $goodCompetitors = array_filter($competitors, fn($c) => ($c->similarity_score ?? 0) >= 0.7);
 
         $sites = [];
         foreach ($goodCompetitors as $competitor) {
@@ -212,8 +212,8 @@ new class extends Component {
         $competitors = $this->competitorResults[$sku]['competitors'] ?? [];
         $total = count($competitors);
 
-        // Compter les bons résultats (≥ 0.6)
-        $goodCompetitors = array_filter($competitors, fn($c) => ($c->similarity_score ?? 0) >= 0.6);
+        // Compter les bons résultats (≥ 0.7 - excellent et très bon)
+        $goodCompetitors = array_filter($competitors, fn($c) => ($c->similarity_score ?? 0) >= 0.7);
         $goodCount = count($goodCompetitors);
 
         // Compter les résultats filtrés
@@ -287,15 +287,18 @@ new class extends Component {
             $competitors = $this->findCompetitorsForProduct($cleanedProductName, $cleanPrice);
 
             if (!empty($competitors)) {
-                // Compter les bons résultats (similarité >= 0.6)
-                $goodResults = array_filter($competitors, fn($c) => ($c->similarity_score ?? 0) >= 0.6);
+                // Compter les bons résultats (similarité >= 0.7 - excellent et très bon)
+                $excellentResults = array_filter($competitors, fn($c) => ($c->similarity_score ?? 0) >= 0.8);
+                $veryGoodResults = array_filter($competitors, fn($c) => ($c->similarity_score ?? 0) >= 0.7 && ($c->similarity_score ?? 0) < 0.8);
 
                 $this->competitorResults[$sku] = [
                     'product_name' => $cleanedProductName,
                     'our_price' => $cleanPrice,
                     'competitors' => $competitors,
                     'count' => count($competitors),
-                    'good_count' => count($goodResults)
+                    'excellent_count' => count($excellentResults),
+                    'very_good_count' => count($veryGoodResults),
+                    'good_count' => count($excellentResults) + count($veryGoodResults)
                 ];
 
                 // Initialiser les sites sélectionnés avec tous les sites disponibles
@@ -310,6 +313,8 @@ new class extends Component {
                     'our_price' => $cleanPrice,
                     'competitors' => [],
                     'count' => 0,
+                    'excellent_count' => 0,
+                    'very_good_count' => 0,
                     'good_count' => 0
                 ];
             }
@@ -320,6 +325,8 @@ new class extends Component {
                 'our_price' => $this->cleanPrice($price),
                 'competitors' => [],
                 'count' => 0,
+                'excellent_count' => 0,
+                'very_good_count' => 0,
                 'good_count' => 0,
                 'error' => $e->getMessage()
             ];
@@ -589,8 +596,8 @@ new class extends Component {
                 $competitors = $this->searchWithFallbackMethod($search);
             }
 
-            // 5. Filtrer par similarité améliorée
-            $filteredCompetitors = $this->filterBySimilarityWithOpenAI($competitors, $extractedData ?? []);
+            // 5. Filtrer par similarité STRICTE mot par mot
+            $filteredCompetitors = $this->filterByStrictSimilarity($competitors, $extractedData ?? []);
 
             $competitorsWithComparison = $this->addPriceComparisons($filteredCompetitors, $ourPrice);
 
@@ -1120,7 +1127,7 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
                 WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
                 AND {$whereClause}
                 ORDER BY lp.prix_ht ASC
-                LIMIT 50
+                LIMIT 100
             ";
 
             return DB::connection('mysql')->select($query, $params);
@@ -1163,7 +1170,7 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
                 return true;
             }
 
-            return mb_strlen($word) >= 3 && !in_array($word, $stopWords);
+            return mb_strlen($word) >= 2 && !in_array($word, $stopWords);
         });
 
         return array_values($keywords);
@@ -1237,7 +1244,7 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
                 AND (" . implode(' OR ', $nameConditions) . ")
                 {$coffretCondition}
                 ORDER BY lp.prix_ht ASC
-                LIMIT 50
+                LIMIT 100
             ";
 
             return DB::connection('mysql')->select($query, $params);
@@ -1248,17 +1255,17 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
     }
 
     /**
-     * Filtrer par similarité avec les données OpenAI
+     * Filtrer par similarité STRICTE mot par mot
      */
-    protected function filterBySimilarityWithOpenAI(array $competitors, array $extractedData): array
+    protected function filterByStrictSimilarity(array $competitors, array $extractedData): array
     {
         $filtered = [];
 
         foreach ($competitors as $competitor) {
-            $similarityScore = $this->computeSimilarityWithOpenAI($competitor, $extractedData);
+            $similarityScore = $this->computeStrictSimilarity($competitor, $extractedData);
 
-            // Seuil à 0.6 comme dans la première classe
-            if ($similarityScore >= 0.6) {
+            // Seuil à 0.7 pour "très bon" et "excellent" uniquement
+            if ($similarityScore >= 0.7) {
                 $competitor->similarity_score = $similarityScore;
                 $competitor->match_level = $this->getMatchLevel($similarityScore);
                 $filtered[] = $competitor;
@@ -1274,47 +1281,43 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
     }
 
     /**
-     * Calculer la similarité avec les données OpenAI
+     * Calculer la similarité STRICTE mot par mot
      */
-    protected function computeSimilarityWithOpenAI($competitor, array $extractedData): float
+    protected function computeStrictSimilarity($competitor, array $extractedData): float
     {
+        // Poids plus élevés pour name et type
         $weights = [
-            'vendor' => 0.25,
-            'name' => 0.30,
-            'type' => 0.25,
-            'coffret' => 0.10,
-            'variation' => 0.10
+            'vendor' => 0.20,
+            'name' => 0.40,    // Poids plus élevé pour name
+            'type' => 0.35,    // Poids plus élevé pour type
+            'coffret' => 0.05
         ];
 
         $totalScore = 0;
 
         // 1. Score du vendor
-        $vendorScore = $this->computeVendorSimilarityWithOpenAI($competitor, $extractedData['vendor'] ?? '');
+        $vendorScore = $this->computeVendorSimilarityStrict($competitor, $extractedData['vendor'] ?? '');
         $totalScore += $vendorScore * $weights['vendor'];
 
-        // 2. Score du name
-        $nameScore = $this->computeNameSimilarityWithOpenAI($competitor, $extractedData['name'] ?? '');
+        // 2. Score du name - STRICT mot par mot
+        $nameScore = $this->computeNameSimilarityStrict($competitor, $extractedData['name'] ?? '');
         $totalScore += $nameScore * $weights['name'];
 
-        // 3. Score du type
-        $typeScore = $this->computeTypeSimilarityWithOpenAI($competitor, $extractedData['type'] ?? '');
+        // 3. Score du type - STRICT mot par mot
+        $typeScore = $this->computeTypeSimilarityStrict($competitor, $extractedData['type'] ?? '');
         $totalScore += $typeScore * $weights['type'];
 
         // 4. Score coffret
         $coffretScore = $this->computeCoffretSimilarity($competitor, $extractedData['is_coffret'] ?? false);
         $totalScore += $coffretScore * $weights['coffret'];
 
-        // 5. Score variation
-        $variationScore = $this->computeVariationSimilarity($competitor, $extractedData['variation'] ?? '');
-        $totalScore += $variationScore * $weights['variation'];
-
         return min(1.0, $totalScore);
     }
 
     /**
-     * Similarité du vendor avec OpenAI
+     * Similarité du vendor STRICTE
      */
-    protected function computeVendorSimilarityWithOpenAI($competitor, string $searchVendor): float
+    protected function computeVendorSimilarityStrict($competitor, string $searchVendor): float
     {
         $productVendor = $competitor->vendor ?? '';
 
@@ -1329,11 +1332,17 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
             return 1.0;
         }
 
-        if (str_starts_with($productLower, $searchLower) || str_starts_with($searchLower, $productLower)) {
-            return 0.9;
+        // Recherche exacte
+        if (str_contains($productLower, $searchLower) && str_contains($searchLower, $productLower)) {
+            return 1.0;
         }
 
-        if (str_contains($productLower, $searchLower) || str_contains($searchLower, $productLower)) {
+        // Match partiel strict
+        if (str_contains($productLower, $searchLower)) {
+            return 0.8;
+        }
+
+        if (str_contains($searchLower, $productLower)) {
             return 0.8;
         }
 
@@ -1341,67 +1350,212 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
     }
 
     /**
-     * Similarité du name avec OpenAI
+     * Similarité du name STRICTE mot par mot
      */
-    protected function computeNameSimilarityWithOpenAI($competitor, string $searchName): float
+    protected function computeNameSimilarityStrict($competitor, string $searchName): float
     {
         $productName = $competitor->name ?? '';
 
         if (empty($productName) || empty($searchName)) {
-            return 0.3;
+            return 0.1; // Score très faible si un des deux est vide
         }
 
         $productLower = mb_strtolower(trim($productName));
         $searchLower = mb_strtolower(trim($searchName));
 
-        // Si le nom du produit contient le nom recherché (ou vice versa)
-        if (
-            str_contains($productLower, $searchLower) ||
-            str_contains($searchLower, $productLower)
-        ) {
-            return 0.9;
-        }
-
-        // Extraire les mots-clés du name OpenAI
-        $searchKeywords = $this->extractKeywordsFromOpenAIName($searchName);
-
-        if (empty($searchKeywords)) {
-            return 0.3;
-        }
-
-        $matches = 0;
-        foreach ($searchKeywords as $keyword) {
-            if (str_contains($productLower, $keyword)) {
-                $matches++;
-            }
-        }
-
-        return $matches / count($searchKeywords);
-    }
-
-    /**
-     * Similarité du type avec OpenAI
-     */
-    protected function computeTypeSimilarityWithOpenAI($competitor, string $searchType): float
-    {
-        $productType = $competitor->type ?? '';
-
-        if (empty($productType) || empty($searchType)) {
-            return 0.3;
-        }
-
-        $productLower = mb_strtolower($productType);
-        $searchLower = mb_strtolower($searchType);
-
+        // 1. Correspondance exacte
         if ($productLower === $searchLower) {
             return 1.0;
         }
 
-        if (str_contains($productLower, $searchLower) || str_contains($searchLower, $productLower)) {
-            return 0.8;
+        // 2. Extraire les mots significatifs
+        $searchWords = $this->extractSignificantWords($searchLower);
+        $productWords = $this->extractSignificantWords($productLower);
+
+        if (empty($searchWords)) {
+            return 0.1;
         }
 
-        return 0.2;
+        // 3. Vérifier chaque mot recherché dans le produit
+        $matchedWords = 0;
+        $matchedDetails = [];
+
+        foreach ($searchWords as $searchWord) {
+            $wordMatched = false;
+
+            // Vérifier si le mot est présent dans le produit
+            foreach ($productWords as $productWord) {
+                if ($searchWord === $productWord) {
+                    // Match exact
+                    $wordMatched = true;
+                    $matchedDetails[] = "Exact: '$searchWord'";
+                    break;
+                } elseif (str_contains($productWord, $searchWord) || str_contains($searchWord, $productWord)) {
+                    // Match partiel
+                    $wordMatched = true;
+                    $matchedDetails[] = "Partial: '$searchWord' in '$productWord'";
+                    break;
+                }
+            }
+
+            if ($wordMatched) {
+                $matchedWords++;
+            }
+        }
+
+        $wordScore = $matchedWords / count($searchWords);
+
+        // 4. Bonus pour l'ordre des mots
+        $orderBonus = 0;
+        if ($wordScore >= 0.8) {
+            // Vérifier si les mots sont dans le bon ordre
+            $productText = implode(' ', $productWords);
+            $searchText = implode(' ', $searchWords);
+
+            if (str_contains($productText, $searchText)) {
+                $orderBonus = 0.2;
+            }
+        }
+
+        $finalScore = min(1.0, $wordScore + $orderBonus);
+
+        // Log pour le débogage
+        if ($finalScore >= 0.7) {
+            \Log::debug('Name similarity strict', [
+                'search_name' => $searchName,
+                'product_name' => $productName,
+                'search_words' => $searchWords,
+                'product_words' => $productWords,
+                'matched_words' => $matchedWords,
+                'total_words' => count($searchWords),
+                'word_score' => $wordScore,
+                'order_bonus' => $orderBonus,
+                'final_score' => $finalScore,
+                'matched_details' => $matchedDetails
+            ]);
+        }
+
+        return $finalScore;
+    }
+
+    /**
+     * Similarité du type STRICTE mot par mot
+     */
+    protected function computeTypeSimilarityStrict($competitor, string $searchType): float
+    {
+        $productType = $competitor->type ?? '';
+
+        if (empty($productType) || empty($searchType)) {
+            return 0.1; // Score très faible si un des deux est vide
+        }
+
+        $productLower = mb_strtolower(trim($productType));
+        $searchLower = mb_strtolower(trim($searchType));
+
+        // 1. Correspondance exacte
+        if ($productLower === $searchLower) {
+            return 1.0;
+        }
+
+        // 2. Extraire les mots significatifs du type
+        $searchWords = $this->extractSignificantTypeWords($searchLower);
+        $productWords = $this->extractSignificantTypeWords($productLower);
+
+        if (empty($searchWords)) {
+            return 0.1;
+        }
+
+        // 3. Vérifier chaque mot du type recherché dans le type du produit
+        $matchedWords = 0;
+        $matchedDetails = [];
+
+        foreach ($searchWords as $searchWord) {
+            $wordMatched = false;
+
+            foreach ($productWords as $productWord) {
+                if ($searchWord === $productWord) {
+                    // Match exact
+                    $wordMatched = true;
+                    $matchedDetails[] = "Exact: '$searchWord'";
+                    break;
+                } elseif (str_contains($productWord, $searchWord) || str_contains($searchWord, $productWord)) {
+                    // Match partiel
+                    $wordMatched = true;
+                    $matchedDetails[] = "Partial: '$searchWord' in '$productWord'";
+                    break;
+                }
+            }
+
+            if ($wordMatched) {
+                $matchedWords++;
+            }
+        }
+
+        $wordScore = $matchedWords / count($searchWords);
+
+        // 4. Bonus pour les mots clés importants du type
+        $importantTypeWords = ['eau', 'parfum', 'toilette', 'cologne', 'crème', 'creme', 'huile', 'sérum', 'serum', 'lotion', 'masque', 'coffret'];
+        $importantWordsMatched = 0;
+
+        foreach ($importantTypeWords as $importantWord) {
+            if (in_array($importantWord, $searchWords) && in_array($importantWord, $productWords)) {
+                $importantWordsMatched++;
+            }
+        }
+
+        $importantBonus = $importantWordsMatched > 0 ? 0.1 * $importantWordsMatched : 0;
+
+        $finalScore = min(1.0, $wordScore + $importantBonus);
+
+        // Log pour le débogage
+        if ($finalScore >= 0.7) {
+            \Log::debug('Type similarity strict', [
+                'search_type' => $searchType,
+                'product_type' => $productType,
+                'search_words' => $searchWords,
+                'product_words' => $productWords,
+                'matched_words' => $matchedWords,
+                'total_words' => count($searchWords),
+                'word_score' => $wordScore,
+                'important_bonus' => $importantBonus,
+                'final_score' => $finalScore,
+                'matched_details' => $matchedDetails
+            ]);
+        }
+
+        return $finalScore;
+    }
+
+    /**
+     * Extraire les mots significatifs d'un texte
+     */
+    protected function extractSignificantWords(string $text): array
+    {
+        $stopWords = ['de', 'la', 'le', 'les', 'des', 'du', 'et', 'ou', 'pour', 'avec', 'sans', 'à', 'au', 'aux'];
+
+        $words = preg_split('/[\s\-]+/', $text, -1, PREG_SPLIT_NO_EMPTY);
+
+        $significantWords = array_filter($words, function ($word) use ($stopWords) {
+            return mb_strlen($word) >= 2 && !in_array($word, $stopWords);
+        });
+
+        return array_values($significantWords);
+    }
+
+    /**
+     * Extraire les mots significatifs d'un type
+     */
+    protected function extractSignificantTypeWords(string $text): array
+    {
+        $stopWords = ['pour', 'de', 'la', 'le', 'et', 'avec', 'en', 'sur'];
+
+        $words = preg_split('/[\s\-]+/', $text, -1, PREG_SPLIT_NO_EMPTY);
+
+        $significantWords = array_filter($words, function ($word) use ($stopWords) {
+            return mb_strlen($word) >= 2 && !in_array($word, $stopWords);
+        });
+
+        return array_values($significantWords);
     }
 
     /**
@@ -1416,6 +1570,23 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
         }
 
         return 0;
+    }
+
+    /**
+     * Obtenir le niveau de correspondance
+     * MODIFIÉ : seuils ajustés pour n'afficher que "excellent" et "très bon"
+     */
+    protected function getMatchLevel(float $similarityScore): string
+    {
+        // Seuils ajustés pour être plus restrictifs
+        if ($similarityScore >= 0.9)
+            return 'excellent';
+        if ($similarityScore >= 0.8)
+            return 'excellent';
+        if ($similarityScore >= 0.7)
+            return 'très bon';
+        // En dessous de 0.7, pas affiché
+        return 'bon';
     }
 
     /**
@@ -2126,7 +2297,7 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
                 AND (" . implode(' OR ', $vendorConditions) . ")
                 AND (" . implode(' OR ', $keywordConditions) . ")
                 ORDER BY lp.prix_ht ASC
-                LIMIT 50  -- RÉDUIRE À 50
+                LIMIT 100
             ";
 
             return DB::connection('mysql')->select($query, $params);
@@ -2180,7 +2351,7 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
                 WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
                 AND (" . implode(' OR ', $conditions) . ")
                 ORDER BY lp.prix_ht ASC
-                LIMIT 50  -- RÉDUIRE À 50
+                LIMIT 100
             ";
 
             return DB::connection('mysql')->select($query, $params);
@@ -2240,7 +2411,7 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
                     AGAINST (? IN BOOLEAN MODE)
                 AND (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
                 ORDER BY lp.prix_ht ASC
-                LIMIT 50  -- RÉDUIRE À 50
+                LIMIT 100
             ";
 
             return DB::connection('mysql')->select($query, [$searchQuery]);
@@ -2275,7 +2446,7 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
                 WHERE (lp.variation != 'Standard' OR lp.variation IS NULL OR lp.variation = '')
                 AND (" . implode(' OR ', $vendorConditions) . ")
                 ORDER BY lp.prix_ht ASC
-                LIMIT 50  -- RÉDUIRE À 50
+                LIMIT 100
             ";
 
             return DB::connection('mysql')->select($query, $params);
@@ -2287,7 +2458,6 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
 
     /**
      * Filtrer par similarité améliorée
-     * MODIFIÉ : seuil augmenté à 0.6 et limité à 50 résultats
      */
     protected function filterBySimilarityImproved(array $competitors, string $search, array $components): array
     {
@@ -2296,8 +2466,8 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
         foreach ($competitors as $competitor) {
             $similarityScore = $this->computeSimilarityScoreImproved($competitor, $search, $components);
 
-            // SEUIL AUGMENTÉ À 0.6 POUR UN BON NIVEAU DE SIMILARITÉ
-            if ($similarityScore >= 0.6) {
+            // SEUIL À 0.7 POUR "TRÈS BON" ET "EXCELLENT"
+            if ($similarityScore >= 0.7) {
                 $competitor->similarity_score = $similarityScore;
                 $competitor->match_level = $this->getMatchLevel($similarityScore);
                 $filtered[] = $competitor;
@@ -2309,7 +2479,6 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
             return $b->similarity_score <=> $a->similarity_score;
         });
 
-        // LIMITER À 50 RÉSULTATS
         return array_slice($filtered, 0, 50);
     }
 
@@ -2319,14 +2488,11 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
     protected function computeSimilarityScoreImproved($competitor, $search, $components): float
     {
         $weights = [
-            'vendor' => 0.25,
+            'vendor' => 0.20,
             'keywords' => 0.20,
-            'name' => 0.15,
-            'type' => 0.15,
-            'variation' => 0.10,
-            'volumes' => 0.05,
-            'color' => 0.05,
-            'features' => 0.05
+            'name' => 0.30,
+            'type' => 0.25,
+            'variation' => 0.05
         ];
 
         $totalScore = 0;
@@ -2350,18 +2516,6 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
         // 5. Score de la variation
         $variationScore = $this->computeVariationSimilarity($competitor, $components['variation']);
         $totalScore += $variationScore * $weights['variation'];
-
-        // 6. Score des volumes
-        $volumeScore = $this->computeVolumeSimilarity($competitor, $components['volumes']);
-        $totalScore += $volumeScore * $weights['volumes'];
-
-        // 7. Score de la couleur
-        $colorScore = $this->computeColorSimilarity($competitor, $components['color']);
-        $totalScore += $colorScore * $weights['color'];
-
-        // 8. Score des caractéristiques (finition, etc.)
-        $featuresScore = $this->computeFeaturesSimilarity($competitor, $components);
-        $totalScore += $featuresScore * $weights['features'];
 
         return min(1.0, $totalScore);
     }
@@ -2438,7 +2592,7 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
     protected function computeNameSimilarity($productName, $searchProductName): float
     {
         if (empty($productName) || empty($searchProductName)) {
-            return 0.3; // Score minimum si un des deux est vide
+            return 0.1; // Score très faible si un des deux est vide
         }
 
         $productNameLower = mb_strtolower(trim($productName));
@@ -2459,7 +2613,7 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
         });
 
         if (empty($searchWords)) {
-            return 0.3;
+            return 0.1;
         }
 
         $matches = 0;
@@ -2480,7 +2634,7 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
         $productType = $competitor->type ?? '';
 
         if (empty($productType) || empty($searchType)) {
-            return 0.3; // Score minimum si un des deux est vide
+            return 0.1; // Score très faible si un des deux est vide
         }
 
         $productLower = mb_strtolower($productType);
@@ -2541,114 +2695,6 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
     }
 
     /**
-     * Similarité des volumes
-     */
-    protected function computeVolumeSimilarity($competitor, $searchVolumes): float
-    {
-        if (empty($searchVolumes)) {
-            return 0.5; // Pas de pénalité si pas de volumes recherchés
-        }
-
-        $productVolumes = $this->extractVolumesFromText(
-            ($competitor->name ?? '') . ' ' . ($competitor->variation ?? '')
-        );
-
-        if (empty($productVolumes)) {
-            return 0;
-        }
-
-        $matches = array_intersect($searchVolumes, $productVolumes);
-
-        if (!empty($matches)) {
-            return count($matches) / count($searchVolumes);
-        }
-
-        return 0;
-    }
-
-    /**
-     * Similarité de la couleur
-     */
-    protected function computeColorSimilarity($competitor, $searchColor): float
-    {
-        if (empty($searchColor)) {
-            return 0.5; // Pas de pénalité si pas de couleur recherchée
-        }
-
-        $productName = $competitor->name ?? '';
-        $productVariation = $competitor->variation ?? '';
-        $productText = mb_strtolower($productName . ' ' . $productVariation);
-
-        $colorMappings = [
-            'rouge' => ['red', 'rosso', 'rojo'],
-            'blanc' => ['white', 'blanco', 'bianco'],
-            'noir' => ['black', 'nero', 'negro'],
-            'bleu' => ['blue', 'blu', 'azul'],
-            'vert' => ['green', 'verde', 'verde'],
-            'rose' => ['pink', 'rosa', 'rosado'],
-            'brun' => ['brown', 'marrone', 'marrón'],
-            'amarante' => ['amaranth', 'amaranto'],
-            'doré' => ['gold', 'golden', 'dorado', 'dore'],
-            'argenté' => ['silver', 'silvery', 'plateado', 'argente']
-        ];
-
-        $searchLower = mb_strtolower($searchColor);
-
-        // Vérifier la couleur exacte
-        if (str_contains($productText, $searchLower)) {
-            return 1.0;
-        }
-
-        // Vérifier les équivalents dans d'autres langues
-        if (isset($colorMappings[$searchLower])) {
-            foreach ($colorMappings[$searchLower] as $equivalent) {
-                if (str_contains($productText, $equivalent)) {
-                    return 0.8;
-                }
-            }
-        }
-
-        return 0;
-    }
-
-    /**
-     * Similarité des caractéristiques
-     */
-    protected function computeFeaturesSimilarity($competitor, $components): float
-    {
-        $score = 0.5; // Score de base
-
-        $productName = $competitor->name ?? '';
-        $productVariation = $competitor->variation ?? '';
-        $productText = mb_strtolower($productName . ' ' . $productVariation);
-
-        // Vérifier la finition
-        if (!empty($components['finish'])) {
-            $finishLower = mb_strtolower($components['finish']);
-            $finishMappings = [
-                'satin' => ['satiny', 'satiné', 'satinée'],
-                'mat' => ['matte', 'mate', 'opaque'],
-                'brillant' => ['shiny', 'glossy', 'brillante', 'lustré'],
-                'nacré' => ['pearly', 'iridescent', 'nacre', 'nacrée'],
-                'perlé' => ['pearlescent', 'pearlized', 'perle', 'perlée']
-            ];
-
-            if (str_contains($productText, $finishLower)) {
-                $score += 0.1;
-            } elseif (isset($finishMappings[$finishLower])) {
-                foreach ($finishMappings[$finishLower] as $equivalent) {
-                    if (str_contains($productText, $equivalent)) {
-                        $score += 0.05;
-                        break;
-                    }
-                }
-            }
-        }
-
-        return min(1.0, $score);
-    }
-
-    /**
      * Vérifier si un mot est un stop word
      */
     protected function isStopWord(string $word): bool
@@ -2659,24 +2705,6 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
         );
 
         return in_array(mb_strtolower($word), $stopWords);
-    }
-
-    /**
-     * Obtenir le niveau de correspondance
-     * MODIFIÉ : seuils ajustés
-     */
-    protected function getMatchLevel(float $similarityScore): string
-    {
-        // Ajuster les seuils pour être plus restrictifs
-        if ($similarityScore >= 0.8)
-            return 'excellent';
-        if ($similarityScore >= 0.7)
-            return 'très bon'; // Ajouter un niveau intermédiaire
-        if ($similarityScore >= 0.6)
-            return 'bon'; // Seuil pour "bon niveau"
-        if ($similarityScore >= 0.5)
-            return 'moyen';
-        return 'faible';
     }
 
     /**
