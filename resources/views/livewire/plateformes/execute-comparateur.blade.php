@@ -858,7 +858,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             ->map(function ($group) {
                 return $group->sortByDesc('scrape_reference_id')->first();
             })
-            ->values();
+            ->values()
+            ->sortByDesc('scrape_reference_id');
 
         \Log::info('Après déduplication', [
             'produits_avant' => $productsCollection->count(),
@@ -866,38 +867,58 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             'produits_supprimés' => $productsCollection->count() - $uniqueProducts->count()
         ]);
 
-        // Grouper les produits par site pour l'affichage
-        $groupedBySite = $uniqueProducts->groupBy('web_site_id')->map(function ($siteProducts, $siteId) {
-            $siteInfo = collect($this->availableSites)->firstWhere('id', $siteId);
-            
+        $this->matchingProducts = $uniqueProducts->take(200)->toArray();
+
+        \Log::info('Résultats finaux après déduplication', [
+            'total_produits' => count($this->matchingProducts),
+            'par_site' => $uniqueProducts->groupBy('web_site_id')->map(fn($group) => $group->count())->toArray()
+        ]);
+
+        $bySiteStats = $uniqueProducts->groupBy('web_site_id')->map(function ($siteProducts, $siteId) {
             return [
                 'site_id' => $siteId,
-                'site_name' => $siteInfo['name'] ?? 'Site Inconnu',
-                'products' => $siteProducts->sortByDesc('scrape_reference_id')->values()->toArray(),
-                'count' => $siteProducts->count(),
+                'total_products' => $siteProducts->count(),
                 'max_scrape_ref_id' => $siteProducts->max('scrape_reference_id'),
-                'lowest_price' => $siteProducts->min('prix_ht'),
-                'highest_price' => $siteProducts->max('prix_ht'),
+                'min_scrape_ref_id' => $siteProducts->min('scrape_reference_id'),
+                'products' => $siteProducts->values()->toArray()
             ];
-        })->sortByDesc(function ($siteGroup) {
-            return $siteGroup['count'];
         });
 
-        // Conserver également la liste plate pour la compatibilité
-        $this->matchingProducts = $uniqueProducts->sortByDesc('scrape_reference_id')->values()->toArray();
+        $grouped = $uniqueProducts->groupBy('scrape_reference');
         
-        // Stocker le regroupement par site
-        $this->groupedResults = [
-            'by_site' => $groupedBySite->toArray(),
-            'total_unique_products' => $uniqueProducts->count(),
-            'total_sites' => $groupedBySite->count()
-        ];
+        $this->groupedResults = $grouped->map(function ($group, $reference) {
+            $bySite = $group->groupBy('web_site_id')->map(function ($siteProducts) {
+                return [
+                    'count' => $siteProducts->count(),
+                    'products' => $siteProducts->values()->toArray(),
+                    'max_scrape_ref_id' => $siteProducts->max('scrape_reference_id'),
+                    'lowest_price' => $siteProducts->min('prix_ht'),
+                    'highest_price' => $siteProducts->max('prix_ht'),
+                ];
+            });
 
-        \Log::info('Résultats groupés par site', [
-            'total_produits' => $uniqueProducts->count(),
-            'sites_avec_produits' => $groupedBySite->count(),
-            'produits_par_site' => $groupedBySite->map(fn($group) => $group['count'])->toArray()
-        ]);
+            return [
+                'reference' => $reference,
+                'total_count' => $group->count(),
+                'sites_count' => $bySite->count(),
+                'sites' => $bySite->map(function ($siteData, $siteId) {
+                    return [
+                        'site_id' => $siteId,
+                        'products_count' => $siteData['count'],
+                        'max_scrape_ref_id' => $siteData['max_scrape_ref_id'],
+                        'price_range' => [
+                            'min' => $siteData['lowest_price'],
+                            'max' => $siteData['highest_price']
+                        ],
+                        'variations_count' => $siteData['count']
+                    ];
+                })->values()->toArray(),
+                'best_price' => $group->min('prix_ht'),
+                'site_ids' => $group->pluck('web_site_id')->unique()->values()->toArray()
+            ];
+        })->toArray();
+
+        $this->groupedResults['_site_stats'] = $bySiteStats->toArray();
     }
 
     /**
