@@ -613,13 +613,14 @@ Exemple 6 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                             'bonus' => 300
                         ]);
                     } else {
-                        // MALUS si le type de base ne correspond pas
-                        $score -= 200;
-                        \Log::debug('MALUS TYPE DE BASE non correspondant', [
+                        // MALUS RÉDUIT si le type de base ne correspond pas
+                        // On réduit le malus pour être plus tolérant
+                        $score -= 100; // Avant: -200, maintenant: -100
+                        \Log::debug('MALUS TYPE DE BASE non correspondant (réduit)', [
                             'product_id' => $product['id'] ?? 0,
                             'base_type_recherché' => $baseTypeLower,
                             'product_type' => $productType,
-                            'malus' => -200
+                            'malus' => -100
                         ]);
                     }
                 }
@@ -664,6 +665,19 @@ Exemple 6 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 // BONUS supplémentaire si le type du produit commence par le type recherché
                 if (!empty($typeLower) && str_starts_with($productType, $typeLower)) {
                     $score += 100; // +100 points si le type est au début
+                }
+                
+                // NOUVEAU : BONUS PARTIEL si le type du produit est CONTENU dans le type recherché
+                // Exemple: produit "Parfum Elixir" contenu dans recherche "Parfum Elixir Vaporisateur"
+                if (!empty($typeLower) && !empty($productType) && str_contains($typeLower, $productType)) {
+                    $score += 150; // +150 points pour type produit contenu dans type recherche
+                    $typeMatched = true; // On considère que ça matche
+                    \Log::debug('BONUS TYPE PRODUIT contenu dans TYPE RECHERCHÉ', [
+                        'product_id' => $product['id'] ?? 0,
+                        'product_type' => $productType,
+                        'search_type' => $typeLower,
+                        'bonus' => 150
+                    ]);
                 }
             }
 
@@ -714,21 +728,29 @@ Exemple 6 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             })->toArray()
         ]);
 
-        // FILTRAGE CRITIQUE : Ne garder QUE les produits qui matchent à la fois sur NAME et TYPE
+        // MODIFICATION CRITIQUE : Filtrage final plus SOUPLE
+        // On garde les produits qui ont un bon score de NAME, même si le TYPE ne matche pas parfaitement
         $scoredProducts = $scoredProducts->filter(function ($item) use ($nameWords) {
             $hasNameMatch = !empty($nameWords) ? $item['name_match_count'] > 0 : true;
-            $hasTypeMatch = $item['type_matched'];
-
-            $keepProduct = $item['score'] > 0 && $hasNameMatch && $hasTypeMatch;
+            
+            // NOUVEAU : On assouplit la règle du type
+            // Si le produit a un très bon score de NAME (tous les mots matchent), on est plus tolérant sur le TYPE
+            $hasExcellentNameMatch = !empty($nameWords) && ($item['name_match_count'] === count($nameWords));
+            
+            // Garder le produit SI :
+            // 1. Il a un NAME match ET un TYPE match (règle stricte)
+            // 2. OU il a un EXCELLENT NAME match et un score > 0 (règle souple pour bons candidats)
+            $keepProduct = $item['score'] > 0 && $hasNameMatch && ($item['type_matched'] || $hasExcellentNameMatch);
 
             if (!$keepProduct) {
-                \Log::debug('Produit exclu car ne match pas NAME ET TYPE', [
+                \Log::debug('Produit exclu', [
                     'product_id' => $item['product']['id'] ?? 0,
                     'product_name' => $item['product']['name'] ?? '',
                     'product_type' => $item['product']['type'] ?? 'AUCUN',
                     'score' => $item['score'],
                     'name_match' => $hasNameMatch,
-                    'type_match' => $hasTypeMatch,
+                    'excellent_name_match' => $hasExcellentNameMatch,
+                    'type_match' => $item['type_matched'],
                     'name_match_count' => $item['name_match_count'],
                     'name_words_total' => $item['name_words_total']
                 ]);
@@ -737,12 +759,12 @@ Exemple 6 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             return $keepProduct;
         });
 
-        \Log::info('Après filtrage NAME ET TYPE obligatoires', [
+        \Log::info('Après filtrage final (NAME obligatoire + TYPE souple)', [
             'produits_restants' => $scoredProducts->count()
         ]);
 
         if ($scoredProducts->isEmpty()) {
-            \Log::info('Aucun produit après filtrage NAME ET TYPE', [
+            \Log::info('Aucun produit après filtrage final', [
                 'typeParts' => $typeParts,
                 'nameWords' => $nameWords
             ]);
@@ -806,6 +828,7 @@ Exemple 6 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'eau de toilette',
                 'eau de cologne',
                 'extrait de parfum',
+                'parfum elixir', // AJOUT pour gérer "Parfum Elixir"
                 'eau fraiche',
                 'parfum',
                 'extrait',
@@ -1051,7 +1074,7 @@ Exemple 6 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
         // Définir les catégories de types incompatibles
         $typeCategories = [
-            'parfum' => ['eau de parfum', 'parfum', 'eau de toilette', 'eau de cologne', 'eau fraiche', 'extrait de parfum', 'extrait', 'cologne'],
+            'parfum' => ['eau de parfum', 'parfum', 'eau de toilette', 'eau de cologne', 'eau fraiche', 'extrait de parfum', 'parfum elixir', 'extrait', 'cologne'],
             'déodorant' => ['déodorant', 'deodorant', 'deo', 'anti-transpirant', 'antitranspirant'],
             'crème' => ['crème', 'creme', 'baume', 'gel', 'lotion', 'fluide', 'soin'],
             'huile' => ['huile', 'oil'],
@@ -1288,6 +1311,7 @@ Score de confiance entre 0 et 1."
     }
 
 }; ?>
+
 
 <div class="bg-white">
     <!-- Header avec le bouton de recherche -->
