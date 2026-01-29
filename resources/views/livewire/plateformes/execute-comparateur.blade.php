@@ -349,52 +349,46 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
     }
     
     /**
-     * ✨ NOUVEAU : Vérifie si le produit est "La Petite Robe Noire"
-     * Détection stricte pour éviter les faux positifs avec d'autres déclinaisons
+     * ✨ NOUVEAU : Vérifie si le produit est "La Petite Robe Noire" CLASSIQUE
+     * Détection ULTRA STRICTE: uniquement le produit de base, AUCUNE déclinaison
      */
     private function isPetiteRobeNoireProduct(string $name, string $vendor): bool
     {
-        $nameLower = mb_strtolower($name);
-        $vendorLower = mb_strtolower($vendor);
+        $nameLower = mb_strtolower(trim($name));
+        $vendorLower = mb_strtolower(trim($vendor));
         
         // Doit être Guerlain
         if (!str_contains($vendorLower, 'guerlain')) {
             return false;
         }
         
-        // Doit contenir "petite robe noire" ou "la petite robe noire"
-        // Mais PAS les déclinaisons comme "Ma Petite Robe Noire", "Petite Robe Noire Intense", etc.
-        $keywords = ['la petite robe noire', 'petite robe noire'];
-        
-        $hasKeyword = false;
-        foreach ($keywords as $keyword) {
-            if (str_contains($nameLower, $keyword)) {
-                $hasKeyword = true;
-                break;
-            }
-        }
-        
-        if (!$hasKeyword) {
-            return false;
-        }
-        
-        // EXCLUSIONS: Ne pas matcher si c'est une déclinaison spécifique
+        // EXCLUSIONS: Si le name contient un de ces mots, ce n'est PAS le produit classique
         $exclusions = [
             'ma petite robe',           // Ma Petite Robe Noire
             'ma robe',                  // Ma Robe
             'petales',                  // Ma Robe Petales
             'pétales',                  // Ma Robe Pétales
-            'velours',                  // Ma Robe Velours
+            'velours',                  // ❌ VELOURS (déclinaison)
             'sous le vent',             // Ma Robe Sous le Vent
             'couture',                  // Couture
-            'intense',                  // Intense (si c'est une version spéciale)
+            'intense',                  // Intense
             'legere',                   // Legere
-            'légère'                    // Légère
+            'légère',                   // Légère
+            'fraiche',                  // Fraiche
+            'fraîche',                  // Fraîche
+            'couture',                  // Couture
+            'black perfecto',           // Black Perfecto
+            'sexy',                     // Sexy
+            'intensa',                  // Intensa
+            'elixir',                   // Elixir
+            'absolu',                   // Absolu (mais pas "absolue" qui est un type)
+            'flanelle',                 // Flanelle
+            'dentelle'                  // Dentelle
         ];
         
         foreach ($exclusions as $exclusion) {
             if (str_contains($nameLower, $exclusion)) {
-                \Log::debug('❌ LA PETITE ROBE NOIRE - Déclinaison exclue', [
+                \Log::debug('❌ LA PETITE ROBE NOIRE - Déclinaison détectée et exclue', [
                     'name' => $name,
                     'exclusion_trouvée' => $exclusion
                 ]);
@@ -402,7 +396,59 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             }
         }
         
-        \Log::info('✅ LA PETITE ROBE NOIRE CLASSIQUE détectée', [
+        // Doit contenir EXACTEMENT "la petite robe noire" ou "petite robe noire"
+        // Et RIEN D'AUTRE après (sauf types de parfum)
+        $hasBaseName = str_contains($nameLower, 'la petite robe noire') || 
+                       str_contains($nameLower, 'petite robe noire');
+        
+        if (!$hasBaseName) {
+            return false;
+        }
+        
+        // Vérifier qu'il n'y a pas de mots supplémentaires après "petite robe noire"
+        // (sauf les types de parfum qui sont OK)
+        $allowedSuffixes = [
+            'eau de parfum',
+            'parfum',
+            'vaporisateur',
+            'spray',
+            'vapo',
+            'edp',
+            'ml',
+            'absolue',  // "Eau de Parfum Absolue" est OK
+            'flacon',
+            'rechargeable'
+        ];
+        
+        // Extraire ce qui vient après "petite robe noire"
+        $afterRobeNoire = '';
+        if (str_contains($nameLower, 'petite robe noire')) {
+            $pos = strpos($nameLower, 'petite robe noire');
+            $afterRobeNoire = trim(substr($nameLower, $pos + strlen('petite robe noire')));
+        }
+        
+        // Si quelque chose vient après, vérifier que ce sont uniquement des mots autorisés
+        if (!empty($afterRobeNoire)) {
+            // Retirer tous les mots autorisés
+            $remaining = $afterRobeNoire;
+            foreach ($allowedSuffixes as $suffix) {
+                $remaining = str_replace($suffix, '', $remaining);
+            }
+            
+            // Retirer chiffres, espaces, tirets, parenthèses
+            $remaining = preg_replace('/[0-9\s\-\(\)]+/', '', $remaining);
+            
+            // S'il reste quelque chose, ce n'est pas le produit classique
+            if (strlen($remaining) > 0) {
+                \Log::debug('❌ LA PETITE ROBE NOIRE - Mots supplémentaires détectés', [
+                    'name' => $name,
+                    'mots_restants' => $remaining
+                ]);
+                return false;
+            }
+        }
+        
+        \Log::info('✅ LA PETITE ROBE NOIRE CLASSIQUE détectée (sans déclinaison)', [
             'name' => $name
         ]);
         
@@ -509,7 +555,9 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
      * ✨ NOUVEAU : Traitement spécial pour :
      * - VALENTINO + COFFRETS (matching flexible)
      * - MÉTÉORITES (Guerlain) + ÉDITIONS LIMITÉES (matching flexible)
-     * - LA PETITE ROBE NOIRE (Guerlain) - MATCHING ULTRA STRICT (name exact + type exact: "Parfum Vaporisateur" OU "Eau de Parfum Absolue" uniquement)
+     * 
+     * ⚠️ NOTE: Pour les produits Guerlain comme "La Petite Robe Noire" avec déclinaisons (Velours, Intense, etc.),
+     * le matching normal (NAME + TYPE strict) est appliqué car chaque déclinaison est un produit différent.
      */
     private function searchMatchingProducts()
     {
@@ -547,13 +595,18 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         // ✨ NOUVEAU : Détecter si c'est un produit Météorites (Guerlain)
         $isMeteoritesProduct = $this->isMeteoritesProduct($name, $type);
         
-        // ✨ NOUVEAU : Détecter si c'est La Petite Robe Noire (Guerlain)
-        $isPetiteRobeNoire = $this->isPetiteRobeNoireProduct($name, $vendor);
+        // ✨ NOUVEAU : Détecter si c'est La Petite Robe Noire CLASSIQUE (Guerlain)
+        // ⚠️ IMPORTANT: Désactivé car chaque déclinaison (Velours, Intense, etc.) est un produit différent
+        // Le traitement normal (matching strict NAME + TYPE) suffit
+        $isPetiteRobeNoire = false; // Désactivé - traitement normal suffit
+        // $isPetiteRobeNoire = $this->isPetiteRobeNoireProduct($name, $vendor);
         
         // ✨ NOUVEAU : Détecter si c'est une édition limitée
         $isLimitedEdition = $this->isLimitedEdition($name, $type);
         
         // ✨ NOUVEAU : Pour La Petite Robe Noire, ajuster le type à chercher
+        // ⚠️ Désactivé - chaque déclinaison doit matcher exactement
+        /*
         if ($isPetiteRobeNoire) {
             $type = $this->getExactTypeForPetiteRobeNoire($type);
             \Log::info('🎯 LA PETITE ROBE NOIRE DÉTECTÉE - Type ajusté', [
@@ -562,13 +615,13 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'type_ajusté' => $type
             ]);
         }
+        */
         
-        if ($isSpecialVendor || $isMeteoritesProduct || $isPetiteRobeNoire) {
+        if ($isSpecialVendor || $isMeteoritesProduct) {
             \Log::info('🎯 PRODUIT SPÉCIAL DÉTECTÉ', [
                 'vendor' => $vendor,
                 'is_valentino' => $isSpecialVendor,
                 'is_meteorites' => $isMeteoritesProduct,
-                'is_petite_robe_noire' => $isPetiteRobeNoire,
                 'is_coffret' => $isCoffretSource,
                 'is_limited_edition' => $isLimitedEdition
             ]);
@@ -785,8 +838,10 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             $filteredProducts = $nameFilteredProducts;
         }
 
-        // ✨ ÉTAPE 2.7 NOUVEAU : Filtrage ULTRA STRICT pour La Petite Robe Noire
-        // On ne garde que les produits avec le type EXACT accepté
+        // ✨ ÉTAPE 2.7 : Filtrage ULTRA STRICT pour La Petite Robe Noire
+        // ⚠️ DÉSACTIVÉ - Chaque déclinaison (Velours, Intense, etc.) est un produit différent
+        // Le matching normal NAME + TYPE est suffisant et plus précis
+        /*
         if ($isPetiteRobeNoire && !empty($filteredProducts)) {
             $strictTypeFiltered = collect($filteredProducts)->filter(function ($product) {
                 return $this->isAcceptedPetiteRobeNoireType($product['type'] ?? '');
@@ -803,10 +858,10 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 \Log::warning('⚠️ LA PETITE ROBE NOIRE - Aucun produit avec type accepté trouvé', [
                     'type_recherché' => $type
                 ]);
-                // Si aucun produit avec type accepté, on vide les résultats pour éviter les faux positifs
                 $filteredProducts = [];
             }
         }
+        */
 
         // ÉTAPE 3: Scoring avec PRIORITÉ sur le NAME
         $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $type, $isCoffretSource, $nameWords, $shouldSkipTypeFilter, $isMeteoritesProduct, $isLimitedEdition, $isPetiteRobeNoire) {
@@ -831,7 +886,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 }
             }
             
-            // ✨ NOUVEAU : BONUS SPÉCIAL pour Météorites + édition limitée
+            // ✨ BONUS SPÉCIAL pour Météorites + édition limitée
             if ($isMeteoritesProduct && $isLimitedEdition) {
                 $productIsMeteoritesEdition = $this->isMeteoritesProduct($product['name'] ?? '', $product['type'] ?? '') &&
                                              $this->isLimitedEdition($product['name'] ?? '', $product['type'] ?? '');
@@ -841,15 +896,15 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 }
             }
             
-            // ✨ NOUVEAU : BONUS SPÉCIAL pour La Petite Robe Noire avec types acceptés
-            // Types acceptés: "Parfum Vaporisateur" OU "Eau de Parfum Absolue"
-            // ⚠️ MATCHING STRICT: Le produit doit correspondre EXACTEMENT pour éviter confusion entre déclinaisons
+            // ✨ BONUS SPÉCIAL pour La Petite Robe Noire - DÉSACTIVÉ
+            // Chaque déclinaison (Velours, Intense, etc.) est un produit différent
+            // Le matching normal NAME + TYPE est plus précis
+            /*
             if ($isPetiteRobeNoire) {
                 $productIsPetiteRobeNoire = $this->isPetiteRobeNoireProduct($product['name'] ?? '', $product['vendor'] ?? '');
                 
-                // Si le produit est La Petite Robe Noire CLASSIQUE ET a un type accepté
                 if ($productIsPetiteRobeNoire && $this->isAcceptedPetiteRobeNoireType($product['type'] ?? '')) {
-                    $score += 800; // MEGA BONUS RENFORCÉ pour type accepté et name exact
+                    $score += 800;
                     
                     \Log::debug('✅ LA PETITE ROBE NOIRE CLASSIQUE avec type accepté', [
                         'product_id' => $product['id'] ?? 0,
@@ -858,7 +913,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                         'bonus' => 800
                     ]);
                 } else if ($productIsPetiteRobeNoire) {
-                    // Le name correspond mais pas le type - pénalité sévère
                     $score -= 500;
                     
                     \Log::debug('❌ LA PETITE ROBE NOIRE - Type non accepté', [
@@ -869,6 +923,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     ]);
                 }
             }
+            */
 
             // ==========================================
             // BONUS NAME : PRIORITÉ PRINCIPALE
@@ -1560,7 +1615,6 @@ Score de confiance entre 0 et 1."
     }
 
 }; ?>
-
 
 <div class="bg-white">
     <!-- Header avec le bouton de recherche -->
