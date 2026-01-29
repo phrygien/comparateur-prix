@@ -13,13 +13,11 @@ new class extends Component {
     public $extractedData = null;
     public $isLoading = false;
     public $matchingProducts = [];
-    public $alternativeProducts = []; // NOUVEAU: Produits avec matching souple
     public $bestMatch = null;
     public $aiValidation = null;
     public $availableSites = [];
     public $selectedSites = [];
     public $groupedResults = [];
-    public $groupedAlternatives = []; // NOUVEAU: Résultats alternatifs groupés
     
     // Nouveaux champs pour recherche manuelle
     public $manualSearchMode = false;
@@ -49,11 +47,9 @@ new class extends Component {
         $this->isLoading = true;
         $this->extractedData = null;
         $this->matchingProducts = [];
-        $this->alternativeProducts = [];
         $this->bestMatch = null;
         $this->aiValidation = null;
         $this->groupedResults = [];
-        $this->groupedAlternatives = [];
         $this->manualSearchMode = false;
 
         try {
@@ -218,11 +214,9 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
     {
         $this->isLoading = true;
         $this->matchingProducts = [];
-        $this->alternativeProducts = [];
         $this->bestMatch = null;
         $this->aiValidation = null;
         $this->groupedResults = [];
-        $this->groupedAlternatives = [];
 
         try {
             // Créer extractedData à partir des champs manuels
@@ -316,7 +310,16 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
     }
 
     /**
-     * LOGIQUE DE RECHERCHE OPTIMISÉE AVEC RÉSULTATS ALTERNATIFS
+     * LOGIQUE DE RECHERCHE OPTIMISÉE
+     * 1. Filtrer par VENDOR (obligatoire)
+     * 2. Filtrer par statut COFFRET
+     * 3. FILTRAGE PROGRESSIF par NAME : Plus de mots matchent, mieux c'est
+     * 4. SCORING ÉQUILIBRÉ entre NAME et TYPE:
+     *    - Le NAME doit matcher (au moins 1 mot, de préférence 2+)
+     *    - ET le TYPE doit matcher (au moins le type de base)
+     *    - Les deux critères sont OBLIGATOIRES pour qu'un produit soit retenu
+     *    - Le scoring favorise les produits avec plus de mots du NAME qui matchent
+     *    - Mais le TYPE de base doit TOUJOURS correspondre
      */
     private function searchMatchingProducts()
     {
@@ -414,7 +417,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
         // ÉTAPE 2.6: FILTRAGE PROGRESSIF par les mots du NAME
         $nameFilteredProducts = $filteredProducts;
-        $remainingProducts = []; // NOUVEAU: Produits qui ne matchent pas strictement
         
         if (!empty($nameWords)) {
             // TENTATIVE 1: TOUS les mots doivent être présents (filtrage le plus strict)
@@ -433,14 +435,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
             if (!empty($allWordsMatch)) {
                 $nameFilteredProducts = $allWordsMatch;
-                // Les produits qui ne matchent pas tous les mots vont dans les alternatifs
-                $remainingProducts = collect($filteredProducts)->reject(function ($product) use ($allWordsMatch) {
-                    return collect($allWordsMatch)->contains('id', $product['id']);
-                })->values()->toArray();
-                
                 \Log::info('✅ Produits après filtrage STRICT par NAME (TOUS les mots)', [
                     'count' => count($nameFilteredProducts),
-                    'alternatifs' => count($remainingProducts),
                     'nameWords_required' => $nameWords
                 ]);
             } else {
@@ -462,13 +458,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 
                 if (!empty($mostWordsMatch)) {
                     $nameFilteredProducts = $mostWordsMatch;
-                    $remainingProducts = collect($filteredProducts)->reject(function ($product) use ($mostWordsMatch) {
-                        return collect($mostWordsMatch)->contains('id', $product['id']);
-                    })->values()->toArray();
-                    
                     \Log::info('✅ Produits après filtrage 80% par NAME', [
                         'count' => count($nameFilteredProducts),
-                        'alternatifs' => count($remainingProducts),
                         'nameWords_used' => $nameWords
                     ]);
                 } else {
@@ -490,13 +481,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     
                     if (!empty($halfWordsMatch)) {
                         $nameFilteredProducts = $halfWordsMatch;
-                        $remainingProducts = collect($filteredProducts)->reject(function ($product) use ($halfWordsMatch) {
-                            return collect($halfWordsMatch)->contains('id', $product['id']);
-                        })->values()->toArray();
-                        
                         \Log::info('⚠️ Produits après filtrage 50% par NAME', [
                             'count' => count($nameFilteredProducts),
-                            'alternatifs' => count($remainingProducts),
                             'nameWords_used' => $nameWords
                         ]);
                     } else {
@@ -513,13 +499,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                         
                         if (!empty($anyWordMatch)) {
                             $nameFilteredProducts = $anyWordMatch;
-                            $remainingProducts = collect($filteredProducts)->reject(function ($product) use ($anyWordMatch) {
-                                return collect($anyWordMatch)->contains('id', $product['id']);
-                            })->values()->toArray();
-                            
                             \Log::info('⚠️ Produits après filtrage SOUPLE par NAME', [
                                 'count' => count($nameFilteredProducts),
-                                'alternatifs' => count($remainingProducts),
                                 'nameWords_used' => $nameWords
                             ]);
                         }
@@ -530,71 +511,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             $filteredProducts = $nameFilteredProducts;
         }
 
-        // ÉTAPE 3: Scoring avec PRIORITÉ sur le NAME (produits principaux)
-        $scoredProducts = $this->scoreProducts($filteredProducts, $typeParts, $type, $isCoffretSource, $nameWords);
-
-        // NOUVEAU: Scoring des produits alternatifs (matching souple)
-        $scoredAlternatives = !empty($remainingProducts) 
-            ? $this->scoreProducts($remainingProducts, $typeParts, $type, $isCoffretSource, $nameWords, true)
-            : collect([]);
-
-        // FILTRAGE STRICT : NAME ET TYPE doivent TOUS LES DEUX matcher (produits principaux)
-        $scoredProducts = $scoredProducts->filter(function($item) use ($nameWords) {
-            $hasNameMatch = !empty($nameWords) ? $item['name_match_count'] > 0 : true;
-            $hasStrongNameMatch = $item['has_strong_name_match'];
-            $hasTypeMatch = $item['type_matched'];
-            
-            $keepProduct = $item['score'] > 0 && $hasNameMatch && $hasTypeMatch;
-            
-            if (!$keepProduct) {
-                \Log::debug('Produit exclu des principaux', [
-                    'product_id' => $item['product']['id'] ?? 0,
-                    'score' => $item['score'],
-                    'raison' => !$hasNameMatch ? 'NAME ne matche pas' : (!$hasTypeMatch ? 'TYPE ne matche pas' : 'Score trop faible')
-                ]);
-            }
-            
-            return $keepProduct;
-        });
-
-        // FILTRAGE SOUPLE pour les alternatifs (juste vendor et quelques mots)
-        $scoredAlternatives = $scoredAlternatives->filter(function($item) {
-            return $item['score'] > 50; // Score minimum pour être dans les alternatifs
-        });
-
-        \Log::info('Après filtrage', [
-            'produits_principaux' => $scoredProducts->count(),
-            'produits_alternatifs' => $scoredAlternatives->count()
-        ]);
-
-        if ($scoredProducts->isEmpty() && $scoredAlternatives->isEmpty()) {
-            \Log::info('Aucun produit après filtrage');
-            $this->matchingProducts = [];
-            $this->alternativeProducts = [];
-            $this->groupedResults = [];
-            $this->groupedAlternatives = [];
-            return;
-        }
-
-        // Produits principaux
-        $rankedProducts = $scoredProducts->pluck('product')->toArray();
-        $this->matchingProducts = $rankedProducts;
-        $this->groupResultsByScrapeReference($this->matchingProducts);
-
-        // NOUVEAU: Produits alternatifs
-        $rankedAlternatives = $scoredAlternatives->pluck('product')->toArray();
-        $this->alternativeProducts = $rankedAlternatives;
-        $this->groupAlternativesByScrapeReference($this->alternativeProducts);
-
-        $this->validateBestMatchWithAI();
-    }
-
-    /**
-     * NOUVEAU: Fonction de scoring réutilisable
-     */
-    private function scoreProducts($products, $typeParts, $type, $isCoffretSource, $nameWords, $isAlternative = false)
-    {
-        return collect($products)->map(function ($product) use ($typeParts, $type, $isCoffretSource, $nameWords, $isAlternative) {
+        // ÉTAPE 3: Scoring avec PRIORITÉ sur le NAME
+        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $type, $isCoffretSource, $nameWords) {
             $score = 0;
             $productType = mb_strtolower($product['type'] ?? '');
             $productName = mb_strtolower($product['name'] ?? '');
@@ -602,14 +520,18 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             $matchedTypeParts = [];
             $typePartsCount = count($typeParts);
 
-            // BONUS COFFRET
+            // ==========================================
+            // PRIORITÉ ABSOLUE : BONUS COFFRET
+            // ==========================================
             $productIsCoffret = $this->isCoffret($product);
             
             if ($isCoffretSource && $productIsCoffret) {
-                $score += $isAlternative ? 300 : 500; // Moins de bonus pour les alternatifs
+                $score += 500; // MEGA BONUS pour coffrets
             }
 
-            // BONUS NAME
+            // ==========================================
+            // BONUS NAME : PRIORITÉ PRINCIPALE
+            // ==========================================
             $nameMatchCount = 0;
             if (!empty($nameWords)) {
                 foreach ($nameWords as $word) {
@@ -618,41 +540,60 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     }
                 }
                 
+                // Bonus proportionnel
                 $nameMatchRatio = count($nameWords) > 0 ? ($nameMatchCount / count($nameWords)) : 0;
-                $nameBonus = (int)($nameMatchRatio * ($isAlternative ? 200 : 300));
+                $nameBonus = (int)($nameMatchRatio * 300);
                 $score += $nameBonus;
                 
-                if ($nameMatchCount === count($nameWords) && !$isAlternative) {
+                // BONUS EXTRA si TOUS les mots matchent
+                if ($nameMatchCount === count($nameWords)) {
                     $score += 200;
                 }
             }
 
-            // MATCHING TYPE
+            // ==========================================
+            // MATCHING TYPE : Obligatoire mais flexible
+            // ==========================================
+            
             $typeMatched = false;
-            $hasStrongNameMatch = $nameMatchCount >= 2;
+            $hasStrongNameMatch = $nameMatchCount >= 2; // Au moins 2 mots du name matchent
             
             if (!empty($typeParts) && !empty($productType)) {
+                // Vérifier le type de base (OBLIGATOIRE pour être considéré)
                 if (!empty($typeParts[0])) {
                     $baseTypeLower = mb_strtolower(trim($typeParts[0]));
                     
                     if (str_contains($productType, $baseTypeLower)) {
-                        $score += $isAlternative ? 150 : 300;
+                        $score += 300;
                         $typeMatched = true;
+                        
+                        \Log::debug('✅ TYPE DE BASE correspondant', [
+                            'product_id' => $product['id'] ?? 0,
+                            'base_type_recherché' => $baseTypeLower,
+                            'product_type' => $productType,
+                            'bonus' => 300
+                        ]);
                     } else {
-                        $score -= $isAlternative ? 100 : 200;
+                        // MALUS car le type de base ne correspond pas
+                        // Même avec un bon NAME, le TYPE doit matcher
+                        $score -= 200;
+                        \Log::debug('❌ TYPE DE BASE non correspondant', [
+                            'product_id' => $product['id'] ?? 0,
+                            'base_type_recherché' => $baseTypeLower,
+                            'product_type' => $productType,
+                            'name_match_count' => $nameMatchCount,
+                            'malus' => -200
+                        ]);
                     }
                 }
                 
+                // Vérifier chaque partie du type
                 foreach ($typeParts as $index => $part) {
                     $partLower = mb_strtolower(trim($part));
                     if (!empty($partLower)) {
                         if (str_contains($productType, $partLower)) {
                             $partBonus = 100 - ($index * 20);
                             $partBonus = max($partBonus, 20);
-                            
-                            if ($isAlternative) {
-                                $partBonus = (int)($partBonus * 0.7);
-                            }
                             
                             $score += $partBonus;
                             $matchedTypeParts[] = [
@@ -668,18 +609,21 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     }
                 }
                 
+                // Bonus pour match complet du type
                 if (count($matchedTypeParts) === $typePartsCount && $typePartsCount > 0) {
-                    $score += $isAlternative ? 75 : 150;
+                    $score += 150;
                 }
                 
+                // Bonus pour type exact
                 $typeLower = mb_strtolower(trim($type));
                 if (!empty($typeLower) && str_contains($productType, $typeLower)) {
-                    $score += $isAlternative ? 100 : 200;
+                    $score += 200;
                     $typeMatched = true;
                 }
                 
+                // Bonus si le type commence par le type recherché
                 if (!empty($typeLower) && str_starts_with($productType, $typeLower)) {
-                    $score += $isAlternative ? 50 : 100;
+                    $score += 100;
                 }
             }
 
@@ -695,12 +639,92 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'is_coffret' => $productIsCoffret,
                 'coffret_bonus_applied' => ($isCoffretSource && $productIsCoffret),
                 'name_match_count' => $nameMatchCount,
-                'name_words_total' => count($nameWords),
-                'is_alternative' => $isAlternative
+                'name_words_total' => count($nameWords)
             ];
         })
         ->sortByDesc('score')
         ->values();
+
+        \Log::info('Scoring détaillé (NAME ET TYPE OBLIGATOIRES)', [
+            'total_products' => $scoredProducts->count(),
+            'type_recherche' => $type,
+            'type_parts' => $typeParts,
+            'name_words' => $nameWords,
+            'recherche_coffret' => $isCoffretSource,
+            'top_10_scores' => $scoredProducts->take(10)->map(function($item) {
+                return [
+                    'id' => $item['product']['id'] ?? 0,
+                    'score' => $item['score'],
+                    'is_coffret' => $item['is_coffret'],
+                    'coffret_bonus' => $item['coffret_bonus_applied'],
+                    'name_match' => $item['name_match_count'] . '/' . $item['name_words_total'],
+                    'has_strong_name' => $item['has_strong_name_match'],
+                    'type_match' => $item['type_matched'],
+                    'name' => $item['product']['name'] ?? '',
+                    'type' => $item['product']['type'] ?? '',
+                    'matched_type_parts' => array_map(function($part) {
+                        return "{$part['part']} (+{$part['bonus']} pts)";
+                    }, $item['matched_type_parts']),
+                    'all_type_matched' => $item['all_type_parts_matched'],
+                    'match_ratio' => $item['type_parts_count'] > 0 
+                        ? round(($item['matched_count'] / $item['type_parts_count']) * 100) . '%'
+                        : '0%'
+                ];
+            })->toArray()
+        ]);
+
+        // FILTRAGE STRICT : NAME ET TYPE doivent TOUS LES DEUX matcher
+        $scoredProducts = $scoredProducts->filter(function($item) use ($nameWords) {
+            $hasNameMatch = !empty($nameWords) ? $item['name_match_count'] > 0 : true;
+            $hasStrongNameMatch = $item['has_strong_name_match']; // 2+ mots du NAME
+            $hasTypeMatch = $item['type_matched']; // Au moins le type de base matche
+            
+            // RÈGLE STRICTE :
+            // - Le NAME doit matcher (au moins 1 mot, de préférence 2+)
+            // - ET le TYPE doit matcher (au moins le type de base)
+            // Si le NAME matche fortement (2+ mots) mais le TYPE ne matche pas du tout, on REJETTE quand même
+            $keepProduct = $item['score'] > 0 && $hasNameMatch && $hasTypeMatch;
+            
+            if (!$keepProduct) {
+                \Log::debug('Produit exclu car NAME ou TYPE ne matche pas', [
+                    'product_id' => $item['product']['id'] ?? 0,
+                    'product_name' => $item['product']['name'] ?? '',
+                    'product_type' => $item['product']['type'] ?? '',
+                    'score' => $item['score'],
+                    'name_match' => $hasNameMatch,
+                    'strong_name_match' => $hasStrongNameMatch,
+                    'type_match' => $hasTypeMatch,
+                    'name_match_count' => $item['name_match_count'],
+                    'name_words_total' => $item['name_words_total'],
+                    'raison' => !$hasNameMatch ? 'NAME ne matche pas' : (!$hasTypeMatch ? 'TYPE ne matche pas' : 'Score trop faible')
+                ]);
+            }
+            
+            return $keepProduct;
+        });
+
+        \Log::info('Après filtrage (NAME ET TYPE OBLIGATOIRES)', [
+            'produits_restants' => $scoredProducts->count()
+        ]);
+
+        if ($scoredProducts->isEmpty()) {
+            \Log::info('Aucun produit après filtrage');
+            $this->matchingProducts = [];
+            $this->groupedResults = [];
+            return;
+        }
+
+        $rankedProducts = $scoredProducts->pluck('product')->toArray();
+        $this->matchingProducts = $rankedProducts;
+
+        \Log::info('Produits après scoring (avant déduplication)', [
+            'count' => count($this->matchingProducts),
+            'best_score' => $scoredProducts->first()['score'] ?? 0,
+            'worst_score' => $scoredProducts->last()['score'] ?? 0
+        ]);
+
+        $this->groupResultsByScrapeReference($this->matchingProducts);
+        $this->validateBestMatchWithAI();
     }
 
     /**
@@ -776,6 +800,10 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             }
             
             if (!empty($foundParts)) {
+                \Log::info('Type décomposé en parties hiérarchiques', [
+                    'type_original' => $type,
+                    'parties' => $foundParts
+                ]);
                 return $foundParts;
             }
             
@@ -813,6 +841,10 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             ], $product);
         });
 
+        \Log::info('Avant déduplication des résultats', [
+            'total_produits' => $productsCollection->count()
+        ]);
+
         $uniqueProducts = $productsCollection
             ->groupBy(function ($product) {
                 return md5(
@@ -829,7 +861,28 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             ->values()
             ->sortByDesc('scrape_reference_id');
 
+        \Log::info('Après déduplication', [
+            'produits_avant' => $productsCollection->count(),
+            'produits_apres' => $uniqueProducts->count(),
+            'produits_supprimés' => $productsCollection->count() - $uniqueProducts->count()
+        ]);
+
         $this->matchingProducts = $uniqueProducts->take(200)->toArray();
+
+        \Log::info('Résultats finaux après déduplication', [
+            'total_produits' => count($this->matchingProducts),
+            'par_site' => $uniqueProducts->groupBy('web_site_id')->map(fn($group) => $group->count())->toArray()
+        ]);
+
+        $bySiteStats = $uniqueProducts->groupBy('web_site_id')->map(function ($siteProducts, $siteId) {
+            return [
+                'site_id' => $siteId,
+                'total_products' => $siteProducts->count(),
+                'max_scrape_ref_id' => $siteProducts->max('scrape_reference_id'),
+                'min_scrape_ref_id' => $siteProducts->min('scrape_reference_id'),
+                'products' => $siteProducts->values()->toArray()
+            ];
+        });
 
         $grouped = $uniqueProducts->groupBy('scrape_reference');
         
@@ -864,49 +917,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'site_ids' => $group->pluck('web_site_id')->unique()->values()->toArray()
             ];
         })->toArray();
-    }
 
-    /**
-     * NOUVEAU: Groupe les résultats alternatifs
-     */
-    private function groupAlternativesByScrapeReference(array $products)
-    {
-        if (empty($products)) {
-            $this->alternativeProducts = [];
-            $this->groupedAlternatives = [];
-            return;
-        }
-
-        $productsCollection = collect($products)->map(function ($product) {
-            return array_merge([
-                'scrape_reference' => 'unknown_' . ($product['id'] ?? uniqid()),
-                'scrape_reference_id' => $product['scrape_reference_id'] ?? 0,
-                'web_site_id' => 0,
-                'id' => 0,
-                'vendor' => '',
-                'name' => '',
-                'type' => '',
-                'variation' => ''
-            ], $product);
-        });
-
-        $uniqueProducts = $productsCollection
-            ->groupBy(function ($product) {
-                return md5(
-                    strtolower(trim($product['vendor'])) . '|' .
-                    strtolower(trim($product['name'])) . '|' .
-                    strtolower(trim($product['type'])) . '|' .
-                    strtolower(trim($product['variation'])) . '|' .
-                    $product['web_site_id']
-                );
-            })
-            ->map(function ($group) {
-                return $group->sortByDesc('scrape_reference_id')->first();
-            })
-            ->values()
-            ->sortByDesc('scrape_reference_id');
-
-        $this->alternativeProducts = $uniqueProducts->take(100)->toArray();
+        $this->groupedResults['_site_stats'] = $bySiteStats->toArray();
     }
 
     /**
@@ -976,8 +988,17 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         }
 
         if (!$searchCategory) {
+            \Log::info('Type de recherche non catégorisé, pas de filtrage par type de base', [
+                'type' => $searchType
+            ]);
             return $products;
         }
+
+        \Log::info('Filtrage par catégorie de type', [
+            'type_recherché' => $searchType,
+            'catégorie' => $searchCategory,
+            'mots_clés_catégorie' => $typeCategories[$searchCategory]
+        ]);
 
         $filtered = collect($products)->filter(function ($product) use ($searchCategory, $typeCategories) {
             $productType = mb_strtolower($product['type'] ?? '');
@@ -1000,8 +1021,26 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 return true;
             }
 
-            return ($productCategory === $searchCategory);
+            $match = ($productCategory === $searchCategory);
+            
+            if (!$match) {
+                \Log::debug('Produit exclu par filtrage de type', [
+                    'product_id' => $product['id'] ?? 0,
+                    'product_name' => $product['name'] ?? '',
+                    'product_type' => $productType,
+                    'product_category' => $productCategory,
+                    'search_category' => $searchCategory
+                ]);
+            }
+            
+            return $match;
         })->values()->toArray();
+
+        \Log::info('Résultat du filtrage par type de base', [
+            'produits_avant' => count($products),
+            'produits_après' => count($filtered),
+            'produits_exclus' => count($products) - count($filtered)
+        ]);
 
         return $filtered;
     }
@@ -1168,23 +1207,30 @@ Score de confiance entre 0 et 1."
         <div class="px-6 py-4 bg-blue-50 border-b border-blue-200">
             <h3 class="font-semibold text-gray-900 mb-3">🔍 Recherche Manuelle</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Vendor (readonly) -->
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Marque (Vendor)</label>
                     <input type="text" wire:model="manualVendor" readonly
                         class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-600 cursor-not-allowed">
                 </div>
+
+                <!-- Name -->
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Nom de la gamme</label>
                     <input type="text" wire:model="manualName"
                         class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                         placeholder="Ex: J'adore, N°5, Vital Perfection">
                 </div>
+
+                <!-- Type -->
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Type de produit</label>
                     <input type="text" wire:model="manualType"
                         class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                         placeholder="Ex: Eau de Parfum, Crème visage">
                 </div>
+
+                <!-- Variation -->
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Contenance</label>
                     <input type="text" wire:model="manualVariation"
@@ -1192,6 +1238,7 @@ Score de confiance entre 0 et 1."
                         placeholder="Ex: 50 ml, 200 ml">
                 </div>
             </div>
+
             <div class="mt-4 flex justify-end">
                 <button wire:click="manualSearch" wire:loading.attr="disabled"
                     class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium shadow-sm">
@@ -1255,303 +1302,210 @@ Score de confiance entre 0 et 1."
         <!-- Statistiques (quand la recherche est terminée) -->
         @if(!empty($groupedResults) && !$isLoading)
             <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-sm text-blue-800">
-                            <span class="font-semibold">{{ count($matchingProducts) }}</span> produit(s) principal(aux) trouvé(s)
-                        </p>
-                        <!-- NOUVEAU: Stats pour les alternatifs -->
-                        @if(!empty($alternativeProducts))
-                            <p class="text-sm text-orange-700 mt-1">
-                                + <span class="font-semibold">{{ count($alternativeProducts) }}</span> résultat(s) alternatif(s)
-                            </p>
-                        @endif
+                <p class="text-sm text-blue-800">
+                    <span class="font-semibold">{{ count($matchingProducts) }}</span> produit(s) unique(s) trouvé(s)
+                    @if(isset($groupedResults['_site_stats']))
+                        (après déduplication)
+                    @endif
+                </p>
+                @if(isset($groupedResults['_site_stats']))
+                    <div class="mt-2 flex flex-wrap gap-2">
+                        @foreach($groupedResults['_site_stats'] as $siteId => $stats)
+                            @php
+                                $siteInfo = collect($availableSites)->firstWhere('id', $siteId);
+                            @endphp
+                            @if($siteInfo)
+                                <span class="px-2 py-1 bg-white border border-blue-300 rounded text-xs">
+                                    <span class="font-semibold">{{ $siteInfo['name'] }}</span>: 
+                                    <span class="text-blue-700 font-bold">{{ $stats['total_products'] }}</span>
+                                </span>
+                            @endif
+                        @endforeach
                     </div>
-                </div>
+                @endif
             </div>
         @endif
 
-        <!-- Section des produits PRINCIPAUX -->
+        <!-- Section des produits GROUPÉS PAR SITE -->
         @if(!empty($matchingProducts) && !$isLoading)
-            <div class="mb-12">
-                <div class="flex items-center gap-2 mb-4">
-                    <h2 class="text-2xl font-bold text-gray-900">✅ Résultats Principaux</h2>
-                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
-                        Matching strict
-                    </span>
-                </div>
-                
-                <div class="mx-auto max-w-7xl sm:px-6 lg:px-8 space-y-8">
+            <div class="mx-auto max-w-7xl sm:px-6 lg:px-8 space-y-8">
+                <h2 class="sr-only">Produits</h2>
+
+                @php
+                    // Grouper les produits par site
+                    $productsBySite = collect($matchingProducts)->groupBy('web_site_id');
+                @endphp
+
+                @foreach($productsBySite as $siteId => $siteProducts)
                     @php
-                        $productsBySite = collect($matchingProducts)->groupBy('web_site_id');
+                        $siteInfo = collect($availableSites)->firstWhere('id', $siteId);
                     @endphp
+                    
+                    <!-- En-tête de section par site -->
+                    <div class="mb-8">
+                        <div class="flex items-center justify-between mb-4 pb-3 border-b-2 border-gray-300">
+                            <h3 class="text-lg font-bold text-gray-900">
+                                @if($siteInfo)
+                                    🌐 {{ $siteInfo['name'] }}
+                                @else
+                                    🌐 Site inconnu
+                                @endif
+                            </h3>
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-indigo-100 text-indigo-800">
+                                {{ $siteProducts->count() }} produit(s)
+                            </span>
+                        </div>
 
-                    @foreach($productsBySite as $siteId => $siteProducts)
-                        @php
-                            $siteInfo = collect($availableSites)->firstWhere('id', $siteId);
-                        @endphp
-                        
-                        <div class="mb-8">
-                            <div class="flex items-center justify-between mb-4 pb-3 border-b-2 border-gray-300">
-                                <h3 class="text-lg font-bold text-gray-900">
-                                    @if($siteInfo)
-                                        🌐 {{ $siteInfo['name'] }}
-                                    @else
-                                        🌐 Site inconnu
-                                    @endif
-                                </h3>
-                                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-indigo-100 text-indigo-800">
-                                    {{ $siteProducts->count() }} produit(s)
-                                </span>
-                            </div>
-
-                            <div class="-mx-px grid grid-cols-2 border-l border-gray-200 sm:mx-0 md:grid-cols-3 lg:grid-cols-4">
-                                @foreach($siteProducts as $product)
-                                    @php
-                                        $hasUrl = !empty($product['url']);
-                                        $isBestMatch = $bestMatch && $bestMatch['id'] === $product['id'];
-                                        $cardClass = "group relative border-r border-b border-gray-200 p-4 sm:p-6 cursor-pointer transition hover:bg-gray-50";
-                                        if ($isBestMatch) {
-                                            $cardClass .= " ring-2 ring-indigo-500 bg-indigo-50";
-                                        }
-                                    @endphp
+                        <!-- Grille des produits pour ce site -->
+                        <div class="-mx-px grid grid-cols-2 border-l border-gray-200 sm:mx-0 md:grid-cols-3 lg:grid-cols-4">
+                            @foreach($siteProducts as $product)
+                                @php
+                                    $hasUrl = !empty($product['url']);
+                                    $isBestMatch = $bestMatch && $bestMatch['id'] === $product['id'];
+                                    $cardClass = "group relative border-r border-b border-gray-200 p-4 sm:p-6 cursor-pointer transition hover:bg-gray-50";
+                                    if ($isBestMatch) {
+                                        $cardClass .= " ring-2 ring-indigo-500 bg-indigo-50";
+                                    }
+                                @endphp
+                                
+                                @if($hasUrl)
+                                    <a href="{{ $product['url'] }}" target="_blank" rel="noopener noreferrer" 
+                                       class="{{ $cardClass }}">
+                                @else
+                                    <div class="{{ $cardClass }}">
+                                @endif
                                     
-                                    @if($hasUrl)
-                                        <a href="{{ $product['url'] }}" target="_blank" rel="noopener noreferrer" 
-                                           class="{{ $cardClass }}">
+                                    <!-- Image du produit -->
+                                    @if(!empty($product['image_url']))
+                                        <img src="{{ $product['image_url'] }}" 
+                                             alt="{{ $product['name'] }}"
+                                             class="aspect-square rounded-lg bg-gray-200 object-cover group-hover:opacity-75"
+                                             onerror="this.src='https://placehold.co/600x400/e5e7eb/9ca3af?text=No+Image'">
                                     @else
-                                        <div class="{{ $cardClass }}">
+                                        <img src="https://placehold.co/600x400/e5e7eb/9ca3af?text=No+Image" 
+                                             alt="Image non disponible"
+                                             class="aspect-square rounded-lg bg-gray-200 object-cover group-hover:opacity-75">
                                     @endif
-                                        
-                                        @if(!empty($product['image_url']))
-                                            <img src="{{ $product['image_url'] }}" 
-                                                 alt="{{ $product['name'] }}"
-                                                 class="aspect-square rounded-lg bg-gray-200 object-cover group-hover:opacity-75"
-                                                 onerror="this.src='https://placehold.co/600x400/e5e7eb/9ca3af?text=No+Image'">
-                                        @else
-                                            <img src="https://placehold.co/600x400/e5e7eb/9ca3af?text=No+Image" 
-                                                 alt="Image non disponible"
-                                                 class="aspect-square rounded-lg bg-gray-200 object-cover group-hover:opacity-75">
-                                        @endif
 
-                                        <div class="pt-4 pb-4 text-center">
-                                            <div class="mb-2 flex justify-center gap-1">
-                                                @php
-                                                    $nameMatches = false;
-                                                    if (!empty($extractedData['name'])) {
-                                                        $searchNameLower = mb_strtolower($extractedData['name']);
-                                                        $productNameLower = mb_strtolower($product['name'] ?? '');
-                                                        $nameMatches = str_contains($productNameLower, $searchNameLower);
-                                                    }
-                                                    
-                                                    $typeMatches = false;
-                                                    if (!empty($extractedData['type'])) {
-                                                        $searchTypeLower = mb_strtolower($extractedData['type']);
-                                                        $productTypeLower = mb_strtolower($product['type'] ?? '');
-                                                        $typeMatches = str_contains($productTypeLower, $searchTypeLower);
-                                                    }
-                                                @endphp
-                                                
-                                                @if($nameMatches)
-                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                                                        ✓ Name
-                                                    </span>
-                                                @endif
-                                                
-                                                @if($typeMatches)
-                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                                        ✓ Type
-                                                    </span>
-                                                @endif
-                                            </div>
-
-                                            @if($product['name'] && (str_contains(strtolower($product['name']), 'coffret') || str_contains(strtolower($product['name']), 'set') || str_contains(strtolower($product['type'] ?? ''), 'coffret')))
-                                                <div class="mb-2">
-                                                    <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800">🎁 Coffret</span>
-                                                </div>
-                                            @endif
-
-                                            <h3 class="text-sm font-medium text-gray-900">{{ $product['vendor'] }}</h3>
-                                            <p class="text-xs text-gray-600 mt-1 truncate">{{ $product['name'] }}</p>
-                                            
+                                    <div class="pt-4 pb-4 text-center">
+                                        <!-- Badges de matching -->
+                                        <div class="mb-2 flex justify-center gap-1">
                                             @php
-                                                $productTypeLower = strtolower($product['type'] ?? '');
-                                                $badgeColor = 'bg-gray-100 text-gray-800';
+                                                // Vérifier si le name matche
+                                                $nameMatches = false;
+                                                if (!empty($extractedData['name'])) {
+                                                    $searchNameLower = mb_strtolower($extractedData['name']);
+                                                    $productNameLower = mb_strtolower($product['name'] ?? '');
+                                                    $nameMatches = str_contains($productNameLower, $searchNameLower);
+                                                }
                                                 
-                                                if (str_contains($productTypeLower, 'eau de toilette') || str_contains($productTypeLower, 'eau de parfum')) {
-                                                    $badgeColor = 'bg-purple-100 text-purple-800';
-                                                } elseif (str_contains($productTypeLower, 'déodorant') || str_contains($productTypeLower, 'deodorant')) {
-                                                    $badgeColor = 'bg-green-100 text-green-800';
-                                                } elseif (str_contains($productTypeLower, 'crème') || str_contains($productTypeLower, 'creme')) {
-                                                    $badgeColor = 'bg-pink-100 text-pink-800';
-                                                } elseif (str_contains($productTypeLower, 'huile')) {
-                                                    $badgeColor = 'bg-yellow-100 text-yellow-800';
+                                                // Vérifier si le type matche
+                                                $typeMatches = false;
+                                                if (!empty($extractedData['type'])) {
+                                                    $searchTypeLower = mb_strtolower($extractedData['type']);
+                                                    $productTypeLower = mb_strtolower($product['type'] ?? '');
+                                                    $typeMatches = str_contains($productTypeLower, $searchTypeLower);
                                                 }
                                             @endphp
                                             
-                                            <div class="mt-1">
-                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ $badgeColor }}">
-                                                    {{ $product['type'] }}
+                                            @if($nameMatches)
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                                    ✓ Name
                                                 </span>
-                                            </div>
+                                            @endif
                                             
-                                            <p class="text-xs text-gray-400 mt-1">{{ $product['variation'] }}</p>
-                                            <p class="mt-4 text-base font-medium text-gray-900">
-                                                {{ number_format((float)($product['prix_ht'] ?? 0), 2) }} €
-                                            </p>
-
-                                            @if($hasUrl)
-                                                <div class="mt-2">
-                                                    <span class="inline-flex items-center text-xs font-medium text-indigo-600">
-                                                        Ouvrir dans un nouvel onglet
-                                                        <svg class="ml-1 h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                                        </svg>
-                                                    </span>
-                                                </div>
-                                            @endif
-
-                                            @if(isset($product['scrape_reference_id']))
-                                                <p class="text-xs text-gray-400 mt-2">Scrape ID: {{ $product['scrape_reference_id'] }}</p>
+                                            @if($typeMatches)
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                                    ✓ Type
+                                                </span>
                                             @endif
                                         </div>
-                                        
-                                    @if($hasUrl)
-                                        </a>
-                                    @else
-                                        </div>
-                                    @endif
-                                @endforeach
-                            </div>
-                        </div>
-                    @endforeach
-                </div>
-            </div>
-        @endif
 
-        <!-- NOUVELLE SECTION: Résultats Alternatifs -->
-        @if(!empty($alternativeProducts) && !$isLoading)
-            <div class="mt-12 pt-8 border-t-4 border-orange-200">
-                <div class="flex items-center gap-2 mb-4">
-                    <h2 class="text-2xl font-bold text-gray-900">💡 Résultats Alternatifs</h2>
-                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-orange-100 text-orange-800">
-                        Matching souple
-                    </span>
-                </div>
-                <p class="text-sm text-gray-600 mb-6">
-                    Ces produits correspondent partiellement à votre recherche. Ils partagent la même marque mais peuvent différer sur certains critères.
-                </p>
-                
-                <div class="mx-auto max-w-7xl sm:px-6 lg:px-8 space-y-8">
-                    @php
-                        $alternativesBySite = collect($alternativeProducts)->groupBy('web_site_id');
-                    @endphp
-
-                    @foreach($alternativesBySite as $siteId => $siteProducts)
-                        @php
-                            $siteInfo = collect($availableSites)->firstWhere('id', $siteId);
-                        @endphp
-                        
-                        <div class="mb-8">
-                            <div class="flex items-center justify-between mb-4 pb-3 border-b-2 border-orange-200">
-                                <h3 class="text-lg font-bold text-gray-900">
-                                    @if($siteInfo)
-                                        🌐 {{ $siteInfo['name'] }}
-                                    @else
-                                        🌐 Site inconnu
-                                    @endif
-                                </h3>
-                                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-orange-100 text-orange-800">
-                                    {{ $siteProducts->count() }} produit(s)
-                                </span>
-                            </div>
-
-                            <div class="-mx-px grid grid-cols-2 border-l border-orange-100 sm:mx-0 md:grid-cols-3 lg:grid-cols-4">
-                                @foreach($siteProducts as $product)
-                                    @php
-                                        $hasUrl = !empty($product['url']);
-                                        $cardClass = "group relative border-r border-b border-orange-100 p-4 sm:p-6 cursor-pointer transition hover:bg-orange-50";
-                                    @endphp
-                                    
-                                    @if($hasUrl)
-                                        <a href="{{ $product['url'] }}" target="_blank" rel="noopener noreferrer" 
-                                           class="{{ $cardClass }}">
-                                    @else
-                                        <div class="{{ $cardClass }}">
-                                    @endif
-                                        
-                                        @if(!empty($product['image_url']))
-                                            <img src="{{ $product['image_url'] }}" 
-                                                 alt="{{ $product['name'] }}"
-                                                 class="aspect-square rounded-lg bg-gray-200 object-cover group-hover:opacity-75"
-                                                 onerror="this.src='https://placehold.co/600x400/e5e7eb/9ca3af?text=No+Image'">
-                                        @else
-                                            <img src="https://placehold.co/600x400/e5e7eb/9ca3af?text=No+Image" 
-                                                 alt="Image non disponible"
-                                                 class="aspect-square rounded-lg bg-gray-200 object-cover group-hover:opacity-75">
+                                        <!-- Badge coffret -->
+                                        @if($product['name'] && (str_contains(strtolower($product['name']), 'coffret') || str_contains(strtolower($product['name']), 'set') || str_contains(strtolower($product['type'] ?? ''), 'coffret')))
+                                            <div class="mb-2">
+                                                <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800">🎁 Coffret</span>
+                                            </div>
                                         @endif
 
-                                        <div class="pt-4 pb-4 text-center">
-                                            <!-- Badge "Alternatif" -->
-                                            <div class="mb-2">
-                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">
-                                                    ⚡ Alternatif
-                                                </span>
-                                            </div>
-
-                                            @if($product['name'] && (str_contains(strtolower($product['name']), 'coffret') || str_contains(strtolower($product['name']), 'set') || str_contains(strtolower($product['type'] ?? ''), 'coffret')))
-                                                <div class="mb-2">
-                                                    <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800">🎁 Coffret</span>
-                                                </div>
-                                            @endif
-
-                                            <h3 class="text-sm font-medium text-gray-900">{{ $product['vendor'] }}</h3>
-                                            <p class="text-xs text-gray-600 mt-1 truncate">{{ $product['name'] }}</p>
+                                        <!-- Nom du produit -->
+                                        <h3 class="text-sm font-medium text-gray-900">
+                                            {{ $product['vendor'] }}
+                                        </h3>
+                                        <p class="text-xs text-gray-600 mt-1 truncate">{{ $product['name'] }}</p>
+                                        
+                                        <!-- Type avec badge coloré -->
+                                        @php
+                                            $productTypeLower = strtolower($product['type'] ?? '');
+                                            $badgeColor = 'bg-gray-100 text-gray-800';
                                             
-                                            <div class="mt-1">
-                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
-                                                    {{ $product['type'] }}
-                                                </span>
-                                            </div>
-                                            
-                                            <p class="text-xs text-gray-400 mt-1">{{ $product['variation'] }}</p>
-                                            <p class="mt-4 text-base font-medium text-gray-900">
-                                                {{ number_format((float)($product['prix_ht'] ?? 0), 2) }} €
-                                            </p>
-
-                                            @if($hasUrl)
-                                                <div class="mt-2">
-                                                    <span class="inline-flex items-center text-xs font-medium text-orange-600">
-                                                        Ouvrir dans un nouvel onglet
-                                                        <svg class="ml-1 h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                                        </svg>
-                                                    </span>
-                                                </div>
-                                            @endif
+                                            if (str_contains($productTypeLower, 'eau de toilette') || str_contains($productTypeLower, 'eau de parfum')) {
+                                                $badgeColor = 'bg-purple-100 text-purple-800';
+                                            } elseif (str_contains($productTypeLower, 'déodorant') || str_contains($productTypeLower, 'deodorant')) {
+                                                $badgeColor = 'bg-green-100 text-green-800';
+                                            } elseif (str_contains($productTypeLower, 'crème') || str_contains($productTypeLower, 'creme')) {
+                                                $badgeColor = 'bg-pink-100 text-pink-800';
+                                            } elseif (str_contains($productTypeLower, 'huile')) {
+                                                $badgeColor = 'bg-yellow-100 text-yellow-800';
+                                            }
+                                        @endphp
+                                        
+                                        <div class="mt-1">
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ $badgeColor }}">
+                                                {{ $product['type'] }}
+                                            </span>
                                         </div>
                                         
-                                    @if($hasUrl)
-                                        </a>
-                                    @else
-                                        </div>
-                                    @endif
-                                @endforeach
-                            </div>
-                        </div>
-                    @endforeach
-                </div>
-            </div>
-        @endif
+                                        <p class="text-xs text-gray-400 mt-1">{{ $product['variation'] }}</p>
 
-        <!-- États vides -->
-        @if($isLoading)
+                                        <!-- Prix -->
+                                        <p class="mt-4 text-base font-medium text-gray-900">
+                                            {{ number_format((float)($product['prix_ht'] ?? 0), 2) }} €
+                                        </p>
+
+                                        <!-- Bouton voir produit -->
+                                        @if($hasUrl)
+                                            <div class="mt-2">
+                                                <span class="inline-flex items-center text-xs font-medium text-indigo-600">
+                                                    Ouvrir dans un nouvel onglet
+                                                    <svg class="ml-1 h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                                    </svg>
+                                                </span>
+                                            </div>
+                                        @else
+                                            <div class="mt-2">
+                                                <span class="inline-flex items-center text-xs font-medium text-gray-400">
+                                                    URL non disponible
+                                                </span>
+                                            </div>
+                                        @endif
+
+                                        <!-- ID scrape -->
+                                        @if(isset($product['scrape_reference_id']))
+                                            <p class="text-xs text-gray-400 mt-2">Scrape ID: {{ $product['scrape_reference_id'] }}</p>
+                                        @endif
+                                    </div>
+                                    
+                                @if($hasUrl)
+                                    </a>
+                                @else
+                                    </div>
+                                @endif
+                            @endforeach
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        @elseif($isLoading)
+            <!-- État de chargement -->
             <div class="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
                 <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
                 <h3 class="mt-4 text-sm font-medium text-gray-900">Extraction en cours</h3>
                 <p class="mt-1 text-sm text-gray-500">Analyse du produit et recherche des correspondances...</p>
             </div>
-        @elseif($extractedData && empty($matchingProducts) && empty($alternativeProducts))
+        @elseif($extractedData && empty($matchingProducts))
+            <!-- Aucun résultat -->
             <div class="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
                 <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1559,7 +1513,8 @@ Score de confiance entre 0 et 1."
                 <h3 class="mt-2 text-sm font-medium text-gray-900">Aucun produit trouvé</h3>
                 <p class="mt-1 text-sm text-gray-500">Essayez de modifier les filtres par site ou utilisez la recherche manuelle</p>
             </div>
-        @elseif(!$extractedData)
+        @else
+            <!-- État initial (avant chargement) -->
             <div class="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
                 <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
