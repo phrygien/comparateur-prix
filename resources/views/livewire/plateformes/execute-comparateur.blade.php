@@ -64,9 +64,13 @@ new class extends Component {
                                 'content' => 'Tu es un expert en extraction de données de produits cosmétiques. 
 
 RÈGLES IMPORTANTES pour le champ "type" :
+- Pour les LAITS CORPORELS : utilise "Lait pour le corps" ou "Lait corps"
+- Pour les HUILES CORPORELLES : utilise "Huile pour le corps" ou "Huile corps"  
+- Pour les CRÈMES CORPORELLES : utilise "Crème pour le corps" ou "Crème corps"
 - Pour les ROUGES À LÈVRES : utilise "Rouge à lèvres" comme type de base
 - Pour les RECHARGES de rouge à lèvres : utilise "Recharge" ou "Recharge rouge à lèvres"
-- Le type doit être la CATÉGORIE du produit (Crème, Huile, Sérum, Eau de Parfum, Rouge à lèvres, Recharge, etc.)
+- Le type doit être la CATÉGORIE PRÉCISE du produit
+- NE PAS confondre lait, huile, crème, gel - ce sont des types DIFFÉRENTS
 - NE PAS inclure le nom de la gamme dans le type
 - SI le produit est une "recharge" ou "refill", le mentionner dans le type
 
@@ -82,17 +86,35 @@ Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémen
                                 'content' => "Extrait les informations suivantes du nom de produit et retourne-les au format JSON strict :
 
 RÈGLES IMPORTANTES :
-- vendor : la marque du produit (ex: Dior, Shiseido, Chanel, Guerlain)
-- name : le nom de la gamme/ligne de produit UNIQUEMENT (ex: \"J'adore\", \"Vital Perfection\", \"La Vie Est Belle\", \"Rouge G\")
-- type : UNIQUEMENT la catégorie/type du produit (ex: \"Huile pour le corps\", \"Eau de Parfum\", \"Crème visage\", \"Sérum\", \"Rouge à lèvres\", \"Recharge\")
-- variation : la contenance/taille avec unité OU le numéro et nom de teinte (ex: \"200 ml\", \"50 ml\", \"30 g\", \"12 Le Brun Amarante\")
+- vendor : la marque du produit (ex: Dior, Shiseido, Chanel, Guerlain, Biotherm)
+- name : le nom de la gamme/ligne de produit UNIQUEMENT (ex: \"J'adore\", \"Vital Perfection\", \"La Vie Est Belle\", \"Rouge G\", \"Life Plankton\")
+- type : UNIQUEMENT la catégorie/type PRÉCIS du produit (ex: \"Lait pour le corps\", \"Huile pour le corps\", \"Crème pour le corps\", \"Eau de Parfum\", \"Crème visage\", \"Sérum\", \"Rouge à lèvres\", \"Recharge\")
+- variation : la contenance/taille avec unité OU le numéro et nom de teinte (ex: \"200 ml\", \"50 ml\", \"30 g\", \"40ml\", \"12 Le Brun Amarante\")
 - is_coffret : true si c'est un coffret/set/kit, false sinon
 
 Nom du produit : {$this->productName}
 
 EXEMPLES DE FORMAT ATTENDU :
 
-Exemple 1 - Rouge à lèvres recharge : \"GUERLAIN Rouge G, La recharge Le rouge à lèvres soin personnalisable 12 Le Brun Amarante\"
+Exemple 1 - Lait corps : \"Biotherm Life Plankton Lait pour le corps lissant et raffermissant 40ml\"
+{
+  \"vendor\": \"Biotherm\",
+  \"name\": \"Life Plankton\",
+  \"type\": \"Lait pour le corps\",
+  \"variation\": \"40 ml\",
+  \"is_coffret\": false
+}
+
+Exemple 2 - Huile corps : \"Guerlain Abeille Royale Huile corps nourrissante 100ml\"
+{
+  \"vendor\": \"Guerlain\",
+  \"name\": \"Abeille Royale\",
+  \"type\": \"Huile pour le corps\",
+  \"variation\": \"100 ml\",
+  \"is_coffret\": false
+}
+
+Exemple 3 - Rouge à lèvres recharge : \"GUERLAIN Rouge G, La recharge Le rouge à lèvres soin personnalisable 12 Le Brun Amarante\"
 {
   \"vendor\": \"Guerlain\",
   \"name\": \"Rouge G\",
@@ -101,48 +123,12 @@ Exemple 1 - Rouge à lèvres recharge : \"GUERLAIN Rouge G, La recharge Le rouge
   \"is_coffret\": false
 }
 
-Exemple 2 - Rouge à lèvres standard : \"GUERLAIN Rouge G Le rouge à lèvres soin personnalisable 03 Le Nude Intense\"
-{
-  \"vendor\": \"Guerlain\",
-  \"name\": \"Rouge G\",
-  \"type\": \"Rouge à lèvres\",
-  \"variation\": \"03 Le Nude Intense\",
-  \"is_coffret\": false
-}
-
-Exemple 3 - Parfum : \"Dior J'adore Les Adorables Huile Scintillante Huile pour le corps 200ml\"
+Exemple 4 - Parfum : \"Dior J'adore Les Adorables Huile Scintillante Huile pour le corps 200ml\"
 {
   \"vendor\": \"Dior\",
   \"name\": \"J'adore Les Adorables\",
   \"type\": \"Huile pour le corps\",
   \"variation\": \"200 ml\",
-  \"is_coffret\": false
-}
-
-Exemple 4 - Produit : \"Chanel N°5 Eau de Parfum Vaporisateur 100 ml\"
-{
-  \"vendor\": \"Chanel\",
-  \"name\": \"N°5\",
-  \"type\": \"Eau de Parfum Vaporisateur\",
-  \"variation\": \"100 ml\",
-  \"is_coffret\": false
-}
-
-Exemple 5 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream Enriched 50ml\"
-{
-  \"vendor\": \"Shiseido\",
-  \"name\": \"Vital Perfection Uplifting and Firming\",
-  \"type\": \"Crème visage Enrichie\",
-  \"variation\": \"50 ml\",
-  \"is_coffret\": false
-}
-
-Exemple 6 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum Intense Vaporisateur 30ml\"
-{
-  \"vendor\": \"Lancôme\",
-  \"name\": \"La Nuit Trésor Rouge Drama\",
-  \"type\": \"Eau de Parfum Intense Vaporisateur\",
-  \"variation\": \"30 ml\",
   \"is_coffret\": false
 }"
                             ]
@@ -345,9 +331,10 @@ Exemple 6 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
      * LOGIQUE DE RECHERCHE OPTIMISÉE
      * 1. Filtrer par VENDOR (obligatoire)
      * 2. Filtrer par statut COFFRET
-     * 3. FILTRAGE STRICT par NAME : TOUS les mots du name (hors vendor) doivent être présents
+     * 3. FILTRAGE STRICT par TYPE DE BASE (éviter lait vs huile vs crème)
+     * 4. FILTRAGE STRICT par NAME : TOUS les mots du name (hors vendor) doivent être présents
      *    Fallback progressif si filtrage strict ne donne rien
-     * 4. SCORER avec :
+     * 5. SCORER avec :
      *    - BONUS ÉNORME (+500) si recherche coffret ET produit est coffret (PRIORITÉ ABSOLUE)
      *    - Matching HIÉRARCHIQUE sur le TYPE : vérifier étape par étape
      */
@@ -435,12 +422,17 @@ Exemple 6 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         $typeFilteredProducts = $this->filterByBaseType($filteredProducts, $type);
 
         if (empty($typeFilteredProducts)) {
-            \Log::info('Aucun produit après filtrage par type de base, on garde tous les produits');
+            \Log::warning('⚠️ AUCUN produit après filtrage STRICT par type de base!', [
+                'type_recherché' => $type,
+                'produits_avant_filtrage' => count($filteredProducts)
+            ]);
+            // On garde quand même les produits pour ne pas bloquer complètement
             $typeFilteredProducts = $filteredProducts;
         } else {
-            \Log::info('✅ Produits après filtrage par TYPE DE BASE', [
+            \Log::info('✅ Produits après filtrage STRICT par TYPE DE BASE', [
                 'count' => count($typeFilteredProducts),
-                'type_recherché' => $type
+                'type_recherché' => $type,
+                'reduction' => count($filteredProducts) - count($typeFilteredProducts)
             ]);
             $filteredProducts = $typeFilteredProducts;
         }
@@ -586,97 +578,98 @@ Exemple 6 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
             // ==========================================
             // MATCHING HIÉRARCHIQUE SUR LE TYPE
+            // UTILISE LES 2 PREMIERS MOTS DU TYPE
             // ==========================================
 
             $typeMatched = false; // Flag pour savoir si le type correspond
 
-            // NOUVEAU : Si le produit N'A PAS de type, on considère qu'il match par défaut
+            // Si le produit N'A PAS de type, on considère qu'il match par défaut
             if (empty($productType)) {
-                $typeMatched = true; // ← IMPORTANT : Considérer comme matché
+                $typeMatched = true;
                 $score += 50; // Petit bonus pour compenser l'absence de type
                 
                 \Log::debug('Produit sans type, considéré comme matché par défaut', [
                     'product_id' => $product['id'] ?? 0,
                     'product_name' => $productName
                 ]);
-            } elseif (!empty($typeParts) && !empty($productType)) {
-                // BONUS CRITIQUE : Vérifier que le TYPE DE BASE correspond
-                if (!empty($typeParts[0])) {
-                    $baseTypeLower = mb_strtolower(trim($typeParts[0]));
-                    if (str_contains($productType, $baseTypeLower)) {
-                        $score += 300; // ÉNORME BONUS pour correspondance du type de base
-                        $typeMatched = true; // Le type de base correspond
-                        \Log::debug('BONUS TYPE DE BASE correspondant', [
+            } elseif (!empty($type) && !empty($productType)) {
+                // EXTRACTION DES 2 PREMIERS MOTS du type recherché
+                $searchTypeLower = mb_strtolower(trim($type));
+                $searchWords = preg_split('/\s+/', $searchTypeLower);
+                $searchBase = array_slice($searchWords, 0, 2);
+                $searchBaseStr = implode(' ', $searchBase);
+
+                // EXTRACTION DES 2 PREMIERS MOTS du type du produit
+                $productWords = preg_split('/\s+/', $productType);
+                $productBase = array_slice($productWords, 0, 2);
+                $productBaseStr = implode(' ', $productBase);
+
+                \Log::debug('Comparaison des 2 premiers mots du type', [
+                    'product_id' => $product['id'] ?? 0,
+                    'search_type_complet' => $searchTypeLower,
+                    'search_2_mots' => $searchBaseStr,
+                    'product_type_complet' => $productType,
+                    'product_2_mots' => $productBaseStr
+                ]);
+
+                // RÈGLE PRINCIPALE : Les 2 premiers mots doivent correspondre
+                // On vérifie si un contient l'autre
+                $baseMatch = str_contains($searchBaseStr, $productBaseStr) || 
+                            str_contains($productBaseStr, $searchBaseStr);
+
+                if ($baseMatch) {
+                    $score += 500; // ÉNORME BONUS pour correspondance des 2 premiers mots
+                    $typeMatched = true;
+                    \Log::debug('✅ BONUS TYPE (2 premiers mots) correspondant', [
+                        'product_id' => $product['id'] ?? 0,
+                        'search_2_mots' => $searchBaseStr,
+                        'product_2_mots' => $productBaseStr,
+                        'bonus' => 500
+                    ]);
+                } else {
+                    // Vérifier si au moins le PREMIER mot correspond
+                    $firstWordMatch = !empty($searchBase[0]) && !empty($productBase[0]) && 
+                                     str_contains($searchBase[0], $productBase[0]) ||
+                                     str_contains($productBase[0], $searchBase[0]);
+
+                    if ($firstWordMatch) {
+                        $score += 200; // BONUS réduit si seul le premier mot correspond
+                        $typeMatched = true;
+                        \Log::debug('⚠️ BONUS TYPE (1er mot uniquement) correspondant', [
                             'product_id' => $product['id'] ?? 0,
-                            'base_type_recherché' => $baseTypeLower,
-                            'product_type' => $productType,
-                            'bonus' => 300
+                            'search_1er_mot' => $searchBase[0] ?? '',
+                            'product_1er_mot' => $productBase[0] ?? '',
+                            'bonus' => 200
                         ]);
                     } else {
-                        // MALUS RÉDUIT si le type de base ne correspond pas
-                        // On réduit le malus pour être plus tolérant
-                        $score -= 100; // Avant: -200, maintenant: -100
-                        \Log::debug('MALUS TYPE DE BASE non correspondant (réduit)', [
+                        // Aucun match sur les 2 premiers mots = MALUS
+                        $score -= 300; // GROS MALUS
+                        \Log::debug('❌ MALUS TYPE : 2 premiers mots ne correspondent pas', [
                             'product_id' => $product['id'] ?? 0,
-                            'base_type_recherché' => $baseTypeLower,
-                            'product_type' => $productType,
-                            'malus' => -100
+                            'search_2_mots' => $searchBaseStr,
+                            'product_2_mots' => $productBaseStr,
+                            'malus' => -300
                         ]);
                     }
                 }
 
-                // Vérifier chaque partie du type dans l'ordre
-                foreach ($typeParts as $index => $part) {
-                    $partLower = mb_strtolower(trim($part));
-                    if (!empty($partLower)) {
-                        // Vérifier si cette partie du type est présente dans le type du produit
-                        if (str_contains($productType, $partLower)) {
-                            // Bonus décroissant selon la position dans la hiérarchie
-                            $partBonus = 100 - ($index * 20); // 100, 80, 60, 40, etc.
-                            $partBonus = max($partBonus, 20); // Minimum 20 points
-
-                            $score += $partBonus;
-                            $matchedTypeParts[] = [
-                                'part' => $part,
-                                'bonus' => $partBonus,
-                                'position' => $index + 1
-                            ];
-
-                            // Si au moins une partie du type correspond, on considère que le type match
-                            if ($index == 0 || $typeMatched) {
-                                $typeMatched = true;
-                            }
-                        }
-                    }
-                }
-
-                // BONUS supplémentaire si TOUTES les parties du type correspondent
-                if (count($matchedTypeParts) === $typePartsCount && $typePartsCount > 0) {
-                    $score += 150; // +150 points pour un match complet
-                }
-
-                // BONUS MAXIMUM si le type complet est une sous-chaîne exacte
-                $typeLower = mb_strtolower(trim($type));
-                if (!empty($typeLower) && str_contains($productType, $typeLower)) {
-                    $score += 200; // +200 points pour type exact dans le produit
+                // BONUS supplémentaire si le type complet du produit est dans le type recherché
+                if (str_contains($searchTypeLower, $productType)) {
+                    $score += 100;
                     $typeMatched = true;
+                    \Log::debug('BONUS EXTRA : type produit contenu dans type recherché', [
+                        'product_id' => $product['id'] ?? 0,
+                        'bonus' => 100
+                    ]);
                 }
 
-                // BONUS supplémentaire si le type du produit commence par le type recherché
-                if (!empty($typeLower) && str_starts_with($productType, $typeLower)) {
-                    $score += 100; // +100 points si le type est au début
-                }
-                
-                // NOUVEAU : BONUS PARTIEL si le type du produit est CONTENU dans le type recherché
-                // Exemple: produit "Parfum Elixir" contenu dans recherche "Parfum Elixir Vaporisateur"
-                if (!empty($typeLower) && !empty($productType) && str_contains($typeLower, $productType)) {
-                    $score += 150; // +150 points pour type produit contenu dans type recherche
-                    $typeMatched = true; // On considère que ça matche
-                    \Log::debug('BONUS TYPE PRODUIT contenu dans TYPE RECHERCHÉ', [
+                // BONUS si le type recherché est dans le type du produit
+                if (str_contains($productType, $searchTypeLower)) {
+                    $score += 100;
+                    $typeMatched = true;
+                    \Log::debug('BONUS EXTRA : type recherché contenu dans type produit', [
                         'product_id' => $product['id'] ?? 0,
-                        'product_type' => $productType,
-                        'search_type' => $typeLower,
-                        'bonus' => 150
+                        'bonus' => 100
                     ]);
                 }
             }
@@ -728,8 +721,7 @@ Exemple 6 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             })->toArray()
         ]);
 
-        // MODIFICATION CRITIQUE : Filtrage final plus SOUPLE
-        // On garde les produits qui ont un bon score de NAME, même si le TYPE ne matche pas parfaitement
+        // FILTRAGE FINAL : Plus strict sur le type match
         $scoredProducts = $scoredProducts->filter(function ($item) use ($nameWords) {
             $hasNameMatch = !empty($nameWords) ? $item['name_match_count'] > 0 : true;
             
@@ -740,6 +732,7 @@ Exemple 6 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             // Garder le produit SI :
             // 1. Il a un NAME match ET un TYPE match (règle stricte)
             // 2. OU il a un EXCELLENT NAME match et un score > 0 (règle souple pour bons candidats)
+            // 3. IMPORTANT: Le score doit être positif (évite les produits avec MALUS TYPE)
             $keepProduct = $item['score'] > 0 && $hasNameMatch && ($item['type_matched'] || $hasExcellentNameMatch);
 
             if (!$keepProduct) {
@@ -759,7 +752,7 @@ Exemple 6 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             return $keepProduct;
         });
 
-        \Log::info('Après filtrage final (NAME obligatoire + TYPE souple)', [
+        \Log::info('Après filtrage final (NAME obligatoire + TYPE strict)', [
             'produits_restants' => $scoredProducts->count()
         ]);
 
@@ -828,11 +821,28 @@ Exemple 6 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'eau de toilette',
                 'eau de cologne',
                 'extrait de parfum',
-                'parfum elixir', // AJOUT pour gérer "Parfum Elixir"
+                'parfum elixir',
                 'eau fraiche',
                 'parfum',
                 'extrait',
                 'cologne'
+            ];
+
+            // AJOUT : Mots-clés pour produits corps (IMPORTANT pour différencier lait/huile/crème)
+            $bodyProductKeywords = [
+                'lait pour le corps',
+                'lait corps',
+                'lait corporel',
+                'huile pour le corps',
+                'huile corps',
+                'huile corporelle',
+                'crème pour le corps',
+                'crème corps',
+                'crème corporelle',
+                'gel pour le corps',
+                'gel corps',
+                'baume pour le corps',
+                'baume corps'
             ];
 
             $intensityKeywords = ['intense', 'extrême', 'absolu', 'concentré', 'léger', 'doux', 'fort', 'puissant'];
@@ -844,8 +854,8 @@ Exemple 6 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             $typeLower = mb_strtolower($type);
             $foundParts = [];
 
-            // Chercher d'abord dans les mots-clés maquillage
-            foreach ($makeupKeywords as $keyword) {
+            // PRIORITÉ 1 : Chercher d'abord dans les produits corps (car c'est le plus spécifique)
+            foreach ($bodyProductKeywords as $keyword) {
                 if (str_contains($typeLower, $keyword)) {
                     $startPos = mb_strpos($typeLower, $keyword);
                     $originalPart = mb_substr($type, $startPos, mb_strlen($keyword));
@@ -855,7 +865,20 @@ Exemple 6 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 }
             }
 
-            // Chercher le type de parfum si pas encore trouvé
+            // PRIORITÉ 2 : Chercher dans les mots-clés maquillage si pas encore trouvé
+            if (empty($foundParts)) {
+                foreach ($makeupKeywords as $keyword) {
+                    if (str_contains($typeLower, $keyword)) {
+                        $startPos = mb_strpos($typeLower, $keyword);
+                        $originalPart = mb_substr($type, $startPos, mb_strlen($keyword));
+                        $foundParts[] = $originalPart;
+                        $typeLower = str_replace($keyword, '', $typeLower);
+                        break;
+                    }
+                }
+            }
+
+            // PRIORITÉ 3 : Chercher le type de parfum si pas encore trouvé
             if (empty($foundParts)) {
                 foreach ($perfumeKeywords as $keyword) {
                     if (str_contains($typeLower, $keyword)) {
@@ -1064,7 +1087,8 @@ Exemple 6 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
     /**
      * Filtre les produits par type de base pour éviter les confusions
-     * MODIFIÉ : Plus tolérant pour les types non catégorisés et les produits sans type
+     * MATCHING SUR 2 MOTS : Compare uniquement les 2 premiers mots du type
+     * Exemple: "Eau de Parfum Vaporisateur" match avec "Eau de Parfum Intense"
      */
     private function filterByBaseType(array $products, string $searchType): array
     {
@@ -1072,92 +1096,111 @@ Exemple 6 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             return $products;
         }
 
-        // Définir les catégories de types incompatibles
-        $typeCategories = [
-            'parfum' => ['eau de parfum', 'parfum', 'eau de toilette', 'eau de cologne', 'eau fraiche', 'extrait de parfum', 'parfum elixir', 'extrait', 'cologne'],
-            'déodorant' => ['déodorant', 'deodorant', 'deo', 'anti-transpirant', 'antitranspirant'],
-            'crème' => ['crème', 'creme', 'baume', 'gel', 'lotion', 'fluide', 'soin'],
-            'huile' => ['huile', 'oil'],
-            'sérum' => ['sérum', 'serum', 'concentrate', 'concentré'],
-            'masque' => ['masque', 'mask', 'patch'],
-            'shampooing' => ['shampooing', 'shampoing', 'shampoo'],
-            'après-shampooing' => ['après-shampooing', 'conditioner', 'après shampooing'],
-            'savon' => ['savon', 'soap', 'gel douche', 'mousse'],
-            'maquillage' => ['fond de teint', 'rouge à lèvres', 'mascara', 'eye-liner', 'fard', 'poudre', 'gloss', 'crayon', 'liner'],
-        ];
-
+        // Extraire les 2 PREMIERS MOTS du type recherché
         $searchTypeLower = mb_strtolower(trim($searchType));
+        $searchWords = preg_split('/\s+/', $searchTypeLower);
+        
+        // Prendre les 2 premiers mots (ou moins si le type est court)
+        $searchBase = array_slice($searchWords, 0, 2);
+        $searchBaseStr = implode(' ', $searchBase);
 
-        // Trouver la catégorie du type recherché
-        $searchCategory = null;
-        foreach ($typeCategories as $category => $keywords) {
-            foreach ($keywords as $keyword) {
-                if (str_contains($searchTypeLower, $keyword)) {
-                    $searchCategory = $category;
-                    break 2;
-                }
-            }
-        }
+        \Log::info('Filtrage par TYPE (2 premiers mots)', [
+            'type_recherché_complet' => $searchType,
+            'type_base_2_mots' => $searchBaseStr,
+            'mots_extraits' => $searchBase
+        ]);
 
-        // CHANGEMENT CLÉ : Si on n'a pas trouvé de catégorie, NE PAS FILTRER
-        if (!$searchCategory) {
-            \Log::info('Type de recherche non catégorisé, pas de filtrage par type de base', [
-                'type' => $searchType
-            ]);
+        // Si on n'a même pas 2 mots, on garde tous les produits
+        if (count($searchBase) < 1) {
+            \Log::info('Type trop court pour filtrage, on garde tous les produits');
             return $products;
         }
 
-        \Log::info('Filtrage par catégorie de type', [
-            'type_recherché' => $searchType,
-            'catégorie' => $searchCategory,
-            'mots_clés_catégorie' => $typeCategories[$searchCategory]
-        ]);
+        // Définir les catégories de types INCOMPATIBLES (pour éviter lait vs huile)
+        $incompatibleGroups = [
+            // Produits corps : lait ≠ huile ≠ crème ≠ gel
+            ['lait', 'huile', 'crème', 'gel'],
+        ];
 
         // Filtrer les produits
-        $filtered = collect($products)->filter(function ($product) use ($searchCategory, $typeCategories) {
+        $filtered = collect($products)->filter(function ($product) use ($searchBase, $searchBaseStr, $incompatibleGroups) {
             $productType = mb_strtolower($product['type'] ?? '');
 
-            // CHANGEMENT CLÉ : Si le produit n'a pas de type, on le GARDE par défaut
+            // Si le produit n'a pas de type, on le garde par défaut (tolérance)
             if (empty($productType)) {
                 return true;
             }
 
-            // Vérifier si le produit appartient à la même catégorie
-            $productCategory = null;
-            foreach ($typeCategories as $category => $keywords) {
-                foreach ($keywords as $keyword) {
-                    if (str_contains($productType, $keyword)) {
-                        $productCategory = $category;
-                        break 2;
-                    }
-                }
-            }
+            // Extraire les 2 PREMIERS MOTS du type du produit
+            $productWords = preg_split('/\s+/', $productType);
+            $productBase = array_slice($productWords, 0, 2);
+            $productBaseStr = implode(' ', $productBase);
 
-            // CHANGEMENT CLÉ : Si le produit n'a pas de catégorie identifiée, on le GARDE
-            if (!$productCategory) {
+            // RÈGLE 1 : Vérifier si les 2 premiers mots correspondent
+            // On vérifie si le type recherché CONTIENT le type produit ou inversement
+            $match = str_contains($searchBaseStr, $productBaseStr) || 
+                     str_contains($productBaseStr, $searchBaseStr);
+
+            if ($match) {
+                \Log::debug('✅ Produit GARDÉ : 2 premiers mots matchent', [
+                    'product_id' => $product['id'] ?? 0,
+                    'product_type' => $productType,
+                    'product_base_2_mots' => $productBaseStr,
+                    'search_base_2_mots' => $searchBaseStr
+                ]);
                 return true;
             }
 
-            // Garder uniquement si même catégorie
-            $match = ($productCategory === $searchCategory);
+            // RÈGLE 2 : Vérifier si ce sont des types INCOMPATIBLES (ex: lait vs huile)
+            // On regarde le PREMIER mot seulement pour détecter les incompatibilités
+            foreach ($incompatibleGroups as $group) {
+                $searchFirstWord = $searchBase[0] ?? '';
+                $productFirstWord = $productBase[0] ?? '';
 
-            if (!$match) {
-                \Log::debug('Produit exclu par filtrage de type', [
-                    'product_id' => $product['id'] ?? 0,
-                    'product_name' => $product['name'] ?? '',
-                    'product_type' => $productType,
-                    'product_category' => $productCategory,
-                    'search_category' => $searchCategory
-                ]);
+                // Si les deux types contiennent des mots du même groupe d'incompatibilité
+                $searchInGroup = false;
+                $productInGroup = false;
+
+                foreach ($group as $incompatibleWord) {
+                    if (str_contains($searchFirstWord, $incompatibleWord)) {
+                        $searchInGroup = $incompatibleWord;
+                    }
+                    if (str_contains($productFirstWord, $incompatibleWord)) {
+                        $productInGroup = $incompatibleWord;
+                    }
+                }
+
+                // Si les deux sont dans le groupe MAIS avec des mots différents = EXCLURE
+                if ($searchInGroup && $productInGroup && $searchInGroup !== $productInGroup) {
+                    \Log::debug('❌ Produit EXCLU : types incompatibles', [
+                        'product_id' => $product['id'] ?? 0,
+                        'product_type' => $productType,
+                        'product_first_word' => $productFirstWord,
+                        'search_first_word' => $searchFirstWord,
+                        'incompatible_group' => $group,
+                        'search_type_in_group' => $searchInGroup,
+                        'product_type_in_group' => $productInGroup
+                    ]);
+                    return false;
+                }
             }
 
-            return $match;
+            // RÈGLE 3 : Si pas de match mais pas incompatible non plus, on GARDE (tolérance)
+            \Log::debug('⚠️ Produit GARDÉ par tolérance : pas de match mais pas incompatible', [
+                'product_id' => $product['id'] ?? 0,
+                'product_type' => $productType,
+                'product_base_2_mots' => $productBaseStr,
+                'search_base_2_mots' => $searchBaseStr
+            ]);
+            return true;
+
         })->values()->toArray();
 
-        \Log::info('Résultat du filtrage par type de base', [
+        \Log::info('Résultat du filtrage par TYPE (2 premiers mots)', [
             'produits_avant' => count($products),
             'produits_après' => count($filtered),
-            'produits_exclus' => count($products) - count($filtered)
+            'produits_exclus' => count($products) - count($filtered),
+            'type_base_recherché' => $searchBaseStr
         ]);
 
         return $filtered;
@@ -1311,6 +1354,7 @@ Score de confiance entre 0 et 1."
     }
 
 }; ?>
+
 
 
 <div class="bg-white">
