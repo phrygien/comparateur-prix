@@ -61,7 +61,7 @@ new class extends Component {
                         'messages' => [
                             [
                                 'role' => 'system',
-                                'content' => 'Tu es un expert en extraction de données de produits cosmétiques. IMPORTANT: Le champ "type" doit contenir UNIQUEMENT la catégorie du produit (Crème, Huile, Sérum, Eau de Parfum, Baume, etc.), PAS le nom de la gamme. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
+                                'content' => 'Tu es un expert en extraction de données de produits cosmétiques. IMPORTANT: Le champ "type" doit contenir UNIQUEMENT la catégorie du produit (Crème, Huile, Sérum, Eau de Parfum, etc.), PAS le nom de la gamme. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
                             ],
                             [
                                 'role' => 'user',
@@ -70,7 +70,7 @@ new class extends Component {
 RÈGLES IMPORTANTES :
 - vendor : la marque du produit (ex: Dior, Shiseido, Chanel, Clarins)
 - name : le nom de la gamme/ligne de produit UNIQUEMENT - C'EST LE PLUS IMPORTANT (ex: \"J'adore\", \"Vital Perfection\", \"Multi-Intensive\", \"Les essentiels\")
-- type : UNIQUEMENT la catégorie/type du produit (ex: \"Huile pour le corps\", \"Eau de Parfum\", \"Crème visage\", \"Baume lèvres\", \"Coffret\")
+- type : UNIQUEMENT la catégorie/type du produit (ex: \"Huile pour le corps\", \"Eau de Parfum\", \"Crème visage\", \"Coffret\")
 - variation : la contenance/taille avec unité (ex: \"200 ml\", \"50 ml\", \"30 g\")
 - is_coffret : true si c'est un coffret/set/kit, false sinon
 
@@ -145,24 +145,6 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
   \"type\": \"Soin illuminateur\",
   \"variation\": \"50 ml\",
   \"is_coffret\": false
-}
-
-Exemple 8 - Produit : \"Clarins - Hydra-Essentiel [HA²+ PEPTIDE] - Baume lèvres réparateur 15 ml\"
-{
-  \"vendor\": \"Clarins\",
-  \"name\": \"Hydra-Essentiel [HA²+ PEPTIDE]\",
-  \"type\": \"Baume lèvres réparateur\",
-  \"variation\": \"15 ml\",
-  \"is_coffret\": false
-}
-
-Exemple 9 - Produit : \"Clarins Baume Corps Eclat Suprême 200 ml\"
-{
-  \"vendor\": \"Clarins\",
-  \"name\": \"Eclat Suprême\",
-  \"type\": \"Baume Corps\",
-  \"variation\": \"200 ml\",
-  \"is_coffret\": false
 }"
                             ]
                         ],
@@ -207,22 +189,23 @@ Exemple 9 - Produit : \"Clarins Baume Corps Eclat Suprême 200 ml\"
                 $this->manualType = $this->extractedData['type'] ?? '';
                 $this->manualVariation = $this->extractedData['variation'] ?? '';
 
-                // Post-traitement : Correction spécifique pour les baumes
+                // Post-traitement : nettoyer le type s'il contient des informations parasites
                 if (!empty($this->extractedData['type'])) {
-                    // Correction spécifique pour les baumes
-                    $this->extractedData['type'] = $this->correctProductType(
-                        $this->extractedData['type'],
-                        $this->productName
-                    );
+                    $type = $this->extractedData['type'];
                     
-                    // Mettre à jour le champ manuel aussi
+                    // Si le type contient le nom de la gamme, essayer de le nettoyer
+                    if (!empty($this->extractedData['name'])) {
+                        $name = $this->extractedData['name'];
+                        // Enlever le nom de la gamme du type s'il y est
+                        $type = trim(str_ireplace($name, '', $type));
+                    }
+                    
+                    // Enlever les tirets et espaces multiples
+                    $type = preg_replace('/\s*-\s*/', ' ', $type);
+                    $type = preg_replace('/\s+/', ' ', $type);
+                    
+                    $this->extractedData['type'] = trim($type);
                     $this->manualType = $this->extractedData['type'];
-                    
-                    \Log::info('Type après correction', [
-                        'type_original' => $this->extractedData['type'] ?? '',
-                        'type_corrigé' => $this->extractedData['type'] ?? '',
-                        'product_name' => $this->productName
-                    ]);
                 }
 
                 \Log::info('Données extraites', [
@@ -350,7 +333,7 @@ Exemple 9 - Produit : \"Clarins Baume Corps Eclat Suprême 200 ml\"
             'lotion',
             'gel',
             'masque',
-            // 'baume', // NE PAS ENLEVER "baume" - il fait partie du type, pas du name
+            'baume',
             'eau',
             'parfum',
             'visage',
@@ -908,11 +891,8 @@ Exemple 9 - Produit : \"Clarins Baume Corps Eclat Suprême 200 ml\"
             ]);
         }
 
-        // Normaliser le type pour les baumes
-        $normalizedType = $this->normalizeProductType($type);
-        
         // Extraire les parties du TYPE pour matching hiérarchique
-        $typeParts = $this->extractTypeParts($normalizedType);
+        $typeParts = $this->extractTypeParts($type);
         
         // Extraire les mots du name EN EXCLUANT le vendor
         $allNameWords = $this->extractKeywords($name, $isSpecialVendor, $isClarinsEssentiels);
@@ -934,7 +914,6 @@ Exemple 9 - Produit : \"Clarins Baume Corps Eclat Suprême 200 ml\"
             'nameWords_brut' => $allNameWords,
             'nameWords_filtres' => $nameWords,
             'type' => $type,
-            'type_normalized' => $normalizedType,
             'type_parts' => $typeParts
         ]);
 
@@ -976,12 +955,12 @@ Exemple 9 - Produit : \"Clarins Baume Corps Eclat Suprême 200 ml\"
                                 $isClarinsEssentiels;
         
         if (!$shouldSkipTypeFilter) {
-            $typeFilteredProducts = $this->filterByBaseType($filteredProducts, $normalizedType);
+            $typeFilteredProducts = $this->filterByBaseType($filteredProducts, $type);
             
             if (!empty($typeFilteredProducts)) {
                 \Log::info('✅ Produits après filtrage par TYPE DE BASE', [
                     'count' => count($typeFilteredProducts),
-                    'type_recherché' => $normalizedType
+                    'type_recherché' => $type
                 ]);
                 $filteredProducts = $typeFilteredProducts;
             } else {
@@ -990,7 +969,7 @@ Exemple 9 - Produit : \"Clarins Baume Corps Eclat Suprême 200 ml\"
         } else {
             \Log::info('⚠️ CAS SPÉCIAL DÉTECTÉ - Skip du filtrage strict par TYPE', [
                 'vendor' => $vendor,
-                'type_recherché' => $normalizedType,
+                'type_recherché' => $type,
                 'is_valentino_coffret' => ($isSpecialVendor && $isCoffretSource),
                 'is_meteorites_limited' => ($isMeteoritesProduct && $isLimitedEdition),
                 'is_clarins_essentiels' => $isClarinsEssentiels,
@@ -1196,7 +1175,7 @@ Exemple 9 - Produit : \"Clarins Baume Corps Eclat Suprême 200 ml\"
         }
 
         // ÉTAPE 3: Scoring avec PRIORITÉ sur le NAME
-        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $normalizedType, $isCoffretSource, $nameWords, $shouldSkipTypeFilter, $isMeteoritesProduct, $isLimitedEdition, $isPetiteRobeNoire, $isClarinsEssentiels) {
+        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $type, $isCoffretSource, $nameWords, $shouldSkipTypeFilter, $isMeteoritesProduct, $isLimitedEdition, $isPetiteRobeNoire, $isClarinsEssentiels) {
             $score = 0;
             $productType = mb_strtolower($product['type'] ?? '');
             $productName = mb_strtolower($product['name'] ?? '');
@@ -1301,23 +1280,6 @@ Exemple 9 - Produit : \"Clarins Baume Corps Eclat Suprême 200 ml\"
             }
 
             // ==========================================
-            // BONUS SPÉCIAL pour les baumes
-            // ==========================================
-            $isBaumeType = str_contains(mb_strtolower($normalizedType), 'baume');
-            $productIsBaumeType = str_contains($productType, 'baume');
-            
-            if ($isBaumeType && $productIsBaumeType) {
-                $score += 150; // Bonus pour match exact de type "baume"
-                
-                \Log::debug('✅ Bonus baume', [
-                    'product_id' => $product['id'] ?? 0,
-                    'type_recherché' => $normalizedType,
-                    'type_produit' => $productType,
-                    'bonus' => 150
-                ]);
-            }
-
-            // ==========================================
             // MATCHING TYPE : Obligatoire mais flexible pour cas spéciaux
             // ==========================================
             
@@ -1386,7 +1348,7 @@ Exemple 9 - Produit : \"Clarins Baume Corps Eclat Suprême 200 ml\"
                 }
                 
                 // Bonus pour type exact
-                $typeLower = mb_strtolower(trim($normalizedType));
+                $typeLower = mb_strtolower(trim($type));
                 if (!empty($typeLower) && str_contains($productType, $typeLower)) {
                     $score += 200;
                     $typeMatched = true;
@@ -1416,9 +1378,7 @@ Exemple 9 - Produit : \"Clarins Baume Corps Eclat Suprême 200 ml\"
                 'is_meteorites' => $isMeteoritesProduct,
                 'is_limited_edition' => $isLimitedEdition,
                 'is_petite_robe_noire' => $isPetiteRobeNoire,
-                'is_clarins_essentiels' => $isClarinsEssentiels,
-                'is_baume_type' => $isBaumeType,
-                'product_is_baume_type' => $productIsBaumeType
+                'is_clarins_essentiels' => $isClarinsEssentiels
             ];
         })
         ->sortByDesc('score')
@@ -1426,7 +1386,7 @@ Exemple 9 - Produit : \"Clarins Baume Corps Eclat Suprême 200 ml\"
 
         \Log::info('Scoring détaillé (NAME ET TYPE OBLIGATOIRES sauf cas spéciaux)', [
             'total_products' => $scoredProducts->count(),
-            'type_recherche' => $normalizedType,
+            'type_recherche' => $type,
             'type_parts' => $typeParts,
             'name_words' => $nameWords,
             'recherche_coffret' => $isCoffretSource,
@@ -1450,8 +1410,6 @@ Exemple 9 - Produit : \"Clarins Baume Corps Eclat Suprême 200 ml\"
                     'matched_words' => $item['matched_name_words'] ?? [],
                     'has_strong_name' => $item['has_strong_name_match'],
                     'type_match' => $item['type_matched'],
-                    'is_baume_type' => $item['is_baume_type'] ?? false,
-                    'product_is_baume_type' => $item['product_is_baume_type'] ?? false,
                     'name' => $item['product']['name'] ?? '',
                     'type' => $item['product']['type'] ?? '',
                     'matched_type_parts' => array_map(function($part) {
@@ -1794,7 +1752,6 @@ Exemple 9 - Produit : \"Clarins Baume Corps Eclat Suprême 200 ml\"
             'après-shampooing' => ['après-shampooing', 'conditioner', 'après shampooing'],
             'savon' => ['savon', 'soap', 'gel douche', 'mousse'],
             'maquillage' => ['fond de teint', 'rouge à lèvres', 'mascara', 'eye-liner', 'fard', 'poudre'],
-            'baume' => ['baume', 'balm', 'balsam'],
         ];
 
         $searchTypeLower = mb_strtolower(trim($searchType));
@@ -1967,146 +1924,6 @@ Score de confiance entre 0 et 1."
 
             $this->bestMatch = $this->matchingProducts[0] ?? null;
         }
-    }
-
-    /**
-     * ✨ NOUVEAU : Correction spécifique pour le type de produit
-     * Détecte et corrige les problèmes spécifiques (baumes lèvres, baumes corps, etc.)
-     */
-    private function correctProductType(string $type, string $productName): string
-    {
-        $typeLower = mb_strtolower(trim($type));
-        $productNameLower = mb_strtolower(trim($productName));
-        
-        // Détecter les baumes à lèvres
-        $lipBaumeKeywords = ['lèvres', 'levres', 'lip'];
-        $isLipBaume = false;
-        
-        foreach ($lipBaumeKeywords as $keyword) {
-            if (str_contains($productNameLower, $keyword) && 
-                (str_contains($typeLower, 'baume') || str_contains($typeLower, 'crème') || str_contains($typeLower, 'soin'))) {
-                $isLipBaume = true;
-                break;
-            }
-        }
-        
-        if ($isLipBaume) {
-            // S'assurer que le type contient "Baume lèvres"
-            if (!str_contains($typeLower, 'baume')) {
-                $type = 'Baume lèvres';
-                
-                // Ajouter des qualificatifs si présents
-                if (str_contains($productNameLower, 'réparateur') || str_contains($productNameLower, 'reparateur')) {
-                    $type .= ' réparateur';
-                } elseif (str_contains($productNameLower, 'nourrissant')) {
-                    $type .= ' nourrissant';
-                } elseif (str_contains($productNameLower, 'hydratant')) {
-                    $type .= ' hydratant';
-                }
-            }
-            
-            \Log::info('Correction type baume lèvres', [
-                'type_original' => $type,
-                'type_corrigé' => $type,
-                'product_name' => $productName
-            ]);
-        }
-        
-        // Détecter les baumes corps
-        $bodyBaumeKeywords = ['corps', 'body'];
-        $isBodyBaume = false;
-        
-        foreach ($bodyBaumeKeywords as $keyword) {
-            if (str_contains($productNameLower, $keyword) && 
-                (str_contains($typeLower, 'baume') || str_contains($typeLower, 'crème') || str_contains($typeLower, 'soin'))) {
-                $isBodyBaume = true;
-                break;
-            }
-        }
-        
-        if ($isBodyBaume) {
-            if (!str_contains($typeLower, 'baume')) {
-                $type = 'Baume corps';
-                
-                // Ajouter des qualificatifs si présents
-                if (str_contains($productNameLower, 'hydratant')) {
-                    $type .= ' hydratant';
-                } elseif (str_contains($productNameLower, 'nourrissant')) {
-                    $type .= ' nourrissant';
-                } elseif (str_contains($productNameLower, 'apaisant')) {
-                    $type .= ' apaisant';
-                }
-            }
-            
-            \Log::info('Correction type baume corps', [
-                'type_original' => $type,
-                'type_corrigé' => $type,
-                'product_name' => $productName
-            ]);
-        }
-        
-        // Normalisation des termes de baume
-        $type = $this->normalizeProductType($type);
-        
-        return $type;
-    }
-
-    /**
-     * ✨ NOUVEAU : Normalise les types de produits
-     * Standardise les variantes de mots (ex: "creme" → "crème", "balm" → "baume")
-     */
-    private function normalizeProductType(string $type): string
-    {
-        $typeLower = mb_strtolower(trim($type));
-        
-        // Mapping des types similaires
-        $typeMapping = [
-            'crème' => ['creme', 'cream'],
-            'baume' => ['balm', 'balsam'],
-            'sérum' => ['serum'],
-            'lotion' => ['lotion', 'tonique'],
-            'gel' => ['gel', 'jelly'],
-            'eau' => ['water', 'eau'],
-            'parfum' => ['perfume', 'fragrance'],
-            'lèvres' => ['levres', 'lip'],
-            'corps' => ['body'],
-            'visage' => ['face'],
-            'yeux' => ['eye'],
-            'mains' => ['hand'],
-        ];
-        
-        $normalizedType = $type;
-        
-        foreach ($typeMapping as $normalized => $variants) {
-            foreach ($variants as $variant) {
-                if (str_contains($typeLower, $variant)) {
-                    // Remplacer la variante par la version normalisée
-                    $pattern = '/\b' . preg_quote($variant, '/') . '\b/i';
-                    $normalizedType = preg_replace($pattern, $normalized, $normalizedType);
-                    break;
-                }
-            }
-        }
-        
-        // Capitaliser les mots importants
-        $words = explode(' ', $normalizedType);
-        $words = array_map(function($word) {
-            if (in_array(mb_strtolower($word), ['de', 'pour', 'et', 'avec', 'sans', 'le', 'la', 'les'])) {
-                return $word;
-            }
-            return mb_convert_case($word, MB_CASE_TITLE, 'UTF-8');
-        }, $words);
-        
-        $normalizedType = implode(' ', $words);
-        
-        if ($normalizedType !== $type) {
-            \Log::info('Type normalisé', [
-                'type_original' => $type,
-                'type_normalisé' => $normalizedType
-            ]);
-        }
-        
-        return $normalizedType;
     }
 
     public function selectProduct($productId)
