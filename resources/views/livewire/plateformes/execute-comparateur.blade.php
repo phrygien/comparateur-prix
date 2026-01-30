@@ -498,252 +498,259 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         
         return true;
     }
-
-    /**
-     * ✨ NOUVEAU : Vérifie si le nom du produit est valide pour un cas Hermès
-     * Pour Hermès, on vérifie :
-     * 1. Si c'est un produit Barenia, on cherche "Barenia" dans le nom ou le type
-     * 2. Si c'est un produit Intense, on vérifie la correspondance
-     * 3. Si c'est un produit Rechargeable, on vérifie la correspondance
-     * 4. Vérification stricte des sous-variantes (Ginger, Poivrée, etc.)
-     * 5. Si c'est une édition limitée, matching flexible
-     * 6. Sinon, matching strict sur le nom
-     */
-    private function isValidHermesMatch(string $searchName, string $searchType, string $productName, string $productType, bool $isLimitedEdition): bool
-    {
-        $searchNameLower = mb_strtolower(trim($searchName));
-        $searchTypeLower = mb_strtolower(trim($searchType));
-        $productNameLower = mb_strtolower(trim($productName));
-        $productTypeLower = mb_strtolower(trim($productType));
-        
-        // CAS 1: Produit Barenia - Vérification spéciale
-        $isSearchBarenia = str_contains($searchNameLower, 'barenia') || str_contains($searchTypeLower, 'barenia');
-        $isProductBarenia = str_contains($productNameLower, 'barenia') || str_contains($productTypeLower, 'barenia');
-        
-        if ($isSearchBarenia) {
-            if (!$isProductBarenia) {
-                \Log::debug('❌ HERMÈS - Produit Barenia non correspondant', [
-                    'recherché_name' => $searchName,
-                    'recherché_type' => $searchType,
-                    'produit_name' => $productName,
-                    'produit_type' => $productType,
-                    'raison' => 'Barenia recherché mais pas trouvé dans le produit'
-                ]);
-                return false;
-            }
-            
-            \Log::debug('✅ HERMÈS - Produit Barenia correspondant', [
-                'recherché_name' => $searchName,
-                'produit_name' => $productName,
-                'produit_type' => $productType
-            ]);
-            return true;
+/**
+ * ✨ FONCTION AUXILIAIRE : Extrait le type de base d'un type de produit
+ * 
+ * Cette fonction identifie le type principal d'un produit en ignorant les détails.
+ * 
+ * EXEMPLES :
+ * - "Eau de Parfum Vaporisateur 85ml" → "eau de parfum"
+ * - "Lait parfumé pour le corps 200ml" → "lait"
+ * - "Eau de Toilette Spray" → "eau de toilette"
+ * - "Crème enrichie visage" → "crème"
+ * - "Huile scintillante" → "huile"
+ * 
+ * @param string $type Le type complet du produit
+ * @return string Le type de base extrait (en minuscules)
+ */
+private function extractBaseType(string $type): string
+{
+    $type = mb_strtolower(trim($type));
+    
+    if (empty($type)) {
+        return '';
+    }
+    
+    // PRIORITÉ 1 : Types de parfums (les plus spécifiques en premier)
+    $perfumeTypes = [
+        'extrait de parfum',
+        'eau de parfum',
+        'eau de toilette',
+        'eau de cologne',
+        'eau fraiche',
+        'parfum',
+        'cologne'
+    ];
+    
+    foreach ($perfumeTypes as $perfumeType) {
+        if (str_contains($type, $perfumeType)) {
+            \Log::debug("  → Type de parfum détecté : {$perfumeType}");
+            return $perfumeType;
         }
-        
-        // Si le produit est Barenia mais pas la recherche, rejeter
-        if ($isProductBarenia && !$isSearchBarenia) {
-            \Log::debug('❌ HERMÈS - Produit Barenia mais recherche non-Barenia', [
-                'recherché_name' => $searchName,
-                'produit_name' => $productName,
-                'raison' => 'Produit est Barenia mais pas la recherche'
+    }
+    
+    // PRIORITÉ 2 : Types de soins corporels
+    $bodyTypes = [
+        'lait parfumé' => 'lait',
+        'lait pour le corps' => 'lait',
+        'lait corporel' => 'lait',
+        'body lotion' => 'lait',
+        'lotion' => 'lotion',
+        'crème visage' => 'crème',
+        'crème corps' => 'crème',
+        'crème' => 'crème',
+        'creme' => 'crème',
+        'cream' => 'crème',
+        'huile corps' => 'huile',
+        'huile' => 'huile',
+        'oil' => 'huile',
+        'gel douche' => 'gel',
+        'shower gel' => 'gel',
+        'gel' => 'gel',
+        'savon' => 'savon',
+        'soap' => 'savon',
+        'déodorant' => 'déodorant',
+        'deodorant' => 'déodorant',
+        'deo' => 'déodorant',
+        'shampooing' => 'shampooing',
+        'shampoing' => 'shampooing',
+        'shampoo' => 'shampooing',
+        'après-shampooing' => 'après-shampooing',
+        'conditioner' => 'après-shampooing',
+        'baume' => 'baume',
+        'balm' => 'baume',
+        'sérum' => 'sérum',
+        'serum' => 'sérum'
+    ];
+    
+    foreach ($bodyTypes as $keyword => $baseType) {
+        if (str_contains($type, $keyword)) {
+            \Log::debug("  → Type de soin détecté : {$keyword} → {$baseType}");
+            return $baseType;
+        }
+    }
+    
+    // PRIORITÉ 3 : Premiers mots significatifs (≥3 caractères)
+    $words = preg_split('/\s+/', $type);
+    foreach ($words as $word) {
+        $word = trim($word);
+        if (mb_strlen($word) >= 3) {
+            \Log::debug("  → Type par défaut (premier mot) : {$word}");
+            return $word;
+        }
+    }
+    
+    // Fallback : retourner le type complet
+    \Log::debug("  → Type complet retourné : {$type}");
+    return $type;
+}
+/**
+ * ✨ VERSION ULTRA STRICTE : Vérifie si le nom ET le type sont EXACTEMENT corrects pour Hermès
+ * 
+ * RÈGLE SIMPLE :
+ * 1. TOUS les mots du NOM recherché doivent être dans le nom du produit
+ * 2. Le TYPE DE BASE doit être EXACTEMENT le même
+ * 3. Pas de compromis, pas de flexibilité (sauf pour éditions limitées)
+ * 
+ * EXEMPLES :
+ * - Recherche "Twilly d'Hermès Eau Ginger" + "Eau de Parfum"
+ *   ✅ Accepte : "Twilly d'Hermès Eau Ginger" + "Eau de Parfum"
+ *   ❌ Rejette : "Twilly d'Hermès" + "Eau de Parfum" (manque "Ginger")
+ * 
+ * - Recherche "24 Faubourg" + "Lait parfumé"
+ *   ✅ Accepte : "24 Faubourg" + "Lait parfumé pour le corps"
+ *   ❌ Rejette : "24 Faubourg" + "Eau de Toilette" (type différent)
+ */
+private function isValidHermesMatch(string $searchName, string $searchType, string $productName, string $productType, bool $isLimitedEdition): bool
+{
+    $searchNameLower = mb_strtolower(trim($searchName));
+    $searchTypeLower = mb_strtolower(trim($searchType));
+    $productNameLower = mb_strtolower(trim($productName));
+    $productTypeLower = mb_strtolower(trim($productType));
+    
+    \Log::info('🔍 HERMÈS - Début de validation ULTRA STRICTE', [
+        'recherché_name' => $searchName,
+        'recherché_type' => $searchType,
+        'produit_name' => $productName,
+        'produit_type' => $productType,
+        'is_limited_edition' => $isLimitedEdition
+    ]);
+    
+    // ============================================================
+    // ÉTAPE 1 : VÉRIFICATION STRICTE DU TYPE DE BASE (OBLIGATOIRE)
+    // ============================================================
+    $searchTypeBase = $this->extractBaseType($searchTypeLower);
+    $productTypeBase = $this->extractBaseType($productTypeLower);
+    
+    \Log::info('📋 HERMÈS - Comparaison des types de base', [
+        'recherché_type' => $searchType,
+        'recherché_type_base' => $searchTypeBase,
+        'produit_type' => $productType,
+        'produit_type_base' => $productTypeBase
+    ]);
+    
+    if (!empty($searchTypeBase) && !empty($productTypeBase)) {
+        if ($searchTypeBase !== $productTypeBase) {
+            \Log::warning('❌ HERMÈS - TYPE DE BASE DIFFÉRENT - REJET', [
+                'recherché_type_base' => $searchTypeBase,
+                'produit_type_base' => $productTypeBase,
+                'raison' => 'Les types de base doivent être identiques'
             ]);
             return false;
         }
         
-        // CAS 2: Produit Intense - Vérification stricte
-        $isSearchIntense = $this->isIntenseProduct($searchName, $searchType);
-        $isProductIntense = $this->isIntenseProduct($productName, $productType);
-        
-        if ($isSearchIntense && !$isProductIntense) {
-            \Log::debug('❌ HERMÈS - Produit Intense recherché mais non trouvé', [
-                'recherché_name' => $searchName,
-                'recherché_type' => $searchType,
-                'produit_name' => $productName,
-                'produit_type' => $productType,
-                'raison' => 'Intense recherché mais pas dans le produit'
-            ]);
-            return false;
+        \Log::info('✅ HERMÈS - Type de base correspondant', [
+            'type_base' => $searchTypeBase
+        ]);
+    }
+    
+    // ============================================================
+    // ÉTAPE 2 : EXTRACTION DES MOTS SIGNIFICATIFS DU NOM
+    // ============================================================
+    
+    // Liste des mots à ignorer (stop words)
+    $stopWords = ['de', 'la', 'le', 'les', 'des', 'du', 'un', 'une', 'et', 'ou', 'pour', 'avec', 'sans', 'hermès', 'hermes'];
+    
+    // Extraire TOUS les mots du nom recherché (≥3 caractères)
+    $searchWords = preg_split('/[\s\-\']+/', $searchNameLower, -1, PREG_SPLIT_NO_EMPTY);
+    $searchWords = array_filter($searchWords, function($word) use ($stopWords) {
+        return mb_strlen($word) >= 3 && !in_array($word, $stopWords);
+    });
+    $searchWords = array_values($searchWords);
+    
+    \Log::info('🔤 HERMÈS - Mots extraits du nom recherché', [
+        'nom_recherché' => $searchName,
+        'mots_significatifs' => $searchWords,
+        'nombre_mots' => count($searchWords)
+    ]);
+    
+    // ============================================================
+    // ÉTAPE 3 : VÉRIFICATION STRICTE DES MOTS DU NOM
+    // ============================================================
+    
+    $matchCount = 0;
+    $matchedWords = [];
+    $missingWords = [];
+    
+    foreach ($searchWords as $word) {
+        if (str_contains($productNameLower, $word)) {
+            $matchCount++;
+            $matchedWords[] = $word;
+            \Log::debug("  ✓ Mot trouvé : {$word}");
+        } else {
+            $missingWords[] = $word;
+            \Log::debug("  ✗ Mot manquant : {$word}");
         }
-        
-        // Si le produit est Intense mais pas la recherche, rejeter
-        if ($isProductIntense && !$isSearchIntense) {
-            \Log::debug('❌ HERMÈS - Produit est Intense mais recherche ne l\'est pas', [
-                'recherché_name' => $searchName,
-                'produit_name' => $productName,
-                'raison' => 'Produit est Intense mais pas la recherche'
-            ]);
-            return false;
-        }
-        
-        // CAS 3: Produit Rechargeable - Vérification stricte
-        $isSearchRechargeable = $this->isRechargeableProduct($searchName, $searchType);
-        $isProductRechargeable = $this->isRechargeableProduct($productName, $productType);
-        
-        if ($isSearchRechargeable && !$isProductRechargeable) {
-            \Log::debug('❌ HERMÈS - Produit Rechargeable recherché mais non trouvé', [
-                'recherché_name' => $searchName,
-                'recherché_type' => $searchType,
-                'produit_name' => $productName,
-                'produit_type' => $productType,
-                'raison' => 'Rechargeable recherché mais pas dans le produit'
-            ]);
-            return false;
-        }
-        
-        // Si le produit est Rechargeable mais pas la recherche, rejeter
-        if ($isProductRechargeable && !$isSearchRechargeable) {
-            \Log::debug('❌ HERMÈS - Produit est Rechargeable mais recherche ne l\'est pas', [
-                'recherché_name' => $searchName,
-                'produit_name' => $productName,
-                'raison' => 'Produit est Rechargeable mais pas la recherche'
-            ]);
-            return false;
-        }
-        
-        // CAS 4: Vérification stricte des sous-variantes (Ginger, Poivrée, Eau Claire, etc.)
-        // Liste des variantes connues pour différents parfums Hermès
-        $variantKeywords = [
-            'ginger',
-            'poivrée', 'poivree',
-            'eau claire',
-            'eau givree', 'eau givrée',
-            'eau intense', 
-            'vetiver', 'vétiver',
-            'parfum', // Pour distinguer "Eau de Parfum" du parfum de base
-            'absolu',
-            'pure',
-            'noir',
-            'rose',
-            'blanche',
-            'marine',
-            'magnolia',
-            'mousson',
-            'brume',
-            'ombre'
-        ];
-        
-        // Extraire les variantes présentes dans la recherche
-        $searchVariants = [];
-        foreach ($variantKeywords as $variant) {
-            if (str_contains($searchNameLower, $variant) || str_contains($searchTypeLower, $variant)) {
-                $searchVariants[] = $variant;
-            }
-        }
-        
-        // Extraire les variantes présentes dans le produit
-        $productVariants = [];
-        foreach ($variantKeywords as $variant) {
-            if (str_contains($productNameLower, $variant) || str_contains($productTypeLower, $variant)) {
-                $productVariants[] = $variant;
-            }
-        }
-        
-        // Si la recherche contient des variantes, le produit DOIT avoir les MÊMES variantes
-        if (!empty($searchVariants)) {
-            foreach ($searchVariants as $searchVariant) {
-                if (!in_array($searchVariant, $productVariants)) {
-                    \Log::debug('❌ HERMÈS - Variante recherchée mais non trouvée', [
-                        'recherché_name' => $searchName,
-                        'produit_name' => $productName,
-                        'variante_recherchée' => $searchVariant,
-                        'variantes_produit' => $productVariants,
-                        'raison' => 'Variante "' . $searchVariant . '" recherchée mais pas dans le produit'
-                    ]);
-                    return false;
-                }
-            }
-        }
-        
-        // Si le produit contient des variantes qui ne sont PAS dans la recherche, REJETER
-        if (!empty($productVariants)) {
-            foreach ($productVariants as $productVariant) {
-                if (!in_array($productVariant, $searchVariants)) {
-                    \Log::debug('❌ HERMÈS - Produit contient une variante non recherchée', [
-                        'recherché_name' => $searchName,
-                        'recherché_variantes' => $searchVariants,
-                        'produit_name' => $productName,
-                        'variante_produit' => $productVariant,
-                        'raison' => 'Produit contient "' . $productVariant . '" mais pas dans la recherche'
-                    ]);
-                    return false;
-                }
-            }
-        }
-        
-        // Si des variantes ont été vérifiées avec succès
-        if (!empty($searchVariants) && !empty($productVariants)) {
-            \Log::debug('✅ HERMÈS - Variantes correspondantes', [
-                'recherché_name' => $searchName,
-                'produit_name' => $productName,
-                'variantes_matchées' => $searchVariants
-            ]);
-        }
-        
-        // CAS 5: Édition limitée - Matching flexible
-        if ($isLimitedEdition) {
-            $searchWords = $this->extractKeywords($searchName, true);
-            $matchCount = 0;
-            
-            foreach ($searchWords as $word) {
-                if (str_contains($productNameLower, $word) || str_contains($productTypeLower, $word)) {
-                    $matchCount++;
-                }
-            }
-            
-            // Pour édition limitée, au moins 50% des mots doivent matcher
-            $minRequired = max(1, (int)ceil(count($searchWords) * 0.5));
-            $isValid = $matchCount >= $minRequired;
-            
-            if (!$isValid) {
-                \Log::debug('❌ HERMÈS - Édition limitée - Matching insuffisant', [
-                    'recherché_name' => $searchName,
-                    'produit_name' => $productName,
-                    'mots_recherchés' => $searchWords,
-                    'mots_matchés' => $matchCount,
-                    'minimum_requis' => $minRequired
-                ]);
-            } else {
-                \Log::debug('✅ HERMÈS - Édition limitée - Matching validé', [
-                    'recherché_name' => $searchName,
-                    'produit_name' => $productName,
-                    'mots_matchés' => $matchCount . '/' . count($searchWords)
-                ]);
-            }
-            
-            return $isValid;
-        }
-        
-        // CAS 6: Produit standard - Matching strict
-        $searchWords = $this->extractKeywords($searchName, true);
-        $matchCount = 0;
-        
-        foreach ($searchWords as $word) {
-            if (str_contains($productNameLower, $word)) {
-                $matchCount++;
-            }
-        }
-        
-        // Tous les mots doivent matcher pour un produit standard
-        $isValid = $matchCount === count($searchWords);
+    }
+    
+    \Log::info('📊 HERMÈS - Résultat du matching des mots', [
+        'total_mots_recherchés' => count($searchWords),
+        'mots_trouvés' => $matchCount,
+        'mots_matchés' => $matchedWords,
+        'mots_manquants' => $missingWords,
+        'pourcentage' => count($searchWords) > 0 ? round(($matchCount / count($searchWords)) * 100, 2) . '%' : '100%'
+    ]);
+    
+    // ============================================================
+    // ÉTAPE 4 : DÉCISION FINALE
+    // ============================================================
+    
+    // CAS 1 : Édition limitée - On accepte 70% des mots minimum
+    if ($isLimitedEdition) {
+        $minRequired = max(1, (int)ceil(count($searchWords) * 0.7));
+        $isValid = $matchCount >= $minRequired;
         
         if (!$isValid) {
-            \Log::debug('❌ HERMÈS - Produit standard - Matching strict échoué', [
-                'recherché_name' => $searchName,
-                'produit_name' => $productName,
-                'mots_recherchés' => $searchWords,
-                'mots_matchés' => $matchCount,
-                'requis' => count($searchWords)
+            \Log::warning('❌ HERMÈS - ÉDITION LIMITÉE - Matching insuffisant', [
+                'mots_trouvés' => $matchCount,
+                'minimum_requis' => $minRequired,
+                'mots_manquants' => $missingWords,
+                'raison' => 'Au moins 70% des mots doivent être présents pour les éditions limitées'
             ]);
         } else {
-            \Log::debug('✅ HERMÈS - Produit standard - Matching validé', [
-                'recherché_name' => $searchName,
-                'produit_name' => $productName,
-                'tous_mots_matchés' => true
+            \Log::info('✅ HERMÈS - ÉDITION LIMITÉE - Matching validé', [
+                'mots_trouvés' => $matchCount . '/' . count($searchWords),
+                'pourcentage' => round(($matchCount / count($searchWords)) * 100, 2) . '%'
             ]);
         }
         
         return $isValid;
     }
+    
+    // CAS 2 : Produit standard - TOUS les mots doivent être présents (100%)
+    $isValid = (count($searchWords) === 0) || ($matchCount === count($searchWords));
+    
+    if (!$isValid) {
+        \Log::warning('❌ HERMÈS - PRODUIT STANDARD - Matching échoué', [
+            'mots_recherchés' => $searchWords,
+            'mots_trouvés' => $matchedWords,
+            'mots_manquants' => $missingWords,
+            'raison' => '❗ TOUS les mots du nom doivent être présents (100%)',
+            'message' => 'Le produit "' . $productName . '" ne contient pas tous les mots de "' . $searchName . '"'
+        ]);
+        return false;
+    }
+    
+    \Log::info('✅ HERMÈS - PRODUIT STANDARD - Matching réussi', [
+        'nom_recherché' => $searchName,
+        'nom_produit' => $productName,
+        'type_base' => $searchTypeBase,
+        'tous_mots_présents' => true,
+        'message' => '🎉 MATCH PARFAIT : Nom ET Type correspondent exactement'
+    ]);
+    
+    return true;
+}
 
     /**
      * LOGIQUE DE RECHERCHE OPTIMISÉE
