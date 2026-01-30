@@ -2116,7 +2116,7 @@ Score de confiance entre 0 et 1."
 
                                     <!-- ID scrape -->
                                     @if(isset($product['scrape_reference_id']))
-                                        <p class="text-xs text-gray-400 mt-2">Scrape ID: {{ $product['scrape_reference_id'] }}</p>
+                                        <p class="text-xs text-gray-400 mt-2">Date MAJ : {{ \Carbon\Carbon::parse($product['updated_at'])->translatedFormat('j F Y \\à H:i') }} </p>
                                     @endif
 
                                     <!-- Site -->
