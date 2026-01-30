@@ -175,6 +175,29 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     $this->manualType = $this->extractedData['type'];
                 }
 
+                // ✅ CORRECTION HERMÈS : Nettoyer le NAME si c'est un produit Hermès
+                if ($this->isHermesProduct($this->extractedData['vendor'] ?? '')) {
+                    $originalName = $this->extractedData['name'];
+                    $this->extractedData['name'] = $this->cleanHermesName(
+                        $this->extractedData['name'],
+                        $this->extractedData['type']
+                    );
+                    
+                    if ($originalName !== $this->extractedData['name']) {
+                        \Log::info('🧹 HERMÈS - Nettoyage du NAME détecté', [
+                            'name_original' => $originalName,
+                            'name_nettoyé' => $this->extractedData['name'],
+                            'mots_retirés' => array_diff(
+                                explode(' ', mb_strtolower($originalName)),
+                                explode(' ', mb_strtolower($this->extractedData['name']))
+                            )
+                        ]);
+                        
+                        // Mettre à jour aussi le champ manuel
+                        $this->manualName = $this->extractedData['name'];
+                    }
+                }
+
                 \Log::info('Données extraites', [
                     'vendor' => $this->extractedData['vendor'] ?? '',
                     'name' => $this->extractedData['name'] ?? '',
@@ -333,6 +356,58 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
     {
         $vendorLower = mb_strtolower(trim($vendor));
         return str_contains($vendorLower, 'hermès') || str_contains($vendorLower, 'hermes');
+    }
+    
+    /**
+     * ✅ CORRECTION HERMÈS : Nettoie le nom extrait pour les produits Hermès
+     * 
+     * PROBLÈME : OpenAI met parfois "Eau" dans le NAME au lieu du TYPE
+     * Exemple : "Twilly d'Hermès Eau Ginger" au lieu de "Twilly d'Hermès Ginger"
+     * 
+     * SOLUTION : Retirer les mots qui appartiennent au TYPE (Eau, Parfum, etc.)
+     * 
+     * @param string $name Le nom extrait par OpenAI
+     * @param string $type Le type extrait par OpenAI
+     * @return string Le nom nettoyé
+     */
+    private function cleanHermesName(string $name, string $type): string
+    {
+        // Mots-clés qui appartiennent au TYPE, pas au NAME
+        $typeKeywords = [
+            'eau',
+            'parfum',
+            'toilette',
+            'cologne',
+            'vaporisateur',
+            'spray',
+            'extrait',
+            'fraiche',
+            'fraîche'
+        ];
+        
+        // Convertir en minuscules pour comparaison
+        $nameLower = mb_strtolower(trim($name));
+        
+        // Séparer le nom en mots (en gardant les apostrophes)
+        $words = preg_split('/[\s\-]+/', $nameLower, -1, PREG_SPLIT_NO_EMPTY);
+        
+        // Filtrer les mots qui ne sont pas des mots-clés du TYPE
+        $cleanedWords = [];
+        $originalWords = preg_split('/[\s\-]+/', $name, -1, PREG_SPLIT_NO_EMPTY);
+        
+        foreach ($words as $index => $wordLower) {
+            // Garder le mot seulement s'il n'est pas un mot-clé du TYPE
+            if (!in_array($wordLower, $typeKeywords)) {
+                // Utiliser le mot original (avec majuscules)
+                $cleanedWords[] = $originalWords[$index];
+            }
+        }
+        
+        // Reconstituer le nom nettoyé
+        $cleanedName = implode(' ', $cleanedWords);
+        
+        // Si le nom nettoyé est vide, retourner le nom original
+        return !empty($cleanedName) ? $cleanedName : $name;
     }
     
     /**
@@ -1694,7 +1769,6 @@ Score de confiance entre 0 et 1."
     }
 
 }; ?>
-
 
 
 <div class="bg-white">
