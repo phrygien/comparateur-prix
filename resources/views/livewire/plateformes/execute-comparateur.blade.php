@@ -505,8 +505,9 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
      * 1. Si c'est un produit Barenia, on cherche "Barenia" dans le nom ou le type
      * 2. Si c'est un produit Intense, on vérifie la correspondance
      * 3. Si c'est un produit Rechargeable, on vérifie la correspondance
-     * 4. Si c'est une édition limitée, matching flexible
-     * 5. Sinon, matching strict sur le nom
+     * 4. Vérification stricte des sous-variantes (Ginger, Poivrée, etc.)
+     * 5. Si c'est une édition limitée, matching flexible
+     * 6. Sinon, matching strict sur le nom
      */
     private function isValidHermesMatch(string $searchName, string $searchType, string $productName, string $productType, bool $isLimitedEdition): bool
     {
@@ -599,7 +600,86 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             return false;
         }
         
-        // CAS 4: Édition limitée - Matching flexible
+        // CAS 4: Vérification stricte des sous-variantes (Ginger, Poivrée, Eau Claire, etc.)
+        // Liste des variantes connues pour différents parfums Hermès
+        $variantKeywords = [
+            'ginger',
+            'poivrée', 'poivree',
+            'eau claire',
+            'eau givree', 'eau givrée',
+            'eau intense', 
+            'vetiver', 'vétiver',
+            'parfum', // Pour distinguer "Eau de Parfum" du parfum de base
+            'absolu',
+            'pure',
+            'noir',
+            'rose',
+            'blanche',
+            'marine',
+            'magnolia',
+            'mousson',
+            'brume',
+            'ombre'
+        ];
+        
+        // Extraire les variantes présentes dans la recherche
+        $searchVariants = [];
+        foreach ($variantKeywords as $variant) {
+            if (str_contains($searchNameLower, $variant) || str_contains($searchTypeLower, $variant)) {
+                $searchVariants[] = $variant;
+            }
+        }
+        
+        // Extraire les variantes présentes dans le produit
+        $productVariants = [];
+        foreach ($variantKeywords as $variant) {
+            if (str_contains($productNameLower, $variant) || str_contains($productTypeLower, $variant)) {
+                $productVariants[] = $variant;
+            }
+        }
+        
+        // Si la recherche contient des variantes, le produit DOIT avoir les MÊMES variantes
+        if (!empty($searchVariants)) {
+            foreach ($searchVariants as $searchVariant) {
+                if (!in_array($searchVariant, $productVariants)) {
+                    \Log::debug('❌ HERMÈS - Variante recherchée mais non trouvée', [
+                        'recherché_name' => $searchName,
+                        'produit_name' => $productName,
+                        'variante_recherchée' => $searchVariant,
+                        'variantes_produit' => $productVariants,
+                        'raison' => 'Variante "' . $searchVariant . '" recherchée mais pas dans le produit'
+                    ]);
+                    return false;
+                }
+            }
+        }
+        
+        // Si le produit contient des variantes qui ne sont PAS dans la recherche, REJETER
+        if (!empty($productVariants)) {
+            foreach ($productVariants as $productVariant) {
+                if (!in_array($productVariant, $searchVariants)) {
+                    \Log::debug('❌ HERMÈS - Produit contient une variante non recherchée', [
+                        'recherché_name' => $searchName,
+                        'recherché_variantes' => $searchVariants,
+                        'produit_name' => $productName,
+                        'variante_produit' => $productVariant,
+                        'raison' => 'Produit contient "' . $productVariant . '" mais pas dans la recherche'
+                    ]);
+                    return false;
+                }
+            }
+        }
+        
+        // Si des variantes ont été vérifiées avec succès
+        if (!empty($searchVariants) && !empty($productVariants)) {
+            \Log::debug('✅ HERMÈS - Variantes correspondantes', [
+                'recherché_name' => $searchName,
+                'produit_name' => $productName,
+                'variantes_matchées' => $searchVariants
+            ]);
+        }
+        
+        // CAS 5: Édition limitée - Matching flexible
         if ($isLimitedEdition) {
             $searchWords = $this->extractKeywords($searchName, true);
             $matchCount = 0;
@@ -633,7 +713,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             return $isValid;
         }
         
-        // CAS 5: Produit standard - Matching strict
+        // CAS 6: Produit standard - Matching strict
         $searchWords = $this->extractKeywords($searchName, true);
         $matchCount = 0;
         
