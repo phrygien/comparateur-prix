@@ -1842,7 +1842,7 @@ Score de confiance entre 0 et 1."
     @endif
 
     <!-- Filtres par site -->
-    @if(!empty($availableSites))
+    {{-- @if(!empty($availableSites))
         <div class="px-6 py-4 bg-gray-50 border-b border-gray-200">
             <div class="flex items-center justify-between mb-3">
                 <h3 class="font-semibold text-gray-700">Filtrer par site</h3>
@@ -1863,7 +1863,7 @@ Score de confiance entre 0 et 1."
                 {{ count($selectedSites) }} site(s) sélectionné(s)
             </p>
         </div>
-    @endif
+    @endif --}}
 
     @if(session('error'))
         <div class="mx-6 mt-4 p-4 bg-red-100 text-red-700 rounded-lg">
