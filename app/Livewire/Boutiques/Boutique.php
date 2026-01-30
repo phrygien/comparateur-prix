@@ -479,7 +479,7 @@ class Boutique extends Component
                     $subQuery .= "
                         $and LOWER(
                             REGEXP_REPLACE(
-                                CONCAT(product_char.name, ' ', COALESCE(options.attribute_value, '')) ,
+                                CONCAT(product_char.normalized_name , ' ', COALESCE(options.attribute_value, '')) ,
                                 '[^a-z0-9 ]',
                                 ''
                             )
