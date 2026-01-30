@@ -347,44 +347,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
     }
     
     /**
-     * ✨ NOUVEAU : Vérifie si le produit est intense
-     */
-    private function isIntenseProduct(string $name, string $type): bool
-    {
-        $nameLower = mb_strtolower($name);
-        $typeLower = mb_strtolower($type);
-        
-        $intenseKeywords = ['intense', 'intenso', 'intensive'];
-        
-        foreach ($intenseKeywords as $keyword) {
-            if (str_contains($nameLower, $keyword) || str_contains($typeLower, $keyword)) {
-                return true;
-            }
-        }
-        
-        return false;
-    }
-    
-    /**
-     * ✨ NOUVEAU : Vérifie si le produit est rechargeable
-     */
-    private function isRechargeableProduct(string $name, string $type): bool
-    {
-        $nameLower = mb_strtolower($name);
-        $typeLower = mb_strtolower($type);
-        
-        $rechargeableKeywords = ['rechargeable', 'refillable', 'recharge', 'refill', 'rechargé'];
-        
-        foreach ($rechargeableKeywords as $keyword) {
-            if (str_contains($nameLower, $keyword) || str_contains($typeLower, $keyword)) {
-                return true;
-            }
-        }
-        
-        return false;
-    }
-    
-    /**
      * ✨ NOUVEAU : Vérifie si le produit est un produit Météorites (éditions spéciales)
      */
     private function isMeteoritesProduct(string $name, string $type): bool
@@ -503,10 +465,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
      * ✨ NOUVEAU : Vérifie si le nom du produit est valide pour un cas Hermès
      * Pour Hermès, on vérifie :
      * 1. Si c'est un produit Barenia, on cherche "Barenia" dans le nom ou le type
-     * 2. Si c'est un produit Intense, on vérifie la correspondance
-     * 3. Si c'est un produit Rechargeable, on vérifie la correspondance
-     * 4. Si c'est une édition limitée, matching flexible
-     * 5. Sinon, matching strict sur le nom
+     * 2. Si c'est une édition limitée, matching flexible
+     * 3. Sinon, matching strict sur le nom
      */
     private function isValidHermesMatch(string $searchName, string $searchType, string $productName, string $productType, bool $isLimitedEdition): bool
     {
@@ -549,57 +509,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             return false;
         }
         
-        // CAS 2: Produit Intense - Vérification stricte
-        $isSearchIntense = $this->isIntenseProduct($searchName, $searchType);
-        $isProductIntense = $this->isIntenseProduct($productName, $productType);
-        
-        if ($isSearchIntense && !$isProductIntense) {
-            \Log::debug('❌ HERMÈS - Produit Intense recherché mais non trouvé', [
-                'recherché_name' => $searchName,
-                'recherché_type' => $searchType,
-                'produit_name' => $productName,
-                'produit_type' => $productType,
-                'raison' => 'Intense recherché mais pas dans le produit'
-            ]);
-            return false;
-        }
-        
-        // Si le produit est Intense mais pas la recherche, rejeter
-        if ($isProductIntense && !$isSearchIntense) {
-            \Log::debug('❌ HERMÈS - Produit est Intense mais recherche ne l\'est pas', [
-                'recherché_name' => $searchName,
-                'produit_name' => $productName,
-                'raison' => 'Produit est Intense mais pas la recherche'
-            ]);
-            return false;
-        }
-        
-        // CAS 3: Produit Rechargeable - Vérification stricte
-        $isSearchRechargeable = $this->isRechargeableProduct($searchName, $searchType);
-        $isProductRechargeable = $this->isRechargeableProduct($productName, $productType);
-        
-        if ($isSearchRechargeable && !$isProductRechargeable) {
-            \Log::debug('❌ HERMÈS - Produit Rechargeable recherché mais non trouvé', [
-                'recherché_name' => $searchName,
-                'recherché_type' => $searchType,
-                'produit_name' => $productName,
-                'produit_type' => $productType,
-                'raison' => 'Rechargeable recherché mais pas dans le produit'
-            ]);
-            return false;
-        }
-        
-        // Si le produit est Rechargeable mais pas la recherche, rejeter
-        if ($isProductRechargeable && !$isSearchRechargeable) {
-            \Log::debug('❌ HERMÈS - Produit est Rechargeable mais recherche ne l\'est pas', [
-                'recherché_name' => $searchName,
-                'produit_name' => $productName,
-                'raison' => 'Produit est Rechargeable mais pas la recherche'
-            ]);
-            return false;
-        }
-        
-        // CAS 4: Édition limitée - Matching flexible
+        // CAS 2: Édition limitée - Matching flexible
         if ($isLimitedEdition) {
             $searchWords = $this->extractKeywords($searchName, true);
             $matchCount = 0;
@@ -633,7 +543,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             return $isValid;
         }
         
-        // CAS 5: Produit standard - Matching strict
+        // CAS 3: Produit standard - Matching strict
         $searchWords = $this->extractKeywords($searchName, true);
         $matchCount = 0;
         
@@ -718,12 +628,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         // ✨ NOUVEAU : Détecter si c'est un produit Barenia (Hermès)
         $isBareniaProduct = $isHermesProduct && $this->isBareniaProduct($name, $type);
         
-        // ✨ NOUVEAU : Détecter si c'est un produit Intense (Hermès)
-        $isIntenseProduct = $isHermesProduct && $this->isIntenseProduct($name, $type);
-        
-        // ✨ NOUVEAU : Détecter si c'est un produit Rechargeable (Hermès)
-        $isRechargeableProduct = $isHermesProduct && $this->isRechargeableProduct($name, $type);
-        
         // ✨ NOUVEAU : Détecter si c'est un produit Météorites (Guerlain)
         $isMeteoritesProduct = $this->isMeteoritesProduct($name, $type);
         
@@ -736,8 +640,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'is_valentino' => str_contains(mb_strtolower($vendor), 'valent'),
                 'is_hermes' => $isHermesProduct,
                 'is_barenia' => $isBareniaProduct,
-                'is_intense' => $isIntenseProduct,
-                'is_rechargeable' => $isRechargeableProduct,
                 'is_meteorites' => $isMeteoritesProduct,
                 'is_coffret' => $isCoffretSource,
                 'is_limited_edition' => $isLimitedEdition
@@ -762,8 +664,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             'is_special_vendor' => $isSpecialVendor,
             'is_hermes' => $isHermesProduct,
             'is_barenia' => $isBareniaProduct,
-            'is_intense' => $isIntenseProduct,
-            'is_rechargeable' => $isRechargeableProduct,
             'is_meteorites' => $isMeteoritesProduct,
             'is_limited_edition' => $isLimitedEdition,
             'name' => $name,
@@ -1015,7 +915,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         }
 
         // ÉTAPE 3: Scoring avec PRIORITÉ sur le NAME
-        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $type, $isCoffretSource, $nameWords, $shouldSkipTypeFilter, $isMeteoritesProduct, $isLimitedEdition, $isHermesProduct, $isBareniaProduct, $isIntenseProduct, $isRechargeableProduct) {
+        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $type, $isCoffretSource, $nameWords, $shouldSkipTypeFilter, $isMeteoritesProduct, $isLimitedEdition, $isHermesProduct, $isBareniaProduct) {
             $score = 0;
             $productType = mb_strtolower($product['type'] ?? '');
             $productName = mb_strtolower($product['name'] ?? '');
@@ -1053,24 +953,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 
                 if ($productIsBarenia) {
                     $score += 450; // MEGA BONUS pour Hermès Barenia
-                }
-            }
-            
-            // ✨ BONUS SPÉCIAL pour Hermès + Intense
-            if ($isHermesProduct && $isIntenseProduct) {
-                $productIsIntense = $this->isIntenseProduct($product['name'] ?? '', $product['type'] ?? '');
-                
-                if ($productIsIntense) {
-                    $score += 350; // BONUS pour Hermès Intense
-                }
-            }
-            
-            // ✨ BONUS SPÉCIAL pour Hermès + Rechargeable
-            if ($isHermesProduct && $isRechargeableProduct) {
-                $productIsRechargeable = $this->isRechargeableProduct($product['name'] ?? '', $product['type'] ?? '');
-                
-                if ($productIsRechargeable) {
-                    $score += 350; // BONUS pour Hermès Rechargeable
                 }
             }
             
@@ -1209,8 +1091,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'is_meteorites' => $isMeteoritesProduct,
                 'is_hermes' => $isHermesProduct,
                 'is_barenia' => $isBareniaProduct,
-                'is_intense' => $isIntenseProduct,
-                'is_rechargeable' => $isRechargeableProduct,
                 'is_limited_edition' => $isLimitedEdition
             ];
         })
@@ -1226,8 +1106,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             'is_special_case' => $shouldSkipTypeFilter,
             'is_hermes' => $isHermesProduct,
             'is_barenia' => $isBareniaProduct,
-            'is_intense' => $isIntenseProduct,
-            'is_rechargeable' => $isRechargeableProduct,
             'is_meteorites' => $isMeteoritesProduct,
             'is_limited_edition' => $isLimitedEdition,
             'top_10_scores' => $scoredProducts->take(10)->map(function($item) {
@@ -1238,8 +1116,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     'is_special_case' => $item['is_special_case'],
                     'is_hermes' => $item['is_hermes'] ?? false,
                     'is_barenia' => $item['is_barenia'] ?? false,
-                    'is_intense' => $item['is_intense'] ?? false,
-                    'is_rechargeable' => $item['is_rechargeable'] ?? false,
                     'is_meteorites' => $item['is_meteorites'],
                     'is_limited_edition' => $item['is_limited_edition'],
                     'coffret_bonus' => $item['coffret_bonus_applied'],
@@ -1285,8 +1161,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     'is_special_case' => $shouldSkipTypeFilter,
                     'is_hermes' => $item['is_hermes'] ?? false,
                     'is_barenia' => $item['is_barenia'] ?? false,
-                    'is_intense' => $item['is_intense'] ?? false,
-                    'is_rechargeable' => $item['is_rechargeable'] ?? false,
                     'is_meteorites' => $item['is_meteorites'] ?? false,
                     'is_limited_edition' => $item['is_limited_edition'] ?? false,
                     'name_match' => $hasNameMatch,
@@ -1786,7 +1660,6 @@ Score de confiance entre 0 et 1."
     }
 
 }; ?>
-
 
 
 <div class="bg-white">
