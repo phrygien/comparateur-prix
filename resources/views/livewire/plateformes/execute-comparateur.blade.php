@@ -462,11 +462,16 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
     }
 
     /**
-     * ✨ NOUVEAU : Vérifie si le nom du produit est valide pour un cas Hermès
-     * Pour Hermès, on vérifie :
-     * 1. Si c'est un produit Barenia, on cherche "Barenia" dans le nom ou le type
-     * 2. Si c'est une édition limitée, matching flexible
-     * 3. Sinon, matching strict sur le nom
+     * ✅ CORRIGÉ : Vérifie si le nom du produit est valide pour un cas Hermès
+     * 
+     * RÈGLES STRICTES :
+     * 1. Produit Barenia : vérification spéciale du mot "Barenia"
+     * 2. Édition limitée : 50% des mots minimum
+     * 3. Produit standard : 100% des mots (STRICT) - TOUS les mots doivent être présents
+     * 
+     * CORRECTION PRINCIPALE :
+     * - Avant : Ne vérifiait pas tous les mots strictement
+     * - Après : TOUS les mots du nom recherché doivent être présents (ex: "Ginger" obligatoire)
      */
     private function isValidHermesMatch(string $searchName, string $searchType, string $productName, string $productType, bool $isLimitedEdition): bool
     {
@@ -475,7 +480,9 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         $productNameLower = mb_strtolower(trim($productName));
         $productTypeLower = mb_strtolower(trim($productType));
         
+        // ========================================
         // CAS 1: Produit Barenia - Vérification spéciale
+        // ========================================
         $isSearchBarenia = str_contains($searchNameLower, 'barenia') || str_contains($searchTypeLower, 'barenia');
         $isProductBarenia = str_contains($productNameLower, 'barenia') || str_contains($productTypeLower, 'barenia');
         
@@ -509,14 +516,18 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             return false;
         }
         
-        // CAS 2: Édition limitée - Matching flexible
+        // ========================================
+        // CAS 2: Édition limitée - Matching flexible (50% des mots)
+        // ========================================
         if ($isLimitedEdition) {
             $searchWords = $this->extractKeywords($searchName, true);
             $matchCount = 0;
+            $matchedWords = [];
             
             foreach ($searchWords as $word) {
                 if (str_contains($productNameLower, $word) || str_contains($productTypeLower, $word)) {
                     $matchCount++;
+                    $matchedWords[] = $word;
                 }
             }
             
@@ -529,46 +540,69 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     'recherché_name' => $searchName,
                     'produit_name' => $productName,
                     'mots_recherchés' => $searchWords,
-                    'mots_matchés' => $matchCount,
+                    'mots_matchés' => $matchedWords,
+                    'count_matchés' => $matchCount,
                     'minimum_requis' => $minRequired
                 ]);
             } else {
                 \Log::debug('✅ HERMÈS - Édition limitée - Matching validé', [
                     'recherché_name' => $searchName,
                     'produit_name' => $productName,
-                    'mots_matchés' => $matchCount . '/' . count($searchWords)
+                    'mots_matchés' => $matchedWords,
+                    'ratio' => $matchCount . '/' . count($searchWords)
                 ]);
             }
             
             return $isValid;
         }
         
-        // CAS 3: Produit standard - Matching strict
+        // ========================================
+        // CAS 3: Produit standard - Matching TRÈS STRICT (100% des mots)
+        // ========================================
+        // ✅ CORRECTION PRINCIPALE :
+        // TOUS les mots du nom recherché doivent être présents dans le nom du produit
+        // Exemple : "Twilly d'Hermès Eau Ginger"
+        //   - "twilly" doit être présent ✓
+        //   - "hermès" doit être présent ✓
+        //   - "eau" doit être présent ✓
+        //   - "ginger" doit être présent ✓ ← C'EST CE QUI MANQUAIT !
+        
         $searchWords = $this->extractKeywords($searchName, true);
         $matchCount = 0;
+        $matchedWords = [];
+        $missingWords = [];
         
         foreach ($searchWords as $word) {
+            // Chercher UNIQUEMENT dans le nom du produit (pas dans le type)
             if (str_contains($productNameLower, $word)) {
                 $matchCount++;
+                $matchedWords[] = $word;
+            } else {
+                $missingWords[] = $word;
             }
         }
         
-        // Tous les mots doivent matcher pour un produit standard
-        $isValid = $matchCount === count($searchWords);
+        // ✅ RÈGLE STRICTE : TOUS les mots doivent matcher (100%)
+        $isValid = $matchCount === count($searchWords) && empty($missingWords);
         
         if (!$isValid) {
             \Log::debug('❌ HERMÈS - Produit standard - Matching strict échoué', [
                 'recherché_name' => $searchName,
                 'produit_name' => $productName,
                 'mots_recherchés' => $searchWords,
-                'mots_matchés' => $matchCount,
-                'requis' => count($searchWords)
+                'mots_matchés' => $matchedWords,
+                'mots_manquants' => $missingWords,
+                'ratio' => $matchCount . '/' . count($searchWords),
+                'raison' => empty($missingWords) 
+                    ? 'Tous les mots ne matchent pas' 
+                    : 'Mots manquants: ' . implode(', ', $missingWords)
             ]);
         } else {
-            \Log::debug('✅ HERMÈS - Produit standard - Matching validé', [
+            \Log::debug('✅ HERMÈS - Produit standard - Matching validé (100%)', [
                 'recherché_name' => $searchName,
                 'produit_name' => $productName,
-                'tous_mots_matchés' => true
+                'tous_mots_matchés' => $matchedWords,
+                'ratio' => $matchCount . '/' . count($searchWords)
             ]);
         }
         
@@ -884,7 +918,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             }
         }
         
-        // ✨ ÉTAPE 2.66: FILTRAGE STRICT pour Hermès (Barenia et éditions limitées)
+        // ✅ ÉTAPE 2.66 CORRIGÉE : FILTRAGE STRICT pour Hermès (Barenia et éditions limitées)
         if ($isHermesProduct && !empty($filteredProducts)) {
             $hermesFiltered = collect($filteredProducts)->filter(function ($product) use ($name, $type, $isLimitedEdition) {
                 return $this->isValidHermesMatch(
@@ -1660,6 +1694,7 @@ Score de confiance entre 0 et 1."
     }
 
 }; ?>
+
 
 
 <div class="bg-white">
