@@ -150,6 +150,26 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     'is_coffret' => false
                 ], $decodedData);
 
+                // ✨ CORRECTION SPÉCIALE HERMÈS : Reconstruire le NAME complet
+                // OpenAI peut extraire un NAME incomplet (ex: "Twilly d'Hermès" au lieu de "Twilly d'Hermès Eau Ginger")
+                if ($this->isHermesProduct($this->extractedData['vendor'] ?? '')) {
+                    $completeHermesName = $this->extractCompleteHermesName(
+                        $this->productName,
+                        $this->extractedData['name'] ?? '',
+                        $this->extractedData['type'] ?? '',
+                        $this->extractedData['vendor'] ?? ''
+                    );
+                    
+                    // Remplacer le NAME par le NAME complet reconstruit
+                    $this->extractedData['name'] = $completeHermesName;
+                    
+                    \Log::info('✅ HERMÈS - NAME corrigé avec le nom complet', [
+                        'name_original_openai' => $decodedData['name'] ?? '',
+                        'name_complet_reconstruit' => $completeHermesName,
+                        'produit_complet' => $this->productName
+                    ]);
+                }
+
                 // Initialiser les champs de recherche manuelle
                 $this->manualVendor = $this->extractedData['vendor'] ?? '';
                 $this->manualName = $this->extractedData['name'] ?? '';
@@ -459,6 +479,77 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         ]);
         
         return true;
+    }
+
+    /**
+     * ✨ NOUVEAU : Extrait le NAME COMPLET pour les produits Hermès
+     * 
+     * Problème : OpenAI peut extraire un NAME incomplet
+     * Exemple : "Hermès - Twilly d'Hermès Eau Ginger - Eau de Parfum 85ml"
+     *          OpenAI extrait : name="Twilly d'Hermès" (INCOMPLET)
+     *          Devrait être   : name="Twilly d'Hermès Eau Ginger" (COMPLET)
+     * 
+     * Solution : Analyser le nom complet du produit pour reconstruire le NAME correct
+     * 
+     * @param string $fullProductName Le nom complet du produit
+     * @param string $extractedName Le name extrait par OpenAI
+     * @param string $extractedType Le type extrait par OpenAI
+     * @param string $vendor Le vendor
+     * @return string Le NAME complet reconstruit
+     */
+    private function extractCompleteHermesName(
+        string $fullProductName, 
+        string $extractedName, 
+        string $extractedType,
+        string $vendor
+    ): string
+    {
+        // Nettoyer le nom complet
+        $fullNameClean = trim($fullProductName);
+        
+        // Supprimer le vendor du début (peut apparaître plusieurs fois)
+        $fullNameClean = preg_replace('/^(' . preg_quote($vendor, '/') . '\s*-?\s*)+/i', '', $fullNameClean);
+        
+        // Extraire les mots significatifs du type pour les identifier
+        $typeWords = $this->extractSignificantWords($extractedType);
+        
+        // Supprimer la variation (nombres + ml, g, etc.)
+        $fullNameClean = preg_replace('/\b\d+\s*(ml|g|kg|oz|fl\s*oz|l)\b/i', '', $fullNameClean);
+        
+        // Trouver où commence le TYPE dans le nom complet
+        $fullNameLower = mb_strtolower($fullNameClean);
+        $typeStartPos = mb_strlen($fullNameClean);
+        
+        // Chercher le premier mot du type qui apparaît dans le nom
+        foreach ($typeWords as $word) {
+            $pos = mb_strpos($fullNameLower, $word);
+            if ($pos !== false && $pos < $typeStartPos) {
+                $typeStartPos = $pos;
+            }
+        }
+        
+        // Extraire tout ce qui est AVANT le type = le NAME complet
+        if ($typeStartPos < mb_strlen($fullNameClean)) {
+            $completeName = mb_substr($fullNameClean, 0, $typeStartPos);
+        } else {
+            $completeName = $fullNameClean;
+        }
+        
+        // Nettoyer les tirets et espaces en trop
+        $completeName = preg_replace('/\s*-\s*$/', '', $completeName);
+        $completeName = preg_replace('/\s+/', ' ', $completeName);
+        $completeName = trim($completeName);
+        
+        \Log::info('🔍 HERMÈS - Reconstruction du NAME complet', [
+            'nom_complet_produit' => $fullProductName,
+            'name_extrait_openai' => $extractedName,
+            'type_extrait' => $extractedType,
+            'name_reconstruit' => $completeName,
+            'type_words_utilisés' => $typeWords,
+            'position_type_trouvée' => $typeStartPos
+        ]);
+        
+        return $completeName;
     }
 
     /**
@@ -1725,7 +1816,7 @@ Score de confiance entre 0 et 1."
         }
     }
 
-};?>
+}; ?>
 
 
 <div class="bg-white">
