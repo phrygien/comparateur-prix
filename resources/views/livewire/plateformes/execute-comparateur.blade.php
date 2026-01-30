@@ -63,11 +63,7 @@ new class extends Component {
                         'messages' => [
                             [
                                 'role' => 'system',
-                                'content' => 'Tu es un expert en extraction de données de produits cosmétiques. IMPORTANT: 
-                                - Le champ "type" doit contenir UNIQUEMENT la catégorie du produit (Crème, Huile, Sérum, Eau de Parfum, Brume parfumée, etc.), PAS le nom de la gamme.
-                                - Pour les produits capillaires, "Brume parfumée pour cheveux" est un TYPE.
-                                - Pour Hermès, "Barénia" est un NOM de gamme, "Brume parfumée pour cheveux" est un TYPE.
-                                Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
+                                'content' => 'Tu es un expert en extraction de données de produits cosmétiques. IMPORTANT: Le champ "type" doit contenir UNIQUEMENT la catégorie du produit (Crème, Huile, Sérum, Eau de Parfum, etc.), PAS le nom de la gamme. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
                             ],
                             [
                                 'role' => 'user',
@@ -76,7 +72,7 @@ new class extends Component {
 RÈGLES IMPORTANTES :
 - vendor : la marque du produit (ex: Dior, Shiseido, Chanel)
 - name : le nom de la gamme/ligne de produit UNIQUEMENT (ex: \"J'adore\", \"Vital Perfection\", \"La Vie Est Belle\")
-- type : UNIQUEMENT la catégorie/type du produit (ex: \"Huile pour le corps\", \"Eau de Parfum\", \"Crème visage\", \"Sérum\", \"Brume parfumée pour cheveux\")
+- type : UNIQUEMENT la catégorie/type du produit (ex: \"Huile pour le corps\", \"Eau de Parfum\", \"Crème visage\", \"Sérum\")
 - variation : la contenance/taille avec unité (ex: \"200 ml\", \"50 ml\", \"30 g\")
 - is_coffret : true si c'est un coffret/set/kit, false sinon
 
@@ -116,15 +112,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
   \"vendor\": \"Lancôme\",
   \"name\": \"La Nuit Trésor Rouge Drama\",
   \"type\": \"Eau de Parfum Intense Vaporisateur\",
-  \"variation\": \"30 ml\",
-  \"is_coffret\": false
-}
-
-Exemple 5 - Produit : \"Hermès - Barénia - Brume parfumée pour cheveux 30 ml\"
-{
-  \"vendor\": \"Hermès\",
-  \"name\": \"Barénia\",
-  \"type\": \"Brume parfumée pour cheveux\",
   \"variation\": \"30 ml\",
   \"is_coffret\": false
 }"
@@ -211,57 +198,6 @@ Exemple 5 - Produit : \"Hermès - Barénia - Brume parfumée pour cheveux 30 ml\
                         // Mettre à jour aussi le champ manuel
                         $this->manualName = $this->extractedData['name'];
                     }
-                    
-                    // ✅ CORRECTION SPÉCIFIQUE pour les produits capillaires Hermès
-                    if (!empty($this->extractedData['type']) && !empty($this->extractedData['name'])) {
-                        $type = $this->extractedData['type'];
-                        $name = $this->extractedData['name'];
-                        
-                        // Si le type contient le nom de la gamme, le retirer
-                        $type = trim(str_ireplace($name, '', $type));
-                        $type = preg_replace('/\s*-\s*/', ' ', $type);
-                        $type = preg_replace('/\s+/', ' ', $type);
-                        
-                        $this->extractedData['type'] = trim($type);
-                        $this->manualType = $this->extractedData['type'];
-                    }
-                    
-                    // ✅ CORRECTION SPÉCIFIQUE : Si c'est une brume parfumée, s'assurer qu'elle est dans le TYPE
-                    if (str_contains(mb_strtolower($this->productName), 'brume parfumée')) {
-                        $typeLower = mb_strtolower($this->extractedData['type'] ?? '');
-                        $nameLower = mb_strtolower($this->extractedData['name'] ?? '');
-                        
-                        // Si "brume parfumée" est dans le name mais pas dans le type, le déplacer
-                        if (str_contains($nameLower, 'brume') || str_contains($nameLower, 'parfumée')) {
-                            // Extraire "brume parfumée" du name
-                            $cleanedName = $this->cleanHermesName($this->extractedData['name'], $this->extractedData['type']);
-                            
-                            // Ajouter "Brume parfumée" au type si pas déjà présent
-                            if (!str_contains($typeLower, 'brume') && !str_contains($typeLower, 'parfumée')) {
-                                $this->extractedData['type'] = 'Brume parfumée pour cheveux ' . $this->extractedData['type'];
-                                $this->manualType = $this->extractedData['type'];
-                            }
-                            
-                            $this->extractedData['name'] = $cleanedName;
-                            $this->manualName = $cleanedName;
-                            
-                            \Log::info('🧹 HERMÈS BRUME - Correction appliquée', [
-                                'name_original' => $this->productName,
-                                'name_final' => $this->extractedData['name'],
-                                'type_final' => $this->extractedData['type']
-                            ]);
-                        }
-                    }
-                    
-                    // Log de test spécifique
-                    \Log::info('🧪 TEST HERMÈS BARÉNIA', [
-                        'produit_source' => $this->productName,
-                        'vendor_extrait' => $this->extractedData['vendor'] ?? '',
-                        'name_extrait' => $this->extractedData['name'] ?? '',
-                        'type_extrait' => $this->extractedData['type'] ?? '',
-                        'is_hermes' => $this->isHermesProduct($this->extractedData['vendor'] ?? ''),
-                        'contains_brume' => str_contains(mb_strtolower($this->productName), 'brume')
-                    ]);
                 }
 
                 \Log::info('Données extraites', [
@@ -427,10 +363,10 @@ Exemple 5 - Produit : \"Hermès - Barénia - Brume parfumée pour cheveux 30 ml\
     /**
      * ✅ CORRECTION HERMÈS : Nettoie le nom extrait pour les produits Hermès
      * 
-     * PROBLÈME : OpenAI met parfois "Eau", "Brume", "Parfum" dans le NAME au lieu du TYPE
-     * Exemple : "Barénia Brume parfumée" au lieu de "Barénia"
+     * PROBLÈME : OpenAI met parfois "Eau" dans le NAME au lieu du TYPE
+     * Exemple : "Twilly d'Hermès Eau Ginger" au lieu de "Twilly d'Hermès Ginger"
      * 
-     * SOLUTION : Retirer les mots qui appartiennent au TYPE (Eau, Parfum, Brume, etc.)
+     * SOLUTION : Retirer les mots qui appartiennent au TYPE (Eau, Parfum, etc.)
      * 
      * @param string $name Le nom extrait par OpenAI
      * @param string $type Le type extrait par OpenAI
@@ -448,17 +384,7 @@ Exemple 5 - Produit : \"Hermès - Barénia - Brume parfumée pour cheveux 30 ml\
             'spray',
             'extrait',
             'fraiche',
-            'fraîche',
-            'brume', // ✅ AJOUTÉ pour corriger le cas "Brume parfumée"
-            'parfumée', // ✅ AJOUTÉ pour les brumes parfumées
-            'parfumé',
-            'cheveux', // ✅ AJOUTÉ car c'est une application (fait partie du type)
-            'corps',
-            'visage',
-            'mains',
-            'shampooing',
-            'after-shampooing',
-            'soin'
+            'fraîche'
         ];
         
         // Convertir en minuscules pour comparaison
@@ -671,11 +597,6 @@ Exemple 5 - Produit : \"Hermès - Barénia - Brume parfumée pour cheveux 30 ml\
         // CAS 2: Édition limitée - Matching flexible (50% des mots)
         // ========================================
         if ($isLimitedEdition) {
-            // ✅ CORRECTION : Pour les brumes parfumées en édition limitée, matching plus flexible
-            if (str_contains($searchTypeLower, 'brume')) {
-                return $this->checkFlexibleMatching($searchName, $searchType, $productName, $productType, 0.5);
-            }
-            
             $searchWords = $this->extractKeywords($searchName, true);
             $matchCount = 0;
             $matchedWords = [];
@@ -763,61 +684,6 @@ Exemple 5 - Produit : \"Hermès - Barénia - Brume parfumée pour cheveux 30 ml\
         }
         
         return $isValid;
-    }
-
-    /**
-     * Vérification flexible pour les éditions limitées Hermès
-     */
-    private function checkFlexibleMatching(string $searchName, string $searchType, string $productName, string $productType, float $minRatio = 0.5): bool
-    {
-        $searchNameLower = mb_strtolower($searchName);
-        $searchTypeLower = mb_strtolower($searchType);
-        $productNameLower = mb_strtolower($productName);
-        $productTypeLower = mb_strtolower($productType);
-        
-        $searchWords = $this->extractKeywords($searchName, true);
-        $typeWords = $this->extractTypeWords($searchType);
-        
-        $allWords = array_merge($searchWords, $typeWords);
-        $matchCount = 0;
-        
-        foreach ($allWords as $word) {
-            if (str_contains($productNameLower, $word) || str_contains($productTypeLower, $word)) {
-                $matchCount++;
-            }
-        }
-        
-        $minRequired = max(1, (int)ceil(count($allWords) * $minRatio));
-        
-        \Log::debug('🔍 HERMÈS - Vérification flexible', [
-            'search_name' => $searchName,
-            'search_type' => $searchType,
-            'product_name' => $productName,
-            'product_type' => $productType,
-            'all_words' => $allWords,
-            'match_count' => $matchCount,
-            'min_required' => $minRequired,
-            'ratio' => $minRatio
-        ]);
-        
-        return $matchCount >= $minRequired;
-    }
-
-    /**
-     * Extrait les mots significatifs d'un type
-     */
-    private function extractTypeWords(string $type): array
-    {
-        if (empty($type)) {
-            return [];
-        }
-        
-        $stopWords = ['de', 'pour', 'et', 'avec', 'sans', 'le', 'la', 'les', 'des', 'du'];
-        $words = preg_split('/[\s\-]+/', mb_strtolower($type), -1, PREG_SPLIT_NO_EMPTY);
-        
-        return array_filter($words, function($word) use ($stopWords) {
-            return mb_strlen($word) >= 3 && !in_array($word, $stopWords);
-        });
     }
 
     /**
@@ -1476,10 +1342,7 @@ Exemple 5 - Produit : \"Hermès - Barénia - Brume parfumée pour cheveux 30 ml\
                 'eau fraiche',
                 'parfum',
                 'extrait',
-                'cologne',
-                'brume parfumée', // ✅ AJOUTÉ pour les brumes
-                'brume',
-                'spray'
+                'cologne'
             ];
             
             $intensityKeywords = ['intense', 'extrême', 'absolu', 'concentré', 'léger', 'doux', 'fort', 'puissant'];
@@ -1692,7 +1555,7 @@ Exemple 5 - Produit : \"Hermès - Barénia - Brume parfumée pour cheveux 30 ml\
         }
 
         $typeCategories = [
-            'parfum' => ['eau de parfum', 'parfum', 'eau de toilette', 'eau de cologne', 'eau fraiche', 'extrait de parfum', 'extrait', 'cologne', 'brume parfumée', 'brume'],
+            'parfum' => ['eau de parfum', 'parfum', 'eau de toilette', 'eau de cologne', 'eau fraiche', 'extrait de parfum', 'extrait', 'cologne'],
             'déodorant' => ['déodorant', 'deodorant', 'deo', 'anti-transpirant', 'antitranspirant'],
             'crème' => ['crème', 'creme', 'baume', 'gel', 'lotion', 'fluide', 'soin'],
             'huile' => ['huile', 'oil'],
