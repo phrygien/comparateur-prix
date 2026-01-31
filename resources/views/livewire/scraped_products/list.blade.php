@@ -306,15 +306,15 @@ new class extends Component {
         .stacked-list-item {
             transition: background-color 0.15s;
         }
-        
+
         .stacked-list-item:hover {
             background-color: #f9fafb;
         }
-        
+
         .sites-select-wrapper {
             position: relative;
         }
-        
+
         .sites-dropdown {
             position: absolute;
             top: 100%;
@@ -329,7 +329,7 @@ new class extends Component {
             z-index: 50;
             box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
         }
-        
+
         .site-option {
             padding: 0.5rem 0.75rem;
             cursor: pointer;
@@ -338,15 +338,15 @@ new class extends Component {
             gap: 0.5rem;
             transition: background-color 0.15s;
         }
-        
+
         .site-option:hover {
             background-color: #f3f4f6;
         }
-        
+
         .site-option input[type="checkbox"] {
             cursor: pointer;
         }
-        
+
         .selected-sites-display {
             min-height: 2.5rem;
             padding: 0.5rem;
@@ -355,17 +355,17 @@ new class extends Component {
             cursor: pointer;
             transition: all 0.2s;
         }
-        
+
         .selected-sites-display:hover {
             border-color: #3b82f6;
         }
-        
+
         .selected-sites-display:focus-within {
             border-color: #3b82f6;
             ring: 2px;
             ring-color: rgba(59, 130, 246, 0.2);
         }
-        
+
         .site-badge {
             display: inline-flex;
             align-items: center;
@@ -377,7 +377,7 @@ new class extends Component {
             font-size: 0.875rem;
             margin: 0.125rem;
         }
-        
+
         .site-badge button {
             margin-left: 0.25rem;
             color: #1e40af;
@@ -388,69 +388,61 @@ new class extends Component {
             padding: 0;
             line-height: 1;
         }
-        
+
         .site-badge button:hover {
             color: #1e3a8a;
         }
     </style>
-    
+
     <x-header title="Produits de concurrent" subtitle="Tous les prix des produits sur le concurrent" separator />
-    
+
     <!-- Filtres -->
     <div class="card bg-base-100 shadow-sm mb-4">
         <div class="card-body p-3">
             <h3 class="card-title text-base font-medium mb-2">Filtres de recherche</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
                 <!-- Vendeur -->
-                <div class="rounded-md bg-white px-3 pt-2.5 pb-1.5 outline outline-1 -outline-offset-1 outline-gray-300 focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-indigo-600">
+                <div
+                    class="rounded-md bg-white px-3 pt-2.5 pb-1.5 outline outline-1 -outline-offset-1 outline-gray-300 focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-indigo-600">
                     <label for="vendor" class="block text-xs font-medium text-gray-900">Vendeur</label>
-                    <input 
-                        type="text" 
-                        wire:model="vendor"
-                        id="vendor" 
-                        class="block w-full border-0 p-0 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0 sm:text-sm/6" 
+                    <input type="text" wire:model="vendor" id="vendor"
+                        class="block w-full border-0 p-0 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0 sm:text-sm/6"
                         placeholder="Dior, Prada, etc...">
                 </div>
-                
+
                 <!-- Nom du produit -->
-                <div class="rounded-md bg-white px-3 pt-2.5 pb-1.5 outline outline-1 -outline-offset-1 outline-gray-300 focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-indigo-600">
+                <div
+                    class="rounded-md bg-white px-3 pt-2.5 pb-1.5 outline outline-1 -outline-offset-1 outline-gray-300 focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-indigo-600">
                     <label for="name" class="block text-xs font-medium text-gray-900">Nom du produit</label>
-                    <input 
-                        type="text" 
-                        wire:model="name"
-                        id="name" 
-                        class="block w-full border-0 p-0 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0 sm:text-sm/6" 
+                    <input type="text" wire:model="name" id="name"
+                        class="block w-full border-0 p-0 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0 sm:text-sm/6"
                         placeholder="Filtrer par nom...">
                 </div>
-                
+
                 <!-- Type -->
-                <div class="rounded-md bg-white px-3 pt-2.5 pb-1.5 outline outline-1 -outline-offset-1 outline-gray-300 focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-indigo-600">
+                <div
+                    class="rounded-md bg-white px-3 pt-2.5 pb-1.5 outline outline-1 -outline-offset-1 outline-gray-300 focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-indigo-600">
                     <label for="type" class="block text-xs font-medium text-gray-900">Type</label>
-                    <input 
-                        type="text" 
-                        wire:model="type"
-                        id="type" 
-                        class="block w-full border-0 p-0 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0 sm:text-sm/6" 
+                    <input type="text" wire:model="type" id="type"
+                        class="block w-full border-0 p-0 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0 sm:text-sm/6"
                         placeholder="Filtrer par type...">
                 </div>
-                
+
                 <!-- Variation -->
-                <div class="rounded-md bg-white px-3 pt-2.5 pb-1.5 outline outline-1 -outline-offset-1 outline-gray-300 focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-indigo-600">
+                <div
+                    class="rounded-md bg-white px-3 pt-2.5 pb-1.5 outline outline-1 -outline-offset-1 outline-gray-300 focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-indigo-600">
                     <label for="variation" class="block text-xs font-medium text-gray-900">Variation</label>
-                    <input 
-                        type="text" 
-                        wire:model="variation"
-                        id="variation" 
-                        class="block w-full border-0 p-0 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0 sm:text-sm/6" 
+                    <input type="text" wire:model="variation" id="variation"
+                        class="block w-full border-0 p-0 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0 sm:text-sm/6"
                         placeholder="Filtrer par variation...">
                 </div>
-                
+
                 <!-- Sites web (Multi-select) -->
                 <div x-data="{ open: false }" @click.away="open = false" class="sites-select-wrapper">
                     <label class="block text-sm font-medium text-gray-700 mb-1">
                         Sites web
                     </label>
-                    
+
                     <div @click="open = !open" class="selected-sites-display">
                         @if(empty($site_ids))
                             <span class="text-gray-400 text-sm">Sélectionner des sites...</span>
@@ -463,10 +455,8 @@ new class extends Component {
                                     @if($site)
                                         <span class="site-badge">
                                             {{ $site->name }}
-                                            <button 
-                                                type="button"
-                                                wire:click.stop="$set('site_ids', {{ json_encode(array_values(array_diff($site_ids, [$siteId]))) }})"
-                                            >
+                                            <button type="button"
+                                                wire:click.stop="$set('site_ids', {{ json_encode(array_values(array_diff($site_ids, [$siteId]))) }})">
                                                 ×
                                             </button>
                                         </span>
@@ -475,40 +465,31 @@ new class extends Component {
                             </div>
                         @endif
                     </div>
-                    
+
                     <div x-show="open" x-transition class="sites-dropdown">
                         <div class="p-2 border-b border-gray-200 bg-gray-50">
-                            <button 
-                                type="button"
+                            <button type="button"
                                 wire:click="$set('site_ids', {{ json_encode($sites->pluck('id')->toArray()) }})"
-                                class="text-xs text-blue-600 hover:text-blue-800 mr-2"
-                            >
+                                class="text-xs text-blue-600 hover:text-blue-800 mr-2">
                                 Tout sélectionner
                             </button>
-                            <button 
-                                type="button"
-                                wire:click="$set('site_ids', [])"
-                                class="text-xs text-gray-600 hover:text-gray-800"
-                            >
+                            <button type="button" wire:click="$set('site_ids', [])"
+                                class="text-xs text-gray-600 hover:text-gray-800">
                                 Tout désélectionner
                             </button>
                         </div>
-                        
+
                         @foreach($sites as $site)
                             <label class="site-option">
-                                <input 
-                                    type="checkbox" 
-                                    value="{{ $site->id }}"
-                                    wire:model.live="site_ids"
-                                    class="checkbox checkbox-sm checkbox-primary"
-                                >
+                                <input type="checkbox" value="{{ $site->id }}" wire:model.live="site_ids"
+                                    class="checkbox checkbox-sm checkbox-primary">
                                 <span class="text-sm">{{ $site->name }}</span>
                             </label>
                         @endforeach
                     </div>
                 </div>
             </div>
-            
+
             <!-- Boutons d'action -->
             <div class="flex justify-between items-center mt-3">
                 <div class="text-sm text-gray-600">
@@ -518,34 +499,19 @@ new class extends Component {
                 </div>
                 <div class="flex gap-2">
                     @if($showResults)
-                        <x-button 
-                            wire:click="resetFilter" 
-                            icon="o-x-mark"
-                            label="Réinitialiser"
-                            class="btn-ghost btn-sm"
-                        />
+                        <x-button wire:click="resetFilter" icon="o-x-mark" label="Réinitialiser" class="btn-ghost btn-sm" />
                     @endif
-                    <x-button 
-                        wire:click="applyFilter" 
-                            icon="o-funnel"
-                        label="Appliquer les filtres"
-                        class="btn-primary btn-sm"
-                        spinner
-                    />
+                    <x-button wire:click="applyFilter" icon="o-funnel" label="Appliquer les filtres"
+                        class="btn-primary btn-sm" spinner />
                     @if($showResults && $totalResults > 0)
-                        <x-button 
-                            wire:click="exportCsv" 
-                            icon="o-arrow-down-tray"
-                            label="Exporter CSV ({{ $totalResults }})"
-                            class="btn-success btn-sm"
-                            spinner
-                        />
+                        <x-button wire:click="exportCsv" icon="o-arrow-down-tray" label="Exporter CSV ({{ $totalResults }})"
+                            class="btn-success btn-sm" spinner />
                     @endif
                 </div>
             </div>
         </div>
     </div>
-    
+
     <!-- Stacked List Results -->
     @if($showResults)
         @if($products->count() > 0)
@@ -561,18 +527,14 @@ new class extends Component {
                             <div class="flex gap-x-4 pr-6 sm:w-1/2 sm:flex-none">
                                 <!-- Product Image -->
                                 @if($product->image_url)
-                                    <img 
-                                        class="size-12 flex-none rounded-full bg-gray-50 object-cover" 
-                                        src="{{ $product->image_url }}" 
-                                        alt="{{ $product->name }}"
-                                        onerror="this.src='https://via.placeholder.com/48x48?text=No+Image'"
-                                    >
+                                    <img class="size-12 flex-none rounded-full bg-gray-50 object-cover" src="{{ $product->image_url }}"
+                                        alt="{{ $product->name }}" onerror="this.src='https://via.placeholder.com/48x48?text=No+Image'">
                                 @else
                                     <div class="size-12 flex-none rounded-full bg-gray-100 flex items-center justify-center">
                                         <x-icon name="o-photo" class="w-6 h-6 text-gray-400" />
                                     </div>
                                 @endif
-                                
+
                                 <!-- Product Details -->
                                 <div class="min-w-0 flex-auto">
                                     <p class="text-sm/6 font-semibold text-gray-900">
@@ -586,19 +548,21 @@ new class extends Component {
                                     </p>
                                     <p class="mt-1 flex items-center gap-2 text-xs/5 text-gray-500">
                                         @if($product->type)
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                                            <span
+                                                class="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
                                                 {{ $product->type }}
                                             </span>
                                         @endif
                                         @if($product->variation)
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded bg-gray-50 text-gray-700 border border-gray-200">
+                                            <span
+                                                class="inline-flex items-center px-2 py-0.5 rounded bg-gray-50 text-gray-700 border border-gray-200">
                                                 {{ $product->variation }}
                                             </span>
                                         @endif
                                     </p>
                                 </div>
                             </div>
-                            
+
                             <!-- Right Section: Price + Site -->
                             <div class="flex items-center justify-between gap-x-4 sm:w-1/2 sm:flex-none">
                                 <div class="hidden sm:block">
@@ -606,7 +570,7 @@ new class extends Component {
                                     <p class="text-sm/6 font-bold text-green-600">
                                         {{ $product->prix_ht }} {{ $product->currency }}
                                     </p>
-                                    
+
                                     <!-- Site and Date -->
                                     <p class="mt-1 text-xs/5 text-gray-500">
                                         @if($site)
@@ -621,10 +585,13 @@ new class extends Component {
                                         </time>
                                     </p>
                                 </div>
-                                
+
                                 <!-- Chevron Icon -->
-                                <svg class="size-5 flex-none text-gray-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                                    <path fill-rule="evenodd" d="M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
+                                <svg class="size-5 flex-none text-gray-400" viewBox="0 0 20 20" fill="currentColor"
+                                    aria-hidden="true">
+                                    <path fill-rule="evenodd"
+                                        d="M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z"
+                                        clip-rule="evenodd" />
                                 </svg>
                             </div>
                         </li>
@@ -632,112 +599,107 @@ new class extends Component {
                 </ul>
             </div>
         @else
-            <div class="p-8 text-center bg-white rounded-lg border border-gray-200">
-                <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-yellow-50 border border-yellow-200 mb-4">
+            <div class="p-8 text-center bg-gray-50 rounded-lg border border-gray-200">
+                <div
+                    class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-yellow-50 border border-yellow-200 mb-4">
                     <x-icon name="o-magnifying-glass" class="w-8 h-8 text-yellow-600" />
                 </div>
                 <h3 class="text-lg font-semibold mb-2">Aucun produit trouvé</h3>
                 <p class="text-gray-600 mb-4">
                     Aucun produit ne correspond à vos critères de filtrage.
                 </p>
-                <x-button 
-                    wire:click="resetFilter" 
-                    icon="o-arrow-path"
-                    label="Réinitialiser les filtres"
-                    class="btn-outline border-gray-300"
-                />
+                <x-button wire:click="resetFilter" icon="o-arrow-path" label="Réinitialiser les filtres"
+                    class="btn-outline border-gray-300" />
             </div>
         @endif
-        
+
         <!-- Pagination -->
         @if($products->count() > 0 && $paginator)
-            <nav class="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 sm:px-6 rounded-lg shadow-sm">
+            <nav
+                class="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 sm:px-6 rounded-lg shadow-sm">
                 <!-- Previous Button -->
                 <div class="-mt-px flex w-0 flex-1">
-                    <button 
-                        wire:click="previousPage"
+                    <button wire:click="previousPage"
                         class="inline-flex items-center border-t-2 border-transparent pt-4 pr-1 text-sm font-medium text-gray-500 hover:border-gray-300 hover:text-gray-700 {{ $currentPage <= 1 ? 'opacity-50 cursor-not-allowed' : '' }}"
-                        {{ $currentPage <= 1 ? 'disabled' : '' }}
-                    >
+                        {{ $currentPage <= 1 ? 'disabled' : '' }}>
                         <svg class="mr-3 size-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                            <path fill-rule="evenodd" d="M18 10a.75.75 0 0 1-.75.75H4.66l2.1 1.95a.75.75 0 1 1-1.02 1.1l-3.5-3.25a.75.75 0 0 1 0-1.1l3.5-3.25a.75.75 0 1 1 1.02 1.1l-2.1 1.95h12.59A.75.75 0 0 1 18 10Z" clip-rule="evenodd" />
+                            <path fill-rule="evenodd"
+                                d="M18 10a.75.75 0 0 1-.75.75H4.66l2.1 1.95a.75.75 0 1 1-1.02 1.1l-3.5-3.25a.75.75 0 0 1 0-1.1l3.5-3.25a.75.75 0 1 1 1.02 1.1l-2.1 1.95h12.59A.75.75 0 0 1 18 10Z"
+                                clip-rule="evenodd" />
                         </svg>
                         Previous
                     </button>
                 </div>
-                
+
                 <!-- Page Numbers -->
                 <div class="hidden md:-mt-px md:flex">
                     @php
                         $startPage = max(1, $currentPage - 2);
                         $endPage = min($totalPages, $currentPage + 2);
                     @endphp
-                    
+
                     @if($startPage > 1)
-                        <button 
-                            wire:click="goToPage(1)" 
-                            class="inline-flex items-center border-t-2 {{ $currentPage == 1 ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700' }} px-4 pt-4 text-sm font-medium"
-                        >
+                        <button wire:click="goToPage(1)"
+                            class="inline-flex items-center border-t-2 {{ $currentPage == 1 ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700' }} px-4 pt-4 text-sm font-medium">
                             1
                         </button>
                         @if($startPage > 2)
-                            <span class="inline-flex items-center border-t-2 border-transparent px-4 pt-4 text-sm font-medium text-gray-500">...</span>
+                            <span
+                                class="inline-flex items-center border-t-2 border-transparent px-4 pt-4 text-sm font-medium text-gray-500">...</span>
                         @endif
                     @endif
-                    
+
                     @for($page = $startPage; $page <= $endPage; $page++)
-                        <button 
-                            wire:click="goToPage({{ $page }})" 
+                        <button wire:click="goToPage({{ $page }})"
                             class="inline-flex items-center border-t-2 {{ $currentPage == $page ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700' }} px-4 pt-4 text-sm font-medium"
-                            @if($currentPage == $page) aria-current="page" @endif
-                        >
+                            @if($currentPage == $page) aria-current="page" @endif>
                             {{ $page }}
                         </button>
                     @endfor
-                    
+
                     @if($endPage < $totalPages)
                         @if($endPage < $totalPages - 1)
-                            <span class="inline-flex items-center border-t-2 border-transparent px-4 pt-4 text-sm font-medium text-gray-500">...</span>
+                            <span
+                                class="inline-flex items-center border-t-2 border-transparent px-4 pt-4 text-sm font-medium text-gray-500">...</span>
                         @endif
-                        <button 
-                            wire:click="goToPage({{ $totalPages }})" 
-                            class="inline-flex items-center border-t-2 {{ $currentPage == $totalPages ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700' }} px-4 pt-4 text-sm font-medium"
-                        >
+                        <button wire:click="goToPage({{ $totalPages }})"
+                            class="inline-flex items-center border-t-2 {{ $currentPage == $totalPages ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700' }} px-4 pt-4 text-sm font-medium">
                             {{ $totalPages }}
                         </button>
                     @endif
                 </div>
-                
+
                 <!-- Next Button -->
                 <div class="-mt-px flex w-0 flex-1 justify-end">
-                    <button 
-                        wire:click="nextPage"
+                    <button wire:click="nextPage"
                         class="inline-flex items-center border-t-2 border-transparent pt-4 pl-1 text-sm font-medium text-gray-500 hover:border-gray-300 hover:text-gray-700 {{ $currentPage >= $totalPages ? 'opacity-50 cursor-not-allowed' : '' }}"
-                        {{ $currentPage >= $totalPages ? 'disabled' : '' }}
-                    >
+                        {{ $currentPage >= $totalPages ? 'disabled' : '' }}>
                         Next
                         <svg class="ml-3 size-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                            <path fill-rule="evenodd" d="M2 10a.75.75 0 0 1 .75-.75h12.59l-2.1-1.95a.75.75 0 1 1 1.02-1.1l3.5 3.25a.75.75 0 0 1 0 1.1l-3.5 3.25a.75.75 0 1 1-1.02-1.1l2.1-1.95H2.75A.75.75 0 0 1 2 10Z" clip-rule="evenodd" />
+                            <path fill-rule="evenodd"
+                                d="M2 10a.75.75 0 0 1 .75-.75h12.59l-2.1-1.95a.75.75 0 1 1 1.02-1.1l3.5 3.25a.75.75 0 0 1 0 1.1l-3.5 3.25a.75.75 0 1 1-1.02-1.1l2.1-1.95H2.75A.75.75 0 0 1 2 10Z"
+                                clip-rule="evenodd" />
                         </svg>
                     </button>
                 </div>
             </nav>
-            
+
             <!-- Results info and per page selector -->
             <div class="mt-4 flex flex-col sm:flex-row justify-between items-center gap-4 px-4 sm:px-6">
                 <div class="text-sm text-gray-600">
-                    Affichage de 
+                    Affichage de
                     <span class="font-semibold">{{ (($currentPage - 1) * $perPage) + 1 }}</span>
-                    à 
+                    à
                     <span class="font-semibold">{{ min($currentPage * $perPage, $totalResults) }}</span>
-                    sur 
+                    sur
                     <span class="font-semibold">{{ $totalResults }}</span>
                     produit(s)
                 </div>
-                
+
                 <div class="flex items-center gap-2">
                     <span class="text-sm text-gray-600">Résultats par page:</span>
-                    <select class="rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" wire:model.live="perPage">
+                    <select class="rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                        wire:model.live="perPage">
                         <option value="20">20</option>
                         <option value="50" selected>50</option>
                         <option value="100">100</option>
@@ -747,18 +709,20 @@ new class extends Component {
             </div>
         @endif
     @else
-        <div class="card bg-white border border-gray-300 shadow-sm">
+        <div class="card bg-gray-50 border border-gray-300 shadow-sm">
             <div class="card-body text-center py-12">
-                <div class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-blue-50 border border-blue-200 mb-4">
+                <div
+                    class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-blue-50 border border-blue-200 mb-4">
                     <x-icon name="o-funnel" class="w-10 h-10 text-blue-600" />
                 </div>
                 <h3 class="text-xl font-semibold mb-2 text-gray-800">Aucun filtre appliqué</h3>
                 <p class="text-gray-600 max-w-md mx-auto mb-6">
                     Remplissez les champs de filtrage et cliquez sur "Appliquer les filtres" pour voir les résultats.
                     <br>
-                    <span class="text-sm text-gray-500">Seuls les produits les plus récents pour chaque combinaison unique sont affichés.</span>
+                    <span class="text-sm text-gray-500">Seuls les produits les plus récents pour chaque combinaison unique
+                        sont affichés.</span>
                 </p>
-                <div class="stats shadow border border-gray-300">
+                <div class="stats shadow border border-gray-300 bg-white">
                     <div class="stat border-r border-gray-300">
                         <div class="stat-figure text-blue-600">
                             <x-icon name="o-cube" class="w-8 h-8" />
@@ -767,7 +731,7 @@ new class extends Component {
                         <div class="stat-value text-blue-600 text-2xl">?</div>
                         <div class="stat-desc text-gray-500">Cliquez pour voir</div>
                     </div>
-                    
+
                     <div class="stat border-r border-gray-300">
                         <div class="stat-figure text-gray-600">
                             <x-icon name="o-building-storefront" class="w-8 h-8" />
@@ -776,7 +740,7 @@ new class extends Component {
                         <div class="stat-value text-gray-700 text-2xl">?</div>
                         <div class="stat-desc text-gray-500">En attente de filtre</div>
                     </div>
-                    
+
                     <div class="stat">
                         <div class="stat-figure text-green-600">
                             <x-icon name="o-globe-alt" class="w-8 h-8" />
