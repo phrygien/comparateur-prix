@@ -457,7 +457,7 @@ new class extends Component {
             <!-- Boutons d'action -->
             <div class="flex justify-end items-center mt-3 gap-2">
                 @if($showResults)
-                    <x-button wire:click="resetFilter" icon="o-x-mark" label="Réinitialiser" class="text-white bg-warning box-border border border-transparent hover:bg-warning-strong focus:ring-4 focus:ring-warning-medium shadow-xs font-medium leading-5 rounded-base text-sm px-4 py-2.5 focus:outline-none" />
+                    <x-button wire:click="resetFilter" icon="o-x-mark" label="Réinitialiser" class="focus:outline-none text-white bg-red-700 hover:bg-red-800 focus:ring-4 focus:ring-red-300 font-medium rounded-lg text-sm px-5 py-2.5 me-2 mb-2 dark:bg-red-600 dark:hover:bg-red-700 dark:focus:ring-red-900" />
                 @endif
                 <x-button wire:click="applyFilter" icon="o-funnel" label="Appliquer les filtres"
                     class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 me-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" spinner />
