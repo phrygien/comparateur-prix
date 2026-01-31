@@ -303,14 +303,6 @@ new class extends Component {
 
 <div>
     <style>
-        .stacked-list-item {
-            transition: background-color 0.15s;
-        }
-        
-        .stacked-list-item:hover {
-            background-color: #f9fafb;
-        }
-        
         .sites-select-wrapper {
             position: relative;
         }
@@ -550,14 +542,14 @@ new class extends Component {
         </div>
         
         @if($products->count() > 0)
-            <div class="bg-white shadow-sm rounded-lg border border-gray-200 overflow-hidden mb-6">
-                <ul role="list" class="divide-y divide-gray-100">
-                    @foreach($products as $index => $product)
-                        @php
-                            $rowNumber = (($currentPage - 1) * $perPage) + $index + 1;
-                            $site = \App\Models\Site::find($product->web_site_id);
-                        @endphp
-                        <li class="relative flex justify-between py-5 px-4 sm:px-6 stacked-list-item">
+            <div class="space-y-3">
+                @foreach($products as $index => $product)
+                    @php
+                        $rowNumber = (($currentPage - 1) * $perPage) + $index + 1;
+                        $site = \App\Models\Site::find($product->web_site_id);
+                    @endphp
+                    <div class="bg-white shadow-sm rounded-lg border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
+                        <div class="relative flex justify-between py-5 px-4 sm:px-6">
                             <!-- Left Section: Image + Product Info -->
                             <div class="flex gap-x-4 pr-6 sm:w-1/2 sm:flex-none">
                                 <!-- Product Image -->
@@ -628,9 +620,9 @@ new class extends Component {
                                     <path fill-rule="evenodd" d="M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
                                 </svg>
                             </div>
-                        </li>
-                    @endforeach
-                </ul>
+                        </div>
+                    </div>
+                @endforeach
             </div>
         @else
             <div class="p-8 text-center bg-gray-50 rounded-lg border border-gray-200">
