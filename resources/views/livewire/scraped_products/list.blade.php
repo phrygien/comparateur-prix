@@ -460,10 +460,10 @@ new class extends Component {
                     <x-button wire:click="resetFilter" icon="o-x-mark" label="Réinitialiser" class="text-white bg-warning box-border border border-transparent hover:bg-warning-strong focus:ring-4 focus:ring-warning-medium shadow-xs font-medium leading-5 rounded-base text-sm px-4 py-2.5 focus:outline-none" />
                 @endif
                 <x-button wire:click="applyFilter" icon="o-funnel" label="Appliquer les filtres"
-                    class="btn-primary btn-sm" spinner />
+                    class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 me-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800" spinner />
                 @if($showResults && $totalResults > 0)
                     <x-button wire:click="exportCsv" icon="o-arrow-down-tray" label="Exporter CSV ({{ $totalResults }})"
-                        class="btn-success btn-sm" spinner />
+                        class="focus:outline-none text-white bg-green-700 hover:bg-green-800 focus:ring-4 focus:ring-green-300 font-medium rounded-lg text-sm px-5 py-2.5 me-2 mb-2 dark:bg-green-600 dark:hover:bg-green-700 dark:focus:ring-green-800" spinner />
                 @endif
             </div>
         </div>
