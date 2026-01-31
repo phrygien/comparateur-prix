@@ -119,7 +119,7 @@
                                             <p class="text-xs text-base-content/70 truncate">{{ $user->email }}</p>
                                         </div>
                                         <!-- Logout -->
-                                        <form method="POST" action="{{ route('logout') }}" class="inline">
+                                        <form method="POST" action="" class="inline">
                                             @csrf
                                             <button type="submit" class="p-1 rounded hover:bg-base-400" title="Déconnexion">
                                                 <svg class="size-5 text-base-content" fill="none" viewBox="0 0 24 24"
