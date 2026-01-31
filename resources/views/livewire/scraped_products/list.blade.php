@@ -457,7 +457,7 @@ new class extends Component {
             <!-- Boutons d'action -->
             <div class="flex justify-end items-center mt-3 gap-2">
                 @if($showResults)
-                    <x-button wire:click="resetFilter" icon="o-x-mark" label="Réinitialiser" class="btn-ghost btn-sm" />
+                    <x-button wire:click="resetFilter" icon="o-x-mark" label="Réinitialiser" class="text-white bg-warning box-border border border-transparent hover:bg-warning-strong focus:ring-4 focus:ring-warning-medium shadow-xs font-medium leading-5 rounded-base text-sm px-4 py-2.5 focus:outline-none" />
                 @endif
                 <x-button wire:click="applyFilter" icon="o-funnel" label="Appliquer les filtres"
                     class="btn-primary btn-sm" spinner />
@@ -485,7 +485,7 @@ new class extends Component {
                         <div class="flex flex-wrap gap-1">
                             @foreach($site_ids as $siteId)
                                 @php
-                                    $site = $sites->firstWhere('id', $siteId);
+            $site = $sites->firstWhere('id', $siteId);
                                 @endphp
                                 @if($site)
                                     <span class="site-badge">
@@ -535,8 +535,8 @@ new class extends Component {
             <div class="space-y-3">
                 @foreach($products as $index => $product)
                     @php
-                        $rowNumber = (($currentPage - 1) * $perPage) + $index + 1;
-                        $site = \App\Models\Site::find($product->web_site_id);
+            $rowNumber = (($currentPage - 1) * $perPage) + $index + 1;
+            $site = \App\Models\Site::find($product->web_site_id);
                     @endphp
                     <div class="gradient-border-card shadow-sm overflow-hidden hover:shadow-md transition-shadow">
                         <div class="relative flex justify-between py-5 px-4 sm:px-6 bg-white">
@@ -651,8 +651,8 @@ new class extends Component {
                 <!-- Page Numbers -->
                 <div class="hidden md:-mt-px md:flex">
                     @php
-                        $startPage = max(1, $currentPage - 2);
-                        $endPage = min($totalPages, $currentPage + 2);
+        $startPage = max(1, $currentPage - 2);
+        $endPage = min($totalPages, $currentPage + 2);
                     @endphp
 
                     @if($startPage > 1)
