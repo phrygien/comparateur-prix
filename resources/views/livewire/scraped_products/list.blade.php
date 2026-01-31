@@ -460,14 +460,8 @@ new class extends Component {
                     <x-button wire:click="resetFilter" label="Réinitialiser" class="focus:outline-none text-white bg-red-700 hover:bg-red-800 focus:ring-4 focus:ring-red-300 font-medium rounded-lg text-sm px-5 py-2.5 me-2 mb-2 dark:bg-red-600 dark:hover:bg-red-700 dark:focus:ring-red-900" />
                 @endif
                 @if($showResults && $totalResults > 0)
-                    <x-button wire:click="exportCsv" label="Exporter CSV ({{ $totalResults }})"
-                        class="focus:outline-none text-white bg-green-700 hover:bg-green-800 focus:ring-4 focus:ring-green-300 font-medium rounded-lg text-sm px-5 py-2.5 me-2 mb-2 dark:bg-green-600 dark:hover:bg-green-700 dark:focus:ring-green-800"
-                        spinner>
-                        <x-slot:icon>
-                            <img src="https://icons.iconarchive.com/icons/carlosjj/microsoft-office-2013/256/Excel-2013-icon.png"
-                                alt="Excel" class="w-5 h-5 inline-block mr-2" />
-                        </x-slot:icon>
-                    </x-button>
+                    <x-button wire:click="exportCsv" icon="o-arrow-down-tray" label="Exporter Excel ({{ $totalResults }})"
+                        class="focus:outline-none text-white bg-green-700 hover:bg-green-800 focus:ring-4 focus:ring-green-300 font-medium rounded-lg text-sm px-5 py-2.5 me-2 mb-2 dark:bg-green-600 dark:hover:bg-green-700 dark:focus:ring-green-800" spinner />
                 @endif
                     <x-button wire:click="applyFilter" icon="o-magnifying-glass" label="Appliquer les filtres"
                         class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 me-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800"
