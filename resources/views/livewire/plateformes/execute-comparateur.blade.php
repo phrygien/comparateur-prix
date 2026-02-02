@@ -88,6 +88,10 @@ RÈGLES IMPORTANTES :
 - Le TYPE décrit le produit (ex: \"Baume en stick\", \"Eau de Parfum\", \"Fond de teint\")
 - Pour les coffrets sans contenance/teinte → variation = \"\"
 
+⚠️ EXCEPTION POUR PARFUMS :
+- Pour les parfums, les termes comme \"Purple\", \"Intense\", \"Coral\" dans le nom (ex: \"Born in Roma Purple\") font partie du NOM DE LA GAMME
+- Seule la CONTENANCE (ex: \"100 ml\") va dans VARIATION
+
 Nom du produit : {$this->productName}
 
 EXEMPLES DE FORMAT ATTENDU :
@@ -272,6 +276,26 @@ Exemple 18 - Vernis avec TEINTE :
   \"is_coffret\": false
 }
 
+Exemple 19 - PARFUM VALENTINO avec nom descriptif :
+\"Valentino - Born in Roma Purple Melancholia Uomo - Eau de Toilette Vaporisateur 100ml\"
+{
+  \"vendor\": \"Valentino\",
+  \"name\": \"Born in Roma Purple Melancholia Uomo\",
+  \"type\": \"Eau de Toilette Vaporisateur\",
+  \"variation\": \"100 ml\",
+  \"is_coffret\": false
+}
+
+Exemple 20 - AUTRE PARFUM VALENTINO :
+\"Valentino - Born in Roma Intense - Eau de Parfum Vaporisateur 50ml\"
+{
+  \"vendor\": \"Valentino\",
+  \"name\": \"Born in Roma Intense\",
+  \"type\": \"Eau de Parfum Vaporisateur\",
+  \"variation\": \"50 ml\",
+  \"is_coffret\": false
+}
+
 RÈGLES DE PRIORITÉ :
 1. Le NAME = nom de la gamme/ligne UNIQUEMENT (ex: \"Dior Forever Skin Bronze\", \"Rouge Dior\", \"Les Beiges\")
 2. Le TYPE = catégorie + description (ex: \"Baume en stick bronzant ultra-fondant\", \"Rouge à lèvres rechargeable\")
@@ -280,12 +304,13 @@ RÈGLES DE PRIORITÉ :
 5. Pour les coffrets, le TYPE peut combiner \"Coffret\" + catégorie (ex: \"Coffret Eau de Parfum\", \"Set Soin Anti-Âge\")
 6. La variation reste vide \"\" pour les coffrets sans contenance/teinte précise
 7. ⚠️ JAMAIS de numéro de teinte ou de couleur dans le NAME
+8. ⚠️ EXCEPTION PARFUMS : Pour les parfums, les termes comme \"Purple\", \"Intense\" font partie du NAME
 
 PATTERNS DE TEINTES À RECONNAÎTRE :
 - Numéro + Nom (ex: \"05 Intense Tan\", \"999 Rouge Dior\", \"02 Clair\")
 - Code + Nom (ex: \"B30 Beige\", \"1.5 Radiant Silk\", \"NC15 Fair\")
 - Nom de couleur seul (ex: \"Ivoire\", \"Beige\", \"Nude\", \"Rouge\")
-- Tous ces patterns vont dans VARIATION, jamais dans NAME"
+- Tous ces patterns vont dans VARIATION, jamais dans NAME SAUF pour les parfums"
                 ]
             ],
             'temperature' => 0.3,
