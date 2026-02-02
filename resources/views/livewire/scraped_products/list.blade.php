@@ -634,7 +634,7 @@ new class extends Component {
         <!-- Pagination -->
         @if($products->count() > 0 && $paginator)
             <nav
-                class="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 sm:px-6 rounded-lg shadow-sm">
+                class="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 sm:px-6 rounded-lg shadow-sm mt-3">
                 <!-- Previous Button -->
                 <div class="-mt-px flex w-0 flex-1">
                     <button wire:click="previousPage"
