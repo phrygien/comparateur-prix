@@ -44,7 +44,7 @@ new class extends Component {
         $this->extractSearchTerme();
     }
 
-public function extractSearchTerme()
+    public function extractSearchTerme()
     {
         $this->isLoading = true;
         $this->extractedData = null;
@@ -71,10 +71,12 @@ public function extractSearchTerme()
 
 RÈGLES IMPORTANTES :
 - vendor : la marque du produit (ex: Dior, Shiseido, Chanel)
-- name : le nom de la gamme/ligne de produit UNIQUEMENT (ex: \"J'adore\", \"Vital Perfection\", \"La Vie Est Belle\")
-  * CAS SPÉCIAL COFFRETS : Si c'est un coffret contenant plusieurs produits (ex: \"Coffret Diorshow Essentiels yeux\"), le name doit être \"Coffret\" suivi du nom de la gamme (ex: \"Coffret Diorshow\")
+- name : le nom de la gamme/ligne de produit UNIQUEMENT (ex: \"J'adore\", \"Vital Perfection\", \"La Vie Est Belle\", \"Libre\")
+  * Pour les coffrets simples : garder juste le nom de la gamme (ex: \"Libre Coffret\" → name: \"Libre\")
+  * Pour les coffrets multi-produits avec nom spécifique : inclure \"Coffret\" + nom (ex: \"Coffret Diorshow Essentiels\" → name: \"Coffret Diorshow\")
 - type : UNIQUEMENT la catégorie/type du produit (ex: \"Huile pour le corps\", \"Eau de Parfum\", \"Crème visage\", \"Sérum\")
-  * CAS SPÉCIAL COFFRETS : Si c'est un coffret avec plusieurs produits listés, le type doit contenir la description des produits inclus (ex: \"Mascara volume extrême et base sérum mascara\")
+  * Pour les coffrets simples : le type reste simple (ex: \"Eau de Parfum\", \"Coffret Cadeau Femme\")
+  * Pour les coffrets multi-produits : le type liste les produits inclus (ex: \"Mascara volume extrême et base sérum mascara\")
 - variation : la contenance/taille avec unité (ex: \"200 ml\", \"50 ml\", \"30 g\")
 - is_coffret : true si c'est un coffret/set/kit, false sinon
 
@@ -118,7 +120,16 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
   \"is_coffret\": false
 }
 
-Exemple 5 - Produit : \"Dior - Coffret Diorshow Essentiels yeux - Mascara volume extrême et base sérum mascara\"
+Exemple 5 - Produit : \"Yves Saint Laurent - Libre Coffret Cadeau Femme Eau de Parfum\"
+{
+  \"vendor\": \"Yves Saint Laurent\",
+  \"name\": \"Libre\",
+  \"type\": \"Eau de Parfum\",
+  \"variation\": \"\",
+  \"is_coffret\": true
+}
+
+Exemple 6 - Produit : \"Dior - Coffret Diorshow Essentiels yeux - Mascara volume extrême et base sérum mascara\"
 {
   \"vendor\": \"Dior\",
   \"name\": \"Coffret Diorshow\",
@@ -243,7 +254,8 @@ Exemple 5 - Produit : \"Dior - Coffret Diorshow Essentiels yeux - Mascara volume
             $this->isLoading = false;
         }
     }
-        
+
+
     public function extractSearchTermeOld()
     {
         $this->isLoading = true;
