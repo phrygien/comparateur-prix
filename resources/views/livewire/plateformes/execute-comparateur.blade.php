@@ -44,7 +44,207 @@ new class extends Component {
         $this->extractSearchTerme();
     }
 
-    public function extractSearchTerme()
+public function extractSearchTerme()
+    {
+        $this->isLoading = true;
+        $this->extractedData = null;
+        $this->matchingProducts = [];
+        $this->bestMatch = null;
+        $this->aiValidation = null;
+        $this->groupedResults = [];
+        $this->manualSearchMode = false;
+
+        try {
+            $response = Http::withHeaders([
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
+            ])->post('https://api.openai.com/v1/chat/completions', [
+                        'model' => 'gpt-4o-mini',
+                        'messages' => [
+                            [
+                                'role' => 'system',
+                                'content' => 'Tu es un expert en extraction de données de produits cosmétiques. IMPORTANT: Le champ "type" doit contenir UNIQUEMENT la catégorie du produit (Crème, Huile, Sérum, Eau de Parfum, etc.), PAS le nom de la gamme. Exception: pour les coffrets contenant plusieurs produits, le type peut décrire les produits inclus. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
+                            ],
+                            [
+                                'role' => 'user',
+                                'content' => "Extrait les informations suivantes du nom de produit et retourne-les au format JSON strict :
+
+RÈGLES IMPORTANTES :
+- vendor : la marque du produit (ex: Dior, Shiseido, Chanel)
+- name : le nom de la gamme/ligne de produit UNIQUEMENT (ex: \"J'adore\", \"Vital Perfection\", \"La Vie Est Belle\")
+  * CAS SPÉCIAL COFFRETS : Si c'est un coffret contenant plusieurs produits (ex: \"Coffret Diorshow Essentiels yeux\"), le name doit être \"Coffret\" suivi du nom de la gamme (ex: \"Coffret Diorshow\")
+- type : UNIQUEMENT la catégorie/type du produit (ex: \"Huile pour le corps\", \"Eau de Parfum\", \"Crème visage\", \"Sérum\")
+  * CAS SPÉCIAL COFFRETS : Si c'est un coffret avec plusieurs produits listés, le type doit contenir la description des produits inclus (ex: \"Mascara volume extrême et base sérum mascara\")
+- variation : la contenance/taille avec unité (ex: \"200 ml\", \"50 ml\", \"30 g\")
+- is_coffret : true si c'est un coffret/set/kit, false sinon
+
+Nom du produit : {$this->productName}
+
+EXEMPLES DE FORMAT ATTENDU :
+
+Exemple 1 - Produit : \"Dior J'adore Les Adorables Huile Scintillante Huile pour le corps 200ml\"
+{
+  \"vendor\": \"Dior\",
+  \"name\": \"J'adore Les Adorables\",
+  \"type\": \"Huile pour le corps\",
+  \"variation\": \"200 ml\",
+  \"is_coffret\": false
+}
+
+Exemple 2 - Produit : \"Chanel N°5 Eau de Parfum Vaporisateur 100 ml\"
+{
+  \"vendor\": \"Chanel\",
+  \"name\": \"N°5\",
+  \"type\": \"Eau de Parfum Vaporisateur\",
+  \"variation\": \"100 ml\",
+  \"is_coffret\": false
+}
+
+Exemple 3 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream Enriched 50ml\"
+{
+  \"vendor\": \"Shiseido\",
+  \"name\": \"Vital Perfection Uplifting and Firming\",
+  \"type\": \"Crème visage Enrichie\",
+  \"variation\": \"50 ml\",
+  \"is_coffret\": false
+}
+
+Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum Intense Vaporisateur 30ml\"
+{
+  \"vendor\": \"Lancôme\",
+  \"name\": \"La Nuit Trésor Rouge Drama\",
+  \"type\": \"Eau de Parfum Intense Vaporisateur\",
+  \"variation\": \"30 ml\",
+  \"is_coffret\": false
+}
+
+Exemple 5 - Produit : \"Dior - Coffret Diorshow Essentiels yeux - Mascara volume extrême et base sérum mascara\"
+{
+  \"vendor\": \"Dior\",
+  \"name\": \"Coffret Diorshow\",
+  \"type\": \"Mascara volume extrême et base sérum mascara\",
+  \"variation\": \"\",
+  \"is_coffret\": true
+}"
+                            ]
+                        ],
+                        'temperature' => 0.3,
+                        'max_tokens' => 500
+                    ]);
+
+            if ($response->successful()) {
+                $data = $response->json();
+                $content = $data['choices'][0]['message']['content'];
+
+                // Nettoyer le contenu
+                $content = preg_replace('/```json\s*|\s*```/', '', $content);
+                $content = trim($content);
+
+                $decodedData = json_decode($content, true);
+
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    \Log::error('Erreur parsing JSON OpenAI', [
+                        'content' => $content,
+                        'error' => json_last_error_msg()
+                    ]);
+                    throw new \Exception('Erreur de parsing JSON: ' . json_last_error_msg());
+                }
+
+                // Valider que les données essentielles existent
+                if (empty($decodedData) || !is_array($decodedData)) {
+                    throw new \Exception('Les données extraites sont vides ou invalides');
+                }
+
+                $this->extractedData = array_merge([
+                    'vendor' => '',
+                    'name' => '',
+                    'variation' => '',
+                    'type' => '',
+                    'is_coffret' => false
+                ], $decodedData);
+
+                // Initialiser les champs de recherche manuelle
+                $this->manualVendor = $this->extractedData['vendor'] ?? '';
+                $this->manualName = $this->extractedData['name'] ?? '';
+                $this->manualType = $this->extractedData['type'] ?? '';
+                $this->manualVariation = $this->extractedData['variation'] ?? '';
+
+                // Post-traitement : nettoyer le type s'il contient des informations parasites
+                // ⚠️ EXCEPTION : Ne pas nettoyer le type pour les coffrets
+                if (!empty($this->extractedData['type']) && !($this->extractedData['is_coffret'] ?? false)) {
+                    $type = $this->extractedData['type'];
+                    
+                    // Si le type contient le nom de la gamme, essayer de le nettoyer
+                    if (!empty($this->extractedData['name'])) {
+                        $name = $this->extractedData['name'];
+                        // Enlever le nom de la gamme du type s'il y est
+                        $type = trim(str_ireplace($name, '', $type));
+                    }
+                    
+                    // Enlever les tirets et espaces multiples
+                    $type = preg_replace('/\s*-\s*/', ' ', $type);
+                    $type = preg_replace('/\s+/', ' ', $type);
+                    
+                    $this->extractedData['type'] = trim($type);
+                    $this->manualType = $this->extractedData['type'];
+                }
+
+                // ✅ CORRECTION HERMÈS : Nettoyer le NAME si c'est un produit Hermès
+                if ($this->isHermesProduct($this->extractedData['vendor'] ?? '')) {
+                    $originalName = $this->extractedData['name'];
+                    $this->extractedData['name'] = $this->cleanHermesName(
+                        $this->extractedData['name'],
+                        $this->extractedData['type']
+                    );
+                    
+                    if ($originalName !== $this->extractedData['name']) {
+                        \Log::info('🧹 HERMÈS - Nettoyage du NAME détecté', [
+                            'name_original' => $originalName,
+                            'name_nettoyé' => $this->extractedData['name'],
+                            'mots_retirés' => array_diff(
+                                explode(' ', mb_strtolower($originalName)),
+                                explode(' ', mb_strtolower($this->extractedData['name']))
+                            )
+                        ]);
+                        
+                        // Mettre à jour aussi le champ manuel
+                        $this->manualName = $this->extractedData['name'];
+                    }
+                }
+
+                \Log::info('Données extraites', [
+                    'vendor' => $this->extractedData['vendor'] ?? '',
+                    'name' => $this->extractedData['name'] ?? '',
+                    'type' => $this->extractedData['type'] ?? '',
+                    'variation' => $this->extractedData['variation'] ?? '',
+                    'is_coffret' => $this->extractedData['is_coffret'] ?? false
+                ]);
+
+                // Rechercher les produits correspondants
+                $this->searchMatchingProducts();
+
+            } else {
+                $errorBody = $response->body();
+                \Log::error('Erreur API OpenAI', [
+                    'status' => $response->status(),
+                    'body' => $errorBody
+                ]);
+                throw new \Exception('Erreur API OpenAI: ' . $response->status() . ' - ' . $errorBody);
+            }
+
+        } catch (\Exception $e) {
+            \Log::error('Erreur extraction', [
+                'message' => $e->getMessage(),
+                'product_name' => $this->productName
+            ]);
+
+            session()->flash('error', 'Erreur lors de l\'extraction: ' . $e->getMessage());
+        } finally {
+            $this->isLoading = false;
+        }
+    }
+        
+    public function extractSearchTermeOld()
     {
         $this->isLoading = true;
         $this->extractedData = null;
