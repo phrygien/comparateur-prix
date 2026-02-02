@@ -44,7 +44,7 @@ new class extends Component {
         $this->extractSearchTerme();
     }
 
-    public function extractSearchTerme()
+public function extractSearchTerme()
 {
     $this->isLoading = true;
     $this->extractedData = null;
@@ -63,7 +63,12 @@ new class extends Component {
             'messages' => [
                 [
                     'role' => 'system',
-                    'content' => 'Tu es un expert en extraction de données de produits cosmétiques. IMPORTANT: Le champ "type" doit contenir UNIQUEMENT la catégorie du produit (Crème, Huile, Sérum, Eau de Parfum, Mascara, Coffret, etc.), PAS le nom de la gamme. La "variation" contient UNIQUEMENT la contenance avec unité (ml, g) ou reste vide si non précisée. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
+                    'content' => 'Tu es un expert en extraction de données de produits cosmétiques. IMPORTANT: 
+- Le "name" est le NOM DE LA GAMME/LIGNE uniquement (ex: "J\'adore", "Dior Forever Skin Bronze")
+- Le "type" est la CATÉGORIE + DESCRIPTION du produit (ex: "Baume en stick bronzant ultra-fondant", "Eau de Parfum Vaporisateur")
+- La "variation" est la TEINTE/NUANCE OU CONTENANCE (ex: "05 Intense Tan", "200 ml", "Teinte 01 Ivoire")
+- NE JAMAIS mettre la teinte/nuance dans le "name"
+Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
                 ],
                 [
                     'role' => 'user',
@@ -71,21 +76,53 @@ new class extends Component {
 
 RÈGLES IMPORTANTES :
 - vendor : la marque du produit (ex: Dior, Shiseido, Chanel, Yves Saint Laurent)
-- name : le nom de la gamme/ligne de produit UNIQUEMENT (ex: \"J'adore\", \"Vital Perfection\", \"Volume Effet Faux Cils\")
-- type : UNIQUEMENT la catégorie/type du produit (ex: \"Huile pour le corps\", \"Eau de Parfum\", \"Crème visage\", \"Mascara\", \"Coffret Cadeau Maquillage\")
-- variation : UNIQUEMENT la contenance/taille avec unité OU vide si non précisée (ex: \"200 ml\", \"50 ml\", \"30 g\", \"\")
+- name : le nom de la GAMME/LIGNE de produit UNIQUEMENT, SANS la teinte/nuance (ex: \"J'adore\", \"Dior Forever Skin Bronze\", \"Volume Effet Faux Cils\")
+- type : la catégorie + description du produit (ex: \"Baume en stick bronzant ultra-fondant\", \"Eau de Parfum\", \"Mascara\", \"Coffret Cadeau Maquillage\")
+- variation : la TEINTE/NUANCE (ex: \"05 Intense Tan\", \"Teinte 01\", \"Rouge 999\") OU la CONTENANCE (ex: \"200 ml\", \"50 ml\") OU vide si non précisée
 - is_coffret : true si c'est un coffret/set/kit, false sinon
 
-⚠️ ATTENTION VARIATIONS :
-- Si c'est un COFFRET sans contenance précise → variation DOIT ÊTRE VIDE \"\"
-- La variation contient UNIQUEMENT des chiffres + unité (ml, g, L, etc.)
-- Les mots comme \"Coffret\", \"Set\", \"Kit\" vont dans le TYPE, PAS dans variation
+⚠️ ATTENTION - RÈGLES STRICTES :
+- Le NAME ne contient JAMAIS de numéro de teinte, de nom de couleur, ou de contenance
+- Les teintes/nuances (ex: \"05 Intense Tan\", \"Teinte 01 Ivoire\", \"Rouge 999\") vont dans VARIATION
+- Les contenances (ex: \"200 ml\", \"50 ml\", \"3x20ml\") vont dans VARIATION
+- Le TYPE décrit le produit (ex: \"Baume en stick\", \"Eau de Parfum\", \"Fond de teint\")
+- Pour les coffrets sans contenance/teinte → variation = \"\"
 
 Nom du produit : {$this->productName}
 
 EXEMPLES DE FORMAT ATTENDU :
 
-Exemple 1 - Produit simple avec contenance :
+Exemple 1 - Produit avec TEINTE :
+\"Dior - Dior Forever Skin Bronze - Baume en stick bronzant ultra-fondant - 05 Intense Tan\"
+{
+  \"vendor\": \"Dior\",
+  \"name\": \"Dior Forever Skin Bronze\",
+  \"type\": \"Baume en stick bronzant ultra-fondant\",
+  \"variation\": \"05 Intense Tan\",
+  \"is_coffret\": false
+}
+
+Exemple 2 - Fond de teint avec TEINTE :
+\"Chanel - Les Beiges - Fond de Teint Belle Mine Naturelle - B30 Beige\"
+{
+  \"vendor\": \"Chanel\",
+  \"name\": \"Les Beiges\",
+  \"type\": \"Fond de Teint Belle Mine Naturelle\",
+  \"variation\": \"B30 Beige\",
+  \"is_coffret\": false
+}
+
+Exemple 3 - Rouge à lèvres avec TEINTE :
+\"Dior - Rouge Dior - Rouge à lèvres rechargeable - 999 Rouge Dior\"
+{
+  \"vendor\": \"Dior\",
+  \"name\": \"Rouge Dior\",
+  \"type\": \"Rouge à lèvres rechargeable\",
+  \"variation\": \"999 Rouge Dior\",
+  \"is_coffret\": false
+}
+
+Exemple 4 - Produit avec CONTENANCE uniquement :
 \"Dior J'adore Les Adorables Huile Scintillante Huile pour le corps 200ml\"
 {
   \"vendor\": \"Dior\",
@@ -95,7 +132,7 @@ Exemple 1 - Produit simple avec contenance :
   \"is_coffret\": false
 }
 
-Exemple 2 - Parfum avec contenance :
+Exemple 5 - Parfum avec CONTENANCE :
 \"Chanel N°5 Eau de Parfum Vaporisateur 100 ml\"
 {
   \"vendor\": \"Chanel\",
@@ -105,7 +142,7 @@ Exemple 2 - Parfum avec contenance :
   \"is_coffret\": false
 }
 
-Exemple 3 - Crème avec contenance :
+Exemple 6 - Crème avec CONTENANCE :
 \"Shiseido Vital Perfection Uplifting and Firming Cream Enriched 50ml\"
 {
   \"vendor\": \"Shiseido\",
@@ -115,7 +152,7 @@ Exemple 3 - Crème avec contenance :
   \"is_coffret\": false
 }
 
-Exemple 4 - Parfum intense avec contenance :
+Exemple 7 - Parfum intense avec CONTENANCE :
 \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum Intense Vaporisateur 30ml\"
 {
   \"vendor\": \"Lancôme\",
@@ -125,7 +162,7 @@ Exemple 4 - Parfum intense avec contenance :
   \"is_coffret\": false
 }
 
-Exemple 5 - COFFRET MAQUILLAGE sans contenance :
+Exemple 8 - COFFRET MAQUILLAGE sans variation :
 \"Yves Saint Laurent - Mascara Volume Effet Faux Cils Coffret Cadeau Maquillage\"
 {
   \"vendor\": \"Yves Saint Laurent\",
@@ -135,7 +172,7 @@ Exemple 5 - COFFRET MAQUILLAGE sans contenance :
   \"is_coffret\": true
 }
 
-Exemple 6 - COFFRET PARFUM sans contenance :
+Exemple 9 - COFFRET PARFUM sans variation :
 \"Dior Sauvage Coffret Eau de Toilette\"
 {
   \"vendor\": \"Dior\",
@@ -145,7 +182,7 @@ Exemple 6 - COFFRET PARFUM sans contenance :
   \"is_coffret\": true
 }
 
-Exemple 7 - KIT/SET sans contenance :
+Exemple 10 - KIT/SET sans variation :
 \"Lancôme Rénergie Multi-Lift Set Soin Anti-Âge\"
 {
   \"vendor\": \"Lancôme\",
@@ -155,7 +192,7 @@ Exemple 7 - KIT/SET sans contenance :
   \"is_coffret\": true
 }
 
-Exemple 8 - COFFRET avec contenance précise :
+Exemple 11 - COFFRET avec CONTENANCE précise :
 \"Chanel Coco Mademoiselle Coffret Eau de Parfum 3x20ml\"
 {
   \"vendor\": \"Chanel\",
@@ -165,7 +202,7 @@ Exemple 8 - COFFRET avec contenance précise :
   \"is_coffret\": true
 }
 
-Exemple 9 - Mascara simple avec contenance :
+Exemple 12 - Mascara avec CONTENANCE :
 \"Yves Saint Laurent Volume Effet Faux Cils Mascara 7.5ml\"
 {
   \"vendor\": \"Yves Saint Laurent\",
@@ -175,7 +212,7 @@ Exemple 9 - Mascara simple avec contenance :
   \"is_coffret\": false
 }
 
-Exemple 10 - DUO sans contenance :
+Exemple 13 - DUO sans variation :
 \"Guerlain La Petite Robe Noire Duo Parfum et Lait Corps\"
 {
   \"vendor\": \"Guerlain\",
@@ -185,7 +222,7 @@ Exemple 10 - DUO sans contenance :
   \"is_coffret\": true
 }
 
-Exemple 11 - TRIO sans contenance :
+Exemple 14 - TRIO sans variation :
 \"Clarins Multi-Active Trio Soin Jour, Nuit et Contour\"
 {
   \"vendor\": \"Clarins\",
@@ -195,7 +232,7 @@ Exemple 11 - TRIO sans contenance :
   \"is_coffret\": true
 }
 
-Exemple 12 - COLLECTION sans contenance :
+Exemple 15 - COLLECTION sans variation :
 \"Estée Lauder Advanced Night Repair Collection Voyage\"
 {
   \"vendor\": \"Estée Lauder\",
@@ -205,17 +242,54 @@ Exemple 12 - COLLECTION sans contenance :
   \"is_coffret\": true
 }
 
+Exemple 16 - Poudre avec TEINTE :
+\"Guerlain - Météorites - Perles de Poudre - 02 Clair\"
+{
+  \"vendor\": \"Guerlain\",
+  \"name\": \"Météorites\",
+  \"type\": \"Perles de Poudre\",
+  \"variation\": \"02 Clair\",
+  \"is_coffret\": false
+}
+
+Exemple 17 - Anti-cernes avec TEINTE :
+\"Yves Saint Laurent - Touche Éclat - Correcteur Illuminateur - 1.5 Radiant Silk\"
+{
+  \"vendor\": \"Yves Saint Laurent\",
+  \"name\": \"Touche Éclat\",
+  \"type\": \"Correcteur Illuminateur\",
+  \"variation\": \"1.5 Radiant Silk\",
+  \"is_coffret\": false
+}
+
+Exemple 18 - Vernis avec TEINTE :
+\"Chanel - Le Vernis - Vernis à Ongles - 500 Rouge Essentiel\"
+{
+  \"vendor\": \"Chanel\",
+  \"name\": \"Le Vernis\",
+  \"type\": \"Vernis à Ongles\",
+  \"variation\": \"500 Rouge Essentiel\",
+  \"is_coffret\": false
+}
+
 RÈGLES DE PRIORITÉ :
-1. Si le produit contient \"Coffret\", \"Set\", \"Kit\", \"Duo\", \"Trio\", \"Collection\" → is_coffret = true
-2. Ces mots vont dans le TYPE (ex: \"Coffret Cadeau Maquillage\", \"Set Soin Anti-Âge\", \"Duo Parfum\")
-3. La VARIATION reste vide \"\" sauf si une contenance PRÉCISE est mentionnée (ex: \"3x20ml\", \"50ml\", \"100g\")
-4. Le TYPE décrit la NATURE du produit (Mascara, Parfum, Crème, Coffret, Set, etc.)
-5. Le NAME contient le nom de la gamme/ligne, SANS le type de produit
-6. Pour les coffrets, le TYPE peut combiner \"Coffret\" + catégorie (ex: \"Coffret Eau de Parfum\", \"Coffret Maquillage\")"
+1. Le NAME = nom de la gamme/ligne UNIQUEMENT (ex: \"Dior Forever Skin Bronze\", \"Rouge Dior\", \"Les Beiges\")
+2. Le TYPE = catégorie + description (ex: \"Baume en stick bronzant ultra-fondant\", \"Rouge à lèvres rechargeable\")
+3. La VARIATION = teinte/nuance OU contenance (ex: \"05 Intense Tan\", \"200 ml\", \"999 Rouge Dior\")
+4. Si c'est un coffret/set/kit/duo/trio/collection → is_coffret = true
+5. Pour les coffrets, le TYPE peut combiner \"Coffret\" + catégorie (ex: \"Coffret Eau de Parfum\", \"Set Soin Anti-Âge\")
+6. La variation reste vide \"\" pour les coffrets sans contenance/teinte précise
+7. ⚠️ JAMAIS de numéro de teinte ou de couleur dans le NAME
+
+PATTERNS DE TEINTES À RECONNAÎTRE :
+- Numéro + Nom (ex: \"05 Intense Tan\", \"999 Rouge Dior\", \"02 Clair\")
+- Code + Nom (ex: \"B30 Beige\", \"1.5 Radiant Silk\", \"NC15 Fair\")
+- Nom de couleur seul (ex: \"Ivoire\", \"Beige\", \"Nude\", \"Rouge\")
+- Tous ces patterns vont dans VARIATION, jamais dans NAME"
                 ]
             ],
             'temperature' => 0.3,
-            'max_tokens' => 500
+            'max_tokens' => 600
         ]);
 
         if ($response->successful()) {
