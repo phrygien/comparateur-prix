@@ -1966,7 +1966,7 @@ Score de confiance entre 0 et 1."
             <div class="mt-6">
                 <!-- Onglet "Tous" -->
                 @if($activeTab === 'all')
-                    <ul role="list" class="divide-y divide-gray-100 overflow-hidden bg-white ring-1 shadow-xs ring-gray-900/5 sm:rounded-xl">
+                    <ul role="list" class="space-y-3">
                         @foreach($allProducts as $product)
                             @php
                                 $hasUrl = !empty($product['url']);
@@ -2005,7 +2005,7 @@ Score de confiance entre 0 et 1."
                                 $siteInfo = collect($availableSites)->firstWhere('id', $product['web_site_id']);
                             @endphp
 
-                            <li class="relative flex justify-between gap-x-6 px-4 py-5 hover:bg-gray-50 sm:px-6 {{ $isBestMatch ? 'ring-2 ring-indigo-500 bg-indigo-50' : '' }}">
+                            <li class="relative flex justify-between gap-x-6 px-4 py-5 hover:bg-gray-50 sm:px-6 bg-white rounded-xl shadow-sm ring-1 ring-gray-900/5 transition-shadow hover:shadow-md {{ $isBestMatch ? 'ring-2 ring-indigo-500 bg-indigo-50' : '' }}">
                                 <div class="flex min-w-0 gap-x-4">
                                     <!-- Image du produit -->
                                     @if(!empty($product['image_url']))
@@ -2122,7 +2122,7 @@ Score de confiance entre 0 et 1."
                     @endphp
                     
                     @if($currentSiteProducts->count() > 0)
-                        <ul role="list" class="divide-y divide-gray-100 overflow-hidden bg-white ring-1 shadow-xs ring-gray-900/5 sm:rounded-xl">
+                        <ul role="list" class="space-y-3">
                             @foreach($currentSiteProducts as $product)
                                 @php
                                     $hasUrl = !empty($product['url']);
@@ -2159,7 +2159,7 @@ Score de confiance entre 0 et 1."
                                     }
                                 @endphp
 
-                                <li class="relative flex justify-between gap-x-6 px-4 py-5 hover:bg-gray-50 sm:px-6 {{ $isBestMatch ? 'ring-2 ring-indigo-500 bg-indigo-50' : '' }}">
+                                <li class="relative flex justify-between gap-x-6 px-4 py-5 hover:bg-gray-50 sm:px-6 bg-white rounded-xl shadow-sm ring-1 ring-gray-900/5 transition-shadow hover:shadow-md {{ $isBestMatch ? 'ring-2 ring-indigo-500 bg-indigo-50' : '' }}">
                                     <div class="flex min-w-0 gap-x-4">
                                         <!-- Image du produit -->
                                         @if(!empty($product['image_url']))
