@@ -1841,30 +1841,6 @@ Score de confiance entre 0 et 1."
         </div>
     @endif
 
-    <!-- Filtres par site -->
-    {{-- @if(!empty($availableSites))
-        <div class="px-6 py-4 bg-gray-50 border-b border-gray-200">
-            <div class="flex items-center justify-between mb-3">
-                <h3 class="font-semibold text-gray-700">Filtrer par site</h3>
-                <button wire:click="toggleAllSites" class="text-sm text-indigo-600 hover:text-indigo-800 font-medium">
-                    {{ count($selectedSites) === count($availableSites) ? 'Tout désélectionner' : 'Tout sélectionner' }}
-                </button>
-            </div>
-            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                @foreach($availableSites as $site)
-                    <label class="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 p-2 rounded">
-                        <input type="checkbox" wire:model.live="selectedSites" value="{{ $site['id'] }}"
-                            class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                        <span class="text-sm">{{ $site['name'] }}</span>
-                    </label>
-                @endforeach
-            </div>
-            <p class="text-xs text-gray-500 mt-2">
-                {{ count($selectedSites) }} site(s) sélectionné(s)
-            </p>
-        </div>
-    @endif --}}
-
     @if(session('error'))
         <div class="mx-6 mt-4 p-4 bg-red-100 text-red-700 rounded-lg">
             {{ session('error') }}
@@ -1986,159 +1962,159 @@ Score de confiance entre 0 et 1."
                 </div>
             </div>
 
-            <!-- Contenu des onglets -->
+            <!-- Contenu des onglets - STACKED LIST -->
             <div class="mt-6">
                 <!-- Onglet "Tous" -->
                 @if($activeTab === 'all')
-                    <div class="-mx-px grid grid-cols-2 border-l border-gray-200 sm:mx-0 md:grid-cols-3 lg:grid-cols-4">
+                    <ul role="list" class="divide-y divide-gray-100 overflow-hidden bg-white ring-1 shadow-xs ring-gray-900/5 sm:rounded-xl">
                         @foreach($allProducts as $product)
                             @php
                                 $hasUrl = !empty($product['url']);
                                 $isBestMatch = $bestMatch && $bestMatch['id'] === $product['id'];
-                                $cardClass = "group relative border-r border-b border-gray-200 p-4 sm:p-6 cursor-pointer transition hover:bg-gray-50";
-                                if ($isBestMatch) {
-                                    $cardClass .= " ring-2 ring-indigo-500 bg-indigo-50";
-                                }
-                            @endphp
-                            
-                            @if($hasUrl)
-                                <a href="{{ $product['url'] }}" target="_blank" rel="noopener noreferrer" 
-                                   class="{{ $cardClass }}">
-                            @else
-                                <div class="{{ $cardClass }}">
-                            @endif
                                 
-                                <!-- Image du produit -->
-                                @if(!empty($product['image_url']))
-                                    <img src="{{ $product['image_url'] }}" 
-                                         alt="{{ $product['name'] }}"
-                                         class="aspect-square rounded-lg bg-gray-200 object-cover group-hover:opacity-75"
-                                         onerror="this.src='https://placehold.co/600x400/e5e7eb/9ca3af?text=No+Image'">
-                                @else
-                                    <img src="https://placehold.co/600x400/e5e7eb/9ca3af?text=No+Image" 
-                                         alt="Image non disponible"
-                                         class="aspect-square rounded-lg bg-gray-200 object-cover group-hover:opacity-75">
-                                @endif
+                                // Vérifier si le name matche
+                                $nameMatches = false;
+                                if (!empty($extractedData['name'])) {
+                                    $searchNameLower = mb_strtolower($extractedData['name']);
+                                    $productNameLower = mb_strtolower($product['name'] ?? '');
+                                    $nameMatches = str_contains($productNameLower, $searchNameLower);
+                                }
+                                
+                                // Vérifier si le type matche
+                                $typeMatches = false;
+                                if (!empty($extractedData['type'])) {
+                                    $searchTypeLower = mb_strtolower($extractedData['type']);
+                                    $productTypeLower = mb_strtolower($product['type'] ?? '');
+                                    $typeMatches = str_contains($productTypeLower, $searchTypeLower);
+                                }
 
-                                <div class="pt-4 pb-4 text-center">
-                                    <!-- Badges de matching -->
-                                    <div class="mb-2 flex justify-center gap-1">
-                                        @php
-                                            // Vérifier si le name matche
-                                            $nameMatches = false;
-                                            if (!empty($extractedData['name'])) {
-                                                $searchNameLower = mb_strtolower($extractedData['name']);
-                                                $productNameLower = mb_strtolower($product['name'] ?? '');
-                                                $nameMatches = str_contains($productNameLower, $searchNameLower);
-                                            }
-                                            
-                                            // Vérifier si le type matche
-                                            $typeMatches = false;
-                                            if (!empty($extractedData['type'])) {
-                                                $searchTypeLower = mb_strtolower($extractedData['type']);
-                                                $productTypeLower = mb_strtolower($product['type'] ?? '');
-                                                $typeMatches = str_contains($productTypeLower, $searchTypeLower);
-                                            }
-                                        @endphp
-                                        
-                                        @if($nameMatches)
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                                                ✓ Name
-                                            </span>
-                                        @endif
-                                        
-                                        @if($typeMatches)
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                                ✓ Type
-                                            </span>
-                                        @endif
-                                    </div>
+                                // Badge couleur pour le type
+                                $productTypeLower = strtolower($product['type'] ?? '');
+                                $badgeColor = 'bg-gray-100 text-gray-800';
+                                
+                                if (str_contains($productTypeLower, 'eau de toilette') || str_contains($productTypeLower, 'eau de parfum')) {
+                                    $badgeColor = 'bg-purple-100 text-purple-800';
+                                } elseif (str_contains($productTypeLower, 'déodorant') || str_contains($productTypeLower, 'deodorant')) {
+                                    $badgeColor = 'bg-green-100 text-green-800';
+                                } elseif (str_contains($productTypeLower, 'crème') || str_contains($productTypeLower, 'creme')) {
+                                    $badgeColor = 'bg-pink-100 text-pink-800';
+                                } elseif (str_contains($productTypeLower, 'huile')) {
+                                    $badgeColor = 'bg-yellow-100 text-yellow-800';
+                                }
 
-                                    <!-- Badge coffret -->
-                                    @if($product['name'] && (str_contains(strtolower($product['name']), 'coffret') || str_contains(strtolower($product['name']), 'set') || str_contains(strtolower($product['type'] ?? ''), 'coffret')))
-                                        <div class="mb-2">
-                                            <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800">🎁 Coffret</span>
-                                        </div>
+                                $siteInfo = collect($availableSites)->firstWhere('id', $product['web_site_id']);
+                            @endphp
+
+                            <li class="relative flex justify-between gap-x-6 px-4 py-5 hover:bg-gray-50 sm:px-6 {{ $isBestMatch ? 'ring-2 ring-indigo-500 bg-indigo-50' : '' }}">
+                                <div class="flex min-w-0 gap-x-4">
+                                    <!-- Image du produit -->
+                                    @if(!empty($product['image_url']))
+                                        <img class="size-16 flex-none rounded bg-gray-50 object-cover" 
+                                             src="{{ $product['image_url'] }}" 
+                                             alt="{{ $product['name'] }}"
+                                             onerror="this.src='https://placehold.co/64x64/e5e7eb/9ca3af?text=No+Image'">
+                                    @else
+                                        <img class="size-16 flex-none rounded bg-gray-50 object-cover" 
+                                             src="https://placehold.co/64x64/e5e7eb/9ca3af?text=No+Image" 
+                                             alt="Image non disponible">
                                     @endif
 
-                                    <!-- Nom du produit -->
-                                    <h3 class="text-sm font-medium text-gray-900">
-                                        {{ $product['vendor'] }}
-                                    </h3>
-                                    <p class="text-xs text-gray-600 mt-1 truncate">{{ $product['name'] }}</p>
-                                    
-                                    <!-- Type avec badge coloré -->
-                                    @php
-                                        $productTypeLower = strtolower($product['type'] ?? '');
-                                        $badgeColor = 'bg-gray-100 text-gray-800';
+                                    <div class="min-w-0 flex-auto">
+                                        <p class="text-sm/6 font-semibold text-gray-900">
+                                            @if($hasUrl)
+                                                <a href="{{ $product['url'] }}" target="_blank" rel="noopener noreferrer">
+                                                    <span class="absolute inset-x-0 -top-px bottom-0"></span>
+                                                    {{ $product['vendor'] }} - {{ $product['name'] }}
+                                                </a>
+                                            @else
+                                                <span>{{ $product['vendor'] }} - {{ $product['name'] }}</span>
+                                            @endif
+                                        </p>
                                         
-                                        if (str_contains($productTypeLower, 'eau de toilette') || str_contains($productTypeLower, 'eau de parfum')) {
-                                            $badgeColor = 'bg-purple-100 text-purple-800';
-                                        } elseif (str_contains($productTypeLower, 'déodorant') || str_contains($productTypeLower, 'deodorant')) {
-                                            $badgeColor = 'bg-green-100 text-green-800';
-                                        } elseif (str_contains($productTypeLower, 'crème') || str_contains($productTypeLower, 'creme')) {
-                                            $badgeColor = 'bg-pink-100 text-pink-800';
-                                        } elseif (str_contains($productTypeLower, 'huile')) {
-                                            $badgeColor = 'bg-yellow-100 text-yellow-800';
-                                        }
-                                    @endphp
-                                    
-                                    <div class="mt-1">
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ $badgeColor }}">
-                                            {{ $product['type'] }}
-                                        </span>
+                                        <!-- Badges et informations -->
+                                        <div class="mt-1 flex flex-wrap items-center gap-2">
+                                            <!-- Badge Type -->
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ $badgeColor }}">
+                                                {{ $product['type'] }}
+                                            </span>
+
+                                            <!-- Badge Variation -->
+                                            @if($product['variation'])
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
+                                                    {{ $product['variation'] }}
+                                                </span>
+                                            @endif
+
+                                            <!-- Badge Name Match -->
+                                            @if($nameMatches)
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                                    ✓ Name
+                                                </span>
+                                            @endif
+                                            
+                                            <!-- Badge Type Match -->
+                                            @if($typeMatches)
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                                    ✓ Type
+                                                </span>
+                                            @endif
+
+                                            <!-- Badge Coffret -->
+                                            @if($product['name'] && (str_contains(strtolower($product['name']), 'coffret') || str_contains(strtolower($product['name']), 'set') || str_contains(strtolower($product['type'] ?? ''), 'coffret')))
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                                                    🎁 Coffret
+                                                </span>
+                                            @endif
+
+                                            <!-- Badge Site -->
+                                            @if($siteInfo)
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">
+                                                    {{ $siteInfo['name'] }}
+                                                </span>
+                                            @endif
+                                        </div>
+
+                                        <!-- Date de mise à jour -->
+                                        @if(isset($product['updated_at']))
+                                            <p class="mt-1 text-xs/5 text-gray-500">
+                                                MAJ: {{ \Carbon\Carbon::parse($product['updated_at'])->translatedFormat('j F Y \\à H:i') }}
+                                            </p>
+                                        @endif
                                     </div>
-                                    
-                                    <p class="text-xs text-gray-400 mt-1">{{ $product['variation'] }}</p>
+                                </div>
 
-                                    <!-- Prix -->
-                                    <p class="mt-4 text-base font-medium text-gray-900">
-                                        {{ number_format((float)($product['prix_ht'] ?? 0), 2) }} €
-                                    </p>
-
-                                    <!-- Bouton voir produit -->
-                                    @if($hasUrl)
-                                        <div class="mt-2">
-                                            <span class="inline-flex items-center text-xs font-medium text-indigo-600">
-                                                Ouvrir dans un nouvel onglet
-                                                <svg class="ml-1 h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <div class="flex shrink-0 items-center gap-x-4">
+                                    <div class="hidden sm:flex sm:flex-col sm:items-end">
+                                        <!-- Prix -->
+                                        <p class="text-sm/6 font-semibold text-gray-900">
+                                            {{ number_format((float)($product['prix_ht'] ?? 0), 2) }} €
+                                        </p>
+                                        
+                                        <!-- Statut du lien -->
+                                        @if($hasUrl)
+                                            <p class="mt-1 text-xs/5 text-indigo-600 flex items-center gap-1">
+                                                Voir le produit
+                                                <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                                 </svg>
-                                            </span>
-                                        </div>
-                                    @else
-                                        <div class="mt-2">
-                                            <span class="inline-flex items-center text-xs font-medium text-gray-400">
+                                            </p>
+                                        @else
+                                            <p class="mt-1 text-xs/5 text-gray-400">
                                                 URL non disponible
-                                            </span>
-                                        </div>
-                                    @endif
+                                            </p>
+                                        @endif
+                                    </div>
 
-                                    <!-- ID scrape -->
-                                    @if(isset($product['scrape_reference_id']))
-                                        <p class="text-xs text-gray-400 mt-2">Date MAJ : {{ \Carbon\Carbon::parse($product['updated_at'])->translatedFormat('j F Y \\à H:i') }} </p>
-                                    @endif
-
-                                    <!-- Site -->
-                                    @php
-                                        $siteInfo = collect($availableSites)->firstWhere('id', $product['web_site_id']);
-                                    @endphp
-                                    @if($siteInfo)
-                                        <div class="mt-2">
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
-                                                {{ $siteInfo['name'] }}
-                                            </span>
-                                        </div>
+                                    <!-- Chevron -->
+                                    @if($hasUrl)
+                                        <svg class="size-5 flex-none text-gray-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon">
+                                            <path fill-rule="evenodd" d="M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
+                                        </svg>
                                     @endif
                                 </div>
-                                
-                            @if($hasUrl)
-                                </a>
-                            @else
-                                </div>
-                            @endif
+                            </li>
                         @endforeach
-                    </div>
+                    </ul>
                 @else
                     <!-- Onglets par site spécifique -->
                     @php
@@ -2146,143 +2122,146 @@ Score de confiance entre 0 et 1."
                     @endphp
                     
                     @if($currentSiteProducts->count() > 0)
-                        <div class="-mx-px grid grid-cols-2 border-l border-gray-200 sm:mx-0 md:grid-cols-3 lg:grid-cols-4">
+                        <ul role="list" class="divide-y divide-gray-100 overflow-hidden bg-white ring-1 shadow-xs ring-gray-900/5 sm:rounded-xl">
                             @foreach($currentSiteProducts as $product)
                                 @php
                                     $hasUrl = !empty($product['url']);
                                     $isBestMatch = $bestMatch && $bestMatch['id'] === $product['id'];
-                                    $cardClass = "group relative border-r border-b border-gray-200 p-4 sm:p-6 cursor-pointer transition hover:bg-gray-50";
-                                    if ($isBestMatch) {
-                                        $cardClass .= " ring-2 ring-indigo-500 bg-indigo-50";
+                                    
+                                    // Vérifier si le name matche
+                                    $nameMatches = false;
+                                    if (!empty($extractedData['name'])) {
+                                        $searchNameLower = mb_strtolower($extractedData['name']);
+                                        $productNameLower = mb_strtolower($product['name'] ?? '');
+                                        $nameMatches = str_contains($productNameLower, $searchNameLower);
+                                    }
+                                    
+                                    // Vérifier si le type matche
+                                    $typeMatches = false;
+                                    if (!empty($extractedData['type'])) {
+                                        $searchTypeLower = mb_strtolower($extractedData['type']);
+                                        $productTypeLower = mb_strtolower($product['type'] ?? '');
+                                        $typeMatches = str_contains($productTypeLower, $searchTypeLower);
+                                    }
+
+                                    // Badge couleur pour le type
+                                    $productTypeLower = strtolower($product['type'] ?? '');
+                                    $badgeColor = 'bg-gray-100 text-gray-800';
+                                    
+                                    if (str_contains($productTypeLower, 'eau de toilette') || str_contains($productTypeLower, 'eau de parfum')) {
+                                        $badgeColor = 'bg-purple-100 text-purple-800';
+                                    } elseif (str_contains($productTypeLower, 'déodorant') || str_contains($productTypeLower, 'deodorant')) {
+                                        $badgeColor = 'bg-green-100 text-green-800';
+                                    } elseif (str_contains($productTypeLower, 'crème') || str_contains($productTypeLower, 'creme')) {
+                                        $badgeColor = 'bg-pink-100 text-pink-800';
+                                    } elseif (str_contains($productTypeLower, 'huile')) {
+                                        $badgeColor = 'bg-yellow-100 text-yellow-800';
                                     }
                                 @endphp
-                                
-                                @if($hasUrl)
-                                    <a href="{{ $product['url'] }}" target="_blank" rel="noopener noreferrer" 
-                                       class="{{ $cardClass }}">
-                                @else
-                                    <div class="{{ $cardClass }}">
-                                @endif
-                                    
-                                    <!-- Image du produit -->
-                                    @if(!empty($product['image_url']))
-                                        <img src="{{ $product['image_url'] }}" 
-                                             alt="{{ $product['name'] }}"
-                                             class="aspect-square rounded-lg bg-gray-200 object-cover group-hover:opacity-75"
-                                             onerror="this.src='https://placehold.co/600x400/e5e7eb/9ca3af?text=No+Image'">
-                                    @else
-                                        <img src="https://placehold.co/600x400/e5e7eb/9ca3af?text=No+Image" 
-                                             alt="Image non disponible"
-                                             class="aspect-square rounded-lg bg-gray-200 object-cover group-hover:opacity-75">
-                                    @endif
 
-                                    <div class="pt-4 pb-4 text-center">
-                                        <!-- Badges de matching -->
-                                        <div class="mb-2 flex justify-center gap-1">
-                                            @php
-                                                // Vérifier si le name matche
-                                                $nameMatches = false;
-                                                if (!empty($extractedData['name'])) {
-                                                    $searchNameLower = mb_strtolower($extractedData['name']);
-                                                    $productNameLower = mb_strtolower($product['name'] ?? '');
-                                                    $nameMatches = str_contains($productNameLower, $searchNameLower);
-                                                }
-                                                
-                                                // Vérifier si le type matche
-                                                $typeMatches = false;
-                                                if (!empty($extractedData['type'])) {
-                                                    $searchTypeLower = mb_strtolower($extractedData['type']);
-                                                    $productTypeLower = mb_strtolower($product['type'] ?? '');
-                                                    $typeMatches = str_contains($productTypeLower, $searchTypeLower);
-                                                }
-                                            @endphp
-                                            
-                                            @if($nameMatches)
-                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                                                    ✓ Name
-                                                </span>
-                                            @endif
-                                            
-                                            @if($typeMatches)
-                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                                    ✓ Type
-                                                </span>
-                                            @endif
-                                        </div>
-
-                                        <!-- Badge coffret -->
-                                        @if($product['name'] && (str_contains(strtolower($product['name']), 'coffret') || str_contains(strtolower($product['name']), 'set') || str_contains(strtolower($product['type'] ?? ''), 'coffret')))
-                                            <div class="mb-2">
-                                                <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800">🎁 Coffret</span>
-                                            </div>
+                                <li class="relative flex justify-between gap-x-6 px-4 py-5 hover:bg-gray-50 sm:px-6 {{ $isBestMatch ? 'ring-2 ring-indigo-500 bg-indigo-50' : '' }}">
+                                    <div class="flex min-w-0 gap-x-4">
+                                        <!-- Image du produit -->
+                                        @if(!empty($product['image_url']))
+                                            <img class="size-16 flex-none rounded bg-gray-50 object-cover" 
+                                                 src="{{ $product['image_url'] }}" 
+                                                 alt="{{ $product['name'] }}"
+                                                 onerror="this.src='https://placehold.co/64x64/e5e7eb/9ca3af?text=No+Image'">
+                                        @else
+                                            <img class="size-16 flex-none rounded bg-gray-50 object-cover" 
+                                                 src="https://placehold.co/64x64/e5e7eb/9ca3af?text=No+Image" 
+                                                 alt="Image non disponible">
                                         @endif
 
-                                        <!-- Nom du produit -->
-                                        <h3 class="text-sm font-medium text-gray-900">
-                                            {{ $product['vendor'] }}
-                                        </h3>
-                                        <p class="text-xs text-gray-600 mt-1 truncate">{{ $product['name'] }}</p>
-                                        
-                                        <!-- Type avec badge coloré -->
-                                        @php
-                                            $productTypeLower = strtolower($product['type'] ?? '');
-                                            $badgeColor = 'bg-gray-100 text-gray-800';
+                                        <div class="min-w-0 flex-auto">
+                                            <p class="text-sm/6 font-semibold text-gray-900">
+                                                @if($hasUrl)
+                                                    <a href="{{ $product['url'] }}" target="_blank" rel="noopener noreferrer">
+                                                        <span class="absolute inset-x-0 -top-px bottom-0"></span>
+                                                        {{ $product['vendor'] }} - {{ $product['name'] }}
+                                                    </a>
+                                                @else
+                                                    <span>{{ $product['vendor'] }} - {{ $product['name'] }}</span>
+                                                @endif
+                                            </p>
                                             
-                                            if (str_contains($productTypeLower, 'eau de toilette') || str_contains($productTypeLower, 'eau de parfum')) {
-                                                $badgeColor = 'bg-purple-100 text-purple-800';
-                                            } elseif (str_contains($productTypeLower, 'déodorant') || str_contains($productTypeLower, 'deodorant')) {
-                                                $badgeColor = 'bg-green-100 text-green-800';
-                                            } elseif (str_contains($productTypeLower, 'crème') || str_contains($productTypeLower, 'creme')) {
-                                                $badgeColor = 'bg-pink-100 text-pink-800';
-                                            } elseif (str_contains($productTypeLower, 'huile')) {
-                                                $badgeColor = 'bg-yellow-100 text-yellow-800';
-                                            }
-                                        @endphp
-                                        
-                                        <div class="mt-1">
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ $badgeColor }}">
-                                                {{ $product['type'] }}
-                                            </span>
+                                            <!-- Badges et informations -->
+                                            <div class="mt-1 flex flex-wrap items-center gap-2">
+                                                <!-- Badge Type -->
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ $badgeColor }}">
+                                                    {{ $product['type'] }}
+                                                </span>
+
+                                                <!-- Badge Variation -->
+                                                @if($product['variation'])
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
+                                                        {{ $product['variation'] }}
+                                                    </span>
+                                                @endif
+
+                                                <!-- Badge Name Match -->
+                                                @if($nameMatches)
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                                        ✓ Name
+                                                    </span>
+                                                @endif
+                                                
+                                                <!-- Badge Type Match -->
+                                                @if($typeMatches)
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                                        ✓ Type
+                                                    </span>
+                                                @endif
+
+                                                <!-- Badge Coffret -->
+                                                @if($product['name'] && (str_contains(strtolower($product['name']), 'coffret') || str_contains(strtolower($product['name']), 'set') || str_contains(strtolower($product['type'] ?? ''), 'coffret')))
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                                                        🎁 Coffret
+                                                    </span>
+                                                @endif
+                                            </div>
+
+                                            <!-- Date de mise à jour -->
+                                            @if(isset($product['updated_at']))
+                                                <p class="mt-1 text-xs/5 text-gray-500">
+                                                    MAJ: {{ \Carbon\Carbon::parse($product['updated_at'])->translatedFormat('j F Y \\à H:i') }}
+                                                </p>
+                                            @endif
                                         </div>
-                                        
-                                        <p class="text-xs text-gray-400 mt-1">{{ $product['variation'] }}</p>
+                                    </div>
 
-                                        <!-- Prix -->
-                                        <p class="mt-4 text-base font-medium text-gray-900">
-                                            {{ number_format((float)($product['prix_ht'] ?? 0), 2) }} €
-                                        </p>
-
-                                        <!-- Bouton voir produit -->
-                                        @if($hasUrl)
-                                            <div class="mt-2">
-                                                <span class="inline-flex items-center text-xs font-medium text-indigo-600">
-                                                    Ouvrir dans un nouvel onglet
-                                                    <svg class="ml-1 h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <div class="flex shrink-0 items-center gap-x-4">
+                                        <div class="hidden sm:flex sm:flex-col sm:items-end">
+                                            <!-- Prix -->
+                                            <p class="text-sm/6 font-semibold text-gray-900">
+                                                {{ number_format((float)($product['prix_ht'] ?? 0), 2) }} €
+                                            </p>
+                                            
+                                            <!-- Statut du lien -->
+                                            @if($hasUrl)
+                                                <p class="mt-1 text-xs/5 text-indigo-600 flex items-center gap-1">
+                                                    Voir le produit
+                                                    <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                                     </svg>
-                                                </span>
-                                            </div>
-                                        @else
-                                            <div class="mt-2">
-                                                <span class="inline-flex items-center text-xs font-medium text-gray-400">
+                                                </p>
+                                            @else
+                                                <p class="mt-1 text-xs/5 text-gray-400">
                                                     URL non disponible
-                                                </span>
-                                            </div>
-                                        @endif
+                                                </p>
+                                            @endif
+                                        </div>
 
-                                        <!-- ID scrape -->
-                                        @if(isset($product['scrape_reference_id']))
-                                            <p class="text-xs text-gray-400 mt-2">Date MAJ : {{ \Carbon\Carbon::parse($product['updated_at'])->translatedFormat('j F Y \\à H:i') }} </p>
+                                        <!-- Chevron -->
+                                        @if($hasUrl)
+                                            <svg class="size-5 flex-none text-gray-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" data-slot="icon">
+                                                <path fill-rule="evenodd" d="M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
+                                            </svg>
                                         @endif
                                     </div>
-                                    
-                                @if($hasUrl)
-                                    </a>
-                                @else
-                                    </div>
-                                @endif
+                                </li>
                             @endforeach
-                        </div>
+                        </ul>
                     @else
                         <div class="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
                             <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
