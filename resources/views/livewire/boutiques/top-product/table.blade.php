@@ -141,7 +141,7 @@ new class extends Component {
     }
 
     /**
-     * Obtenir les concurrents filtrés par site pour un produit
+     * Obtenir les concurrents filtrés par site pour un produit (version améliorée)
      */
     public function getFilteredCompetitors(string $sku): array
     {
@@ -151,10 +151,22 @@ new class extends Component {
 
         $competitors = $this->competitorResults[$sku]['competitors'];
 
-        // Filtrer par niveau de similarité (≥ 0.6)
-        $goodCompetitors = array_filter($competitors, fn($c) => ($c->similarity_score ?? 0) >= 0.6);
+        // FILTRAGE PLUS STRICT : seuil augmenté à 0.7 pour de meilleurs résultats
+        $goodCompetitors = array_filter($competitors, function($c) {
+            $score = $c->similarity_score ?? 0;
+            
+            // Seuil strict : ≥ 0.7
+            if ($score >= 0.7) {
+                // Vérifications supplémentaires
+                $vendorMatch = $this->isVendorMatchGood($c);
+                $typeMatch = $this->isTypeMatchGood($c);
+                
+                return $vendorMatch && $typeMatch;
+            }
+            return false;
+        });
 
-        // Appliquer le filtre par site si des sites sont sélectionnés
+        // Appliquer le filtre par site
         if (isset($this->selectedSitesByProduct[$sku]) && !empty($this->selectedSitesByProduct[$sku])) {
             $selectedSiteIds = $this->selectedSitesByProduct[$sku];
             $filtered = array_filter($goodCompetitors, function ($competitor) use ($selectedSiteIds) {
@@ -168,6 +180,50 @@ new class extends Component {
     }
 
     /**
+     * Vérifier si le vendor match bien
+     */
+    private function isVendorMatchGood($competitor): bool
+    {
+        if (!isset($competitor->vendor) || empty($competitor->vendor)) {
+            return false;
+        }
+        
+        // Vérifier que le vendor n'est pas générique
+        $genericVendors = ['Générique', 'Generic', 'Marque', 'Brand', 'Autre', 'Other'];
+        $vendorLower = mb_strtolower($competitor->vendor);
+        
+        foreach ($genericVendors as $generic) {
+            if (str_contains($vendorLower, mb_strtolower($generic))) {
+                return false;
+            }
+        }
+        
+        return true;
+    }
+
+    /**
+     * Vérifier si le type match bien
+     */
+    private function isTypeMatchGood($competitor): bool
+    {
+        if (!isset($competitor->type) || empty($competitor->type)) {
+            return false;
+        }
+        
+        // Vérifier que le type n'est pas trop générique
+        $genericTypes = ['Produit', 'Product', 'Article', 'Item', 'Cosmétique', 'Cosmetic'];
+        $typeLower = mb_strtolower($competitor->type);
+        
+        foreach ($genericTypes as $generic) {
+            if (str_contains($typeLower, mb_strtolower($generic))) {
+                return false;
+            }
+        }
+        
+        return true;
+    }
+
+    /**
      * Obtenir la liste des sites disponibles pour les concurrents d'un produit
      */
     public function getAvailableSitesForProduct(string $sku): array
@@ -177,7 +233,7 @@ new class extends Component {
         }
 
         $competitors = $this->competitorResults[$sku]['competitors'];
-        $goodCompetitors = array_filter($competitors, fn($c) => ($c->similarity_score ?? 0) >= 0.6);
+        $goodCompetitors = array_filter($competitors, fn($c) => ($c->similarity_score ?? 0) >= 0.7);
 
         $sites = [];
         foreach ($goodCompetitors as $competitor) {
@@ -212,8 +268,8 @@ new class extends Component {
         $competitors = $this->competitorResults[$sku]['competitors'] ?? [];
         $total = count($competitors);
 
-        // Compter les bons résultats (≥ 0.6)
-        $goodCompetitors = array_filter($competitors, fn($c) => ($c->similarity_score ?? 0) >= 0.6);
+        // Compter les bons résultats (≥ 0.7)
+        $goodCompetitors = array_filter($competitors, fn($c) => ($c->similarity_score ?? 0) >= 0.7);
         $goodCount = count($goodCompetitors);
 
         // Compter les résultats filtrés
@@ -283,12 +339,36 @@ new class extends Component {
             // Nettoyer le prix
             $cleanPrice = $this->cleanPrice($price);
 
+            \Log::info('Recherche concurrents démarrée', [
+                'sku' => $sku,
+                'product_name' => $cleanedProductName,
+                'our_price' => $cleanPrice
+            ]);
+
             // Utiliser l'algorithme de recherche amélioré avec OpenAI
             $competitors = $this->findCompetitorsForProduct($cleanedProductName, $cleanPrice);
 
+            \Log::info('Résultats concurrents trouvés', [
+                'sku' => $sku,
+                'total_competitors' => count($competitors),
+                'good_competitors' => count(array_filter($competitors, fn($c) => ($c->similarity_score ?? 0) >= 0.7))
+            ]);
+
             if (!empty($competitors)) {
-                // Compter les bons résultats (similarité >= 0.6)
-                $goodResults = array_filter($competitors, fn($c) => ($c->similarity_score ?? 0) >= 0.6);
+                // Compter les bons résultats (similarité >= 0.7)
+                $goodResults = array_filter($competitors, fn($c) => ($c->similarity_score ?? 0) >= 0.7);
+
+                // Log détaillé des meilleurs résultats
+                $topCompetitors = array_slice($competitors, 0, 5);
+                foreach ($topCompetitors as $index => $competitor) {
+                    \Log::info('Top concurrent', [
+                        'rank' => $index + 1,
+                        'vendor' => $competitor->vendor ?? 'N/A',
+                        'name' => $competitor->name ?? 'N/A',
+                        'similarity_score' => $competitor->similarity_score ?? 0,
+                        'price' => $competitor->clean_price ?? 0
+                    ]);
+                }
 
                 $this->competitorResults[$sku] = [
                     'product_name' => $cleanedProductName,
@@ -315,6 +395,12 @@ new class extends Component {
             }
 
         } catch (\Exception $e) {
+            \Log::error('Erreur recherche concurrents', [
+                'sku' => $sku,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
             $this->competitorResults[$sku] = [
                 'product_name' => $productName,
                 'our_price' => $this->cleanPrice($price),
@@ -431,7 +517,9 @@ new class extends Component {
             }
 
         } catch (\Exception $e) {
-            // Erreur silencieuse
+            \Log::error('Erreur lors de la recherche de tous les concurrents', [
+                'error' => $e->getMessage()
+            ]);
         } finally {
             $this->searchingCompetitors = false;
         }
@@ -539,7 +627,6 @@ new class extends Component {
 
     /**
      * Algorithme de recherche de concurrents AMÉLIORÉ avec OpenAI
-     * Utilise la même logique que le premier composant
      */
     protected function findCompetitorsForProduct(string $search, float $ourPrice): array
     {
@@ -589,7 +676,7 @@ new class extends Component {
                 $competitors = $this->searchWithFallbackMethod($search);
             }
 
-            // 5. Filtrer par similarité améliorée
+            // 5. Filtrer par similarité améliorée avec seuil à 0.7
             $filteredCompetitors = $this->filterBySimilarityWithOpenAI($competitors, $extractedData ?? []);
 
             $competitorsWithComparison = $this->addPriceComparisons($filteredCompetitors, $ourPrice);
@@ -608,7 +695,7 @@ new class extends Component {
     }
 
     /**
-     * Extrait les informations du produit avec OpenAI (comme la première classe)
+     * Extrait les informations du produit avec OpenAI (version améliorée)
      */
     protected function extractProductDataWithOpenAI(string $productName): ?array
     {
@@ -617,28 +704,31 @@ new class extends Component {
                 'Content-Type' => 'application/json',
                 'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
             ])->post('https://api.openai.com/v1/chat/completions', [
-                        'model' => 'gpt-4o-mini',
-                        'messages' => [
-                            [
-                                'role' => 'system',
-                                'content' => 'Tu es un expert en extraction de données de produits cosmétiques. IMPORTANT: Le champ "type" doit contenir UNIQUEMENT la catégorie du produit (Crème, Huile, Sérum, Eau de Parfum, etc.), PAS le nom de la gamme. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
-                            ],
-                            [
-                                'role' => 'user',
-                                'content' => "Extrait les informations suivantes du nom de produit et retourne-les au format JSON strict :
+                'model' => 'gpt-4o-mini',
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => 'Tu es un expert en extraction de données de produits cosmétiques. IMPORTANT: 
+                        1. Le champ "type" doit contenir UNIQUEMENT la catégorie du produit (Crème, Huile, Sérum, Eau de Parfum, etc.), PAS le nom de la gamme.
+                        2. Le champ "name" doit être le NOM COMMERCIAL/GAMME EXACT du produit.
+                        3. Pour le matching, extrais aussi le "exact_name" qui est le nom COMPLET du produit tel qu\'il pourrait apparaître dans les résultats de recherche.
+                        4. Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte supplémentaire.'
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => "Extrait les informations suivantes du nom de produit et retourne-les au format JSON strict :
 
-RÈGLES IMPORTANTES :
-- vendor : la marque du produit (ex: Dior, Shiseido, Chanel, Clarins)
-- name : le nom de la gamme/ligne de produit UNIQUEMENT - C'EST LE PLUS IMPORTANT (ex: \"J'adore\", \"Vital Perfection\", \"Multi-Intensive\", \"Les essentiels\")
+RÈGLES CRITIQUES POUR LE MATCHING :
+- vendor : la marque EXACTE (ex: Dior, Shiseido, Chanel, Clarins)
+- name : le nom de la gamme/ligne EXACT (ex: \"J'adore\", \"Vital Perfection\", \"Multi-Intensive\", \"Les essentiels\")
+- exact_name : le nom COMPLET du produit tel qu'il pourrait apparaître dans les résultats (pour le matching)
 - type : UNIQUEMENT la catégorie/type du produit (ex: \"Huile pour le corps\", \"Eau de Parfum\", \"Crème visage\", \"Coffret\")
 - variation : la contenance/taille avec unité (ex: \"200 ml\", \"50 ml\", \"30 g\")
 - is_coffret : true si c'est un coffret/set/kit, false sinon
 
-RÈGLE CRITIQUE POUR LE 'name' :
-- Le 'name' doit être le NOM COMMERCIAL/GAMME du produit, PAS une description
-- Cherche le nom propre ou la ligne de produit (souvent en majuscules ou après un tiret)
-- Exemples : \"Multi-Intensive\", \"Les essentiels\", \"ClarinsMen\", \"J'adore\", \"N°5\"
-- NE PAS mettre de descriptions génériques comme \"Crème visage\" dans le name
+IMPORTANT POUR LE MATCHING :
+- Le 'exact_name' doit être optimisé pour la recherche : version simplifiée mais complète
+- Enlève les mots superflus mais garde les mots-clés importants pour le matching
 
 Nom du produit : {$productName}
 
@@ -648,6 +738,7 @@ Exemple 1 - Produit : \"Dior J'adore Les Adorables Huile Scintillante Huile pour
 {
   \"vendor\": \"Dior\",
   \"name\": \"J'adore Les Adorables\",
+  \"exact_name\": \"Dior J'adore Les Adorables Huile Scintillante\",
   \"type\": \"Huile pour le corps\",
   \"variation\": \"200 ml\",
   \"is_coffret\": false
@@ -657,6 +748,7 @@ Exemple 2 - Produit : \"Chanel N°5 Eau de Parfum Vaporisateur 100 ml\"
 {
   \"vendor\": \"Chanel\",
   \"name\": \"N°5\",
+  \"exact_name\": \"Chanel N°5 Eau de Parfum\",
   \"type\": \"Eau de Parfum Vaporisateur\",
   \"variation\": \"100 ml\",
   \"is_coffret\": false
@@ -666,6 +758,7 @@ Exemple 3 - Produit : \"Shiseido Vital Perfection Uplifting and Firming Cream En
 {
   \"vendor\": \"Shiseido\",
   \"name\": \"Vital Perfection Uplifting and Firming\",
+  \"exact_name\": \"Shiseido Vital Perfection Uplifting Firming Cream\",
   \"type\": \"Crème visage Enrichie\",
   \"variation\": \"50 ml\",
   \"is_coffret\": false
@@ -675,6 +768,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 {
   \"vendor\": \"Lancôme\",
   \"name\": \"La Nuit Trésor Rouge Drama\",
+  \"exact_name\": \"Lancôme La Nuit Trésor Rouge Drama Eau de Parfum\",
   \"type\": \"Eau de Parfum Intense Vaporisateur\",
   \"variation\": \"30 ml\",
   \"is_coffret\": false
@@ -684,6 +778,7 @@ Exemple 5 - Produit : \"Clarins - Les essentiels ClarinsMen\"
 {
   \"vendor\": \"Clarins\",
   \"name\": \"Les essentiels ClarinsMen\",
+  \"exact_name\": \"Clarins Les essentiels ClarinsMen Coffret\",
   \"type\": \"Coffret\",
   \"variation\": \"\",
   \"is_coffret\": true
@@ -693,24 +788,16 @@ Exemple 6 - Produit : \"Clarins - Coffret Multi-Intensive Crème visage anti-rid
 {
   \"vendor\": \"Clarins\",
   \"name\": \"Multi-Intensive\",
+  \"exact_name\": \"Clarins Multi-Intensive Crème visage Coffret\",
   \"type\": \"Coffret Crème visage\",
   \"variation\": \"\",
   \"is_coffret\": true
-}
-
-Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instantané 50ml\"
-{
-  \"vendor\": \"Clarins\",
-  \"name\": \"Baume Beauté Éclair\",
-  \"type\": \"Soin illuminateur\",
-  \"variation\": \"50 ml\",
-  \"is_coffret\": false
 }"
-                            ]
-                        ],
-                        'temperature' => 0.3,
-                        'max_tokens' => 500
-                    ]);
+                    ]
+                ],
+                'temperature' => 0.2, // Réduit pour plus de cohérence
+                'max_tokens' => 500
+            ]);
 
             if ($response->successful()) {
                 $data = $response->json();
@@ -738,40 +825,38 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
                 $extractedData = array_merge([
                     'vendor' => '',
                     'name' => '',
+                    'exact_name' => '',
                     'variation' => '',
                     'type' => '',
                     'is_coffret' => false
                 ], $decodedData);
 
-                // Post-traitement : nettoyer le type s'il contient des informations parasites
+                // Post-traitement : nettoyer et optimiser pour le matching
+                if (!empty($extractedData['exact_name'])) {
+                    // Nettoyer le exact_name pour le matching
+                    $extractedData['exact_name'] = $this->cleanForMatching($extractedData['exact_name']);
+                }
+
                 if (!empty($extractedData['type'])) {
                     $type = $extractedData['type'];
-
-                    // Si le type contient le nom de la gamme, essayer de le nettoyer
-                    if (!empty($extractedData['name'])) {
-                        $name = $extractedData['name'];
-                        // Enlever le nom de la gamme du type s'il y est
-                        $type = trim(str_ireplace($name, '', $type));
-                    }
-
-                    // Enlever les tirets et espaces multiples
+                    // Nettoyer le type
                     $type = preg_replace('/\s*-\s*/', ' ', $type);
                     $type = preg_replace('/\s+/', ' ', $type);
-
                     $extractedData['type'] = trim($type);
                 }
 
                 // ✨ NOUVEAU CLARINS : Post-traitement du name pour Clarins
-                if (
-                    !empty($extractedData['vendor']) &&
-                    str_contains(mb_strtolower($extractedData['vendor']), 'clarins')
-                ) {
-
+                if (!empty($extractedData['vendor']) && str_contains(mb_strtolower($extractedData['vendor']), 'clarins')) {
                     $extractedData['name'] = $this->cleanClarinsName(
                         $extractedData['name'],
                         $extractedData['type']
                     );
                 }
+
+                \Log::info('Données extraites OpenAI (améliorées)', [
+                    'original' => $productName,
+                    'extracted' => $extractedData
+                ]);
 
                 return $extractedData;
 
@@ -791,6 +876,31 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
             ]);
             return null;
         }
+    }
+
+    /**
+     * Nettoyer le texte pour le matching
+     */
+    private function cleanForMatching(string $text): string
+    {
+        $text = mb_strtolower(trim($text));
+        
+        // Enlever les articles et mots superflus
+        $stopWords = ['le', 'la', 'les', 'de', 'des', 'du', 'pour', 'avec', 'et', 'ou'];
+        
+        $words = preg_split('/\s+/', $text);
+        $cleanWords = [];
+        
+        foreach ($words as $word) {
+            if (!in_array($word, $stopWords) && strlen($word) > 1) {
+                $cleanWords[] = $word;
+            }
+        }
+        
+        // Enlever les doublons
+        $cleanWords = array_unique($cleanWords);
+        
+        return implode(' ', $cleanWords);
     }
 
     /**
@@ -1248,7 +1358,7 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
     }
 
     /**
-     * Filtrer par similarité avec les données OpenAI
+     * Filtrer par similarité avec les données OpenAI (seuil à 0.7)
      */
     protected function filterBySimilarityWithOpenAI(array $competitors, array $extractedData): array
     {
@@ -1257,8 +1367,8 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
         foreach ($competitors as $competitor) {
             $similarityScore = $this->computeSimilarityWithOpenAI($competitor, $extractedData);
 
-            // Seuil à 0.6 comme dans la première classe
-            if ($similarityScore >= 0.6) {
+            // SEUIL STRICT À 0.7
+            if ($similarityScore >= 0.7) {
                 $competitor->similarity_score = $similarityScore;
                 $competitor->match_level = $this->getMatchLevel($similarityScore);
                 $filtered[] = $competitor;
@@ -1274,16 +1384,17 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
     }
 
     /**
-     * Calculer la similarité avec les données OpenAI
+     * Calculer la similarité avec les données OpenAI (version améliorée)
      */
     protected function computeSimilarityWithOpenAI($competitor, array $extractedData): float
     {
         $weights = [
-            'vendor' => 0.25,
-            'name' => 0.30,
-            'type' => 0.25,
-            'coffret' => 0.10,
-            'variation' => 0.10
+            'vendor' => 0.20,
+            'exact_name' => 0.35, // Poids augmenté pour le nom exact
+            'name' => 0.15,
+            'type' => 0.20,
+            'coffret' => 0.05,
+            'variation' => 0.05
         ];
 
         $totalScore = 0;
@@ -1292,23 +1403,101 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
         $vendorScore = $this->computeVendorSimilarityWithOpenAI($competitor, $extractedData['vendor'] ?? '');
         $totalScore += $vendorScore * $weights['vendor'];
 
-        // 2. Score du name
+        // 2. Score du exact_name (NOUVEAU - plus important)
+        $exactNameScore = $this->computeExactNameSimilarity($competitor, $extractedData['exact_name'] ?? '');
+        $totalScore += $exactNameScore * $weights['exact_name'];
+
+        // 3. Score du name
         $nameScore = $this->computeNameSimilarityWithOpenAI($competitor, $extractedData['name'] ?? '');
         $totalScore += $nameScore * $weights['name'];
 
-        // 3. Score du type
+        // 4. Score du type
         $typeScore = $this->computeTypeSimilarityWithOpenAI($competitor, $extractedData['type'] ?? '');
         $totalScore += $typeScore * $weights['type'];
 
-        // 4. Score coffret
+        // 5. Score coffret
         $coffretScore = $this->computeCoffretSimilarity($competitor, $extractedData['is_coffret'] ?? false);
         $totalScore += $coffretScore * $weights['coffret'];
 
-        // 5. Score variation
+        // 6. Score variation
         $variationScore = $this->computeVariationSimilarity($competitor, $extractedData['variation'] ?? '');
         $totalScore += $variationScore * $weights['variation'];
 
+        // Bonus pour les correspondances exactes
+        if ($vendorScore >= 0.9 && $exactNameScore >= 0.8) {
+            $totalScore = min(1.0, $totalScore + 0.1);
+        }
+
         return min(1.0, $totalScore);
+    }
+
+    /**
+     * Similarité du exact_name (NOUVELLE MÉTHODE)
+     */
+    protected function computeExactNameSimilarity($competitor, string $exactName): float
+    {
+        if (empty($exactName)) {
+            return $this->computeNameSimilarityWithOpenAI($competitor, '');
+        }
+
+        $productName = $competitor->name ?? '';
+        $productType = $competitor->type ?? '';
+        $productVendor = $competitor->vendor ?? '';
+        
+        // Construire le nom complet du concurrent pour comparaison
+        $competitorFullName = mb_strtolower(trim($productVendor . ' ' . $productName . ' ' . $productType));
+        $exactNameLower = mb_strtolower(trim($exactName));
+        
+        // Nettoyer pour la comparaison
+        $competitorClean = $this->cleanForMatching($competitorFullName);
+        $exactNameClean = $this->cleanForMatching($exactNameLower);
+        
+        if (empty($competitorClean) || empty($exactNameClean)) {
+            return 0;
+        }
+        
+        // 1. Correspondance exacte (après nettoyage)
+        if ($competitorClean === $exactNameClean) {
+            return 1.0;
+        }
+        
+        // 2. L'un contient l'autre
+        if (str_contains($competitorClean, $exactNameClean) || str_contains($exactNameClean, $competitorClean)) {
+            return 0.9;
+        }
+        
+        // 3. Similarité de Jaccard
+        $competitorWords = array_unique(explode(' ', $competitorClean));
+        $exactNameWords = array_unique(explode(' ', $exactNameClean));
+        
+        $intersection = array_intersect($competitorWords, $exactNameWords);
+        $union = array_unique(array_merge($competitorWords, $exactNameWords));
+        
+        if (empty($union)) {
+            return 0;
+        }
+        
+        $jaccardSimilarity = count($intersection) / count($union);
+        
+        // 4. Bonus pour les mots-clés importants
+        $importantWords = array_filter($exactNameWords, function($word) {
+            return strlen($word) > 3 && !in_array($word, ['pour', 'avec', 'de']);
+        });
+        
+        if (!empty($importantWords)) {
+            $importantMatches = 0;
+            foreach ($importantWords as $importantWord) {
+                if (str_contains($competitorClean, $importantWord)) {
+                    $importantMatches++;
+                }
+            }
+            $importantScore = $importantMatches / count($importantWords);
+            
+            // Combiner Jaccard et score des mots importants
+            return max($jaccardSimilarity, $importantScore * 0.8);
+        }
+        
+        return $jaccardSimilarity;
     }
 
     /**
@@ -2286,34 +2475,6 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
     }
 
     /**
-     * Filtrer par similarité améliorée
-     * MODIFIÉ : seuil augmenté à 0.6 et limité à 50 résultats
-     */
-    protected function filterBySimilarityImproved(array $competitors, string $search, array $components): array
-    {
-        $filtered = [];
-
-        foreach ($competitors as $competitor) {
-            $similarityScore = $this->computeSimilarityScoreImproved($competitor, $search, $components);
-
-            // SEUIL AUGMENTÉ À 0.6 POUR UN BON NIVEAU DE SIMILARITÉ
-            if ($similarityScore >= 0.6) {
-                $competitor->similarity_score = $similarityScore;
-                $competitor->match_level = $this->getMatchLevel($similarityScore);
-                $filtered[] = $competitor;
-            }
-        }
-
-        // Trier par score décroissant
-        usort($filtered, function ($a, $b) {
-            return $b->similarity_score <=> $a->similarity_score;
-        });
-
-        // LIMITER À 50 RÉSULTATS
-        return array_slice($filtered, 0, 50);
-    }
-
-    /**
      * Calculer le score de similarité amélioré
      */
     protected function computeSimilarityScoreImproved($competitor, $search, $components): float
@@ -2663,18 +2824,17 @@ Exemple 7 - Produit : \"Clarins Baume Beauté Éclair Soin illuminateur instanta
 
     /**
      * Obtenir le niveau de correspondance
-     * MODIFIÉ : seuils ajustés
      */
     protected function getMatchLevel(float $similarityScore): string
     {
-        // Ajuster les seuils pour être plus restrictifs
-        if ($similarityScore >= 0.8)
+        // Seuils ajustés pour le nouveau système
+        if ($similarityScore >= 0.85)
             return 'excellent';
+        if ($similarityScore >= 0.75)
+            return 'très bon';
         if ($similarityScore >= 0.7)
-            return 'très bon'; // Ajouter un niveau intermédiaire
+            return 'bon';
         if ($similarityScore >= 0.6)
-            return 'bon'; // Seuil pour "bon niveau"
-        if ($similarityScore >= 0.5)
             return 'moyen';
         return 'faible';
     }
