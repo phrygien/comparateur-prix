@@ -335,12 +335,11 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
     }
 
     /**
-     * ✨ MODIFIÉ : Vérifie si le vendor nécessite un traitement spécial
-     * Ajout de Guerlain à la liste
+     * ✨ NOUVEAU : Vérifie si le vendor nécessite un traitement spécial
      */
     private function isSpecialVendor(string $vendor): bool
     {
-        $specialVendors = ['valentino', 'valent', 'hermès', 'hermes', 'guerlain'];
+        $specialVendors = ['valentino', 'valent', 'hermès', 'hermes'];
         $vendorLower = mb_strtolower(trim($vendor));
         
         foreach ($specialVendors as $special) {
@@ -359,15 +358,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
     {
         $vendorLower = mb_strtolower(trim($vendor));
         return str_contains($vendorLower, 'hermès') || str_contains($vendorLower, 'hermes');
-    }
-    
-    /**
-     * ✨ NOUVEAU : Vérifie si c'est un produit Guerlain
-     */
-    private function isGuerlainProduct(string $vendor): bool
-    {
-        $vendorLower = mb_strtolower(trim($vendor));
-        return str_contains($vendorLower, 'guerlain');
     }
     
     /**
@@ -646,6 +636,14 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         // ========================================
         // CAS 3: Produit standard - Matching TRÈS STRICT (100% des mots)
         // ========================================
+        // ✅ CORRECTION PRINCIPALE :
+        // TOUS les mots du nom recherché doivent être présents dans le nom du produit
+        // Exemple : "Twilly d'Hermès Eau Ginger"
+        //   - "twilly" doit être présent ✓
+        //   - "hermès" doit être présent ✓
+        //   - "eau" doit être présent ✓
+        //   - "ginger" doit être présent ✓ ← C'EST CE QUI MANQUAIT !
+        
         $searchWords = $this->extractKeywords($searchName, true);
         $matchCount = 0;
         $matchedWords = [];
@@ -689,153 +687,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
     }
 
     /**
-     * ✨ NOUVEAU : Vérifie si le nom du produit est valide pour un cas Guerlain
-     * 
-     * RÈGLES STRICTES pour Guerlain :
-     * 1. TOUS les mots significatifs du NAME recherché doivent être présents dans le nom du produit
-     * 2. Le TYPE de base doit correspondre (Eau de Toilette, Eau de Parfum, etc.)
-     * 3. Matching mot par mot STRICT
-     * 
-     * EXEMPLE :
-     * Recherché : "La Petite Robe Noire Le Flacon Coeur" + "Eau de Toilette"
-     * Accepté : "La Petite Robe Noire Le Flacon Coeur" + "Eau de Toilette"
-     * Rejeté : "La Petite Robe Noire" (manque "Flacon Coeur")
-     * Rejeté : "La Petite Robe Noire Le Flacon Coeur" + "Eau de Parfum" (type différent)
-     */
-    private function isValidGuerlainMatch(string $searchName, string $searchType, string $productName, string $productType): bool
-    {
-        $searchNameLower = mb_strtolower(trim($searchName));
-        $searchTypeLower = mb_strtolower(trim($searchType));
-        $productNameLower = mb_strtolower(trim($productName));
-        $productTypeLower = mb_strtolower(trim($productType));
-        
-        // ========================================
-        // ÉTAPE 1: Extraction des mots du NAME
-        // ========================================
-        $searchWords = $this->extractKeywords($searchName, false);
-        
-        \Log::info('🎯 GUERLAIN - Validation du matching', [
-            'recherché_name' => $searchName,
-            'recherché_type' => $searchType,
-            'produit_name' => $productName,
-            'produit_type' => $productType,
-            'mots_recherchés' => $searchWords
-        ]);
-        
-        // ========================================
-        // ÉTAPE 2: Vérification STRICTE du NAME
-        // Tous les mots doivent être présents (100%)
-        // ========================================
-        $matchCount = 0;
-        $matchedWords = [];
-        $missingWords = [];
-        
-        foreach ($searchWords as $word) {
-            if (str_contains($productNameLower, $word)) {
-                $matchCount++;
-                $matchedWords[] = $word;
-            } else {
-                $missingWords[] = $word;
-            }
-        }
-        
-        // RÈGLE STRICTE : TOUS les mots doivent matcher (100%)
-        if ($matchCount !== count($searchWords) || !empty($missingWords)) {
-            \Log::debug('❌ GUERLAIN - NAME matching échoué', [
-                'recherché_name' => $searchName,
-                'produit_name' => $productName,
-                'mots_recherchés' => $searchWords,
-                'mots_matchés' => $matchedWords,
-                'mots_manquants' => $missingWords,
-                'ratio' => $matchCount . '/' . count($searchWords),
-                'raison' => 'Mots manquants: ' . implode(', ', $missingWords)
-            ]);
-            return false;
-        }
-        
-        \Log::debug('✅ GUERLAIN - NAME matching validé (100%)', [
-            'recherché_name' => $searchName,
-            'produit_name' => $productName,
-            'tous_mots_matchés' => $matchedWords
-        ]);
-        
-        // ========================================
-        // ÉTAPE 3: Vérification du TYPE de base
-        // ========================================
-        $perfumeTypes = [
-            'eau de parfum',
-            'eau de toilette',
-            'eau de cologne',
-            'extrait de parfum',
-            'eau fraiche',
-            'eau fraîche',
-            'parfum',
-            'extrait',
-            'cologne'
-        ];
-        
-        // Trouver le type de base dans la recherche
-        $searchBaseType = null;
-        foreach ($perfumeTypes as $type) {
-            if (str_contains($searchTypeLower, $type)) {
-                $searchBaseType = $type;
-                break;
-            }
-        }
-        
-        // Trouver le type de base dans le produit
-        $productBaseType = null;
-        foreach ($perfumeTypes as $type) {
-            if (str_contains($productTypeLower, $type)) {
-                $productBaseType = $type;
-                break;
-            }
-        }
-        
-        // Vérifier que les types de base correspondent
-        if ($searchBaseType && $productBaseType) {
-            if ($searchBaseType !== $productBaseType) {
-                \Log::debug('❌ GUERLAIN - TYPE de base différent', [
-                    'recherché_type' => $searchType,
-                    'produit_type' => $productType,
-                    'recherché_base_type' => $searchBaseType,
-                    'produit_base_type' => $productBaseType,
-                    'raison' => 'Les types de base ne correspondent pas'
-                ]);
-                return false;
-            }
-            
-            \Log::debug('✅ GUERLAIN - TYPE de base correspondant', [
-                'recherché_type' => $searchType,
-                'produit_type' => $productType,
-                'base_type' => $searchBaseType
-            ]);
-        } else if ($searchBaseType && !$productBaseType) {
-            \Log::debug('❌ GUERLAIN - TYPE de base manquant dans le produit', [
-                'recherché_type' => $searchType,
-                'produit_type' => $productType,
-                'recherché_base_type' => $searchBaseType,
-                'raison' => 'Le produit n\'a pas de type de base détectable'
-            ]);
-            return false;
-        }
-        
-        // ========================================
-        // VALIDATION FINALE
-        // ========================================
-        \Log::debug('✅ GUERLAIN - Produit validé (NAME 100% + TYPE correspondant)', [
-            'recherché_name' => $searchName,
-            'recherché_type' => $searchType,
-            'produit_name' => $productName,
-            'produit_type' => $productType,
-            'tous_mots_matchés' => $matchedWords,
-            'base_type' => $searchBaseType ?? 'N/A'
-        ]);
-        
-        return true;
-    }
-
-    /**
      * LOGIQUE DE RECHERCHE OPTIMISÉE
      * 1. Filtrer par VENDOR (obligatoire)
      * 2. Filtrer par statut COFFRET
@@ -847,7 +698,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
      * - VALENTINO + NOM D'UN SEUL MOT (validation stricte contre les mots supplémentaires)
      * - HERMÈS + BARENIA (vérification stricte de Barenia)
      * - HERMÈS + ÉDITIONS LIMITÉES (matching flexible)
-     * - GUERLAIN + NAME (100% des mots) + TYPE (type de base exact)
      * - MÉTÉORITES (Guerlain) + ÉDITIONS LIMITÉES (matching flexible)
      */
     private function searchMatchingProducts()
@@ -880,14 +730,11 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             return;
         }
 
-        // ✨ NOUVEAU : Détecter si c'est un vendor spécial (Valentino, Hermès, Guerlain)
+        // ✨ NOUVEAU : Détecter si c'est un vendor spécial (Valentino, Hermès)
         $isSpecialVendor = $this->isSpecialVendor($vendor);
         
         // ✨ NOUVEAU : Détecter si c'est un produit Hermès
         $isHermesProduct = $this->isHermesProduct($vendor);
-        
-        // ✨ NOUVEAU : Détecter si c'est un produit Guerlain
-        $isGuerlainProduct = $this->isGuerlainProduct($vendor);
         
         // ✨ NOUVEAU : Détecter si c'est un produit Barenia (Hermès)
         $isBareniaProduct = $isHermesProduct && $this->isBareniaProduct($name, $type);
@@ -903,7 +750,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'vendor' => $vendor,
                 'is_valentino' => str_contains(mb_strtolower($vendor), 'valent'),
                 'is_hermes' => $isHermesProduct,
-                'is_guerlain' => $isGuerlainProduct,
                 'is_barenia' => $isBareniaProduct,
                 'is_meteorites' => $isMeteoritesProduct,
                 'is_coffret' => $isCoffretSource,
@@ -928,7 +774,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             'vendor' => $vendor,
             'is_special_vendor' => $isSpecialVendor,
             'is_hermes' => $isHermesProduct,
-            'is_guerlain' => $isGuerlainProduct,
             'is_barenia' => $isBareniaProduct,
             'is_meteorites' => $isMeteoritesProduct,
             'is_limited_edition' => $isLimitedEdition,
@@ -1150,7 +995,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             }
         }
         
-        // ✅ ÉTAPE 2.66 : FILTRAGE STRICT pour Hermès (Barenia et éditions limitées)
+        // ✅ ÉTAPE 2.66 CORRIGÉE : FILTRAGE STRICT pour Hermès (Barenia et éditions limitées)
         if ($isHermesProduct && !empty($filteredProducts)) {
             $hermesFiltered = collect($filteredProducts)->filter(function ($product) use ($name, $type, $isLimitedEdition) {
                 return $this->isValidHermesMatch(
@@ -1180,35 +1025,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             }
         }
 
-        // ✅ ÉTAPE 2.67 : FILTRAGE STRICT pour Guerlain (NAME 100% + TYPE de base)
-        if ($isGuerlainProduct && !empty($filteredProducts)) {
-            $guerlainFiltered = collect($filteredProducts)->filter(function ($product) use ($name, $type) {
-                return $this->isValidGuerlainMatch(
-                    $name,
-                    $type,
-                    $product['name'] ?? '',
-                    $product['type'] ?? ''
-                );
-            })->values()->toArray();
-            
-            if (!empty($guerlainFiltered)) {
-                \Log::info('✅ GUERLAIN - Filtrage strict appliqué', [
-                    'produits_avant' => count($filteredProducts),
-                    'produits_après' => count($guerlainFiltered),
-                    'nom_recherché' => $name,
-                    'type_recherché' => $type
-                ]);
-                $filteredProducts = $guerlainFiltered;
-            } else {
-                \Log::warning('⚠️ GUERLAIN - Aucun produit après filtrage strict, conservation des résultats précédents', [
-                    'nom_recherché' => $name,
-                    'type_recherché' => $type
-                ]);
-            }
-        }
-
         // ÉTAPE 3: Scoring avec PRIORITÉ sur le NAME
-        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $type, $isCoffretSource, $nameWords, $shouldSkipTypeFilter, $isMeteoritesProduct, $isLimitedEdition, $isHermesProduct, $isBareniaProduct, $isGuerlainProduct, $name) {
+        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $type, $isCoffretSource, $nameWords, $shouldSkipTypeFilter, $isMeteoritesProduct, $isLimitedEdition, $isHermesProduct, $isBareniaProduct) {
             $score = 0;
             $productType = mb_strtolower($product['type'] ?? '');
             $productName = mb_strtolower($product['name'] ?? '');
@@ -1255,27 +1073,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 
                 if ($productIsLimited) {
                     $score += 400; // MEGA BONUS pour Hermès éditions limitées
-                }
-            }
-
-            // ✨ BONUS SPÉCIAL pour Guerlain (matching strict name + type)
-            if ($isGuerlainProduct ?? false) {
-                $productIsValidGuerlain = $this->isValidGuerlainMatch(
-                    $name,
-                    $type,
-                    $product['name'] ?? '',
-                    $product['type'] ?? ''
-                );
-                
-                if ($productIsValidGuerlain) {
-                    $score += 450; // MEGA BONUS pour Guerlain validé
-                    
-                    \Log::debug('✅ GUERLAIN - MEGA BONUS appliqué', [
-                        'product_id' => $product['id'] ?? 0,
-                        'product_name' => $product['name'] ?? '',
-                        'product_type' => $product['type'] ?? '',
-                        'bonus' => 450
-                    ]);
                 }
             }
 
@@ -1404,7 +1201,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'is_special_case' => $shouldSkipTypeFilter,
                 'is_meteorites' => $isMeteoritesProduct,
                 'is_hermes' => $isHermesProduct,
-                'is_guerlain' => $isGuerlainProduct ?? false,
                 'is_barenia' => $isBareniaProduct,
                 'is_limited_edition' => $isLimitedEdition
             ];
@@ -1420,7 +1216,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             'recherche_coffret' => $isCoffretSource,
             'is_special_case' => $shouldSkipTypeFilter,
             'is_hermes' => $isHermesProduct,
-            'is_guerlain' => $isGuerlainProduct,
             'is_barenia' => $isBareniaProduct,
             'is_meteorites' => $isMeteoritesProduct,
             'is_limited_edition' => $isLimitedEdition,
@@ -1431,7 +1226,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     'is_coffret' => $item['is_coffret'],
                     'is_special_case' => $item['is_special_case'],
                     'is_hermes' => $item['is_hermes'] ?? false,
-                    'is_guerlain' => $item['is_guerlain'] ?? false,
                     'is_barenia' => $item['is_barenia'] ?? false,
                     'is_meteorites' => $item['is_meteorites'],
                     'is_limited_edition' => $item['is_limited_edition'],
@@ -1477,7 +1271,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     'score' => $item['score'],
                     'is_special_case' => $shouldSkipTypeFilter,
                     'is_hermes' => $item['is_hermes'] ?? false,
-                    'is_guerlain' => $item['is_guerlain'] ?? false,
                     'is_barenia' => $item['is_barenia'] ?? false,
                     'is_meteorites' => $item['is_meteorites'] ?? false,
                     'is_limited_edition' => $item['is_limited_edition'] ?? false,
@@ -1715,7 +1508,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
     /**
      * ✨ VERSION AMÉLIORÉE : Extrait les mots-clés significatifs
      * Pour Valentino et Hermès, les mots-clés "coffret", "set", "kit" sont exclus
-     * Pour Guerlain, pas d'exclusion spéciale (comportement normal)
+     * Pour Météorites (Guerlain), le traitement spécial est géré ailleurs (via isMeteoritesProduct)
      */
     private function extractKeywords(string $text, bool $isSpecialVendor = false): array
     {
@@ -1727,7 +1520,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         $stopWords = ['de', 'la', 'le', 'les', 'des', 'du', 'un', 'une', 'et', 'ou', 'pour', 'avec', 'sans'];
         
         // ✨ Pour vendors spéciaux (Valentino, Hermès), ajouter les mots-clés coffret aux stop words
-        // Note: Guerlain n'est PAS concerné par cette exclusion
         if ($isSpecialVendor) {
             $stopWords = array_merge($stopWords, ['coffret', 'set', 'kit', 'duo', 'trio', 'collection']);
         }
