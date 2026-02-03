@@ -20,8 +20,6 @@ new class extends Component {
     #[Url]
     public string $nameFilter = '';
 
-    public array $filterByConditions = [];
-
     public function mount($name, $id, $price): void
     {
         $this->name = $name;
@@ -37,33 +35,32 @@ new class extends Component {
 
     public function filterProducts(): void
     {
-        // Construire les conditions de filtrage
-        $this->filterByConditions = [];
-
-        if ($this->typeFilter) {
-            $this->filterByConditions[] = "type:= {$this->typeFilter}";
-        }
-
-        if ($this->variationFilter) {
-            $this->filterByConditions[] = "variation:= {$this->variationFilter}";
-        }
-
         // Recherche avec Typesense avec filtres
         $searchTerm = html_entity_decode($this->nameFilter);
 
+        // Construire les options de recherche
+        $searchOptions = [
+            'sort_by' => 'created_at:desc',
+            'per_page' => 100,
+        ];
+
+        // Construire les conditions de filtrage
+        $filterConditions = [];
+
+        if ($this->typeFilter) {
+            $filterConditions[] = "type:= {$this->typeFilter}";
+        }
+
+        if ($this->variationFilter) {
+            $filterConditions[] = "variation:= {$this->variationFilter}";
+        }
+
+        if (!empty($filterConditions)) {
+            $searchOptions['filter_by'] = implode(' && ', $filterConditions);
+        }
+
         $products = Product::search($searchTerm)
-            ->options(function ($options) {
-                // Appliquer les filtres si disponibles
-                if (!empty($this->filterByConditions)) {
-                    $options['filter_by'] = implode(' && ', $this->filterByConditions);
-                }
-
-                // Ajouter d'autres options si nécessaire
-                $options['sort_by'] = 'created_at:desc';
-                $options['per_page'] = 100; // Augmenter si nécessaire
-
-                return $options;
-            })
+            ->options($searchOptions)
             ->query(fn($query) => $query->with('website'))
             ->get();
 
@@ -91,7 +88,6 @@ new class extends Component {
         $this->nameFilter = $this->name;
         $this->typeFilter = '';
         $this->variationFilter = '';
-        $this->filterByConditions = [];
         $this->filterProducts();
     }
 
