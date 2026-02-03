@@ -56,7 +56,7 @@ new class extends Component {
     {
         return $this->productsBySite->sum(fn($products) => $products->count());
     }
-};
+}; ?>
 
 <div class="bg-white">
 
