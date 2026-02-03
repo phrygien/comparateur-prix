@@ -19,17 +19,49 @@ new class extends Component {
         $searchTerm = html_entity_decode($this->name);
         $parsed = $this->parseProductName($searchTerm);
 
-        // Utiliser la méthode helper du modèle
-        $products = Product::searchWithFallback($parsed)
-            ->query(fn($query) => $query->with('website'))
-            ->get();
+        // Recherche avec les paramètres stricts
+        $products = Product::search($parsed['name'], function ($typesense, $query, $options) use ($parsed) {
+            // Strict sur name et type
+            $options['num_typos'] = '0,1,0,0'; // name, vendor, type, variation
+            $options['drop_tokens_threshold'] = 0;
+
+            $filters = [];
+
+            // FILTRE STRICT : Vendor doit correspondre EXACTEMENT
+            if (!empty($parsed['vendor'])) {
+                $filters[] = "vendor:= `{$parsed['vendor']}`";
+            }
+
+            // FILTRE STRICT : Type doit correspondre EXACTEMENT
+            if (!empty($parsed['type'])) {
+                $filters[] = "type:= `{$parsed['type']}`";
+            }
+
+            // Appliquer les filtres
+            if (!empty($filters)) {
+                $options['filter_by'] = implode(' && ', $filters);
+            }
+
+            // Boost additionnel si variation correspond exactement
+            if (!empty($parsed['variation'])) {
+                $options['sort_by'] = "_eval([(variation:={$parsed['variation']}):10]):desc,_text_match:desc,created_at:desc";
+            }
+
+            return $options;
+        })
+            ->query(fn($query) => $query->with('website')) // ✅ Ceci est correct - query() est appelé sur le Builder Scout
+            ->get(); // ✅ get() retourne une Collection
+
+        // ❌ NE PAS faire ->query() sur $products qui est déjà une Collection
 
         $this->productsBySite = $products
             ->groupBy('web_site_id')
             ->map(function ($siteProducts) {
                 return $siteProducts
                     ->groupBy('scrap_reference_id')
-                    ->map(fn($refProducts) => $refProducts->sortByDesc('created_at')->first())
+                    ->map(function ($refProducts) {
+                        return $refProducts->sortByDesc('created_at')->first();
+                    })
                     ->values();
             });
     }
@@ -38,28 +70,25 @@ new class extends Component {
     {
         $parts = array_map('trim', explode(' - ', $productName));
 
-        return [
+        $result = [
             'vendor' => $parts[0] ?? '',
             'name' => $parts[1] ?? '',
-            'type' => isset($parts[2]) ? $this->extractType($parts[2]) : '',
-            'variation' => isset($parts[2]) ? $this->extractVariation($parts[2]) : ''
+            'type' => '',
+            'variation' => ''
         ];
-    }
 
-    private function extractType(string $lastPart): string
-    {
-        if (preg_match('/\b(\d+\s?(ml|g|oz|cl|l|mg))\b/i', $lastPart, $matches)) {
-            return trim(str_replace($matches[0], '', $lastPart));
-        }
-        return $lastPart;
-    }
+        if (isset($parts[2])) {
+            $lastPart = $parts[2];
 
-    private function extractVariation(string $lastPart): string
-    {
-        if (preg_match('/\b(\d+\s?(ml|g|oz|cl|l|mg))\b/i', $lastPart, $matches)) {
-            return trim($matches[1]);
+            if (preg_match('/\b(\d+\s?(ml|g|oz|cl|l|mg))\b/i', $lastPart, $matches)) {
+                $result['variation'] = trim($matches[1]);
+                $result['type'] = trim(str_replace($matches[0], '', $lastPart));
+            } else {
+                $result['type'] = $lastPart;
+            }
         }
-        return '';
+
+        return $result;
     }
 }; ?>
 
