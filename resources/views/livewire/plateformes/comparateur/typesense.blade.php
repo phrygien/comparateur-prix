@@ -22,7 +22,7 @@ new class extends Component {
         // Recherche avec les paramètres stricts
         $products = Product::search($parsed['name'], function ($typesense, $query, $options) use ($parsed) {
             // Strict sur name et type
-            $options['num_typos'] = '0,1,0,0'; // name, vendor, type, variation
+            $options['num_typos'] = '0,1,0,1'; // name, vendor, type, variation
             $options['drop_tokens_threshold'] = 0;
 
             $filters = [];
