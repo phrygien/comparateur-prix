@@ -16,46 +16,11 @@ new class extends Component {
         $this->id = $id;
         $this->price = $price;
         
-        // Décoder les entités HTML
+        // Décoder les entités HTML et rechercher avec Typesense Scout
         $searchTerm = html_entity_decode($this->name);
-        
-        // Parser le terme de recherche
-        $parsedSearch = $this->parseSearchTerm($searchTerm);
-        
-        // Construire la recherche Typesense avec des poids
-        $products = Product::search($searchTerm, function ($typesenseClient, $query, $params) use ($parsedSearch) {
-            // Modifier les paramètres de recherche
-            $params['query_by'] = 'vendor,name,type,variation';
-            
-            // Définir des poids pour prioriser les champs
-            // vendor (poids 4), name (poids 3), type (poids 2), variation (poids 1)
-            $params['query_by_weights'] = '4,3,2,1';
-            
-            // Utiliser la recherche exhaustive pour de meilleurs résultats
-            $params['exhaustive_search'] = true;
-            
-            // Filtres optionnels basés sur le parsing
-            $filters = [];
-            
-            if (!empty($parsedSearch['vendor'])) {
-                $filters[] = "vendor:=[{$parsedSearch['vendor']}]";
-            }
-            
-            if (!empty($parsedSearch['type'])) {
-                $filters[] = "type:=[{$parsedSearch['type']}]";
-            }
-            
-            if (!empty($filters)) {
-                $params['filter_by'] = implode(' && ', $filters);
-            }
-            
-            // Nombre de résultats
-            $params['per_page'] = 250;
-            
-            return $typesenseClient->collections[$params['collection']]->documents->search($params);
-        })
-        ->query(fn($query) => $query->with('website'))
-        ->get();
+        $products = Product::search($searchTerm)
+            ->query(fn($query) => $query->with('website'))
+            ->get();
         
         // Grouper par site et sélectionner le dernier produit scrapé par scrap_reference_id
         $this->productsBySite = $products
@@ -64,74 +29,11 @@ new class extends Component {
                 return $siteProducts
                     ->groupBy('scrap_reference_id')
                     ->map(function ($refProducts) {
+                        // Retourner le produit le plus récent (dernière date de scraping)
                         return $refProducts->sortByDesc('created_at')->first();
                     })
                     ->values();
             });
-    }
-    
-    /**
-     * Parse le terme de recherche pour extraire vendor, name, type et variation
-     */
-    private function parseSearchTerm(string $searchTerm): array
-    {
-        $result = [
-            'vendor' => '',
-            'name' => '',
-            'type' => '',
-            'variation' => '',
-        ];
-        
-        // Liste des types de produits courants
-        $productTypes = [
-            'Eau de Parfum',
-            'Eau de Toilette',
-            'Parfum',
-            'Cologne',
-            'Body Lotion',
-            'Shower Gel',
-            'Deodorant',
-        ];
-        
-        // Extraire le type de produit
-        foreach ($productTypes as $type) {
-            if (stripos($searchTerm, $type) !== false) {
-                $result['type'] = $type;
-                // Retirer le type du terme de recherche
-                $searchTerm = str_ireplace($type, '', $searchTerm);
-                break;
-            }
-        }
-        
-        // Extraire la variation (ml, g, oz, etc.)
-        if (preg_match('/(\d+\s*(ml|g|oz|cl|l))/i', $searchTerm, $matches)) {
-            $result['variation'] = trim($matches[0]);
-            // Retirer la variation du terme de recherche
-            $searchTerm = str_replace($matches[0], '', $searchTerm);
-        }
-        
-        // Nettoyer et séparer le reste (vendor et name)
-        $searchTerm = preg_replace('/\s+/', ' ', trim($searchTerm));
-        $searchTerm = trim($searchTerm, ' -');
-        
-        // Diviser par " - " pour séparer vendor et name
-        $parts = array_map('trim', explode('-', $searchTerm));
-        
-        if (count($parts) >= 2) {
-            $result['vendor'] = $parts[0];
-            $result['name'] = implode(' - ', array_slice($parts, 1));
-        } elseif (count($parts) === 1) {
-            // Si pas de séparateur, considérer le premier mot comme vendor
-            $words = explode(' ', $parts[0]);
-            if (count($words) > 1) {
-                $result['vendor'] = $words[0];
-                $result['name'] = implode(' ', array_slice($words, 1));
-            } else {
-                $result['name'] = $parts[0];
-            }
-        }
-        
-        return $result;
     }
     
 }; ?>
