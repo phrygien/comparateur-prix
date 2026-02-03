@@ -506,7 +506,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
         // RÈGLE STRICTE : Le nom du produit doit contenir EXACTEMENT 1 mot significatif
         if (count($productNameWords) !== 1) {
-            \Log::debug('❌ VALENTINO - Nom avec plusieurs mots rejeté', [
+            \Log::debug(' VALENTINO - Nom avec plusieurs mots rejeté', [
                 'nom_recherché' => $searchName,
                 'nom_produit' => $productName,
                 'mot_recherché' => $searchWordLower,
@@ -519,7 +519,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
         // Vérifier que le seul mot du produit correspond au mot recherché
         if ($productNameWords[0] !== $searchWordLower) {
-            \Log::debug('❌ VALENTINO - Mot différent rejeté', [
+            \Log::debug(' VALENTINO - Mot différent rejeté', [
                 'nom_recherché' => $searchName,
                 'nom_produit' => $productName,
                 'mot_recherché' => $searchWordLower,
@@ -565,7 +565,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
         if ($isSearchBarenia) {
             if (!$isProductBarenia) {
-                \Log::debug('❌ HERMÈS - Produit Barenia non correspondant', [
+                \Log::debug(' HERMÈS - Produit Barenia non correspondant', [
                     'recherché_name' => $searchName,
                     'recherché_type' => $searchType,
                     'produit_name' => $productName,
@@ -585,7 +585,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
         // Si le produit est Barenia mais pas la recherche, rejeter
         if ($isProductBarenia && !$isSearchBarenia) {
-            \Log::debug('❌ HERMÈS - Produit Barenia mais recherche non-Barenia', [
+            \Log::debug(' HERMÈS - Produit Barenia mais recherche non-Barenia', [
                 'recherché_name' => $searchName,
                 'produit_name' => $productName,
                 'raison' => 'Produit est Barenia mais pas la recherche'
@@ -613,7 +613,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             $isValid = $matchCount >= $minRequired;
 
             if (!$isValid) {
-                \Log::debug('❌ HERMÈS - Édition limitée - Matching insuffisant', [
+                \Log::debug(' HERMÈS - Édition limitée - Matching insuffisant', [
                     'recherché_name' => $searchName,
                     'produit_name' => $productName,
                     'mots_recherchés' => $searchWords,
@@ -663,7 +663,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         $isValid = $matchCount === count($searchWords) && empty($missingWords);
 
         if (!$isValid) {
-            \Log::debug('❌ HERMÈS - Produit standard - Matching strict échoué', [
+            \Log::debug(' HERMÈS - Produit standard - Matching strict échoué', [
                 'recherché_name' => $searchName,
                 'produit_name' => $productName,
                 'mots_recherchés' => $searchWords,
@@ -1143,7 +1143,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                             $score -= 200; // Malus normal
                         }
 
-                        \Log::debug('❌ TYPE DE BASE non correspondant', [
+                        \Log::debug(' TYPE DE BASE non correspondant', [
                             'product_id' => $product['id'] ?? 0,
                             'base_type_recherché' => $baseTypeLower,
                             'product_type' => $productType,
