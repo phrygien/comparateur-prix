@@ -19,20 +19,18 @@ new class extends Component {
         // Décoder les entités HTML et rechercher avec Typesense Scout
         $searchTerm = html_entity_decode($this->name);
         $products = Product::search($searchTerm)
-            ->query(fn($query) => $query->with('site'))
+            ->query(fn($query) => $query->with('website'))
             ->get();
         
-        // Grouper par site et sélectionner le produit avec le prix max par scrap_reference_id
+        // Grouper par site et sélectionner le dernier produit scrapé par scrap_reference_id
         $this->productsBySite = $products
             ->groupBy('web_site_id')
             ->map(function ($siteProducts) {
                 return $siteProducts
                     ->groupBy('scrap_reference_id')
                     ->map(function ($refProducts) {
-                        // Retourner le produit avec le prix_ht maximum
-                        return $refProducts->sortByDesc(function ($product) {
-                            return (float) str_replace(',', '.', $product->prix_ht);
-                        })->first();
+                        // Retourner le produit le plus récent (dernière date de scraping)
+                        return $refProducts->sortByDesc('created_at')->first();
                     })
                     ->values();
             });
@@ -49,7 +47,7 @@ new class extends Component {
         @if($productsBySite->count() > 0)
             @foreach($productsBySite as $siteId => $siteProducts)
                 @php
-                    $site = $siteProducts->first()->site ?? null;
+                    $site = $siteProducts->first()->website ?? null;
                 @endphp
                 
                 <div class="mb-8">
@@ -91,6 +89,11 @@ new class extends Component {
                                         <p class="mt-1 text-xs text-gray-500">{{ $product->variation }}</p>
                                         @if($product->scrap_reference_id)
                                             <p class="mt-1 text-xs text-gray-400">Réf: {{ $product->scrap_reference_id }}</p>
+                                        @endif
+                                        @if($product->created_at)
+                                            <p class="mt-1 text-xs text-gray-400">
+                                                Scrapé le {{ $product->created_at->format('d/m/Y') }}
+                                            </p>
                                         @endif
                                     </div>
                                     <p class="mt-4 text-base font-medium text-gray-900">
