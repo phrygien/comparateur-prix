@@ -19,32 +19,32 @@ new class extends Component {
         $searchTerm = html_entity_decode($this->name);
         $parsed = $this->parseProductName($searchTerm);
 
-        // Recherche avec les paramètres par défaut + surcharge
+        // Recherche stricte sur name et type
         $products = Product::search($parsed['name'], function ($typesense, $query, $options) use ($parsed) {
-            // Les paramètres de config/scout.php sont déjà chargés
-            // On ajoute seulement les filtres spécifiques
+            // La config par défaut applique déjà num_typos='0,1,0,0'
+            // On ajoute les filtres stricts sur vendor et type
 
             $filters = [];
 
-            // Filtre STRICT sur vendor
+            // FILTRE STRICT : Vendor doit correspondre EXACTEMENT
             if (!empty($parsed['vendor'])) {
                 $filters[] = "vendor:= `{$parsed['vendor']}`";
             }
 
-            // Filtre STRICT sur type
+            // FILTRE STRICT : Type doit correspondre EXACTEMENT
             if (!empty($parsed['type'])) {
                 $filters[] = "type:= `{$parsed['type']}`";
             }
 
+            // Appliquer les filtres
             if (!empty($filters)) {
                 $options['filter_by'] = implode(' && ', $filters);
             }
 
-            // Boost pour variation exacte si présente
+            // Boost additionnel si variation correspond exactement
             if (!empty($parsed['variation'])) {
                 $options['sort_by'] = "_eval([(variation:={$parsed['variation']}):10]):desc,_text_match:desc,created_at:desc";
             }
-            // Sinon, utiliser le sort_by par défaut de la config
 
             return $options;
         })
@@ -77,6 +77,7 @@ new class extends Component {
         if (isset($parts[2])) {
             $lastPart = $parts[2];
 
+            // Extraire la variation (200ml, 50g, etc.)
             if (preg_match('/\b(\d+\s?(ml|g|oz|cl|l|mg))\b/i', $lastPart, $matches)) {
                 $result['variation'] = trim($matches[1]);
                 $result['type'] = trim(str_replace($matches[0], '', $lastPart));
@@ -88,6 +89,7 @@ new class extends Component {
         return $result;
     }
 }; ?>
+
 
 <div class="bg-white">
 
