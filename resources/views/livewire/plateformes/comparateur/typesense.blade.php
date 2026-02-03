@@ -18,21 +18,19 @@ new class extends Component {
         
         // Décoder les entités HTML et rechercher avec Typesense Scout
         $searchTerm = html_entity_decode($this->name);
-        $products = Product::search($searchTerm)
-            ->query(fn($query) => $query->with('website'))
-            ->get();
         
-        // D'abord, garder uniquement le dernier produit par scrap_reference_id
-        $uniqueProducts = $products
-            ->groupBy('scrap_reference_id')
-            ->map(function ($refProducts) {
-                // Retourner le produit le plus récent pour chaque scrap_reference_id
-                return $refProducts->sortByDesc('created_at')->first();
-            })
-            ->values();
+        // Utiliser group_by pour récupérer uniquement le dernier produit par scrap_reference_id
+        $products = Product::search($searchTerm, function ($typesenseSearch, $query, $options) {
+            $options['group_by'] = 'scrap_reference_id';
+            $options['group_limit'] = 1; // Un seul produit par groupe
+            $options['sort_by'] = 'created_at:desc'; // Le plus récent en premier
+            return $options;
+        })
+        ->query(fn($query) => $query->with('website'))
+        ->get();
         
-        // Ensuite, grouper par site pour l'affichage
-        $this->productsBySite = $uniqueProducts->groupBy('web_site_id');
+        // Grouper par site pour l'affichage
+        $this->productsBySite = $products->groupBy('web_site_id');
     }
     
 }; ?>
