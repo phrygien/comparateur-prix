@@ -65,54 +65,6 @@ class Product extends Model
             'scrap_reference_id' => (int) $this->scrap_reference_id,
             'created_at' => $this->created_at?->timestamp ?? 0,
             'updated_at' => $this->updated_at?->timestamp ?? 0,
-            // Champ combiné pour la recherche exacte
-            'exact_match' => !empty($exactMatch) ? implode(' - ', $exactMatch) : null,
         ];
-    }
-
-    // Ajouter dans votre modèle Product
-    public static function searchByComponents($vendor, $name, $type, $variation = null)
-    {
-        $search = self::search($name, function($engine, $query, $options) use ($vendor, $type, $variation) {
-            // Filtre strict sur vendor et type
-            $filter = "vendor:= `{$vendor}` && type:= `{$type}`";
-
-            // Si variation est fournie, l'ajouter à la recherche
-            if ($variation) {
-                $options['query_by'] = 'name,variation';
-                $options['num_typos'] = '0,2'; // Strict sur name, flexible sur variation
-            } else {
-                $options['query_by'] = 'name';
-                $options['num_typos'] = '0'; // Strict sur name
-            }
-
-            $options['filter_by'] = $filter;
-            $options['prefix'] = 'false';
-
-            return $options;
-        });
-
-        return $search->get();
-    }
-
-// Et aussi une méthode pour la recherche libre
-    public static function searchFreeText($query, $filters = [])
-    {
-        return self::search($query, function($engine, $q, $options) use ($filters) {
-            // Appliquer les filtres si fournis
-            if (!empty($filters)) {
-                $filterParts = [];
-                foreach ($filters as $field => $value) {
-                    $filterParts[] = "{$field}:= `{$value}`";
-                }
-                $options['filter_by'] = implode(' && ', $filterParts);
-            }
-
-            // Recherche sur exact_match principalement
-            $options['query_by'] = 'exact_match,name,vendor';
-            $options['num_typos'] = '2,1,0';
-
-            return $options;
-        })->get();
     }
 }
