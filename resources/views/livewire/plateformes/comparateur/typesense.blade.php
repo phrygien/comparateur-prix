@@ -22,18 +22,17 @@ new class extends Component {
             ->query(fn($query) => $query->with('website'))
             ->get();
         
-        // Grouper par site et sélectionner le dernier produit scrapé par scrap_reference_id
-        $this->productsBySite = $products
-            ->groupBy('web_site_id')
-            ->map(function ($siteProducts) {
-                return $siteProducts
-                    ->groupBy('scrap_reference_id')
-                    ->map(function ($refProducts) {
-                        // Retourner le produit le plus récent (dernière date de scraping)
-                        return $refProducts->sortByDesc('created_at')->first();
-                    })
-                    ->values();
-            });
+        // D'abord, garder uniquement le dernier produit par scrap_reference_id
+        $uniqueProducts = $products
+            ->groupBy('scrap_reference_id')
+            ->map(function ($refProducts) {
+                // Retourner le produit le plus récent pour chaque scrap_reference_id
+                return $refProducts->sortByDesc('created_at')->first();
+            })
+            ->values();
+        
+        // Ensuite, grouper par site pour l'affichage
+        $this->productsBySite = $uniqueProducts->groupBy('web_site_id');
     }
     
 }; ?>
@@ -92,7 +91,7 @@ new class extends Component {
                                         @endif
                                         @if($product->created_at)
                                             <p class="mt-1 text-xs text-gray-400">
-                                                Scrapé le {{ $product->created_at->format('d/m/Y') }}
+                                                {{ $product->created_at->format('d/m/Y H:i') }}
                                             </p>
                                         @endif
                                     </div>
