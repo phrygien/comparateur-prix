@@ -3,6 +3,8 @@
 use Livewire\Volt\Component;
 use App\Models\Product;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Cache;
 
 new class extends Component {
     public string $name;
@@ -16,24 +18,132 @@ new class extends Component {
         $this->id = $id;
         $this->price = $price;
         
-        // Décoder les entités HTML et rechercher avec Typesense Scout
+        // Décoder les entités HTML
         $searchTerm = html_entity_decode($this->name);
-        $products = Product::search($searchTerm)
-            ->query(fn($query) => $query->with('website'))
-            ->get();
         
-        // Grouper par site et sélectionner le dernier produit scrapé par scrap_reference_id
+        // Extraire les informations avec OpenAI (avec cache)
+        $parsedSearch = $this->extractWithOpenAI($searchTerm);
+        
+        // Construire la recherche Typesense
+        $products = Product::search($searchTerm, function ($typesenseClient, $query, $params) use ($parsedSearch) {
+            $params['query_by'] = 'vendor,name,type,variation';
+            $params['query_by_weights'] = '4,3,2,1';
+            $params['exhaustive_search'] = true;
+            $params['per_page'] = 250;
+            
+            // Construire les filtres basés sur l'extraction OpenAI
+            $filters = [];
+            
+            if (!empty($parsedSearch['vendor'])) {
+                // Recherche flexible sur le vendor
+                $filters[] = "vendor:~{$parsedSearch['vendor']}";
+            }
+            
+            if (!empty($parsedSearch['type'])) {
+                $filters[] = "type:~{$parsedSearch['type']}";
+            }
+            
+            // Optionnel : filtrer par variation si elle est spécifique
+            if (!empty($parsedSearch['variation']) && strlen($parsedSearch['variation']) > 2) {
+                $filters[] = "variation:~{$parsedSearch['variation']}";
+            }
+            
+            if (!empty($filters)) {
+                $params['filter_by'] = implode(' && ', $filters);
+            }
+            
+            return $typesenseClient->collections[$params['collection']]->documents->search($params);
+        })
+        ->query(fn($query) => $query->with('website'))
+        ->get();
+        
+        // Grouper par site et sélectionner le dernier produit scrapé
         $this->productsBySite = $products
             ->groupBy('web_site_id')
             ->map(function ($siteProducts) {
                 return $siteProducts
                     ->groupBy('scrap_reference_id')
                     ->map(function ($refProducts) {
-                        // Retourner le produit le plus récent (dernière date de scraping)
                         return $refProducts->sortByDesc('created_at')->first();
                     })
                     ->values();
             });
+    }
+    
+    /**
+     * Extraire les informations du produit avec OpenAI
+     */
+    private function extractWithOpenAI(string $searchTerm): array
+    {
+        // Cache pour éviter les appels répétés à l'API
+        $cacheKey = 'openai_extract_' . md5($searchTerm);
+        
+        return Cache::remember($cacheKey, now()->addHours(24), function () use ($searchTerm) {
+            try {
+                $response = Http::withHeaders([
+                    'Authorization' => 'Bearer ' . config('services.openai.api_key'),
+                    'Content-Type' => 'application/json',
+                ])
+                ->timeout(10)
+                ->post('https://api.openai.com/v1/chat/completions', [
+                    'model' => 'gpt-4o-mini', // Ou 'gpt-4o' pour plus de précision
+                    'messages' => [
+                        [
+                            'role' => 'system',
+                            'content' => 'Tu es un assistant spécialisé dans l\'extraction d\'informations de produits cosmétiques et parfums. 
+                            Extrait les informations suivantes du texte fourni et retourne UNIQUEMENT un JSON valide sans aucun texte supplémentaire.
+                            Format attendu :
+                            {
+                                "vendor": "nom de la marque",
+                                "name": "nom du produit",
+                                "type": "type de produit (Eau de Parfum, Eau de Toilette, etc.)",
+                                "variation": "contenance ou variation (100 ml, 50ml, etc.)"
+                            }
+                            Si une information n\'est pas trouvée, retourne une chaîne vide pour ce champ.'
+                        ],
+                        [
+                            'role' => 'user',
+                            'content' => "Extrait les informations de ce produit : $searchTerm"
+                        ]
+                    ],
+                    'temperature' => 0.1,
+                    'max_tokens' => 200,
+                    'response_format' => ['type' => 'json_object']
+                ]);
+
+                if ($response->successful()) {
+                    $content = $response->json('choices.0.message.content');
+                    $extracted = json_decode($content, true);
+                    
+                    return [
+                        'vendor' => $extracted['vendor'] ?? '',
+                        'name' => $extracted['name'] ?? '',
+                        'type' => $extracted['type'] ?? '',
+                        'variation' => $extracted['variation'] ?? '',
+                    ];
+                }
+                
+                // En cas d'erreur, retourner des valeurs vides
+                \Log::warning('OpenAI extraction failed', [
+                    'status' => $response->status(),
+                    'body' => $response->body()
+                ]);
+                
+            } catch (\Exception $e) {
+                \Log::error('OpenAI extraction error', [
+                    'message' => $e->getMessage(),
+                    'search_term' => $searchTerm
+                ]);
+            }
+            
+            // Fallback : retourner des valeurs vides
+            return [
+                'vendor' => '',
+                'name' => '',
+                'type' => '',
+                'variation' => '',
+            ];
+        });
     }
     
 }; ?>
