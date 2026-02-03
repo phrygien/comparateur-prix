@@ -67,7 +67,7 @@ RÈGLES IMPORTANTES :
 - vendor : la marque du produit (ex: Dior, Shiseido, Chanel)
 - name : le nom de la gamme/ligne de produit UNIQUEMENT (ex: \"J'adore\", \"Vital Perfection\", \"La Vie Est Belle\")
 - type : UNIQUEMENT la catégorie/type du produit (ex: \"Huile pour le corps\", \"Eau de Parfum\", \"Crème visage\", \"Sérum\")
-- variation : la contenance/taille avec unité (ex: \"200 ml\", \"50 ml\", \"30 g\")
+- variation : la contenance/taille avec unité (ex: \"200 ml\", \"50 ml\", \"30 g\"). Si pas de contenance visible, retourne une chaîne vide.
 - is_coffret : true si c'est un coffret/set/kit, false sinon
 
 Nom du produit : {$this->productName}
@@ -190,6 +190,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     'name' => $this->extractedData['name'] ?? '',
                     'type' => $this->extractedData['type'] ?? '',
                     'variation' => $this->extractedData['variation'] ?? '',
+                    'variation_normalisée' => $this->normalizeVariation($this->extractedData['variation'] ?? ''),
                     'is_coffret' => $this->extractedData['is_coffret'] ?? false
                 ]);
 
@@ -237,7 +238,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'vendor' => $this->extractedData['vendor'],
                 'name' => $this->extractedData['name'],
                 'type' => $this->extractedData['type'],
-                'variation' => $this->extractedData['variation']
+                'variation' => $this->extractedData['variation'],
+                'variation_normalisée' => $this->normalizeVariation($this->extractedData['variation'])
             ]);
 
             $this->searchMatchingProducts();
@@ -257,6 +259,79 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
     {
         $this->manualSearchMode = !$this->manualSearchMode;
     }
+
+    // ─── VARIATION HELPERS ────────────────────────────────────────────────────
+
+    /**
+     * Normalise une variation brute en ['value' => float, 'unit' => string]
+     * Exemples : "200ml" → ['value'=>200,'unit'=>'ml']
+     *            "50 g"  → ['value'=>50, 'unit'=>'g']
+     *            "1,5 oz" → ['value'=>1.5,'unit'=>'oz']
+     *            ""       → null
+     */
+    private function normalizeVariation(string $variation): ?array
+    {
+        $variation = trim($variation);
+        if (empty($variation)) {
+            return null;
+        }
+
+        // Chercher un nombre (entier ou décimal avec . ou ,) suivi d'une unité
+        if (preg_match('/^([\d]+[.,]?[\d]*)\s*(ml|g|gr|oz|fl\.?\s*oz|cc|l|kg)$/i', $variation, $matches)) {
+            $value = (float) str_replace(',', '.', $matches[1]);
+            $unit = mb_strtolower(trim($matches[2]));
+
+            // Normaliser les unités
+            $unit = match(true) {
+                in_array($unit, ['gr']) => 'g',
+                in_array($unit, ['cc']) => 'ml',
+                str_starts_with($unit, 'fl') => 'fl oz',
+                default => $unit
+            };
+
+            return ['value' => $value, 'unit' => $unit];
+        }
+
+        return null;
+    }
+
+    /**
+     * Compare deux variations normalisées.
+     * Retourne :
+     *   'exact'   → même valeur, même unité
+     *   'close'   → même unité, différence ≤ 10%
+     *   'unit_only' → même unité mais valeurs très différentes
+     *   'none'    → unités différentes ou impossible à comparer
+     */
+    private function compareVariations(?array $source, ?array $product): string
+    {
+        if ($source === null || $product === null) {
+            return 'none';
+        }
+
+        if ($source['unit'] !== $product['unit']) {
+            return 'none';
+        }
+
+        if ($source['value'] === $product['value']) {
+            return 'exact';
+        }
+
+        // Éviter division par zéro
+        if ($source['value'] == 0) {
+            return 'unit_only';
+        }
+
+        $diff = abs($source['value'] - $product['value']) / $source['value'];
+
+        if ($diff <= 0.10) {
+            return 'close';
+        }
+
+        return 'unit_only';
+    }
+
+    // ─── COFFRET HELPERS ──────────────────────────────────────────────────────
 
     private function isCoffretFromString(string $text): bool
     {
@@ -302,6 +377,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         return $nameCheck || $typeCheck;
     }
 
+    // ─── VENDOR / PRODUCT TYPE HELPERS ────────────────────────────────────────
+
     private function isSpecialVendor(string $vendor): bool
     {
         $specialVendors = ['valentino', 'valent', 'hermès', 'hermes'];
@@ -325,24 +402,14 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
     private function cleanHermesName(string $name, string $type): string
     {
         $typeKeywords = [
-            'eau',
-            'parfum',
-            'toilette',
-            'cologne',
-            'vaporisateur',
-            'spray',
-            'extrait',
-            'fraiche',
-            'fraîche'
+            'eau', 'parfum', 'toilette', 'cologne',
+            'vaporisateur', 'spray', 'extrait', 'fraiche', 'fraîche'
         ];
 
-        $nameLower = mb_strtolower(trim($name));
-
-        $words = preg_split('/[\s\-]+/', $nameLower, -1, PREG_SPLIT_NO_EMPTY);
-
-        $cleanedWords = [];
+        $words = preg_split('/[\s\-]+/', mb_strtolower(trim($name)), -1, PREG_SPLIT_NO_EMPTY);
         $originalWords = preg_split('/[\s\-]+/', $name, -1, PREG_SPLIT_NO_EMPTY);
 
+        $cleanedWords = [];
         foreach ($words as $index => $wordLower) {
             if (!in_array($wordLower, $typeKeywords)) {
                 $cleanedWords[] = $originalWords[$index];
@@ -350,17 +417,12 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         }
 
         $cleanedName = implode(' ', $cleanedWords);
-
         return !empty($cleanedName) ? $cleanedName : $name;
     }
 
-
     private function isBareniaProduct(string $name, string $type): bool
     {
-        $nameLower = mb_strtolower($name);
-        $typeLower = mb_strtolower($type);
-
-        return str_contains($nameLower, 'barenia') || str_contains($typeLower, 'barenia');
+        return str_contains(mb_strtolower($name), 'barenia') || str_contains(mb_strtolower($type), 'barenia');
     }
 
     private function isMeteoritesProduct(string $name, string $type): bool
@@ -368,9 +430,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         $nameLower = mb_strtolower($name);
         $typeLower = mb_strtolower($type);
 
-        $meteoritesKeywords = ['meteorites', 'météorites'];
-
-        foreach ($meteoritesKeywords as $keyword) {
+        foreach (['meteorites', 'météorites'] as $keyword) {
             if (str_contains($nameLower, $keyword) || str_contains($typeLower, $keyword)) {
                 return true;
             }
@@ -379,24 +439,15 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         return false;
     }
 
-
     private function isLimitedEdition(string $name, string $type): bool
     {
         $combinedText = mb_strtolower($name . ' ' . $type);
 
         $limitedKeywords = [
-            'édition limitée',
-            'edition limitée',
-            'édition limite',
-            'limited edition',
-            'édition spéciale',
-            'special edition',
-            'blooming glow',
-            'midnight glow',
-            'phoenix',
-            'collector',
-            'exclusive',
-            'barenia'
+            'édition limitée', 'edition limitée', 'édition limite',
+            'limited edition', 'édition spéciale', 'special edition',
+            'blooming glow', 'midnight glow', 'phoenix',
+            'collector', 'exclusive', 'barenia'
         ];
 
         foreach ($limitedKeywords as $keyword) {
@@ -408,6 +459,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         return false;
     }
 
+    // ─── VALENTINO / HERMÈS MATCH VALIDATORS ─────────────────────────────────
+
     private function isValidValentinoSingleWordMatch(string $searchName, string $productName, string $productType): bool
     {
         $searchWords = $this->extractKeywords($searchName, true);
@@ -417,38 +470,32 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         }
 
         $searchWordLower = mb_strtolower($searchWords[0]);
-        $productNameLower = mb_strtolower(trim($productName));
 
-        $productNameWords = preg_split('/[\s\-]+/', $productNameLower, -1, PREG_SPLIT_NO_EMPTY);
-        $productNameWords = array_filter($productNameWords, function ($word) {
-            return mb_strlen($word) >= 3;
-        });
-        $productNameWords = array_values($productNameWords);
+        $productNameWords = preg_split('/[\s\-]+/', mb_strtolower(trim($productName)), -1, PREG_SPLIT_NO_EMPTY);
+        $productNameWords = array_values(array_filter($productNameWords, fn($w) => mb_strlen($w) >= 3));
 
         if (count($productNameWords) !== 1) {
-            \Log::debug(' VALENTINO - Nom avec plusieurs mots rejeté', [
+            \Log::debug('VALENTINO - Nom avec plusieurs mots rejeté', [
                 'nom_recherché' => $searchName,
                 'nom_produit' => $productName,
                 'mot_recherché' => $searchWordLower,
                 'mots_dans_nom_produit' => $productNameWords,
                 'nombre_mots' => count($productNameWords),
-                'raison' => 'Le nom du produit contient ' . count($productNameWords) . ' mots au lieu de 1'
             ]);
             return false;
         }
 
         if ($productNameWords[0] !== $searchWordLower) {
-            \Log::debug(' VALENTINO - Mot différent rejeté', [
+            \Log::debug('VALENTINO - Mot différent rejeté', [
                 'nom_recherché' => $searchName,
                 'nom_produit' => $productName,
                 'mot_recherché' => $searchWordLower,
                 'mot_produit' => $productNameWords[0],
-                'raison' => 'Le mot du produit ne correspond pas au mot recherché'
             ]);
             return false;
         }
 
-        \Log::debug(' VALENTINO - Nom validé (exactement 1 mot correspondant)', [
+        \Log::debug('VALENTINO - Nom validé (exactement 1 mot correspondant)', [
             'nom_recherché' => $searchName,
             'nom_produit' => $productName,
             'mot_vérifié' => $searchWordLower
@@ -469,29 +516,21 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
         if ($isSearchBarenia) {
             if (!$isProductBarenia) {
-                \Log::debug(' HERMÈS - Produit Barenia non correspondant', [
-                    'recherché_name' => $searchName,
-                    'recherché_type' => $searchType,
-                    'produit_name' => $productName,
-                    'produit_type' => $productType,
+                \Log::debug('HERMÈS - Produit Barenia non correspondant', [
+                    'recherché_name' => $searchName, 'produit_name' => $productName,
                     'raison' => 'Barenia recherché mais pas trouvé dans le produit'
                 ]);
                 return false;
             }
-
-            \Log::debug(' HERMÈS - Produit Barenia correspondant', [
-                'recherché_name' => $searchName,
-                'produit_name' => $productName,
-                'produit_type' => $productType
+            \Log::debug('HERMÈS - Produit Barenia correspondant', [
+                'recherché_name' => $searchName, 'produit_name' => $productName
             ]);
             return true;
         }
 
         if ($isProductBarenia && !$isSearchBarenia) {
-            \Log::debug(' HERMÈS - Produit Barenia mais recherche non-Barenia', [
-                'recherché_name' => $searchName,
-                'produit_name' => $productName,
-                'raison' => 'Produit est Barenia mais pas la recherche'
+            \Log::debug('HERMÈS - Produit Barenia mais recherche non-Barenia', [
+                'recherché_name' => $searchName, 'produit_name' => $productName
             ]);
             return false;
         }
@@ -511,27 +550,16 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             $minRequired = max(1, (int) ceil(count($searchWords) * 0.5));
             $isValid = $matchCount >= $minRequired;
 
-            if (!$isValid) {
-                \Log::debug(' HERMÈS - Édition limitée - Matching insuffisant', [
-                    'recherché_name' => $searchName,
-                    'produit_name' => $productName,
-                    'mots_recherchés' => $searchWords,
-                    'mots_matchés' => $matchedWords,
-                    'count_matchés' => $matchCount,
-                    'minimum_requis' => $minRequired
-                ]);
-            } else {
-                \Log::debug(' HERMÈS - Édition limitée - Matching validé', [
-                    'recherché_name' => $searchName,
-                    'produit_name' => $productName,
-                    'mots_matchés' => $matchedWords,
-                    'ratio' => $matchCount . '/' . count($searchWords)
-                ]);
-            }
+            \Log::debug('HERMÈS - Édition limitée - ' . ($isValid ? 'Matching validé' : 'Matching insuffisant'), [
+                'recherché_name' => $searchName, 'produit_name' => $productName,
+                'mots_matchés' => $matchedWords, 'ratio' => $matchCount . '/' . count($searchWords),
+                'minimum_requis' => $minRequired
+            ]);
 
             return $isValid;
         }
 
+        // Standard : 100% des mots doivent matcher
         $searchWords = $this->extractKeywords($searchName, true);
         $matchCount = 0;
         $matchedWords = [];
@@ -548,56 +576,41 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
         $isValid = $matchCount === count($searchWords) && empty($missingWords);
 
-        if (!$isValid) {
-            \Log::debug(' HERMÈS - Produit standard - Matching strict échoué', [
-                'recherché_name' => $searchName,
-                'produit_name' => $productName,
-                'mots_recherchés' => $searchWords,
-                'mots_matchés' => $matchedWords,
-                'mots_manquants' => $missingWords,
-                'ratio' => $matchCount . '/' . count($searchWords),
-                'raison' => empty($missingWords)
-                    ? 'Tous les mots ne matchent pas'
-                    : 'Mots manquants: ' . implode(', ', $missingWords)
-            ]);
-        } else {
-            \Log::debug(' HERMÈS - Produit standard - Matching validé (100%)', [
-                'recherché_name' => $searchName,
-                'produit_name' => $productName,
-                'tous_mots_matchés' => $matchedWords,
-                'ratio' => $matchCount . '/' . count($searchWords)
-            ]);
-        }
+        \Log::debug('HERMÈS - Produit standard - ' . ($isValid ? 'Matching validé (100%)' : 'Matching strict échoué'), [
+            'recherché_name' => $searchName, 'produit_name' => $productName,
+            'mots_matchés' => $matchedWords, 'mots_manquants' => $missingWords,
+            'ratio' => $matchCount . '/' . count($searchWords)
+        ]);
 
         return $isValid;
     }
 
+    // ─── RECHERCHE PRINCIPALE ─────────────────────────────────────────────────
+
     private function searchMatchingProducts()
     {
         if (empty($this->extractedData) || !is_array($this->extractedData)) {
-            \Log::warning('searchMatchingProducts: extractedData invalide', [
-                'extractedData' => $this->extractedData
-            ]);
+            \Log::warning('searchMatchingProducts: extractedData invalide', ['extractedData' => $this->extractedData]);
             return;
         }
 
         $extractedData = array_merge([
-            'vendor' => '',
-            'name' => '',
-            'variation' => '',
-            'type' => '',
-            'is_coffret' => false
+            'vendor' => '', 'name' => '', 'variation' => '', 'type' => '', 'is_coffret' => false
         ], $this->extractedData);
 
         $vendor = $extractedData['vendor'] ?? '';
         $name = $extractedData['name'] ?? '';
         $type = $extractedData['type'] ?? '';
+        $variation = $extractedData['variation'] ?? '';
         $isCoffretSource = $extractedData['is_coffret'] ?? false;
 
         if (empty($vendor)) {
             \Log::warning('searchMatchingProducts: vendor vide');
             return;
         }
+
+        // Normaliser la variation source une seule fois
+        $sourceVariation = $this->normalizeVariation($variation);
 
         $isSpecialVendor = $this->isSpecialVendor($vendor);
         $isHermesProduct = $this->isHermesProduct($vendor);
@@ -620,11 +633,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         $typeParts = $this->extractTypeParts($type);
 
         $allNameWords = $this->extractKeywords($name, $isSpecialVendor);
-
         $vendorWords = $this->extractKeywords($vendor, false);
-        $nameWordsFiltered = array_diff($allNameWords, $vendorWords);
-
-        $nameWords = array_values($nameWordsFiltered);
+        $nameWords = array_values(array_diff($allNameWords, $vendorWords));
 
         \Log::info('Mots-clés pour la recherche', [
             'vendor' => $vendor,
@@ -634,31 +644,28 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             'is_meteorites' => $isMeteoritesProduct,
             'is_limited_edition' => $isLimitedEdition,
             'name' => $name,
-            'nameWords_brut' => $allNameWords,
             'nameWords_filtres' => $nameWords,
             'type' => $type,
-            'type_parts' => $typeParts
+            'type_parts' => $typeParts,
+            'variation' => $variation,
+            'variation_normalisée' => $sourceVariation
         ]);
 
-        $baseQuery = Product::query()
+        // ── ÉTAPE 1 : Recherche par vendor + sites ──
+        $vendorProducts = Product::query()
             ->where('vendor', 'LIKE', "%{$vendor}%")
-            ->when(!empty($this->selectedSites), function ($q) {
-                $q->whereIn('web_site_id', $this->selectedSites);
-            })
-            ->orderByDesc('id');
-
-        $vendorProducts = $baseQuery->get();
+            ->when(!empty($this->selectedSites), fn($q) => $q->whereIn('web_site_id', $this->selectedSites))
+            ->orderByDesc('id')
+            ->get();
 
         if ($vendorProducts->isEmpty()) {
             \Log::info('Aucun produit trouvé pour le vendor: ' . $vendor);
             return;
         }
 
-        \Log::info('Produits trouvés pour le vendor', [
-            'vendor' => $vendor,
-            'count' => $vendorProducts->count()
-        ]);
+        \Log::info('Produits trouvés pour le vendor', ['vendor' => $vendor, 'count' => $vendorProducts->count()]);
 
+        // ── ÉTAPE 2 : Filtrage coffret ──
         $filteredProducts = $this->filterByCoffretStatus($vendorProducts, $isCoffretSource);
 
         if (empty($filteredProducts)) {
@@ -666,6 +673,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             return;
         }
 
+        // ── ÉTAPE 2.5 : Filtrage TYPE (skip pour cas spéciaux) ──
         $shouldSkipTypeFilter = ($isSpecialVendor && $isCoffretSource) ||
             ($isHermesProduct && $isLimitedEdition) ||
             ($isMeteoritesProduct && $isLimitedEdition);
@@ -674,131 +682,102 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             $typeFilteredProducts = $this->filterByBaseType($filteredProducts, $type);
 
             if (!empty($typeFilteredProducts)) {
-                \Log::info(' Produits après filtrage par TYPE DE BASE', [
-                    'count' => count($typeFilteredProducts),
-                    'type_recherché' => $type
+                \Log::info('Produits après filtrage par TYPE DE BASE', [
+                    'count' => count($typeFilteredProducts), 'type_recherché' => $type
                 ]);
                 $filteredProducts = $typeFilteredProducts;
             } else {
                 \Log::info('Aucun produit après filtrage par type de base, on garde tous les produits');
             }
         } else {
-            \Log::info(' CAS SPÉCIAL DÉTECTÉ - Skip du filtrage strict par TYPE', [
-                'vendor' => $vendor,
-                'type_recherché' => $type,
-                'is_valentino_coffret' => (str_contains(mb_strtolower($vendor), 'valent') && $isCoffretSource),
-                'is_hermes_limited' => ($isHermesProduct && $isLimitedEdition),
-                'is_meteorites_limited' => ($isMeteoritesProduct && $isLimitedEdition),
+            \Log::info('CAS SPÉCIAL DÉTECTÉ - Skip du filtrage strict par TYPE', [
+                'vendor' => $vendor, 'type_recherché' => $type,
                 'produits_conservés' => count($filteredProducts)
             ]);
         }
 
+        // ── ÉTAPE 2.6 : Filtrage progressif par NAME (100% → 80% → 50% → 1 mot) ──
         $nameFilteredProducts = $filteredProducts;
 
         if (!empty($nameWords)) {
             $allWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $shouldSkipTypeFilter) {
                 $productName = mb_strtolower($product['name'] ?? '');
                 $productType = mb_strtolower($product['type'] ?? '');
-
                 $matchCount = 0;
                 foreach ($nameWords as $word) {
-                    if (
-                        str_contains($productName, $word) ||
-                        ($shouldSkipTypeFilter && str_contains($productType, $word))
-                    ) {
+                    if (str_contains($productName, $word) || ($shouldSkipTypeFilter && str_contains($productType, $word))) {
                         $matchCount++;
                     }
                 }
-
                 return $matchCount === count($nameWords);
             })->values()->toArray();
 
             if (!empty($allWordsMatch)) {
                 $nameFilteredProducts = $allWordsMatch;
-                \Log::info(' Produits après filtrage STRICT par NAME (TOUS les mots)', [
-                    'count' => count($nameFilteredProducts),
-                    'nameWords_required' => $nameWords
+                \Log::info('Produits après filtrage STRICT par NAME (TOUS les mots)', [
+                    'count' => count($nameFilteredProducts), 'nameWords_required' => $nameWords
                 ]);
             } else {
-                $minRequired = max(1, (int) ceil(count($nameWords) * 0.8));
-
-                $mostWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $minRequired, $shouldSkipTypeFilter) {
+                // 80%
+                $minRequired80 = max(1, (int) ceil(count($nameWords) * 0.8));
+                $mostWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $minRequired80, $shouldSkipTypeFilter) {
                     $productName = mb_strtolower($product['name'] ?? '');
                     $productType = mb_strtolower($product['type'] ?? '');
-
                     $matchCount = 0;
                     foreach ($nameWords as $word) {
-                        if (
-                            str_contains($productName, $word) ||
-                            ($shouldSkipTypeFilter && str_contains($productType, $word))
-                        ) {
+                        if (str_contains($productName, $word) || ($shouldSkipTypeFilter && str_contains($productType, $word))) {
                             $matchCount++;
                         }
                     }
-
-                    return $matchCount >= $minRequired;
+                    return $matchCount >= $minRequired80;
                 })->values()->toArray();
 
                 if (!empty($mostWordsMatch)) {
                     $nameFilteredProducts = $mostWordsMatch;
-                    \Log::info(' Produits après filtrage 80% par NAME', [
-                        'count' => count($nameFilteredProducts),
-                        'nameWords_used' => $nameWords
+                    \Log::info('Produits après filtrage 80% par NAME', [
+                        'count' => count($nameFilteredProducts), 'nameWords_used' => $nameWords
                     ]);
                 } else {
-                    $minRequired = max(1, (int) ceil(count($nameWords) * 0.5));
-
-                    $halfWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $minRequired, $shouldSkipTypeFilter, $isMeteoritesProduct, $isHermesProduct) {
+                    // 50%
+                    $minRequired50 = max(1, (int) ceil(count($nameWords) * 0.5));
+                    $halfWordsMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $minRequired50, $shouldSkipTypeFilter, $isMeteoritesProduct, $isHermesProduct) {
                         $productName = mb_strtolower($product['name'] ?? '');
                         $productType = mb_strtolower($product['type'] ?? '');
-
                         $matchCount = 0;
                         $matchedWords = [];
-
                         foreach ($nameWords as $word) {
-                            if (
-                                str_contains($productName, $word) ||
-                                ($shouldSkipTypeFilter && str_contains($productType, $word))
-                            ) {
+                            if (str_contains($productName, $word) || ($shouldSkipTypeFilter && str_contains($productType, $word))) {
                                 $matchCount++;
                                 $matchedWords[] = $word;
                             }
                         }
-
                         if ($shouldSkipTypeFilter && $matchCount > 0) {
                             \Log::debug('🎯 CAS SPÉCIAL - Matching partiel', [
                                 'product_id' => $product['id'] ?? 0,
                                 'product_name' => $product['name'] ?? '',
-                                'product_type' => $product['type'] ?? '',
                                 'matched_words' => $matchedWords,
                                 'match_count' => $matchCount,
-                                'required' => $minRequired,
+                                'required' => $minRequired50,
                                 'is_meteorites' => $isMeteoritesProduct,
                                 'is_hermes' => $isHermesProduct,
-                                'passes' => $matchCount >= $minRequired
+                                'passes' => $matchCount >= $minRequired50
                             ]);
                         }
-
-                        return $matchCount >= $minRequired;
+                        return $matchCount >= $minRequired50;
                     })->values()->toArray();
 
                     if (!empty($halfWordsMatch)) {
                         $nameFilteredProducts = $halfWordsMatch;
-                        \Log::info(' Produits après filtrage 50% par NAME', [
-                            'count' => count($nameFilteredProducts),
-                            'nameWords_used' => $nameWords,
-                            'is_special_case' => $shouldSkipTypeFilter
+                        \Log::info('Produits après filtrage 50% par NAME', [
+                            'count' => count($nameFilteredProducts), 'nameWords_used' => $nameWords
                         ]);
                     } else {
+                        // Fallback : au moins 1 mot
                         $anyWordMatch = collect($filteredProducts)->filter(function ($product) use ($nameWords, $shouldSkipTypeFilter) {
                             $productName = mb_strtolower($product['name'] ?? '');
                             $productType = mb_strtolower($product['type'] ?? '');
-
                             foreach ($nameWords as $word) {
-                                if (
-                                    str_contains($productName, $word) ||
-                                    ($shouldSkipTypeFilter && str_contains($productType, $word))
-                                ) {
+                                if (str_contains($productName, $word) || ($shouldSkipTypeFilter && str_contains($productType, $word))) {
                                     return true;
                                 }
                             }
@@ -807,9 +786,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
                         if (!empty($anyWordMatch)) {
                             $nameFilteredProducts = $anyWordMatch;
-                            \Log::info(' Produits après filtrage SOUPLE par NAME', [
-                                'count' => count($nameFilteredProducts),
-                                'nameWords_used' => $nameWords
+                            \Log::info('Produits après filtrage SOUPLE par NAME', [
+                                'count' => count($nameFilteredProducts), 'nameWords_used' => $nameWords
                             ]);
                         }
                     }
@@ -819,126 +797,129 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             $filteredProducts = $nameFilteredProducts;
         }
 
+        // ── ÉTAPE 2.65 : Filtrage strict Valentino (1 mot) ──
         if (str_contains(mb_strtolower($vendor), 'valent') && !empty($nameWords) && count($nameWords) === 1 && !empty($filteredProducts)) {
             $valentinStrictFiltered = collect($filteredProducts)->filter(function ($product) use ($name) {
-                return $this->isValidValentinoSingleWordMatch(
-                    $name,
-                    $product['name'] ?? '',
-                    $product['type'] ?? ''
-                );
+                return $this->isValidValentinoSingleWordMatch($name, $product['name'] ?? '', $product['type'] ?? '');
             })->values()->toArray();
 
             if (!empty($valentinStrictFiltered)) {
-                \Log::info(' VALENTINO - Filtrage strict appliqué (nom d\'un seul mot)', [
+                \Log::info('VALENTINO - Filtrage strict appliqué (nom d\'un seul mot)', [
                     'produits_avant' => count($filteredProducts),
-                    'produits_après' => count($valentinStrictFiltered),
-                    'nom_recherché' => $name,
-                    'nombre_mots' => count($nameWords)
+                    'produits_après' => count($valentinStrictFiltered)
                 ]);
                 $filteredProducts = $valentinStrictFiltered;
             } else {
-                \Log::warning(' VALENTINO - Aucun produit après filtrage strict, conservation des résultats précédents', [
-                    'nom_recherché' => $name,
-                    'nombre_mots' => count($nameWords)
-                ]);
+                \Log::warning('VALENTINO - Aucun produit après filtrage strict, conservation des résultats précédents');
             }
         }
 
+        // ── ÉTAPE 2.66 : Filtrage strict Hermès ──
         if ($isHermesProduct && !empty($filteredProducts)) {
             $hermesFiltered = collect($filteredProducts)->filter(function ($product) use ($name, $type, $isLimitedEdition) {
-                return $this->isValidHermesMatch(
-                    $name,
-                    $type,
-                    $product['name'] ?? '',
-                    $product['type'] ?? '',
-                    $isLimitedEdition
-                );
+                return $this->isValidHermesMatch($name, $type, $product['name'] ?? '', $product['type'] ?? '', $isLimitedEdition);
             })->values()->toArray();
 
             if (!empty($hermesFiltered)) {
-                \Log::info(' HERMÈS - Filtrage spécial appliqué', [
+                \Log::info('HERMÈS - Filtrage spécial appliqué', [
                     'produits_avant' => count($filteredProducts),
                     'produits_après' => count($hermesFiltered),
-                    'nom_recherché' => $name,
                     'is_barenia' => $isBareniaProduct,
                     'is_limited_edition' => $isLimitedEdition
                 ]);
                 $filteredProducts = $hermesFiltered;
             } else {
-                \Log::warning(' HERMÈS - Aucun produit après filtrage strict, conservation des résultats précédents', [
-                    'nom_recherché' => $name,
-                    'is_barenia' => $isBareniaProduct,
-                    'is_limited_edition' => $isLimitedEdition
+                \Log::warning('HERMÈS - Aucun produit après filtrage strict, conservation des résultats précédents');
+            }
+        }
+
+        // ── ÉTAPE 2.7 : Pre-filtrage par variation ──
+        // Si une variation source existe, on essaie d'isoler les produits avec la même variation.
+        // Si aucun ne correspond exactement, on garde tout (la variation sera utilisée dans le scoring).
+        if ($sourceVariation !== null && !empty($filteredProducts)) {
+            $exactVariationProducts = collect($filteredProducts)->filter(function ($product) use ($sourceVariation) {
+                $productVariation = $this->normalizeVariation($product['variation'] ?? '');
+                return $this->compareVariations($sourceVariation, $productVariation) === 'exact';
+            })->values()->toArray();
+
+            if (!empty($exactVariationProducts)) {
+                \Log::info('📦 Variation exacte trouvée — filtrage appliqué', [
+                    'variation_source' => $sourceVariation,
+                    'produits_avant' => count($filteredProducts),
+                    'produits_après' => count($exactVariationProducts)
+                ]);
+                $filteredProducts = $exactVariationProducts;
+            } else {
+                // Pas de match exact → on garde tout, le scoring va pénaliser
+                \Log::info('📦 Aucune variation exacte trouvée — scoring utilisé à la place', [
+                    'variation_source' => $sourceVariation,
+                    'produits_conservés' => count($filteredProducts)
                 ]);
             }
         }
 
-        $scoredProducts = collect($filteredProducts)->map(function ($product) use ($typeParts, $type, $isCoffretSource, $nameWords, $shouldSkipTypeFilter, $isMeteoritesProduct, $isLimitedEdition, $isHermesProduct, $isBareniaProduct) {
+        // ── ÉTAPE 3 : Scoring ──
+        $scoredProducts = collect($filteredProducts)->map(function ($product) use (
+            $typeParts, $type, $isCoffretSource, $nameWords, $shouldSkipTypeFilter,
+            $isMeteoritesProduct, $isLimitedEdition, $isHermesProduct, $isBareniaProduct,
+            $sourceVariation
+        ) {
             $score = 0;
             $productType = mb_strtolower($product['type'] ?? '');
             $productName = mb_strtolower($product['name'] ?? '');
-
             $matchedTypeParts = [];
             $typePartsCount = count($typeParts);
 
+            // ── Bonus coffret ──
             $productIsCoffret = $this->isCoffret($product);
-
             if ($isCoffretSource && $productIsCoffret) {
                 $score += 500;
-
                 if ($shouldSkipTypeFilter) {
                     $score += 100;
                 }
             }
 
+            // ── Bonus cas spéciaux (Météorites / Barenia / Hermès limited) ──
             if ($isMeteoritesProduct && $isLimitedEdition) {
-                $productIsMeteoritesEdition = $this->isMeteoritesProduct($product['name'] ?? '', $product['type'] ?? '') &&
-                    $this->isLimitedEdition($product['name'] ?? '', $product['type'] ?? '');
-
-                if ($productIsMeteoritesEdition) {
+                if ($this->isMeteoritesProduct($product['name'] ?? '', $product['type'] ?? '') &&
+                    $this->isLimitedEdition($product['name'] ?? '', $product['type'] ?? '')) {
                     $score += 400;
                 }
             }
 
             if ($isHermesProduct && $isBareniaProduct) {
-                $productIsBarenia = $this->isBareniaProduct($product['name'] ?? '', $product['type'] ?? '');
-
-                if ($productIsBarenia) {
+                if ($this->isBareniaProduct($product['name'] ?? '', $product['type'] ?? '')) {
                     $score += 450;
                 }
             }
 
             if ($isHermesProduct && $isLimitedEdition) {
-                $productIsLimited = $this->isLimitedEdition($product['name'] ?? '', $product['type'] ?? '');
-
-                if ($productIsLimited) {
+                if ($this->isLimitedEdition($product['name'] ?? '', $product['type'] ?? '')) {
                     $score += 400;
                 }
             }
 
+            // ── Bonus NAME ──
             $nameMatchCount = 0;
             $matchedNameWords = [];
 
             if (!empty($nameWords)) {
                 foreach ($nameWords as $word) {
-                    if (
-                        str_contains($productName, $word) ||
-                        ($shouldSkipTypeFilter && str_contains($productType, $word))
-                    ) {
+                    if (str_contains($productName, $word) || ($shouldSkipTypeFilter && str_contains($productType, $word))) {
                         $nameMatchCount++;
                         $matchedNameWords[] = $word;
                     }
                 }
 
                 $nameMatchRatio = count($nameWords) > 0 ? ($nameMatchCount / count($nameWords)) : 0;
-                $nameBonus = (int) ($nameMatchRatio * 300);
-                $score += $nameBonus;
+                $score += (int) ($nameMatchRatio * 300);
 
                 if ($nameMatchCount === count($nameWords)) {
                     $score += 200;
                 }
             }
 
+            // ── Bonus TYPE ──
             $typeMatched = false;
             $hasStrongNameMatch = $nameMatchCount >= 2;
 
@@ -949,26 +930,17 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     if (str_contains($productType, $baseTypeLower)) {
                         $score += 300;
                         $typeMatched = true;
-
-                        \Log::debug(' TYPE DE BASE correspondant', [
+                        \Log::debug('TYPE DE BASE correspondant', [
                             'product_id' => $product['id'] ?? 0,
                             'base_type_recherché' => $baseTypeLower,
-                            'product_type' => $productType,
-                            'bonus' => 300
+                            'product_type' => $productType
                         ]);
                     } else {
-                        if ($shouldSkipTypeFilter) {
-                            $score -= 50;
-                        } else {
-                            $score -= 200;
-                        }
-
-                        \Log::debug(' TYPE DE BASE non correspondant', [
+                        $score -= $shouldSkipTypeFilter ? 50 : 200;
+                        \Log::debug('TYPE DE BASE non correspondant', [
                             'product_id' => $product['id'] ?? 0,
                             'base_type_recherché' => $baseTypeLower,
                             'product_type' => $productType,
-                            'is_special_case' => $shouldSkipTypeFilter,
-                            'name_match_count' => $nameMatchCount,
                             'malus' => $shouldSkipTypeFilter ? -50 : -200
                         ]);
                     }
@@ -976,21 +948,12 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
                 foreach ($typeParts as $index => $part) {
                     $partLower = mb_strtolower(trim($part));
-                    if (!empty($partLower)) {
-                        if (str_contains($productType, $partLower)) {
-                            $partBonus = 100 - ($index * 20);
-                            $partBonus = max($partBonus, 20);
-
-                            $score += $partBonus;
-                            $matchedTypeParts[] = [
-                                'part' => $part,
-                                'bonus' => $partBonus,
-                                'position' => $index + 1
-                            ];
-
-                            if ($index == 0 || $typeMatched) {
-                                $typeMatched = true;
-                            }
+                    if (!empty($partLower) && str_contains($productType, $partLower)) {
+                        $partBonus = max(100 - ($index * 20), 20);
+                        $score += $partBonus;
+                        $matchedTypeParts[] = ['part' => $part, 'bonus' => $partBonus, 'position' => $index + 1];
+                        if ($index == 0 || $typeMatched) {
+                            $typeMatched = true;
                         }
                     }
                 }
@@ -1004,10 +967,32 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     $score += 200;
                     $typeMatched = true;
                 }
-
                 if (!empty($typeLower) && str_starts_with($productType, $typeLower)) {
                     $score += 100;
                 }
+            }
+
+            // ── Bonus / Malus VARIATION ──
+            $productVariation = $this->normalizeVariation($product['variation'] ?? '');
+            $variationMatch = $this->compareVariations($sourceVariation, $productVariation);
+
+            $variationBonus = 0;
+            if ($sourceVariation !== null) {
+                $variationBonus = match($variationMatch) {
+                    'exact'     => 250,   // Variation identique (ex: 200ml == 200ml)
+                    'close'     => 100,   // Même unité, écart ≤ 10% (ex: 100ml vs 105ml)
+                    'unit_only' => -150,  // Même unité mais taille très différente (ex: 30ml vs 200ml)
+                    'none'      => -100,  // Unité différente ou variation absente sur le produit
+                };
+                $score += $variationBonus;
+
+                \Log::debug('📦 Variation scoring', [
+                    'product_id' => $product['id'] ?? 0,
+                    'source_variation' => $sourceVariation,
+                    'product_variation' => $productVariation,
+                    'match_type' => $variationMatch,
+                    'bonus' => $variationBonus
+                ]);
             }
 
             return [
@@ -1028,78 +1013,60 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 'is_meteorites' => $isMeteoritesProduct,
                 'is_hermes' => $isHermesProduct,
                 'is_barenia' => $isBareniaProduct,
-                'is_limited_edition' => $isLimitedEdition
+                'is_limited_edition' => $isLimitedEdition,
+                'variation_match' => $variationMatch,
+                'variation_bonus' => $variationBonus,
+                'source_variation' => $sourceVariation,
+                'product_variation' => $productVariation
             ];
         })
             ->sortByDesc('score')
             ->values();
 
-        \Log::info('Scoring détaillé (NAME ET TYPE OBLIGATOIRES sauf cas spéciaux)', [
+        \Log::info('Scoring détaillé', [
             'total_products' => $scoredProducts->count(),
             'type_recherche' => $type,
-            'type_parts' => $typeParts,
             'name_words' => $nameWords,
+            'variation_source' => $sourceVariation,
             'recherche_coffret' => $isCoffretSource,
             'is_special_case' => $shouldSkipTypeFilter,
-            'is_hermes' => $isHermesProduct,
-            'is_barenia' => $isBareniaProduct,
-            'is_meteorites' => $isMeteoritesProduct,
-            'is_limited_edition' => $isLimitedEdition,
             'top_10_scores' => $scoredProducts->take(10)->map(function ($item) {
                 return [
                     'id' => $item['product']['id'] ?? 0,
                     'score' => $item['score'],
-                    'is_coffret' => $item['is_coffret'],
-                    'is_special_case' => $item['is_special_case'],
-                    'is_hermes' => $item['is_hermes'] ?? false,
-                    'is_barenia' => $item['is_barenia'] ?? false,
-                    'is_meteorites' => $item['is_meteorites'],
-                    'is_limited_edition' => $item['is_limited_edition'],
-                    'coffret_bonus' => $item['coffret_bonus_applied'],
-                    'name_match' => $item['name_match_count'] . '/' . $item['name_words_total'],
-                    'matched_words' => $item['matched_name_words'] ?? [],
-                    'has_strong_name' => $item['has_strong_name_match'],
-                    'type_match' => $item['type_matched'],
                     'name' => $item['product']['name'] ?? '',
                     'type' => $item['product']['type'] ?? '',
-                    'matched_type_parts' => array_map(function ($part) {
-                        return "{$part['part']} (+{$part['bonus']} pts)";
-                    }, $item['matched_type_parts']),
-                    'all_type_matched' => $item['all_type_parts_matched'],
-                    'match_ratio' => $item['type_parts_count'] > 0
-                        ? round(($item['matched_count'] / $item['type_parts_count']) * 100) . '%'
-                        : '0%'
+                    'variation_produit' => $item['product']['variation'] ?? '',
+                    'variation_match' => $item['variation_match'],
+                    'variation_bonus' => $item['variation_bonus'],
+                    'name_match' => $item['name_match_count'] . '/' . $item['name_words_total'],
+                    'matched_words' => $item['matched_name_words'] ?? [],
+                    'type_match' => $item['type_matched'],
+                    'is_coffret' => $item['is_coffret'],
+                    'coffret_bonus' => $item['coffret_bonus_applied'],
+                    'matched_type_parts' => array_map(fn($p) => "{$p['part']} (+{$p['bonus']} pts)", $item['matched_type_parts']),
                 ];
             })->toArray()
         ]);
 
+        // ── ÉTAPE 4 : Filtrage final (NAME + TYPE obligatoires, variation n'exclut jamais) ──
         $scoredProducts = $scoredProducts->filter(function ($item) use ($nameWords, $shouldSkipTypeFilter) {
             $hasNameMatch = !empty($nameWords) ? $item['name_match_count'] > 0 : true;
-            $hasStrongNameMatch = $item['has_strong_name_match'];
             $hasTypeMatch = $item['type_matched'];
 
-            if ($shouldSkipTypeFilter) {
-                $keepProduct = $item['score'] > 0 && $hasNameMatch;
-            } else {
-                $keepProduct = $item['score'] > 0 && $hasNameMatch && $hasTypeMatch;
-            }
+            $keepProduct = $shouldSkipTypeFilter
+                ? ($item['score'] > 0 && $hasNameMatch)
+                : ($item['score'] > 0 && $hasNameMatch && $hasTypeMatch);
 
             if (!$keepProduct) {
                 \Log::debug('Produit exclu', [
                     'product_id' => $item['product']['id'] ?? 0,
                     'product_name' => $item['product']['name'] ?? '',
-                    'product_type' => $item['product']['type'] ?? '',
+                    'product_variation' => $item['product']['variation'] ?? '',
                     'score' => $item['score'],
-                    'is_special_case' => $shouldSkipTypeFilter,
-                    'is_hermes' => $item['is_hermes'] ?? false,
-                    'is_barenia' => $item['is_barenia'] ?? false,
-                    'is_meteorites' => $item['is_meteorites'] ?? false,
-                    'is_limited_edition' => $item['is_limited_edition'] ?? false,
+                    'variation_match' => $item['variation_match'],
                     'name_match' => $hasNameMatch,
-                    'strong_name_match' => $hasStrongNameMatch,
                     'type_match' => $hasTypeMatch,
-                    'name_match_count' => $item['name_match_count'],
-                    'name_words_total' => $item['name_words_total'],
                     'raison' => !$hasNameMatch ? 'NAME ne matche pas' : (!$hasTypeMatch && !$shouldSkipTypeFilter ? 'TYPE ne matche pas' : 'Score trop faible')
                 ]);
             }
@@ -1107,7 +1074,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             return $keepProduct;
         });
 
-        \Log::info('Après filtrage (NAME ET TYPE OBLIGATOIRES sauf cas spéciaux)', [
+        \Log::info('Après filtrage final', [
             'produits_restants' => $scoredProducts->count(),
             'is_special_case' => $shouldSkipTypeFilter
         ]);
@@ -1119,18 +1086,20 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             return;
         }
 
-        $rankedProducts = $scoredProducts->pluck('product')->toArray();
-        $this->matchingProducts = $rankedProducts;
+        $this->matchingProducts = $scoredProducts->pluck('product')->toArray();
 
         \Log::info('Produits après scoring (avant déduplication)', [
             'count' => count($this->matchingProducts),
             'best_score' => $scoredProducts->first()['score'] ?? 0,
-            'worst_score' => $scoredProducts->last()['score'] ?? 0
+            'worst_score' => $scoredProducts->last()['score'] ?? 0,
+            'top_variation_match' => $scoredProducts->first()['variation_match'] ?? 'N/A'
         ]);
 
         $this->groupResultsByScrapeReference($this->matchingProducts);
         $this->validateBestMatchWithAI();
     }
+
+    // ─── TYPE DECOMPOSITION ───────────────────────────────────────────────────
 
     private function extractTypeParts(string $type): array
     {
@@ -1139,30 +1108,18 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         }
 
         $separators = [' - ', ' / ', ' + ', ', ', ' et ', ' & '];
-
         $normalized = $type;
         foreach ($separators as $separator) {
             $normalized = str_replace($separator, '|', $normalized);
         }
 
-        $parts = explode('|', $normalized);
-        $parts = array_map('trim', $parts);
-        $parts = array_filter($parts, function ($part) {
-            return !empty($part);
-        });
+        $parts = array_values(array_filter(array_map('trim', explode('|', $normalized)), fn($p) => !empty($p)));
 
         if (count($parts) === 1) {
             $perfumeKeywords = [
-                'eau de parfum',
-                'eau de toilette',
-                'eau de cologne',
-                'extrait de parfum',
-                'eau fraiche',
-                'parfum',
-                'extrait',
-                'cologne'
+                'eau de parfum', 'eau de toilette', 'eau de cologne',
+                'extrait de parfum', 'eau fraiche', 'parfum', 'extrait', 'cologne'
             ];
-
             $intensityKeywords = ['intense', 'extrême', 'absolu', 'concentré', 'léger', 'doux', 'fort', 'puissant'];
             $formatKeywords = ['vaporisateur', 'spray', 'atomiseur', 'flacon', 'roller', 'stick', 'roll-on'];
 
@@ -1172,8 +1129,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             foreach ($perfumeKeywords as $keyword) {
                 if (str_contains($typeLower, $keyword)) {
                     $startPos = mb_strpos($typeLower, $keyword);
-                    $originalPart = mb_substr($type, $startPos, mb_strlen($keyword));
-                    $foundParts[] = $originalPart;
+                    $foundParts[] = mb_substr($type, $startPos, mb_strlen($keyword));
                     $typeLower = str_replace($keyword, '', $typeLower);
                     break;
                 }
@@ -1183,8 +1139,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 if (str_contains($typeLower, $keyword)) {
                     $startPos = mb_strpos($typeLower, $keyword);
                     if ($startPos !== false) {
-                        $originalPart = mb_substr($type, $startPos, mb_strlen($keyword));
-                        $foundParts[] = ucfirst($originalPart);
+                        $foundParts[] = ucfirst(mb_substr($type, $startPos, mb_strlen($keyword)));
                     }
                     break;
                 }
@@ -1194,8 +1149,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 if (str_contains($typeLower, $keyword)) {
                     $startPos = mb_strpos($typeLower, $keyword);
                     if ($startPos !== false) {
-                        $originalPart = mb_substr($type, $startPos, mb_strlen($keyword));
-                        $foundParts[] = ucfirst($originalPart);
+                        $foundParts[] = ucfirst(mb_substr($type, $startPos, mb_strlen($keyword)));
                     }
                     break;
                 }
@@ -1203,21 +1157,19 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
             if (!empty($foundParts)) {
                 \Log::info('Type décomposé en parties hiérarchiques', [
-                    'type_original' => $type,
-                    'parties' => $foundParts
+                    'type_original' => $type, 'parties' => $foundParts
                 ]);
                 return $foundParts;
             }
 
-            $words = preg_split('/\s+/', $type);
-            $words = array_filter($words, function ($word) {
-                return mb_strlen($word) >= 3;
-            });
-            return array_values($words);
+            $words = array_values(array_filter(preg_split('/\s+/', $type), fn($w) => mb_strlen($w) >= 3));
+            return $words;
         }
 
-        return array_values($parts);
+        return $parts;
     }
+
+    // ─── DEDUPLICATION / GROUPEMENT ───────────────────────────────────────────
 
     private function groupResultsByScrapeReference(array $products)
     {
@@ -1231,18 +1183,12 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             return array_merge([
                 'scrape_reference' => 'unknown_' . ($product['id'] ?? uniqid()),
                 'scrape_reference_id' => $product['scrape_reference_id'] ?? 0,
-                'web_site_id' => 0,
-                'id' => 0,
-                'vendor' => '',
-                'name' => '',
-                'type' => '',
-                'variation' => ''
+                'web_site_id' => 0, 'id' => 0,
+                'vendor' => '', 'name' => '', 'type' => '', 'variation' => ''
             ], $product);
         });
 
-        \Log::info('Avant déduplication des résultats', [
-            'total_produits' => $productsCollection->count()
-        ]);
+        \Log::info('Avant déduplication des résultats', ['total_produits' => $productsCollection->count()]);
 
         $uniqueProducts = $productsCollection
             ->groupBy(function ($product) {
@@ -1254,9 +1200,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     $product['web_site_id']
                 );
             })
-            ->map(function ($group) {
-                return $group->sortByDesc('scrape_reference_id')->first();
-            })
+            ->map(fn($group) => $group->sortByDesc('scrape_reference_id')->first())
             ->values()
             ->sortByDesc('scrape_reference_id');
 
@@ -1270,7 +1214,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
         \Log::info('Résultats finaux après déduplication', [
             'total_produits' => count($this->matchingProducts),
-            'par_site' => $uniqueProducts->groupBy('web_site_id')->map(fn($group) => $group->count())->toArray()
+            'par_site' => $uniqueProducts->groupBy('web_site_id')->map(fn($g) => $g->count())->toArray()
         ]);
 
         $bySiteStats = $uniqueProducts->groupBy('web_site_id')->map(function ($siteProducts, $siteId) {
@@ -1283,9 +1227,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             ];
         });
 
-        $grouped = $uniqueProducts->groupBy('scrape_reference');
-
-        $this->groupedResults = $grouped->map(function ($group, $reference) {
+        $this->groupedResults = $uniqueProducts->groupBy('scrape_reference')->map(function ($group, $reference) {
             $bySite = $group->groupBy('web_site_id')->map(function ($siteProducts) {
                 return [
                     'count' => $siteProducts->count(),
@@ -1305,10 +1247,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                         'site_id' => $siteId,
                         'products_count' => $siteData['count'],
                         'max_scrape_ref_id' => $siteData['max_scrape_ref_id'],
-                        'price_range' => [
-                            'min' => $siteData['lowest_price'],
-                            'max' => $siteData['highest_price']
-                        ],
+                        'price_range' => ['min' => $siteData['lowest_price'], 'max' => $siteData['highest_price']],
                         'variations_count' => $siteData['count']
                     ];
                 })->values()->toArray(),
@@ -1319,6 +1258,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
         $this->groupedResults['_site_stats'] = $bySiteStats->toArray();
     }
+
+    // ─── KEYWORD EXTRACTION ───────────────────────────────────────────────────
 
     private function extractKeywords(string $text, bool $isSpecialVendor = false): array
     {
@@ -1332,15 +1273,12 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             $stopWords = array_merge($stopWords, ['coffret', 'set', 'kit', 'duo', 'trio', 'collection']);
         }
 
-        $text = mb_strtolower($text);
-        $words = preg_split('/[\s\-]+/', $text, -1, PREG_SPLIT_NO_EMPTY);
+        $words = preg_split('/[\s\-]+/', mb_strtolower($text), -1, PREG_SPLIT_NO_EMPTY);
 
-        $keywords = array_filter($words, function ($word) use ($stopWords) {
-            return mb_strlen($word) >= 3 && !in_array($word, $stopWords);
-        });
-
-        return array_values($keywords);
+        return array_values(array_filter($words, fn($w) => mb_strlen($w) >= 3 && !in_array($w, $stopWords)));
     }
+
+    // ─── FILTRAGE COFFRET / TYPE ──────────────────────────────────────────────
 
     private function filterByCoffretStatus($products, bool $sourceisCoffret): array
     {
@@ -1382,24 +1320,17 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
         }
 
         if (!$searchCategory) {
-            \Log::info('Type de recherche non catégorisé, pas de filtrage par type de base', [
-                'type' => $searchType
-            ]);
+            \Log::info('Type de recherche non catégorisé, pas de filtrage par type de base', ['type' => $searchType]);
             return $products;
         }
 
         \Log::info('Filtrage par catégorie de type', [
-            'type_recherché' => $searchType,
-            'catégorie' => $searchCategory,
-            'mots_clés_catégorie' => $typeCategories[$searchCategory]
+            'type_recherché' => $searchType, 'catégorie' => $searchCategory
         ]);
 
         $filtered = collect($products)->filter(function ($product) use ($searchCategory, $typeCategories) {
             $productType = mb_strtolower($product['type'] ?? '');
-
-            if (empty($productType)) {
-                return false;
-            }
+            if (empty($productType)) return false;
 
             $productCategory = null;
             foreach ($typeCategories as $category => $keywords) {
@@ -1411,12 +1342,9 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                 }
             }
 
-            if (!$productCategory) {
-                return true;
-            }
+            if (!$productCategory) return true;
 
             $match = ($productCategory === $searchCategory);
-
             if (!$match) {
                 \Log::debug('Produit exclu par filtrage de type', [
                     'product_id' => $product['id'] ?? 0,
@@ -1426,7 +1354,6 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                     'search_category' => $searchCategory
                 ]);
             }
-
             return $match;
         })->values()->toArray();
 
@@ -1438,6 +1365,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
 
         return $filtered;
     }
+
+    // ─── VALIDATION IA ────────────────────────────────────────────────────────
 
     private function validateBestMatchWithAI()
     {
@@ -1458,6 +1387,8 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             ];
         }, $candidateProducts);
 
+        $sourceVariationLabel = $this->extractedData['variation'] ?? 'N/A';
+
         try {
             $response = Http::withHeaders([
                 'Content-Type' => 'application/json',
@@ -1467,7 +1398,7 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
                         'messages' => [
                             [
                                 'role' => 'system',
-                                'content' => 'Tu es un expert en matching de produits cosmétiques. Tu dois analyser la correspondance entre un produit source et une liste de candidats, puis retourner l\'ID du meilleur match avec un score de confiance. Réponds UNIQUEMENT avec un objet JSON.'
+                                'content' => 'Tu es un expert en matching de produits cosmétiques. Tu dois analyser la correspondance entre un produit source et une liste de candidats, puis retourner l\'ID du meilleur match avec un score de confiance. La variation (contenance en ml, g, etc.) est un critère TRÈS IMPORTANT : un produit avec une variation différente est considéré comme un produit différent. Réponds UNIQUEMENT avec un objet JSON.'
                             ],
                             [
                                 'role' => 'user',
@@ -1477,16 +1408,20 @@ Critères extraits :
 - Vendor: " . ($this->extractedData['vendor'] ?? 'N/A') . "
 - Name: " . ($this->extractedData['name'] ?? 'N/A') . "
 - Type: " . ($this->extractedData['type'] ?? 'N/A') . "
-- Variation: " . ($this->extractedData['variation'] ?? 'N/A') . "
+- Variation (contenance) : {$sourceVariationLabel}
 
 Produits candidats :
 " . json_encode($productsInfo, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "
 
-Analyse chaque candidat et détermine le meilleur match. Retourne au format JSON :
+Analyse chaque candidat et détermine le meilleur match.
+IMPORTANT : La variation (ml, g, oz) doit correspondre exactement ou très proche pour être considéré comme un bon match.
+Un candidat avec une variation très différente (ex: 30ml vs 200ml) ne peut pas être le meilleur match même si le nom et le type sont identiques.
+
+Retourne au format JSON :
 {
   \"best_match_id\": 123,
   \"confidence_score\": 0.95,
-  \"reasoning\": \"Explication courte du choix\",
+  \"reasoning\": \"Explication courte du choix incluant la variation\",
   \"all_scores\": [
     {\"id\": 123, \"score\": 0.95, \"reason\": \"...\"},
     {\"id\": 124, \"score\": 0.60, \"reason\": \"...\"}
@@ -1494,10 +1429,12 @@ Analyse chaque candidat et détermine le meilleur match. Retourne au format JSON
 }
 
 Critères de scoring :
-- Vendor exact = +40 points
-- Name similaire = +30 points
+- Vendor exact = +30 points
+- Name similaire = +25 points
 - Type identique = +20 points
-- Variation identique = +10 points
+- Variation identique = +25 points (critère crucial)
+- Variation proche (écart ≤ 10%) = +15 points
+- Variation très différente = -20 points
 Score de confiance entre 0 et 1."
                             ]
                         ],
@@ -1518,11 +1455,7 @@ Score de confiance entre 0 et 1."
                     $bestMatchId = $this->aiValidation['best_match_id'];
                     $found = collect($this->matchingProducts)->firstWhere('id', $bestMatchId);
 
-                    if ($found) {
-                        $this->bestMatch = $found;
-                    } else {
-                        $this->bestMatch = $this->matchingProducts[0] ?? null;
-                    }
+                    $this->bestMatch = $found ?? ($this->matchingProducts[0] ?? null);
                 } else {
                     $this->bestMatch = $this->matchingProducts[0] ?? null;
                 }
@@ -1537,6 +1470,8 @@ Score de confiance entre 0 et 1."
             $this->bestMatch = $this->matchingProducts[0] ?? null;
         }
     }
+
+    // ─── ACTIONS PUBLIQUES ────────────────────────────────────────────────────
 
     public function selectProduct($productId)
     {
@@ -1570,6 +1505,7 @@ Score de confiance entre 0 et 1."
     }
 
 }; ?>
+
 
 
 <div class="bg-white">
