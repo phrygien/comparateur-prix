@@ -4,12 +4,6 @@ use Livewire\Volt\Component;
 use App\Models\Product;
 use Illuminate\Support\Collection;
 
-<?php
-
-use Livewire\Volt\Component;
-use App\Models\Product;
-use Illuminate\Support\Collection;
-
 new class extends Component {
     public string $name;
     public string $id;
