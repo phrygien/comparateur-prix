@@ -4,6 +4,12 @@ use Livewire\Volt\Component;
 use App\Models\Product;
 use Illuminate\Support\Collection;
 
+<?php
+
+use Livewire\Volt\Component;
+use App\Models\Product;
+use Illuminate\Support\Collection;
+
 new class extends Component {
     public string $name;
     public string $id;
@@ -15,9 +21,51 @@ new class extends Component {
         $this->name = $name;
         $this->id = $id;
         $this->price = $price;
-        
+
         $searchTerm = html_entity_decode($this->name);
-        $products = Product::search($searchTerm)
+
+        // Parser le nom du produit
+        $parsed = $this->parseProductName($searchTerm);
+
+        // Recherche avec Typesense Scout
+        $products = Product::search($parsed['name'], function ($typesense, $query, $options) use ($parsed) {
+            // Champs sur lesquels rechercher avec pondération
+            $options['query_by'] = 'name,vendor,type,variation';
+            $options['query_by_weights'] = '4,2,2,1'; // Prioriser le name
+
+            // Construction des filtres
+            $filters = [];
+
+            if (!empty($parsed['vendor'])) {
+                // Utiliser filter exact ou partial match selon le besoin
+                $filters[] = "vendor:= {$parsed['vendor']}";
+            }
+
+            if (!empty($parsed['type'])) {
+                $filters[] = "type:= {$parsed['type']}";
+            }
+
+            if (!empty($parsed['variation'])) {
+                $filters[] = "variation: {$parsed['variation']}";
+            }
+
+            if (!empty($filters)) {
+                $options['filter_by'] = implode(' && ', $filters);
+            }
+
+            // Paramètres de recherche stricte
+            $options['prefix'] = 'false,false,true'; // Prefix matching pour le dernier mot seulement
+            $options['num_typos'] = 1; // Tolérance minimale aux fautes
+            $options['min_len_1typo'] = 5;
+            $options['min_len_2typo'] = 8;
+            $options['drop_tokens_threshold'] = 1; // Ne pas ignorer les tokens
+
+            // Tri et limite
+            $options['sort_by'] = 'created_at:desc';
+            $options['per_page'] = 250;
+
+            return $options;
+        })
             ->query(fn($query) => $query->with('website'))
             ->get();
 
@@ -32,7 +80,37 @@ new class extends Component {
                     ->values();
             });
     }
-    
+
+    /**
+     * Parser le nom du produit
+     * Exemple: "Hermès - Un Jardin Sous la Mer - Eau de Toilette Recharge 200ml"
+     */
+    private function parseProductName(string $productName): array
+    {
+        $parts = array_map('trim', explode(' - ', $productName));
+
+        $result = [
+            'vendor' => $parts[0] ?? '',
+            'name' => $parts[1] ?? '',
+            'type' => '',
+            'variation' => ''
+        ];
+
+        // Parser la dernière partie (type + variation)
+        if (isset($parts[2])) {
+            $lastPart = $parts[2];
+
+            // Extraire la variation (nombres suivis de ml, g, oz, etc.)
+            if (preg_match('/\b(\d+\s?(ml|g|oz|cl|l))\b/i', $lastPart, $matches)) {
+                $result['variation'] = $matches[1];
+                $result['type'] = trim(str_replace($matches[0], '', $lastPart));
+            } else {
+                $result['type'] = $lastPart;
+            }
+        }
+
+        return $result;
+    }
 }; ?>
 
 <div class="bg-white">
@@ -49,7 +127,7 @@ new class extends Component {
                 @php
                     $site = $siteProducts->first()->website ?? null;
                 @endphp
-                
+
                 <div class="mb-8">
                     <!-- En-tête du site -->
                     <div class="bg-gray-50 px-4 sm:px-6 py-4 border-b-2 border-gray-200">
@@ -71,9 +149,9 @@ new class extends Component {
                         @foreach($siteProducts as $product)
                             <div class="group relative border-r border-b border-gray-200 p-4 sm:p-6">
                                 <div class="aspect-square rounded-lg bg-gray-200 overflow-hidden">
-                                    <img 
-                                        src="{{ $product->image_url }}" 
-                                        alt="{{ $product->vendor }} - {{ $product->name }}" 
+                                    <img
+                                        src="{{ $product->image_url }}"
+                                        alt="{{ $product->vendor }} - {{ $product->name }}"
                                         class="h-full w-full object-cover group-hover:opacity-75"
                                     >
                                 </div>

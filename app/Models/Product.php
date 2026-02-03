@@ -9,7 +9,7 @@ use Laravel\Scout\Searchable;
 class Product extends Model
 {
     use Searchable;
-    
+
     // scraped product table
     protected $table = 'scraped_product';
 
@@ -26,7 +26,7 @@ class Product extends Model
     // Dans le modèle Product
     public function scopeFullTextSearch($query, string $searchQuery)
     {
-        return $query->whereRaw('MATCH(name, vendor, type, variation) 
+        return $query->whereRaw('MATCH(name, vendor, type, variation)
                                 AGAINST(? IN BOOLEAN MODE)', [$searchQuery]);
     }
 
@@ -37,7 +37,7 @@ class Product extends Model
     {
         // Construire le champ exact_match
         $exactMatch = [];
-        
+
         if (!empty($this->vendor)) {
             $exactMatch[] = $this->vendor;
         }
@@ -50,7 +50,7 @@ class Product extends Model
         if (!empty($this->variation)) {
             $exactMatch[] = $this->variation;
         }
-        
+
         return [
             'id' => (string) $this->id,
             'web_site_id' => (int) $this->web_site_id,
@@ -66,17 +66,38 @@ class Product extends Model
             'created_at' => $this->created_at?->timestamp ?? 0,
             'updated_at' => $this->updated_at?->timestamp ?? 0,
             // Champ combiné pour la recherche exacte
-            'exact_match' => !empty($exactMatch) ? implode(' - ', $exactMatch) : null,
+            'full_name' => $this->vendor . ' - ' . $this->name . ' - ' . $this->type . ' ' . $this->variation,
+        ];
+    }
+
+
+    /**
+     * Get the Typesense collection schema.
+     */
+    public function getCollectionSchema(): array
+    {
+        return [
+            'name' => $this->searchableAs(),
+            'fields' => [
+                ['name' => 'id', 'type' => 'string'],
+                ['name' => 'vendor', 'type' => 'string', 'facet' => true],
+                ['name' => 'name', 'type' => 'string'],
+                ['name' => 'type', 'type' => 'string', 'facet' => true],
+                ['name' => 'variation', 'type' => 'string'],
+                ['name' => 'web_site_id', 'type' => 'int32', 'facet' => true],
+                ['name' => 'scrap_reference_id', 'type' => 'int32'],
+                ['name' => 'price', 'type' => 'int32'],
+                ['name' => 'created_at', 'type' => 'int64'],
+            ],
+            'default_sorting_field' => 'created_at',
         ];
     }
 
     /**
-     * Get the search rules for the model.
+     * Get the name of the index associated with the model.
      */
-    public function getScoutRules(): array
+    public function searchableAs(): string
     {
-        return [
-            \App\Scout\ExactMatchSearchRule::class,
-        ];
+        return 'products';
     }
 }
