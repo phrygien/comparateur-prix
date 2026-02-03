@@ -1086,12 +1086,20 @@ Exemple 4 - Produit : \"Lancôme - La Nuit Trésor Rouge Drama - Eau de Parfum I
             return;
         }
 
+        // ── ÉTAPE 5 : Tri final par prix ascendant (le moins cher en premier) ──
+        $scoredProducts = $scoredProducts->sortBy(function ($item) {
+            $prix = $item['product']['prix_ht'] ?? null;
+            // Produits sans prix poussés en bas
+            return $prix !== null ? (float) $prix : PHP_FLOAT_MAX;
+        })->values();
+
         $this->matchingProducts = $scoredProducts->pluck('product')->toArray();
 
-        \Log::info('Produits après scoring (avant déduplication)', [
+        \Log::info('Produits après scoring + tri prix (avant déduplication)', [
             'count' => count($this->matchingProducts),
-            'best_score' => $scoredProducts->first()['score'] ?? 0,
-            'worst_score' => $scoredProducts->last()['score'] ?? 0,
+            'prix_min' => $scoredProducts->first()['product']['prix_ht'] ?? null,
+            'prix_max' => $scoredProducts->last()['product']['prix_ht'] ?? null,
+            'best_score' => $scoredProducts->max('score'),
             'top_variation_match' => $scoredProducts->first()['variation_match'] ?? 'N/A'
         ]);
 
@@ -1505,7 +1513,6 @@ Score de confiance entre 0 et 1."
     }
 
 }; ?>
-
 
 
 <div class="bg-white">
