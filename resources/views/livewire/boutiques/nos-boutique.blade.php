@@ -160,7 +160,7 @@
             <div class="grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-5 lg:gap-x-8">
                 @foreach($products as $product)
                 <a 
-                    href="{{ route('execute-comparateur', [
+                    href="{{ route('find-product-concurent', [
                         utf8_encode($product->title), 
                         $product->id, 
                         $product->special_price ?? $product->price ?? 0
