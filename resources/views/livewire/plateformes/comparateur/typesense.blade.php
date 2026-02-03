@@ -16,24 +16,92 @@ new class extends Component {
         $this->id = $id;
         $this->price = $price;
         
-        // Décoder les entités HTML et rechercher avec Typesense Scout
+        // Décoder les entités HTML
         $searchTerm = html_entity_decode($this->name);
-        $products = Product::search($searchTerm)
-            ->query(fn($query) => $query->with('website'))
-            ->get();
         
-        // Grouper par site et sélectionner le dernier produit scrapé par scrap_reference_id
+        // Extraire les parties importantes du nom du produit
+        $parts = $this->extractProductParts($searchTerm);
+        
+        // Construire une requête booléenne complexe
+        $products = Product::search('*', function ($typesense, $query, $options) use ($parts) {
+            // Construire des filtres booléens pour chaque partie importante
+            $filters = [];
+            
+            // Filtrer par vendor (Payot)
+            if (!empty($parts['vendor'])) {
+                $filters[] = sprintf('vendor:=%s', $this->escapeFilterValue($parts['vendor']));
+            }
+            
+            // Filtrer par nom principal (Source Nutrition)
+            if (!empty($parts['name'])) {
+                $filters[] = sprintf('name:%s', $this->escapeFilterValue($parts['name']));
+            }
+            
+            // Filtrer par type/variation (Huile à Lèvres Nourrissante)
+            if (!empty($parts['type_variation'])) {
+                $filters[] = sprintf('(type:%s || variation:%s)', 
+                    $this->escapeFilterValue($parts['type_variation']),
+                    $this->escapeFilterValue($parts['type_variation'])
+                );
+            }
+            
+            // Combiner tous les filtres avec AND
+            if (!empty($filters)) {
+                $options['filter_by'] = implode(' && ', $filters);
+            }
+            
+            $options['query_by'] = 'name,vendor,type,variation';
+            $options['sort_by'] = '_text_match:desc';
+            $options['per_page'] = 100;
+            
+            return $typesense->collections['products']->documents->search($options);
+        })
+        ->query(fn($query) => $query->with('website'))
+        ->get();
+        
+        // Grouper par site
         $this->productsBySite = $products
             ->groupBy('web_site_id')
             ->map(function ($siteProducts) {
                 return $siteProducts
                     ->groupBy('scrap_reference_id')
                     ->map(function ($refProducts) {
-                        // Retourner le produit le plus récent (dernière date de scraping)
                         return $refProducts->sortByDesc('created_at')->first();
                     })
                     ->values();
             });
+    }
+    
+    private function extractProductParts(string $productName): array
+    {
+        // Exemple: "Payot - Source Nutrition - Huile à Lèvres Nourrissante 5ml"
+        $parts = [];
+        
+        // Séparer par les tirets
+        $segments = explode('-', $productName);
+        
+        if (count($segments) >= 3) {
+            $parts['vendor'] = trim($segments[0]); // "Payot"
+            $parts['name'] = trim($segments[1]); // "Source Nutrition"
+            
+            // Le reste est le type/variation
+            $typeVariation = trim(implode('-', array_slice($segments, 2)));
+            $parts['type_variation'] = preg_replace('/\s*\d+[a-zA-Z]*$/', '', $typeVariation); // Retirer la taille
+            $parts['type_variation'] = trim($parts['type_variation']); // "Huile à Lèvres Nourrissante"
+        } else {
+            // Fallback: utiliser le terme complet pour tous les champs
+            $parts['vendor'] = $productName;
+            $parts['name'] = $productName;
+            $parts['type_variation'] = $productName;
+        }
+        
+        return $parts;
+    }
+    
+    private function escapeFilterValue(string $value): string
+    {
+        // Échapper les caractères spéciaux pour les filtres TypeSense
+        return '"' . str_replace('"', '\"', $value) . '"';
     }
     
 }; ?>
