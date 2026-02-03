@@ -3,6 +3,7 @@
 use Livewire\Volt\Component;
 use App\Models\Product;
 use Illuminate\Support\Collection;
+use Livewire\Attributes\Url;
 
 new class extends Component {
     public string $name;
@@ -10,14 +11,59 @@ new class extends Component {
     public string $price;
     public Collection $productsBySite;
 
+    #[Url]
+    public string $variationFilter = '';
+
+    #[Url]
+    public string $typeFilter = '';
+
+    #[Url]
+    public string $nameFilter = '';
+
+    public array $filterByConditions = [];
+
     public function mount($name, $id, $price): void
     {
         $this->name = $name;
         $this->id = $id;
         $this->price = $price;
 
-        $searchTerm = html_entity_decode($this->name);
+        if (empty($this->nameFilter)) {
+            $this->nameFilter = $name;
+        }
+
+        $this->filterProducts();
+    }
+
+    public function filterProducts(): void
+    {
+        // Construire les conditions de filtrage
+        $this->filterByConditions = [];
+
+        if ($this->typeFilter) {
+            $this->filterByConditions[] = "type:= {$this->typeFilter}";
+        }
+
+        if ($this->variationFilter) {
+            $this->filterByConditions[] = "variation:= {$this->variationFilter}";
+        }
+
+        // Recherche avec Typesense avec filtres
+        $searchTerm = html_entity_decode($this->nameFilter);
+
         $products = Product::search($searchTerm)
+            ->options(function ($options) {
+                // Appliquer les filtres si disponibles
+                if (!empty($this->filterByConditions)) {
+                    $options['filter_by'] = implode(' && ', $this->filterByConditions);
+                }
+
+                // Ajouter d'autres options si nécessaire
+                $options['sort_by'] = 'created_at:desc';
+                $options['per_page'] = 100; // Augmenter si nécessaire
+
+                return $options;
+            })
             ->query(fn($query) => $query->with('website'))
             ->get();
 
@@ -33,6 +79,22 @@ new class extends Component {
             });
     }
 
+    public function updated($property): void
+    {
+        if (in_array($property, ['nameFilter', 'typeFilter', 'variationFilter'])) {
+            $this->filterProducts();
+        }
+    }
+
+    public function resetFilters(): void
+    {
+        $this->nameFilter = $this->name;
+        $this->typeFilter = '';
+        $this->variationFilter = '';
+        $this->filterByConditions = [];
+        $this->filterProducts();
+    }
+
 }; ?>
 
 <div class="bg-white">
@@ -43,6 +105,83 @@ new class extends Component {
         <h2 class="text-2xl font-bold text-gray-900 px-4 sm:px-0 py-6">
             Résultats pour : {{ $name }}
         </h2>
+
+        <!-- Zone de filtres -->
+        <div class="bg-gray-50 p-4 sm:p-6 mb-6 rounded-lg border border-gray-200">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <!-- Filtre par nom -->
+                <div>
+                    <label for="nameFilter" class="block text-sm font-medium text-gray-700 mb-1">
+                        Nom du produit
+                    </label>
+                    <input
+                        type="text"
+                        id="nameFilter"
+                        wire:model.live.debounce.500ms="nameFilter"
+                        placeholder="Filtrer par nom..."
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    >
+                </div>
+
+                <!-- Filtre par type -->
+                <div>
+                    <label for="typeFilter" class="block text-sm font-medium text-gray-700 mb-1">
+                        Type
+                    </label>
+                    <input
+                        type="text"
+                        id="typeFilter"
+                        wire:model.live.debounce.500ms="typeFilter"
+                        placeholder="Filtrer par type..."
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    >
+                </div>
+
+                <!-- Filtre par variation -->
+                <div>
+                    <label for="variationFilter" class="block text-sm font-medium text-gray-700 mb-1">
+                        Variation
+                    </label>
+                    <input
+                        type="text"
+                        id="variationFilter"
+                        wire:model.live.debounce.500ms="variationFilter"
+                        placeholder="Filtrer par variation..."
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    >
+                </div>
+            </div>
+
+            <!-- Bouton de réinitialisation -->
+            <div class="mt-4 flex justify-end">
+                <button
+                    type="button"
+                    wire:click="resetFilters"
+                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                    Réinitialiser les filtres
+                </button>
+            </div>
+        </div>
+
+        <!-- Statistiques des filtres -->
+        @if($typeFilter || $variationFilter)
+            <div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                <p class="text-sm text-blue-800">
+                    Filtres actifs :
+                    @if($typeFilter)
+                        <span class="inline-flex items-center px-2 py-1 mr-2 text-xs font-medium text-blue-800 bg-blue-100 rounded-full">
+                            Type: {{ $typeFilter }}
+                        </span>
+                    @endif
+                    @if($variationFilter)
+                        <span class="inline-flex items-center px-2 py-1 mr-2 text-xs font-medium text-blue-800 bg-blue-100 rounded-full">
+                            Variation: {{ $variationFilter }}
+                        </span>
+                    @endif
+                </p>
+            </div>
+        @endif
 
         @if($productsBySite->count() > 0)
             @foreach($productsBySite as $siteId => $siteProducts)
@@ -111,7 +250,26 @@ new class extends Component {
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <h3 class="mt-2 text-sm font-semibold text-gray-900">Aucun produit trouvé</h3>
-                <p class="mt-1 text-sm text-gray-500">Aucun résultat pour "{{ $name }}"</p>
+                <p class="mt-1 text-sm text-gray-500">
+                    Aucun résultat pour
+                    @if($nameFilter !== $name)
+                        "{{ $nameFilter }}"
+                    @else
+                        "{{ $name }}"
+                    @endif
+                    @if($typeFilter || $variationFilter)
+                        avec les filtres appliqués
+                    @endif
+                </p>
+                @if($typeFilter || $variationFilter)
+                    <button
+                        type="button"
+                        wire:click="resetFilters"
+                        class="mt-4 px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-800"
+                    >
+                        Réinitialiser les filtres
+                    </button>
+                @endif
             </div>
         @endif
     </div>
