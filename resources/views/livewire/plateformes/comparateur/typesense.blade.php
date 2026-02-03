@@ -17,23 +17,46 @@ new class extends Component {
         $this->price = $price;
         
         $searchTerm = html_entity_decode($this->name);
+        
+        // 1. Récupérer les produits triés directement par requête
         $products = Product::search($searchTerm)
-            ->query(fn($query) => $query->with('website'))
+            ->query(function($query) {
+                $query->with('website')
+                    ->orderBy('web_site_id')
+                    ->orderBy('scrap_reference_id')
+                    ->orderByDesc('created_at');
+            })
             ->get();
 
-        $this->productsBySite = $products
+        // 2. Filtrer pour garder uniquement le plus récent par site et référence
+        $uniqueProducts = new Collection();
+        
+        foreach ($products as $product) {
+            $key = $product->web_site_id . '-' . $product->scrap_reference_id;
+            
+            // Si on n'a pas encore ce couple site-référence, on l'ajoute
+            // Ou si on l'a mais que le produit est plus récent
+            if (!$uniqueProducts->has($key) || 
+                $product->created_at > $uniqueProducts[$key]->created_at) {
+                $uniqueProducts[$key] = $product;
+            }
+        }
+
+        // 3. Grouper par site
+        $this->productsBySite = $uniqueProducts->values()
             ->groupBy('web_site_id')
-            ->map(function ($siteProducts) {
-                return $siteProducts
-                    ->groupBy('scrap_reference_id')
-                    ->map(function ($refProducts) {
-                        return $refProducts->sortByDesc('created_at')->first();
-                    })
-                    ->values();
+            ->map(function($siteProducts) {
+                // Pour chaque site, retourner directement la collection
+                return $siteProducts->values();
             });
     }
     
-}; ?>
+    // Méthode pour compter le nombre total de produits uniques
+    public function getTotalProductsProperty(): int
+    {
+        return $this->productsBySite->sum(fn($products) => $products->count());
+    }
+};
 
 <div class="bg-white">
 
