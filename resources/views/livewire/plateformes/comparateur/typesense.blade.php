@@ -3,6 +3,7 @@
 use Livewire\Volt\Component;
 use App\Models\Product;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Http;
 
 new class extends Component {
     public string $name;
@@ -10,109 +11,106 @@ new class extends Component {
     public string $price;
     public Collection $productsBySite;
 
+    // Nouvelles propriétés pour l'extraction
+    public string $vendor = '';
+    public string $productName = '';
+    public string $productType = '';
+    public string $variation = '';
+    public bool $isExtracting = false;
+    public string $extractionError = '';
+
     public function mount($name, $id, $price): void
     {
         $this->name = $name;
         $this->id = $id;
         $this->price = $price;
 
-        $searchTerm = html_entity_decode($this->name);
-        $products = Product::search($searchTerm)
-            ->query(fn($query) => $query->with('website'))
-            ->get();
+        // Extraire automatiquement les informations lors du montage
+        $this->extractProductInfo();
+    }
 
-        $this->productsBySite = $products
-            ->groupBy('web_site_id')
-            ->map(function ($siteProducts) {
-                return $siteProducts
-                    ->groupBy('scrap_reference_id')
-                    ->map(function ($refProducts) {
-                        return $refProducts->sortByDesc('created_at')->first();
-                    })
-                    ->values();
-            });
+    public function extractProductInfo(): void
+    {
+        $this->isExtracting = true;
+        $this->extractionError = '';
+
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
+                'Content-Type' => 'application/json',
+            ])->post('https://api.openai.com/v1/chat/completions', [
+                'model' => 'gpt-3.5-turbo',
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => 'Tu es un expert en extraction d\'informations produits. Extrais les informations suivantes du texte fourni: vendor (marque), name (nom du produit), type (type de produit), variation (taille/variante). Réponds uniquement au format JSON: {"vendor": "", "name": "", "type": "", "variation": ""}'
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => $this->name
+                    ]
+                ],
+                'temperature' => 0.3,
+                'max_tokens' => 150
+            ]);
+
+            if ($response->successful()) {
+                $result = $response->json();
+                $content = $result['choices'][0]['message']['content'];
+
+                // Nettoyer le contenu JSON
+                $content = trim($content);
+
+                // Extraire le JSON même s'il y a du texte autour
+                preg_match('/\{.*\}/s', $content, $matches);
+
+                if (!empty($matches[0])) {
+                    $extractedData = json_decode($matches[0], true);
+
+                    if (json_last_error() === JSON_ERROR_NONE) {
+                        $this->vendor = $extractedData['vendor'] ?? '';
+                        $this->productName = $extractedData['name'] ?? '';
+                        $this->productType = $extractedData['type'] ?? '';
+                        $this->variation = $extractedData['variation'] ?? '';
+                    } else {
+                        $this->extractionError = 'Erreur de décodage JSON';
+                    }
+                } else {
+                    $this->extractionError = 'Format de réponse invalide';
+                }
+            } else {
+                $this->extractionError = 'Erreur API OpenAI: ' . $response->status();
+            }
+        } catch (\Exception $e) {
+            $this->extractionError = 'Exception: ' . $e->getMessage();
+        } finally {
+            $this->isExtracting = false;
+        }
     }
 
 }; ?>
 
-<div class="bg-white">
+<div>
+    <!-- Affichage des informations extraites -->
+    @if($isExtracting)
+        <div class="text-blue-500">Extraction en cours...</div>
+    @elseif($extractionError)
+        <div class="text-red-500">Erreur: {{ $extractionError }}</div>
+    @else
+        <div class="space-y-2">
+            <div><strong>Vendor:</strong> {{ $vendor }}</div>
+            <div><strong>Nom du produit:</strong> {{ $productName }}</div>
+            <div><strong>Type:</strong> {{ $productType }}</div>
+            <div><strong>Variation:</strong> {{ $variation }}</div>
+        </div>
 
-    <livewire:plateformes.detail :id="$id" />
+    @endif
 
-    <div class="mx-auto max-w-7xl overflow-hidden sm:px-6 lg:px-8">
-        <h2 class="text-2xl font-bold text-gray-900 px-4 sm:px-0 py-6">
-            Résultats pour : {{ $name }}
-        </h2>
-
-        @if($productsBySite->count() > 0)
-            @foreach($productsBySite as $siteId => $siteProducts)
-                @php
-                    $site = $siteProducts->first()->website ?? null;
-                @endphp
-
-                <div class="mb-8">
-                    <!-- En-tête du site -->
-                    <div class="bg-gray-50 px-4 sm:px-6 py-4 border-b-2 border-gray-200">
-                        <h3 class="text-lg font-semibold text-gray-900">
-                            {{ $site?->name ?? 'Site inconnu' }}
-                        </h3>
-                        @if($site?->url)
-                            <a href="{{ $site->url }}" target="_blank" class="text-sm text-blue-600 hover:text-blue-800">
-                                {{ $site->url }}
-                            </a>
-                        @endif
-                        <p class="text-sm text-gray-500 mt-1">
-                            {{ $siteProducts->count() }} {{ $siteProducts->count() > 1 ? 'produits' : 'produit' }}
-                        </p>
-                    </div>
-
-                    <!-- Grille des produits du site -->
-                    <div class="-mx-px grid grid-cols-2 border-l border-gray-200 sm:mx-0 md:grid-cols-3 lg:grid-cols-4">
-                        @foreach($siteProducts as $product)
-                            <div class="group relative border-r border-b border-gray-200 p-4 sm:p-6">
-                                <div class="aspect-square rounded-lg bg-gray-200 overflow-hidden">
-                                    <img
-                                        src="{{ $product->image_url }}"
-                                        alt="{{ $product->vendor }} - {{ $product->name }}"
-                                        class="h-full w-full object-cover group-hover:opacity-75"
-                                    >
-                                </div>
-                                <div class="pt-10 pb-4 text-center">
-                                    <h3 class="text-sm font-medium text-gray-900">
-                                        <a href="{{ $product->url }}" target="_blank">
-                                            <span aria-hidden="true" class="absolute inset-0"></span>
-                                            {{ $product->vendor }} - {{ $product->name }}
-                                        </a>
-                                    </h3>
-                                    <div class="mt-3 flex flex-col items-center">
-                                        <p class="text-xs text-gray-600">{{ $product->type }}</p>
-                                        <p class="mt-1 text-xs text-gray-500">{{ $product->variation }}</p>
-                                        @if($product->scrap_reference_id)
-                                            <p class="mt-1 text-xs text-gray-400">Réf: {{ $product->scrap_reference_id }}</p>
-                                        @endif
-                                        @if($product->created_at)
-                                            <p class="mt-1 text-xs text-gray-400">
-                                                Scrapé le {{ $product->created_at->format('d/m/Y') }}
-                                            </p>
-                                        @endif
-                                    </div>
-                                    <p class="mt-4 text-base font-medium text-gray-900">
-                                        {{ $product->prix_ht }} {{ $product->currency }}
-                                    </p>
-                                </div>
-                            </div>
-                        @endforeach
-                    </div>
-                </div>
-            @endforeach
-        @else
-            <div class="text-center py-12">
-                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <h3 class="mt-2 text-sm font-semibold text-gray-900">Aucun produit trouvé</h3>
-                <p class="mt-1 text-sm text-gray-500">Aucun résultat pour "{{ $name }}"</p>
-            </div>
-        @endif
-    </div>
+    <!-- Bouton pour ré-extraire si nécessaire -->
+    <button wire:click="extractProductInfo"
+            wire:loading.attr="disabled"
+            class="mt-2 px-4 py-2 bg-blue-500 text-white rounded">
+        <span wire:loading.remove>Extraire à nouveau</span>
+        <span wire:loading>Extraction...</span>
+    </button>
 </div>
