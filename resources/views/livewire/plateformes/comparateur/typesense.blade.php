@@ -19,35 +19,8 @@ new class extends Component {
         $searchTerm = html_entity_decode($this->name);
         $parsed = $this->parseProductName($searchTerm);
 
-        // Recherche stricte sur name et type
-        $products = Product::search($parsed['name'], function ($typesense, $query, $options) use ($parsed) {
-            // La config par défaut applique déjà num_typos='0,1,0,0'
-            // On ajoute les filtres stricts sur vendor et type
-
-            $filters = [];
-
-            // FILTRE STRICT : Vendor doit correspondre EXACTEMENT
-            if (!empty($parsed['vendor'])) {
-                $filters[] = "vendor:= `{$parsed['vendor']}`";
-            }
-
-            // FILTRE STRICT : Type doit correspondre EXACTEMENT
-            if (!empty($parsed['type'])) {
-                $filters[] = "type:= `{$parsed['type']}`";
-            }
-
-            // Appliquer les filtres
-            if (!empty($filters)) {
-                $options['filter_by'] = implode(' && ', $filters);
-            }
-
-            // Boost additionnel si variation correspond exactement
-            if (!empty($parsed['variation'])) {
-                $options['sort_by'] = "_eval([(variation:={$parsed['variation']}):10]):desc,_text_match:desc,created_at:desc";
-            }
-
-            return $options;
-        })
+        // Utiliser la méthode helper du modèle
+        $products = Product::searchWithFallback($parsed)
             ->query(fn($query) => $query->with('website'))
             ->get();
 
@@ -56,9 +29,7 @@ new class extends Component {
             ->map(function ($siteProducts) {
                 return $siteProducts
                     ->groupBy('scrap_reference_id')
-                    ->map(function ($refProducts) {
-                        return $refProducts->sortByDesc('created_at')->first();
-                    })
+                    ->map(fn($refProducts) => $refProducts->sortByDesc('created_at')->first())
                     ->values();
             });
     }
@@ -67,29 +38,30 @@ new class extends Component {
     {
         $parts = array_map('trim', explode(' - ', $productName));
 
-        $result = [
+        return [
             'vendor' => $parts[0] ?? '',
             'name' => $parts[1] ?? '',
-            'type' => '',
-            'variation' => ''
+            'type' => isset($parts[2]) ? $this->extractType($parts[2]) : '',
+            'variation' => isset($parts[2]) ? $this->extractVariation($parts[2]) : ''
         ];
+    }
 
-        if (isset($parts[2])) {
-            $lastPart = $parts[2];
-
-            // Extraire la variation (200ml, 50g, etc.)
-            if (preg_match('/\b(\d+\s?(ml|g|oz|cl|l|mg))\b/i', $lastPart, $matches)) {
-                $result['variation'] = trim($matches[1]);
-                $result['type'] = trim(str_replace($matches[0], '', $lastPart));
-            } else {
-                $result['type'] = $lastPart;
-            }
+    private function extractType(string $lastPart): string
+    {
+        if (preg_match('/\b(\d+\s?(ml|g|oz|cl|l|mg))\b/i', $lastPart, $matches)) {
+            return trim(str_replace($matches[0], '', $lastPart));
         }
+        return $lastPart;
+    }
 
-        return $result;
+    private function extractVariation(string $lastPart): string
+    {
+        if (preg_match('/\b(\d+\s?(ml|g|oz|cl|l|mg))\b/i', $lastPart, $matches)) {
+            return trim($matches[1]);
+        }
+        return '';
     }
 }; ?>
-
 
 <div class="bg-white">
 
