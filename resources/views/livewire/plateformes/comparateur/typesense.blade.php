@@ -19,59 +19,32 @@ new class extends Component {
         $searchTerm = html_entity_decode($this->name);
         $parsed = $this->parseProductName($searchTerm);
 
-        // Recherche avec text_match optimisé
+        // Recherche avec les paramètres par défaut + surcharge
         $products = Product::search($parsed['name'], function ($typesense, $query, $options) use ($parsed) {
-            // Query sur les champs pertinents avec pondération
-            $options['query_by'] = 'vendor,name,type,variation';
-            $options['query_by_weights'] = '4,10,3,1'; // Name a le poids le plus élevé
+            // Les paramètres de config/scout.php sont déjà chargés
+            // On ajoute seulement les filtres spécifiques
 
-            // Utiliser max_weight pour prioriser les champs avec poids élevé
-            $options['text_match_type'] = 'max_weight';
+            $filters = [];
 
-            // Construction de la requête complète
-            $queryParts = array_filter([
-                $parsed['vendor'],
-                $parsed['name'],
-                $parsed['type'],
-                $parsed['variation']
-            ]);
-            $options['q'] = implode(' ', $queryParts);
-
-            // Filtres stricts OPTIONNELS via _eval pour le ranking
-            $evalConditions = [];
-
+            // Filtre STRICT sur vendor
             if (!empty($parsed['vendor'])) {
-                $evalConditions[] = "(vendor:={$parsed['vendor']}):10";
+                $filters[] = "vendor:= `{$parsed['vendor']}`";
             }
 
+            // Filtre STRICT sur type
             if (!empty($parsed['type'])) {
-                $evalConditions[] = "(type:={$parsed['type']}):5";
+                $filters[] = "type:= `{$parsed['type']}`";
             }
 
+            if (!empty($filters)) {
+                $options['filter_by'] = implode(' && ', $filters);
+            }
+
+            // Boost pour variation exacte si présente
             if (!empty($parsed['variation'])) {
-                $evalConditions[] = "(variation:{$parsed['variation']}):3";
+                $options['sort_by'] = "_eval([(variation:={$parsed['variation']}):10]):desc,_text_match:desc,created_at:desc";
             }
-
-            // Construire le sort_by avec _eval pour booster les correspondances exactes
-            $sortBy = ['_text_match:desc'];
-
-            if (!empty($evalConditions)) {
-                array_unshift($sortBy, '_eval([' . implode(',', $evalConditions) . ']):desc');
-            }
-
-            $sortBy[] = 'created_at:desc';
-            $options['sort_by'] = implode(',', $sortBy);
-
-            // Paramètres de recherche stricte
-            $options['prefix'] = false; // Pas de prefix matching
-            $options['num_typos'] = '1,0,1,0'; // vendor:1, name:0, type:1, variation:0
-            $options['typo_tokens_threshold'] = 1;
-            $options['drop_tokens_threshold'] = 1; // Garder au moins 1 résultat
-            $options['min_len_1typo'] = 5;
-            $options['min_len_2typo'] = 8;
-            $options['prioritize_exact_match'] = true; // Prioriser les correspondances exactes
-
-            $options['per_page'] = 250;
+            // Sinon, utiliser le sort_by par défaut de la config
 
             return $options;
         })
