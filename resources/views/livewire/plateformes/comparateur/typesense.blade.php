@@ -18,19 +18,22 @@ new class extends Component {
         
         // Décoder les entités HTML et rechercher avec Typesense Scout
         $searchTerm = html_entity_decode($this->name);
+        $products = Product::search($searchTerm)
+            ->query(fn($query) => $query->with('website'))
+            ->get();
         
-        // Utiliser group_by pour récupérer uniquement le dernier produit par scrap_reference_id
-        $products = Product::search($searchTerm, function ($typesenseSearch, $query, $options) {
-            $options['group_by'] = 'scrap_reference_id';
-            $options['group_limit'] = 1; // Un seul produit par groupe
-            $options['sort_by'] = 'created_at:desc'; // Le plus récent en premier
-            return $options;
-        })
-        ->query(fn($query) => $query->with('website'))
-        ->get();
-        
-        // Grouper par site pour l'affichage
-        $this->productsBySite = $products->groupBy('web_site_id');
+        // Grouper par site et sélectionner le dernier produit scrapé par scrap_reference_id
+        $this->productsBySite = $products
+            ->groupBy('web_site_id')
+            ->map(function ($siteProducts) {
+                return $siteProducts
+                    ->groupBy('scrap_reference_id')
+                    ->map(function ($refProducts) {
+                        // Retourner le produit le plus récent (dernière date de scraping)
+                        return $refProducts->sortByDesc('created_at')->first();
+                    })
+                    ->values();
+            });
     }
     
 }; ?>
@@ -89,7 +92,7 @@ new class extends Component {
                                         @endif
                                         @if($product->created_at)
                                             <p class="mt-1 text-xs text-gray-400">
-                                                {{ $product->created_at->format('d/m/Y H:i') }}
+                                                Scrapé le {{ $product->created_at->format('d/m/Y') }}
                                             </p>
                                         @endif
                                     </div>
