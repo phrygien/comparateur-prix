@@ -25,4 +25,6 @@ Route::middleware(['check.auth', 'boutique.cache'])->group(function () {
     // Executer comparateur
     Route::get('/nos-boutique', NosBoutique::class)->name('nos-boutiques');
     Volt::route('/executer-comparateur/{name}/{id}/{price}/execute', 'plateformes.execute-comparateur')->name('execute-comparateur');
+
+    Volt::route('find-product/{name}/{id}/{price}/concurent', 'plateformes.comparateur.typesense')->name('find-product-concurent');
 });
