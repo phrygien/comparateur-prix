@@ -10,30 +10,16 @@ pipeline {
         stage('Fix Permissions for Jenkins') {
             steps {
                 sh '''
-                    # Donner les droits à Jenkins AVANT d'exécuter Git
                     sudo chown -R jenkins:jenkins /var/www/comparateur
                 '''
             }
         }
 
-        // stage('Mise à jour du code') {
-        //     steps {
-        //         sh '''
-        //             git config --global --add safe.directory /var/www/comparateur || true
-        //             cd /var/www/comparateur
-
-        //             git reset --hard
-        //             git clean -fd
-        //             git pull origin main
-        //         '''
-        //     }
-        // }
         stage('Mise à jour du code') {
             steps {
                 sh '''
                     git config --global --add safe.directory /var/www/comparateur || true
                     cd /var/www/comparateur
-
                     git fetch origin main
                     git reset --hard origin/main
                     git clean -fd
@@ -48,6 +34,17 @@ pipeline {
                     composer install --no-interaction --prefer-dist --optimize-autoloader
                     composer require phpoffice/phpspreadsheet --no-interaction
                     composer require openai-php/client
+                '''
+            }
+        }
+
+        stage('Install Scout et TypeSense') {
+            steps {
+                sh '''
+                    cd /var/www/comparateur
+                    composer require laravel/scout --no-interaction
+                    composer require typesense/typesense-php --no-interaction
+                    php artisan vendor:publish --provider="Laravel\\Scout\\ScoutServiceProvider" --force
                 '''
             }
         }
@@ -67,16 +64,13 @@ pipeline {
                 sh '''
                     sudo chown -R www-data:www-data /var/www/comparateur
                     sudo chmod -R 755 /var/www/comparateur
-
                     sudo chown -R www-data:www-data /var/www/comparateur/storage
                     sudo chown -R www-data:www-data /var/www/comparateur/bootstrap/cache
-
                     sudo chmod -R 775 /var/www/comparateur/storage
                     sudo chmod -R 775 /var/www/comparateur/bootstrap/cache
                 '''
             }
         }
-
 
     }
 
