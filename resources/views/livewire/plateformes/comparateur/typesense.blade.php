@@ -9,6 +9,7 @@ new class extends Component {
     public string $id;
     public string $price;
     public Collection $productsBySite;
+    public bool $useExactMatch = false;
 
     public function mount($name, $id, $price): void
     {
@@ -18,15 +19,11 @@ new class extends Component {
         
         $searchTerm = html_entity_decode($this->name);
         
-        // 1. Récupérer les produits triés directement par requête
-        $products = Product::search($searchTerm)
-            ->query(function($query) {
-                $query->with('website')
-                    ->orderBy('web_site_id')
-                    ->orderBy('scrap_reference_id')
-                    ->orderByDesc('created_at');
-            })
-            ->get();
+        // Détecter si le terme de recherche suit le format "X - Y - Z - W"
+        $this->useExactMatch = $this->shouldUseExactMatch($searchTerm);
+        
+        // 1. Récupérer les produits avec la stratégie appropriée
+        $products = $this->performSearch($searchTerm);
 
         // 2. Filtrer pour garder uniquement le plus récent par site et référence
         $uniqueProducts = new Collection();
@@ -51,12 +48,159 @@ new class extends Component {
             });
     }
     
+    /**
+     * Détermine si on doit utiliser la recherche exacte
+     */
+    private function shouldUseExactMatch(string $searchTerm): bool
+    {
+        // Vérifie si le terme contient le séparateur " - " au moins 3 fois
+        // (format: "vendor - name - type - variation")
+        $separatorCount = substr_count($searchTerm, ' - ');
+        return $separatorCount >= 3;
+    }
+    
+    /**
+     * Exécute la recherche avec la stratégie appropriée
+     */
+    private function performSearch(string $searchTerm): Collection
+    {
+        if ($this->useExactMatch) {
+            // Utiliser la recherche exacte sur le champ exact_match
+            return Product::search($searchTerm)
+                ->queryBy('exact_match') // Recherche uniquement sur exact_match
+                ->with(['weights' => [
+                    'exact_match' => 10,
+                ]])
+                ->options([
+                    'num_typos' => 1, // Très peu de fautes de frappe tolérées
+                    'prefix' => false,
+                    'prioritize_exact_match' => true,
+                    'exhaustive_search' => true,
+                ])
+                ->query(function($query) {
+                    $query->with('website')
+                        ->orderBy('web_site_id')
+                        ->orderBy('scrap_reference_id')
+                        ->orderByDesc('created_at');
+                })
+                ->get();
+        } else {
+            // Recherche normale sur tous les champs
+            return Product::search($searchTerm)
+                ->query(function($query) {
+                    $query->with('website')
+                        ->orderBy('web_site_id')
+                        ->orderBy('scrap_reference_id')
+                        ->orderByDesc('created_at');
+                })
+                ->get();
+        }
+    }
+    
+    /**
+     * Méthode pour décomposer un terme de recherche en composants
+     * Utile pour afficher ou déboguer
+     */
+    public function decomposeSearchTerm(): array
+    {
+        if (!$this->useExactMatch) {
+            return [
+                'vendor' => null,
+                'name' => $this->name,
+                'type' => null,
+                'variation' => null,
+            ];
+        }
+        
+        $parts = explode(' - ', html_entity_decode($this->name));
+        
+        return [
+            'vendor' => $parts[0] ?? null,
+            'name' => $parts[1] ?? null,
+            'type' => $parts[2] ?? null,
+            'variation' => $parts[3] ?? implode(' - ', array_slice($parts, 3)) ?? null,
+        ];
+    }
+    
+    /**
+     * Recherche alternative: par composants individuels
+     * Pour les cas où la recherche exacte ne donne pas de résultats
+     */
+    public function searchByComponents(): void
+    {
+        $components = $this->decomposeSearchTerm();
+        
+        $builder = Product::search($components['name'] ?? '');
+        
+        // Construire le filtre Typesense
+        $filters = [];
+        
+        if (!empty($components['vendor'])) {
+            $filters[] = "vendor:={$components['vendor']}";
+        }
+        
+        if (!empty($components['type'])) {
+            $filters[] = "type:={$components['type']}";
+        }
+        
+        if (!empty($components['variation'])) {
+            $filters[] = "variation:={$components['variation']}";
+        }
+        
+        if (!empty($filters)) {
+            $builder->whereRaw(['filter_by' => implode(' && ', $filters)]);
+        }
+        
+        $products = $builder
+            ->query(function($query) {
+                $query->with('website')
+                    ->orderBy('web_site_id')
+                    ->orderBy('scrap_reference_id')
+                    ->orderByDesc('created_at');
+            })
+            ->get();
+        
+        // Même logique de filtrage des doublons
+        $uniqueProducts = new Collection();
+        
+        foreach ($products as $product) {
+            $key = $product->web_site_id . '-' . $product->scrap_reference_id;
+            
+            if (!$uniqueProducts->has($key) || 
+                $product->created_at > $uniqueProducts[$key]->created_at) {
+                $uniqueProducts[$key] = $product;
+            }
+        }
+        
+        $this->productsBySite = $uniqueProducts->values()
+            ->groupBy('web_site_id')
+            ->map(function($siteProducts) {
+                return $siteProducts->values();
+            });
+    }
+    
     // Méthode pour compter le nombre total de produits uniques
     public function getTotalProductsProperty(): int
     {
         return $this->productsBySite->sum(fn($products) => $products->count());
     }
-}; ?>
+    
+    /**
+     * Propriété calculée pour afficher la stratégie utilisée
+     */
+    public function getSearchStrategyProperty(): string
+    {
+        return $this->useExactMatch ? 'Recherche exacte' : 'Recherche normale';
+    }
+    
+    /**
+     * Propriété calculée pour afficher les composants décomposés
+     */
+    public function getSearchComponentsProperty(): array
+    {
+        return $this->decomposeSearchTerm();
+    }
+};
 
 <div class="bg-white">
 
