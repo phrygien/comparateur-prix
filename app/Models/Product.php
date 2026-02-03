@@ -87,7 +87,7 @@ class Product extends Model
      */
     public function website(): BelongsTo
     {
-        return $this->belongsTo(Website::class, 'web_site_id');
+        return $this->belongsTo(Site::class, 'web_site_id');
     }
 
     public function scrapReference(): BelongsTo
