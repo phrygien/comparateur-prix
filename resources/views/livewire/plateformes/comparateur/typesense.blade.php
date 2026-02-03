@@ -24,38 +24,22 @@ new class extends Component {
         // Extraire les informations avec OpenAI (avec cache)
         $parsedSearch = $this->extractWithOpenAI($searchTerm);
         
-        // Construire la recherche Typesense
-        $products = Product::search($searchTerm, function ($typesenseClient, $query, $params) use ($parsedSearch) {
-            $params['query_by'] = 'vendor,name,type,variation';
-            $params['query_by_weights'] = '4,3,2,1';
-            $params['exhaustive_search'] = true;
-            $params['per_page'] = 250;
-            
-            // Construire les filtres basés sur l'extraction OpenAI
-            $filters = [];
-            
-            if (!empty($parsedSearch['vendor'])) {
-                // Recherche flexible sur le vendor
-                $filters[] = "vendor:~{$parsedSearch['vendor']}";
-            }
-            
-            if (!empty($parsedSearch['type'])) {
-                $filters[] = "type:~{$parsedSearch['type']}";
-            }
-            
-            // Optionnel : filtrer par variation si elle est spécifique
-            if (!empty($parsedSearch['variation']) && strlen($parsedSearch['variation']) > 2) {
-                $filters[] = "variation:~{$parsedSearch['variation']}";
-            }
-            
-            if (!empty($filters)) {
-                $params['filter_by'] = implode(' && ', $filters);
-            }
-            
-            return $typesenseClient->collections[$params['collection']]->documents->search($params);
-        })
-        ->query(fn($query) => $query->with('website'))
-        ->get();
+        // Construire la recherche Typesense avec les options personnalisées
+        $searchBuilder = Product::search($searchTerm);
+        
+        // Appliquer les options Typesense
+        $searchBuilder->options([
+            'query_by' => 'vendor,name,type,variation',
+            'query_by_weights' => '4,3,2,1',
+            'exhaustive_search' => true,
+            'per_page' => 250,
+            'filter_by' => $this->buildFilters($parsedSearch),
+        ]);
+        
+        // Exécuter la recherche avec la relation
+        $products = $searchBuilder
+            ->query(fn($query) => $query->with('website'))
+            ->get();
         
         // Grouper par site et sélectionner le dernier produit scrapé
         $this->productsBySite = $products
@@ -68,6 +52,30 @@ new class extends Component {
                     })
                     ->values();
             });
+    }
+    
+    /**
+     * Construire les filtres Typesense basés sur l'extraction OpenAI
+     */
+    private function buildFilters(array $parsedSearch): string
+    {
+        $filters = [];
+        
+        if (!empty($parsedSearch['vendor'])) {
+            // Utiliser := pour la correspondance exacte ou :~ pour la recherche partielle
+            $filters[] = "vendor:={$parsedSearch['vendor']}";
+        }
+        
+        if (!empty($parsedSearch['type'])) {
+            $filters[] = "type:={$parsedSearch['type']}";
+        }
+        
+        // Optionnel : filtrer par variation si elle est spécifique
+        if (!empty($parsedSearch['variation']) && strlen($parsedSearch['variation']) > 2) {
+            $filters[] = "variation:={$parsedSearch['variation']}";
+        }
+        
+        return implode(' && ', $filters);
     }
     
     /**
@@ -86,7 +94,7 @@ new class extends Component {
                 ])
                 ->timeout(10)
                 ->post('https://api.openai.com/v1/chat/completions', [
-                    'model' => 'gpt-4o-mini', // Ou 'gpt-4o' pour plus de précision
+                    'model' => 'gpt-4o-mini',
                     'messages' => [
                         [
                             'role' => 'system',
@@ -123,7 +131,6 @@ new class extends Component {
                     ];
                 }
                 
-                // En cas d'erreur, retourner des valeurs vides
                 \Log::warning('OpenAI extraction failed', [
                     'status' => $response->status(),
                     'body' => $response->body()
