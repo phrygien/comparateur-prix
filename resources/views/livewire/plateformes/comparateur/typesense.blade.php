@@ -17,45 +17,60 @@ new class extends Component {
         $this->price = $price;
 
         $searchTerm = html_entity_decode($this->name);
-
-        // Parser le nom du produit
         $parsed = $this->parseProductName($searchTerm);
 
-        // Recherche avec Typesense Scout
+        // Recherche avec text_match optimisé
         $products = Product::search($parsed['name'], function ($typesense, $query, $options) use ($parsed) {
-            // Champs sur lesquels rechercher avec pondération
-            $options['query_by'] = 'name,vendor,type,variation';
-            $options['query_by_weights'] = '4,2,2,1'; // Prioriser le name
+            // Query sur les champs pertinents avec pondération
+            $options['query_by'] = 'vendor,name,type,variation';
+            $options['query_by_weights'] = '4,10,3,1'; // Name a le poids le plus élevé
 
-            // Construction des filtres
-            $filters = [];
+            // Utiliser max_weight pour prioriser les champs avec poids élevé
+            $options['text_match_type'] = 'max_weight';
+
+            // Construction de la requête complète
+            $queryParts = array_filter([
+                $parsed['vendor'],
+                $parsed['name'],
+                $parsed['type'],
+                $parsed['variation']
+            ]);
+            $options['q'] = implode(' ', $queryParts);
+
+            // Filtres stricts OPTIONNELS via _eval pour le ranking
+            $evalConditions = [];
 
             if (!empty($parsed['vendor'])) {
-                // Utiliser filter exact ou partial match selon le besoin
-                $filters[] = "vendor:= {$parsed['vendor']}";
+                $evalConditions[] = "(vendor:={$parsed['vendor']}):10";
             }
 
             if (!empty($parsed['type'])) {
-                $filters[] = "type:= {$parsed['type']}";
+                $evalConditions[] = "(type:={$parsed['type']}):5";
             }
 
             if (!empty($parsed['variation'])) {
-                $filters[] = "variation: {$parsed['variation']}";
+                $evalConditions[] = "(variation:{$parsed['variation']}):3";
             }
 
-            if (!empty($filters)) {
-                $options['filter_by'] = implode(' && ', $filters);
+            // Construire le sort_by avec _eval pour booster les correspondances exactes
+            $sortBy = ['_text_match:desc'];
+
+            if (!empty($evalConditions)) {
+                array_unshift($sortBy, '_eval([' . implode(',', $evalConditions) . ']):desc');
             }
+
+            $sortBy[] = 'created_at:desc';
+            $options['sort_by'] = implode(',', $sortBy);
 
             // Paramètres de recherche stricte
-            $options['prefix'] = 'false,false,true'; // Prefix matching pour le dernier mot seulement
-            $options['num_typos'] = 1; // Tolérance minimale aux fautes
+            $options['prefix'] = false; // Pas de prefix matching
+            $options['num_typos'] = '1,0,1,0'; // vendor:1, name:0, type:1, variation:0
+            $options['typo_tokens_threshold'] = 1;
+            $options['drop_tokens_threshold'] = 1; // Garder au moins 1 résultat
             $options['min_len_1typo'] = 5;
             $options['min_len_2typo'] = 8;
-            $options['drop_tokens_threshold'] = 1; // Ne pas ignorer les tokens
+            $options['prioritize_exact_match'] = true; // Prioriser les correspondances exactes
 
-            // Tri et limite
-            $options['sort_by'] = 'created_at:desc';
             $options['per_page'] = 250;
 
             return $options;
@@ -75,10 +90,6 @@ new class extends Component {
             });
     }
 
-    /**
-     * Parser le nom du produit
-     * Exemple: "Hermès - Un Jardin Sous la Mer - Eau de Toilette Recharge 200ml"
-     */
     private function parseProductName(string $productName): array
     {
         $parts = array_map('trim', explode(' - ', $productName));
@@ -90,13 +101,11 @@ new class extends Component {
             'variation' => ''
         ];
 
-        // Parser la dernière partie (type + variation)
         if (isset($parts[2])) {
             $lastPart = $parts[2];
 
-            // Extraire la variation (nombres suivis de ml, g, oz, etc.)
-            if (preg_match('/\b(\d+\s?(ml|g|oz|cl|l))\b/i', $lastPart, $matches)) {
-                $result['variation'] = $matches[1];
+            if (preg_match('/\b(\d+\s?(ml|g|oz|cl|l|mg))\b/i', $lastPart, $matches)) {
+                $result['variation'] = trim($matches[1]);
                 $result['type'] = trim(str_replace($matches[0], '', $lastPart));
             } else {
                 $result['type'] = $lastPart;

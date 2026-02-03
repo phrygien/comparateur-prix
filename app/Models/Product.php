@@ -70,34 +70,13 @@ class Product extends Model
         ];
     }
 
-
     /**
-     * Get the Typesense collection schema.
+     * Get the search rules for the model.
      */
-    public function getCollectionSchema(): array
+    public function getScoutRules(): array
     {
         return [
-            'name' => $this->searchableAs(),
-            'fields' => [
-                ['name' => 'id', 'type' => 'string'],
-                ['name' => 'vendor', 'type' => 'string', 'facet' => true],
-                ['name' => 'name', 'type' => 'string'],
-                ['name' => 'type', 'type' => 'string', 'facet' => true],
-                ['name' => 'variation', 'type' => 'string'],
-                ['name' => 'web_site_id', 'type' => 'int32', 'facet' => true],
-                ['name' => 'scrap_reference_id', 'type' => 'int32'],
-                ['name' => 'price', 'type' => 'int32'],
-                ['name' => 'created_at', 'type' => 'int64'],
-            ],
-            'default_sorting_field' => 'created_at',
+            \App\Scout\ExactMatchSearchRule::class,
         ];
-    }
-
-    /**
-     * Get the name of the index associated with the model.
-     */
-    public function searchableAs(): string
-    {
-        return 'products';
     }
 }
