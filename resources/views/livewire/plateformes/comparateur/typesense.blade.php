@@ -17,9 +17,137 @@ new class extends Component {
         $this->price = $price;
         
         $searchTerm = html_entity_decode($this->name);
-        $this->products = Product::search($searchTerm)
-            ->query(fn($query) => $query->with('website')->orderByDesc('created_at'))
-            ->get();
+        
+        // Parser le produit : Valentino - Uomo - Eau de Toilette Vaporisateur 100 ml
+        $parts = array_map('trim', explode(' - ', $searchTerm));
+        
+        $vendor = $parts[0] ?? null;
+        $productName = $parts[1] ?? null;
+        $type = $parts[2] ?? null;
+        
+        // Étape 1 : Recherche avec filtres stricts
+        $products = $this->searchWithFilters($vendor, $productName, $type);
+        
+        // Étape 2 : Si pas de résultats, recherche plus flexible sur vendor + name
+        if ($products->isEmpty() && $vendor && $productName) {
+            $products = $this->searchVendorAndName($vendor, $productName);
+        }
+        
+        // Étape 3 : Si toujours pas de résultats, recherche globale
+        if ($products->isEmpty()) {
+            $products = Product::search($searchTerm)
+                ->query(fn($query) => $query->with('website')->orderByDesc('created_at'))
+                ->get();
+        }
+        
+        // Post-filtrage : éliminer les faux positifs
+        $this->products = $this->filterExactMatches($products, $vendor, $productName, $type);
+    }
+    
+    private function searchWithFilters(?string $vendor, ?string $productName, ?string $type): Collection
+    {
+        if (!$vendor || !$productName) {
+            return collect([]);
+        }
+        
+        return Product::search('', function ($typesenseSearchParams) use ($vendor, $productName, $type) {
+            $filters = [];
+            
+            // Filtre exact sur vendor
+            $filters[] = "vendor:={$vendor}";
+            
+            // Filtre exact sur type si présent
+            if ($type) {
+                // Nettoyer le type (enlever la contenance)
+                $cleanType = preg_replace('/\s*\d+\s*(ml|g|oz|L)\s*$/i', '', $type);
+                $cleanType = trim($cleanType);
+                if ($cleanType) {
+                    $filters[] = "type:={$cleanType}";
+                }
+            }
+            
+            $typesenseSearchParams['q'] = $productName;
+            $typesenseSearchParams['query_by'] = 'name';
+            $typesenseSearchParams['filter_by'] = implode(' && ', $filters);
+            $typesenseSearchParams['prefix'] = false;
+            $typesenseSearchParams['num_typos'] = 1;
+            $typesenseSearchParams['per_page'] = 100;
+            
+            return $typesenseSearchParams;
+        })->query(fn($query) => $query->with('website')->orderByDesc('created_at'))->get();
+    }
+    
+    private function searchVendorAndName(string $vendor, string $productName): Collection
+    {
+        return Product::search('', function ($typesenseSearchParams) use ($vendor, $productName) {
+            $typesenseSearchParams['q'] = $productName;
+            $typesenseSearchParams['query_by'] = 'name';
+            $typesenseSearchParams['filter_by'] = "vendor:={$vendor}";
+            $typesenseSearchParams['prefix'] = true;
+            $typesenseSearchParams['num_typos'] = 2;
+            $typesenseSearchParams['per_page'] = 100;
+            
+            return $typesenseSearchParams;
+        })->query(fn($query) => $query->with('website')->orderByDesc('created_at'))->get();
+    }
+    
+    private function filterExactMatches(Collection $products, ?string $vendor, ?string $productName, ?string $type): Collection
+    {
+        if (!$productName) {
+            return $products;
+        }
+        
+        // Normaliser le nom recherché
+        $targetName = mb_strtolower(trim($productName));
+        $targetWords = preg_split('/\s+/', $targetName, -1, PREG_SPLIT_NO_EMPTY);
+        
+        return $products->filter(function ($product) use ($targetName, $targetWords, $vendor, $type) {
+            $productNameLower = mb_strtolower(trim($product->name));
+            
+            // Vérification 1 : Le nom du produit doit être EXACTEMENT le nom recherché
+            // OU contenir UNIQUEMENT les mots recherchés (pas de mots supplémentaires avant/après)
+            
+            // Cas 1 : Correspondance exacte
+            if ($productNameLower === $targetName) {
+                return true;
+            }
+            
+            // Cas 2 : Le nom du produit ne doit PAS avoir de mots AVANT le premier mot recherché
+            $productWords = preg_split('/\s+/', $productNameLower, -1, PREG_SPLIT_NO_EMPTY);
+            
+            // Trouver la position du premier mot recherché dans le nom du produit
+            $firstWordIndex = null;
+            foreach ($targetWords as $targetWord) {
+                foreach ($productWords as $index => $productWord) {
+                    if (str_contains($productWord, $targetWord) || str_contains($targetWord, $productWord)) {
+                        if ($firstWordIndex === null || $index < $firstWordIndex) {
+                            $firstWordIndex = $index;
+                        }
+                    }
+                }
+            }
+            
+            // Si le premier mot recherché n'est PAS au début du nom du produit, rejeter
+            // Exemple: "Born in Roma Uomo" rejeté car "Uomo" n'est pas au début
+            if ($firstWordIndex !== null && $firstWordIndex > 0) {
+                return false;
+            }
+            
+            // Vérification 2 : Tous les mots recherchés doivent être présents
+            foreach ($targetWords as $targetWord) {
+                if (!str_contains($productNameLower, $targetWord)) {
+                    return false;
+                }
+            }
+            
+            // Vérification 3 : Le nom du produit ne doit pas contenir plus de 2 mots supplémentaires
+            $extraWordsCount = count($productWords) - count($targetWords);
+            if ($extraWordsCount > 2) {
+                return false;
+            }
+            
+            return true;
+        });
     }
     
 }; ?>
