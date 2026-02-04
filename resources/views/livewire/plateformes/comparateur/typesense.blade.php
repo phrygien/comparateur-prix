@@ -16,7 +16,7 @@ new class extends Component {
         $this->id = $id;
         $this->price = $price;
 
-        $searchTerm = html_entity_decode($this->name);
+        $searchTerm = html_entity_decodce($this->name);
         $this->products = Product::search($searchTerm)
             ->query(fn($query) => $query->with('website')->orderByDesc('created_at'))
             ->get();
