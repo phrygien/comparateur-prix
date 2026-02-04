@@ -2,299 +2,117 @@
 
 use Livewire\Volt\Component;
 use App\Models\Product;
-use App\Services\ProductSearchParser;
-use Livewire\WithPagination;
-use Livewire\Attributes\Computed;
+use Illuminate\Support\Collection;
 
 new class extends Component {
-    use WithPagination;
+    public string $name;
+    public string $id;
+    public string $price;
+    public Collection $productsBySite;
 
-    public string $search = '';
-    public array $parsedSearch = [];
-    public bool $showResults = false;
-
-    public function updatedSearch()
+    public function mount($name, $id, $price): void
     {
-        $this->resetPage();
-        $this->showResults = strlen($this->search) >= 3;
-    }
+        $this->name = $name;
+        $this->id = $id;
+        $this->price = $price;
+        
+        $searchTerm = html_entity_decode($this->name);
+        $products = Product::search($searchTerm)
+            ->query(fn($query) => $query->with('website'))
+            ->get();
 
-    #[Computed]
-    public function results()
-    {
-        if (strlen($this->search) < 3) {
-            return collect([]);
-        }
-
-        // Parser la recherche
-        $parser = new ProductSearchParser();
-        $this->parsedSearch = $parser->parse($this->search);
-
-        // Vérifier si on a un format parsé (avec des tirets)
-        $hasParsedFormat = !empty($this->parsedSearch['vendor']) || 
-                          !empty($this->parsedSearch['name']) || 
-                          !empty($this->parsedSearch['type']);
-
-        if ($hasParsedFormat) {
-            // Recherche avec filtres si format parsé
-            $query = Product::search('', function ($typesenseSearchParams, $query) {
-                $filters = [];
-                
-                // Filtre sur vendor si présent
-                if (!empty($this->parsedSearch['vendor'])) {
-                    // Normaliser pour recherche insensible à la casse
-                    $vendor = $this->parsedSearch['vendor'];
-                    $filters[] = "vendor:={$vendor}";
-                }
-                
-                // Filtre sur type si présent
-                if (!empty($this->parsedSearch['type'])) {
-                    $type = $this->parsedSearch['type'];
-                    $filters[] = "type:={$type}";
-                }
-                
-                // Recherche sur le nom
-                if (!empty($this->parsedSearch['name'])) {
-                    $typesenseSearchParams['q'] = $this->parsedSearch['name'];
-                } else {
-                    $typesenseSearchParams['q'] = $this->search;
-                }
-                
-                $typesenseSearchParams['query_by'] = 'name,vendor,type,variation';
-                
-                // Appliquer les filtres si présents
-                if (!empty($filters)) {
-                    $typesenseSearchParams['filter_by'] = implode(' && ', $filters);
-                }
-                
-                // Configuration de recherche flexible
-                $typesenseSearchParams['prefix'] = true;
-                $typesenseSearchParams['num_typos'] = 2;
-                $typesenseSearchParams['sort_by'] = '_text_match:desc,created_at:desc';
-                $typesenseSearchParams['per_page'] = 50;
-                
-                return $typesenseSearchParams;
+        $this->productsBySite = $products
+            ->groupBy('web_site_id')
+            ->map(function ($siteProducts) {
+                return $siteProducts
+                    ->groupBy('scrap_reference_id')
+                    ->map(function ($refProducts) {
+                        return $refProducts->sortByDesc('created_at')->first();
+                    })
+                    ->values();
             });
-        } else {
-            // Recherche simple directe sans filtres
-            $query = Product::search($this->search, function ($typesenseSearchParams, $query) {
-                $typesenseSearchParams['query_by'] = 'name,vendor,type,variation';
-                $typesenseSearchParams['prefix'] = true;
-                $typesenseSearchParams['num_typos'] = 2;
-                $typesenseSearchParams['sort_by'] = '_text_match:desc,created_at:desc';
-                $typesenseSearchParams['per_page'] = 50;
-                
-                return $typesenseSearchParams;
-            });
-        }
-
-        return $query->paginate(50);
     }
-
-    public function clearSearch()
-    {
-        $this->search = '';
-        $this->parsedSearch = [];
-        $this->showResults = false;
-        $this->resetPage();
-    }
+    
 }; ?>
 
-<div class="w-full max-w-4xl mx-auto p-6">
-    <div class="mb-6">
-        <label class="block text-sm font-medium text-gray-700 mb-2">
-            Recherche de produit
-            <span class="text-xs text-gray-500 font-normal ml-2">
-                Recherche libre ou format: Marque - Nom - Type
-            </span>
-        </label>
-        <div class="relative">
-            <input 
-                type="text" 
-                wire:model.live.debounce.500ms="search"
-                placeholder="Ex: Hermès - Un Jardin Sous la Mer ou simplement: un jardin sous la mer"
-                class="w-full px-4 py-3 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-            @if($search)
-                <button 
-                    wire:click="clearSearch"
-                    type="button"
-                    class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                    </svg>
-                </button>
-            @endif
-        </div>
+<div class="bg-white">
 
-        <!-- Affichage des critères parsés -->
-        @if(!empty($parsedSearch) && ($parsedSearch['vendor'] ?? false || $parsedSearch['name'] ?? false || $parsedSearch['type'] ?? false))
-            <div class="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <p class="font-semibold text-gray-700 mb-2 text-sm flex items-center">
-                    <svg class="w-4 h-4 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/>
-                    </svg>
-                    Filtres détectés (triés par pertinence)
-                </p>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    @if(!empty($parsedSearch['vendor']))
-                        <div class="bg-white p-2 rounded border-l-4 border-blue-500">
-                            <span class="text-xs text-gray-600 block">Marque:</span>
-                            <span class="font-bold text-blue-700">{{ $parsedSearch['vendor'] }}</span>
-                        </div>
-                    @endif
-                    @if(!empty($parsedSearch['name']))
-                        <div class="bg-white p-2 rounded border-l-4 border-blue-500">
-                            <span class="text-xs text-gray-600 block">Nom:</span>
-                            <span class="font-bold text-blue-700">{{ $parsedSearch['name'] }}</span>
-                        </div>
-                    @endif
-                    @if(!empty($parsedSearch['type']))
-                        <div class="bg-white p-2 rounded border-l-4 border-blue-500">
-                            <span class="text-xs text-gray-600 block">Type:</span>
-                            <span class="font-bold text-blue-700">{{ $parsedSearch['type'] }}</span>
-                        </div>
-                    @endif
-                </div>
-            </div>
-        @else
-            <div class="mt-3 p-3 bg-gray-50 rounded-lg">
-                <p class="text-xs text-gray-600 flex items-center">
-                    <svg class="w-4 h-4 mr-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    Recherche libre sur tous les champs
-                </p>
-            </div>
-        @endif
-    </div>
+    <livewire:plateformes.detail :id="$id" />
 
-    <!-- Résultats -->
-    @if($showResults)
-        <div class="bg-white rounded-lg shadow-lg border border-gray-200">
-            @if($this->results->count() > 0)
-                <div class="p-4 border-b bg-gradient-to-r from-green-50 to-emerald-50">
-                    <p class="text-sm font-medium text-gray-700 flex items-center">
-                        <svg class="w-5 h-5 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                        {{ $this->results->total() }} résultat(s) trouvé(s) - triés par pertinence
-                    </p>
-                </div>
+    <div class="mx-auto max-w-7xl overflow-hidden sm:px-6 lg:px-8">
+        <h2 class="text-2xl font-bold text-gray-900 px-4 sm:px-0 py-6">
+            Résultats pour : {{ $name }}
+        </h2>
 
-                <div class="divide-y divide-gray-200">
-                    @foreach($this->results as $index => $product)
-                        <div class="p-4 hover:bg-gray-50 transition-colors duration-150 {{ $index < 3 ? 'bg-green-50/30' : '' }}">
-                            <div class="flex items-start gap-4">
-                                <!-- Badge de pertinence pour les 3 premiers -->
-                                @if($index < 3)
-                                    <div class="flex-shrink-0">
-                                        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center text-white font-bold text-sm shadow-lg">
-                                            {{ $index + 1 }}
-                                        </div>
-                                    </div>
-                                @endif
-                                
-                                @if($product->image_url)
-                                    <div class="flex-shrink-0">
-                                        <img 
-                                            src="{{ $product->image_url }}" 
-                                            alt="{{ $product->name }}"
-                                            class="w-24 h-24 object-cover rounded-lg border-2 {{ $index < 3 ? 'border-green-300' : 'border-gray-200' }}"
-                                        />
-                                    </div>
-                                @endif
-                                <div class="flex-1 min-w-0">
-                                    <div class="flex items-start justify-between gap-2">
-                                        <div class="flex-1">
-                                            <!-- Indicateur de meilleure correspondance -->
-                                            @if($index === 0)
-                                                <div class="inline-flex items-center px-2 py-1 rounded-full bg-green-100 text-green-800 text-xs font-semibold mb-1">
-                                                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
-                                                    </svg>
-                                                    Meilleure correspondance
-                                                </div>
-                                            @endif
-                                            
-                                            <h3 class="font-semibold text-gray-900 text-lg">
-                                                <span class="text-blue-600">{{ $product->vendor }}</span> - {{ $product->name }}
-                                            </h3>
-                                            <div class="mt-1 space-y-1">
-                                                <p class="text-sm text-gray-600">
-                                                    <span class="font-medium">Type:</span> {{ $product->type }}
-                                                </p>
-                                                @if($product->variation)
-                                                    <p class="text-sm text-gray-600">
-                                                        <span class="font-medium">Variation:</span> {{ $product->variation }}
-                                                    </p>
-                                                @endif
-                                            </div>
-                                        </div>
-                                        @if($product->prix_ht)
-                                            <div class="flex-shrink-0 text-right">
-                                                <p class="text-lg font-bold text-blue-600">
-                                                    {{ number_format($product->prix_ht, 2) }} {{ $product->currency ?? '€' }}
-                                                </p>
-                                                <p class="text-xs text-gray-500">HT</p>
-                                            </div>
+        @if($productsBySite->count() > 0)
+            @foreach($productsBySite as $siteId => $siteProducts)
+                @php
+                    $site = $siteProducts->first()->website ?? null;
+                @endphp
+                
+                <div class="mb-8">
+                    <!-- En-tête du site -->
+                    <div class="bg-gray-50 px-4 sm:px-6 py-4 border-b-2 border-gray-200">
+                        <h3 class="text-lg font-semibold text-gray-900">
+                            {{ $site?->name ?? 'Site inconnu' }}
+                        </h3>
+                        @if($site?->url)
+                            <a href="{{ $site->url }}" target="_blank" class="text-sm text-blue-600 hover:text-blue-800">
+                                {{ $site->url }}
+                            </a>
+                        @endif
+                        <p class="text-sm text-gray-500 mt-1">
+                            {{ $siteProducts->count() }} {{ $siteProducts->count() > 1 ? 'produits' : 'produit' }}
+                        </p>
+                    </div>
+
+                    <!-- Grille des produits du site -->
+                    <div class="-mx-px grid grid-cols-2 border-l border-gray-200 sm:mx-0 md:grid-cols-3 lg:grid-cols-4">
+                        @foreach($siteProducts as $product)
+                            <div class="group relative border-r border-b border-gray-200 p-4 sm:p-6">
+                                <div class="aspect-square rounded-lg bg-gray-200 overflow-hidden">
+                                    <img 
+                                        src="{{ $product->image_url }}" 
+                                        alt="{{ $product->vendor }} - {{ $product->name }}" 
+                                        class="h-full w-full object-cover group-hover:opacity-75"
+                                    >
+                                </div>
+                                <div class="pt-10 pb-4 text-center">
+                                    <h3 class="text-sm font-medium text-gray-900">
+                                        <a href="{{ $product->url }}" target="_blank">
+                                            <span aria-hidden="true" class="absolute inset-0"></span>
+                                            {{ $product->vendor }} - {{ $product->name }}
+                                        </a>
+                                    </h3>
+                                    <div class="mt-3 flex flex-col items-center">
+                                        <p class="text-xs text-gray-600">{{ $product->type }}</p>
+                                        <p class="mt-1 text-xs text-gray-500">{{ $product->variation }}</p>
+                                        @if($product->scrap_reference_id)
+                                            <p class="mt-1 text-xs text-gray-400">Réf: {{ $product->scrap_reference_id }}</p>
+                                        @endif
+                                        @if($product->created_at)
+                                            <p class="mt-1 text-xs text-gray-400">
+                                                Scrapé le {{ $product->created_at->format('d/m/Y') }}
+                                            </p>
                                         @endif
                                     </div>
-                                    @if($product->url)
-                                        <a 
-                                            href="{{ $product->url }}" 
-                                            target="_blank"
-                                            class="inline-flex items-center text-sm text-blue-600 hover:text-blue-800 hover:underline mt-2 font-medium"
-                                        >
-                                            Voir le produit 
-                                            <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-                                            </svg>
-                                        </a>
-                                    @endif
+                                    <p class="mt-4 text-base font-medium text-gray-900">
+                                        {{ $product->prix_ht }} {{ $product->currency }}
+                                    </p>
                                 </div>
                             </div>
-                        </div>
-                    @endforeach
-                </div>
-
-                <div class="p-4 border-t bg-gray-50">
-                    {{ $this->results->links() }}
-                </div>
-            @else
-                <div class="p-12 text-center">
-                    <svg class="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    <h3 class="text-lg font-medium text-gray-900 mb-2">Aucun résultat trouvé</h3>
-                    <p class="text-gray-500 text-sm">
-                        Aucun produit ne correspond à votre recherche.
-                    </p>
-                    <div class="mt-4 p-4 bg-blue-50 rounded-lg text-left max-w-md mx-auto">
-                        <p class="text-sm font-medium text-gray-700 mb-2">💡 Suggestions :</p>
-                        <ul class="text-xs text-gray-600 space-y-1 list-disc list-inside">
-                            <li>Vérifiez l'orthographe</li>
-                            <li>Utilisez moins de mots</li>
-                            <li>Essayez une recherche plus générale</li>
-                            <li>Recherchez seulement le nom du produit</li>
-                        </ul>
+                        @endforeach
                     </div>
                 </div>
-            @endif
-        </div>
-    @endif
-
-    <!-- Indicateur de chargement -->
-    <div wire:loading class="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-        <div class="bg-white rounded-lg p-6 shadow-xl">
-            <div class="flex items-center space-x-3">
-                <svg class="animate-spin h-6 w-6 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            @endforeach
+        @else
+            <div class="text-center py-12">
+                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <span class="text-gray-700 font-medium">Recherche en cours...</span>
+                <h3 class="mt-2 text-sm font-semibold text-gray-900">Aucun produit trouvé</h3>
+                <p class="mt-1 text-sm text-gray-500">Aucun résultat pour "{{ $name }}"</p>
             </div>
-        </div>
+        @endif
     </div>
 </div>
