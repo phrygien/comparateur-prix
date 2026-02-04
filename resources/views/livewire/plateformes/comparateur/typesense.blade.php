@@ -28,34 +28,29 @@ new class extends Component {
         $this->extractedVendor = $extracted['vendor'];
         $this->extractedName = $extracted['name'];
 
-        // Construire la requête de recherche
-        $this->products = $this->searchProducts($searchTerm, $extracted);
+        // Rechercher
+        $this->products = $this->searchProducts($extracted);
     }
 
-    private function searchProducts(string $searchTerm, array $extracted): Collection
+    private function searchProducts(array $extracted): Collection
     {
-        $query = Product::search($searchTerm);
+        // Rechercher UNIQUEMENT par vendor (ou fallback sur name si pas de vendor)
+        $searchQuery = $extracted['vendor'] ?? $extracted['name'];
 
-        // Ajouter des filtres basés sur l'extraction
-        $query->query(function ($builder) use ($extracted) {
-            $builder->with('website')->orderByDesc('created_at');
+        $query = Product::search($searchQuery);
 
-            // Si on a un vendor, filtrer dessus
-            if (!empty($extracted['vendor'])) {
-                $builder->where(function($q) use ($extracted) {
-                    $q->where('vendor', 'like', '%' . $extracted['vendor'] . '%');
-
-                    // Si on a aussi un name, l'ajouter
-                    if (!empty($extracted['name'])) {
-                        $q->where('name', 'like', '%' . $extracted['name'] . '%');
-                    }
-                });
-            }
-            // Sinon, chercher uniquement sur le name
-            elseif (!empty($extracted['name'])) {
-                $builder->where('name', 'like', '%' . $extracted['name'] . '%');
-            }
-        });
+        // PUIS filtrer par le name extrait
+        if (!empty($extracted['name'])) {
+            $query->query(function ($builder) use ($extracted) {
+                $builder->with('website')
+                    ->where('name', 'like', '%' . $extracted['name'] . '%')
+                    ->orderByDesc('created_at');
+            });
+        } else {
+            $query->query(function ($builder) {
+                $builder->with('website')->orderByDesc('created_at');
+            });
+        }
 
         return $query->get();
     }
@@ -71,16 +66,15 @@ new class extends Component {
             Résultats pour : {{ $name }}
         </h2>
 
-        <!-- Informations d'extraction (optionnel, pour debug) -->
         @if($extractedVendor || $extractedName)
             <div class="mb-4 px-4 sm:px-0">
                 <p class="text-xs text-gray-500">
                     @if($extractedVendor)
-                        Marque: <span class="font-medium">{{ $extractedVendor }}</span>
+                        Scout recherche: <span class="font-medium">{{ $extractedVendor }}</span>
                     @endif
                     @if($extractedName)
                         @if($extractedVendor) • @endif
-                        Produit: <span class="font-medium">{{ $extractedName }}</span>
+                        Filtre SQL: <span class="font-medium">name LIKE '%{{ $extractedName }}%'</span>
                     @endif
                 </p>
             </div>
@@ -93,7 +87,6 @@ new class extends Component {
                 </p>
             </div>
 
-            <!-- Grille de tous les produits -->
             <div class="-mx-px grid grid-cols-2 border-l border-gray-200 sm:mx-0 md:grid-cols-3 lg:grid-cols-4">
                 @foreach($products as $product)
                     <div class="group relative border-r border-b border-gray-200 p-4 sm:p-6">
@@ -105,7 +98,6 @@ new class extends Component {
                             >
                         </div>
                         <div class="pt-10 pb-4 text-center">
-                            <!-- Badge du site -->
                             @if($product->website)
                                 <div class="mb-2">
                                     <span class="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
