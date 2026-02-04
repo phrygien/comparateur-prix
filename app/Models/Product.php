@@ -35,22 +35,6 @@ class Product extends Model
      */
     public function toSearchableArray()
     {
-        // Construire le champ exact_match
-        $exactMatch = [];
-
-        if (!empty($this->vendor)) {
-            $exactMatch[] = $this->vendor;
-        }
-        if (!empty($this->name)) {
-            $exactMatch[] = $this->name;
-        }
-        if (!empty($this->type)) {
-            $exactMatch[] = $this->type;
-        }
-        if (!empty($this->variation)) {
-            $exactMatch[] = $this->variation;
-        }
-
         return [
             'id' => (string) $this->id,
             'web_site_id' => (int) $this->web_site_id,
