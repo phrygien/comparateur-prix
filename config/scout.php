@@ -245,7 +245,7 @@ return [
                 ],
                 'search-parameters' => [
                     // Recherche uniquement par vendor
-                    'query_by' => 'vendor',
+                    'query_by' => 'name',
 
                     // Retirez query_by_weights puisque vous ne recherchez que sur un seul champ
                     // 'query_by_weights' => '3,3,2,1', // À supprimer
