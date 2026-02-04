@@ -209,7 +209,7 @@ return [
                         ],
                         [
                             'name' => 'prix_ht',
-                            'type' => 'float',
+                            'type' => 'string',
                             'optional' => true,
                         ],
                         [
