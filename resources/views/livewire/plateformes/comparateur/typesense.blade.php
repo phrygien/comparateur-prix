@@ -4,27 +4,26 @@ use Livewire\Volt\Component;
 use App\Models\Product;
 use App\Services\ProductSearchParser;
 use Livewire\WithPagination;
+use Livewire\Attributes\Computed;
 
 new class extends Component {
     use WithPagination;
 
     public string $search = '';
-    public $results = [];
-    public $parsedSearch = [];
+    public array $parsedSearch = [];
     public bool $showResults = false;
 
     public function updatedSearch()
     {
         $this->resetPage();
-        $this->performSearch();
+        $this->showResults = strlen($this->search) >= 3;
     }
 
-    public function performSearch()
+    #[Computed]
+    public function results()
     {
         if (strlen($this->search) < 3) {
-            $this->results = [];
-            $this->showResults = false;
-            return;
+            return collect([]);
         }
 
         // Parser la recherche
@@ -32,28 +31,34 @@ new class extends Component {
         $this->parsedSearch = $parser->parse($this->search);
 
         // Recherche avec Typesense
-        $query = Product::search('', function ($typesenseSearchParams, $query) {
+        $query = Product::search('', function ($typesenseSearchParams, $query) use ($parser) {
             $filters = [];
             
-            // Filtre strict sur vendor si présent
+            // Filtre STRICT sur vendor (exact match)
             if (!empty($this->parsedSearch['vendor'])) {
-                // Utiliser :* pour une correspondance exacte insensible à la casse
-                $filters[] = "vendor:=`{$this->parsedSearch['vendor']}`";
+                $filters[] = "vendor:={$this->parsedSearch['vendor']}";
             }
             
-            // Filtre strict sur type si présent
+            // Filtre STRICT sur type (exact match)
             if (!empty($this->parsedSearch['type'])) {
-                $filters[] = "type:=`{$this->parsedSearch['type']}`";
+                $filters[] = "type:={$this->parsedSearch['type']}";
             }
             
-            // Si on a un nom, on cherche dessus
+            // Recherche STRICTE sur le nom
             if (!empty($this->parsedSearch['name'])) {
-                $typesenseSearchParams['q'] = $this->parsedSearch['name'];
+                $searchName = $parser->prepareStrictNameSearch($this->parsedSearch['name']);
+                $typesenseSearchParams['q'] = $searchName;
                 $typesenseSearchParams['query_by'] = 'name';
+                
+                // CRUCIAL : Exiger que TOUS les mots soient présents dans l'ordre
+                $typesenseSearchParams['prefix'] = false;
+                $typesenseSearchParams['num_typos'] = 1; // Tolérer 1 faute de frappe max
+                $typesenseSearchParams['drop_tokens_threshold'] = 0; // Ne pas ignorer de mots
+                
             } else {
-                // Sinon recherche globale
+                // Recherche globale si pas de parsing réussi
                 $typesenseSearchParams['q'] = $this->search;
-                $typesenseSearchParams['query_by'] = 'vendor,name,type';
+                $typesenseSearchParams['query_by'] = 'name,vendor,type';
             }
             
             // Appliquer les filtres
@@ -61,36 +66,58 @@ new class extends Component {
                 $typesenseSearchParams['filter_by'] = implode(' && ', $filters);
             }
             
-            // Configuration stricte
-            $typesenseSearchParams['prefix'] = false;
-            $typesenseSearchParams['num_typos'] = 0;
             $typesenseSearchParams['per_page'] = 20;
+            $typesenseSearchParams['sort_by'] = '_text_match:desc';
             
             return $typesenseSearchParams;
         });
 
-        $this->results = $query->paginate(20);
-        $this->showResults = true;
+        $rawResults = $query->paginate(20);
+        
+        // Post-filtrage en PHP pour être ULTRA strict sur le nom
+        if (!empty($this->parsedSearch['name'])) {
+            $targetName = mb_strtolower(trim($this->parsedSearch['name']));
+            
+            $filtered = $rawResults->filter(function($product) use ($targetName) {
+                $productName = mb_strtolower(trim($product->name));
+                
+                // Vérifier que le nom contient TOUS les mots importants
+                $targetWords = preg_split('/\s+/', $targetName, -1, PREG_SPLIT_NO_EMPTY);
+                
+                foreach ($targetWords as $word) {
+                    // Ignorer les mots très courts (articles)
+                    if (strlen($word) <= 2 && in_array($word, ['le', 'la', 'un', 'de', 'du', 'au'])) {
+                        continue;
+                    }
+                    
+                    // Chaque mot doit être présent
+                    if (stripos($productName, $word) === false) {
+                        return false;
+                    }
+                }
+                
+                return true;
+            });
+            
+            return $filtered;
+        }
+
+        return $rawResults;
     }
 
     public function clearSearch()
     {
         $this->search = '';
-        $this->results = [];
         $this->parsedSearch = [];
         $this->showResults = false;
-    }
-
-    public function with(): array
-    {
-        return [];
+        $this->resetPage();
     }
 }; ?>
 
 <div class="w-full max-w-4xl mx-auto p-6">
     <div class="mb-6">
         <label class="block text-sm font-medium text-gray-700 mb-2">
-            Recherche de produit
+            Recherche de produit (stricte)
             <span class="text-xs text-gray-500 font-normal ml-2">
                 Format: Marque - Nom - Type (ex: Hermès - Un Jardin Sous la Mer - Eau de Toilette)
             </span>
@@ -116,34 +143,40 @@ new class extends Component {
         </div>
 
         <!-- Affichage des critères parsés -->
-        @if(!empty($parsedSearch) && ($parsedSearch['vendor'] || $parsedSearch['name'] || $parsedSearch['type']))
+        @if(!empty($parsedSearch) && ($parsedSearch['vendor'] ?? false || $parsedSearch['name'] ?? false || $parsedSearch['type'] ?? false))
             <div class="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                 <p class="font-semibold text-gray-700 mb-2 text-sm flex items-center">
-                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/>
+                    <svg class="w-4 h-4 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
                     </svg>
-                    Filtres actifs (recherche stricte)
+                    Filtres STRICTS activés
                 </p>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                     @if(!empty($parsedSearch['vendor']))
-                        <div class="bg-white p-2 rounded border border-blue-300">
-                            <span class="text-xs text-gray-600 block">Marque (exact):</span>
-                            <span class="font-medium text-blue-700">{{ $parsedSearch['vendor'] }}</span>
+                        <div class="bg-white p-2 rounded border-l-4 border-red-500">
+                            <span class="text-xs text-gray-600 block">Marque (EXACT):</span>
+                            <span class="font-bold text-red-700">{{ $parsedSearch['vendor'] }}</span>
                         </div>
                     @endif
                     @if(!empty($parsedSearch['name']))
-                        <div class="bg-white p-2 rounded border border-blue-300">
-                            <span class="text-xs text-gray-600 block">Nom:</span>
-                            <span class="font-medium text-blue-700">{{ $parsedSearch['name'] }}</span>
+                        <div class="bg-white p-2 rounded border-l-4 border-red-500">
+                            <span class="text-xs text-gray-600 block">Nom (EXACT):</span>
+                            <span class="font-bold text-red-700">{{ $parsedSearch['name'] }}</span>
                         </div>
                     @endif
                     @if(!empty($parsedSearch['type']))
-                        <div class="bg-white p-2 rounded border border-blue-300">
-                            <span class="text-xs text-gray-600 block">Type (exact):</span>
-                            <span class="font-medium text-blue-700">{{ $parsedSearch['type'] }}</span>
+                        <div class="bg-white p-2 rounded border-l-4 border-red-500">
+                            <span class="text-xs text-gray-600 block">Type (EXACT):</span>
+                            <span class="font-bold text-red-700">{{ $parsedSearch['type'] }}</span>
                         </div>
                     @endif
                 </div>
+                <p class="text-xs text-red-600 mt-2 flex items-center">
+                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+                    </svg>
+                    Seuls les produits correspondant EXACTEMENT à tous les critères seront affichés
+                </p>
             </div>
         @endif
     </div>
@@ -151,15 +184,18 @@ new class extends Component {
     <!-- Résultats -->
     @if($showResults)
         <div class="bg-white rounded-lg shadow-lg border border-gray-200">
-            @if($results->count() > 0)
-                <div class="p-4 border-b bg-gradient-to-r from-blue-50 to-indigo-50">
-                    <p class="text-sm font-medium text-gray-700">
-                        {{ $results->total() }} résultat(s) trouvé(s)
+            @if($this->results->count() > 0)
+                <div class="p-4 border-b bg-gradient-to-r from-green-50 to-emerald-50">
+                    <p class="text-sm font-medium text-gray-700 flex items-center">
+                        <svg class="w-5 h-5 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        {{ $this->results->count() }} résultat(s) exact(s) trouvé(s)
                     </p>
                 </div>
 
                 <div class="divide-y divide-gray-200">
-                    @foreach($results as $product)
+                    @foreach($this->results as $product)
                         <div class="p-4 hover:bg-gray-50 transition-colors duration-150">
                             <div class="flex items-start gap-4">
                                 @if($product->image_url)
@@ -215,20 +251,23 @@ new class extends Component {
                     @endforeach
                 </div>
 
+                <!-- Pagination simple sans objet Paginator -->
+                @if($this->results instanceof \Illuminate\Contracts\Pagination\LengthAwarePaginator)
                 <div class="p-4 border-t bg-gray-50">
-                    {{ $results->links() }}
+                    {{ $this->results->links() }}
                 </div>
+                @endif
             @else
                 <div class="p-12 text-center">
                     <svg class="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
-                    <h3 class="text-lg font-medium text-gray-900 mb-2">Aucun résultat trouvé</h3>
+                    <h3 class="text-lg font-medium text-gray-900 mb-2">Aucun résultat EXACT trouvé</h3>
                     <p class="text-gray-500 text-sm">
-                        Aucun produit ne correspond exactement à vos critères de recherche.
+                        Aucun produit ne correspond <strong>exactement</strong> à tous vos critères.
                     </p>
                     <p class="text-gray-400 text-xs mt-2">
-                        Essayez de modifier les critères ou vérifiez l'orthographe.
+                        Vérifiez l'orthographe et le format : Marque - Nom - Type
                     </p>
                 </div>
             @endif
@@ -243,7 +282,7 @@ new class extends Component {
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                <span class="text-gray-700 font-medium">Recherche en cours...</span>
+                <span class="text-gray-700 font-medium">Recherche stricte en cours...</span>
             </div>
         </div>
     </div>
