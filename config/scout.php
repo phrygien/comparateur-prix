@@ -247,21 +247,22 @@ return [
                     'default_sorting_field' => 'created_at',
                 ],
                 'search-parameters' => [
-                    'query_by' => 'vendor,name,type,variation',
-                    // Donner plus de poids au vendor et au name
-                    'query_by_weights' => '3,3,2,1',
-                    // Activer la recherche préfixe pour une meilleure flexibilité
+                    // Recherche uniquement par vendor
+                    'query_by' => 'vendor',
+                    
+                    // Retirez query_by_weights puisque vous ne recherchez que sur un seul champ
+                    // 'query_by_weights' => '3,3,2,1', // À supprimer
+                    
+                    // Autres paramètres optionnels selon vos besoins
                     'prefix' => true,
-                    // Prioriser les correspondances exactes
                     'prioritize_exact_match' => true,
-                    // Prioriser la position des tokens (correspondances au début)
                     'prioritize_token_position' => true,
-                    // Activer les recherches floues pour gérer les fautes de frappe
                     'typo_tokens_threshold' => 1,
-                    // Nombre de résultats par défaut
                     'per_page' => 10,
-                    // Activer le tri intelligent
-                    'sort_by' => '_text_match:desc,created_at:desc',
+                    'sort_by' => '_text_match:desc',
+                    
+                    // Optionnel : si vous voulez aussi trier par pertinence puis par date
+                    // 'sort_by' => '_text_match:desc,created_at:desc',
                 ],
             ],
         ],
