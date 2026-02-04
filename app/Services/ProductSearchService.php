@@ -8,13 +8,20 @@ class ProductSearchService
 {
     public function extractProductInfo(string $searchTerm): array
     {
-        $prompt = "Extrais les informations suivantes du nom de produit ci-dessous.
+        $prompt = "Extrais les informations suivantes du nom de produit cosmétique ci-dessous.
 
-Règles:
-- vendor: la marque du produit (généralement le premier mot)
-- name: le nom du produit (sans la marque, sans les détails comme le volume)
+Règles IMPORTANTES:
+- vendor: la marque du produit (généralement le premier mot avant le tiret)
+- name: UNIQUEMENT le nom de la gamme/ligne du produit (PAS le type de produit)
+- Le type de produit (Crème, Sérum, Lotion, Gel, Huile, Masque, etc.) ne doit JAMAIS être dans le name
+- Les détails comme le volume (ml, g), les attributs (Nourrissante, Hydratante) ne doivent PAS être dans le name
 - Si tu ne trouves pas le vendor, retourne null
-- Si tu ne trouves pas le name, utilise tout le texte
+- Si tu ne trouves pas le name, retourne null
+
+Exemples:
+- \"Payot - Source Nutrition - Crème Nourrissante 50ml\" → vendor: \"Payot\", name: \"Source Nutrition\"
+- \"Clarins - Multi-Active - Sérum Anti-Âge\" → vendor: \"Clarins\", name: \"Multi-Active\"
+- \"La Roche-Posay - Effaclar - Gel Purifiant\" → vendor: \"La Roche-Posay\", name: \"Effaclar\"
 
 Produit: {$searchTerm}
 
@@ -28,7 +35,7 @@ Réponds UNIQUEMENT en JSON avec cette structure exacte:
             $result = OpenAI::chat()->create([
                 'model' => 'gpt-4o-mini',
                 'messages' => [
-                    ['role' => 'system', 'content' => 'Tu es un assistant qui extrait les informations de produits cosmétiques. Réponds uniquement en JSON valide.'],
+                    ['role' => 'system', 'content' => 'Tu es un expert en extraction de noms de produits cosmétiques. Tu extrais UNIQUEMENT la marque (vendor) et le nom de la gamme (name), JAMAIS le type de produit. Réponds uniquement en JSON valide.'],
                     ['role' => 'user', 'content' => $prompt],
                 ],
                 'temperature' => 0.1,
@@ -40,13 +47,12 @@ Réponds UNIQUEMENT en JSON avec cette structure exacte:
 
             return [
                 'vendor' => $data['vendor'] ?? null,
-                'name' => $data['name'] ?? $searchTerm,
+                'name' => $data['name'] ?? null,
             ];
         } catch (\Exception $e) {
-            // En cas d'erreur, retourner le terme de recherche tel quel
             return [
                 'vendor' => null,
-                'name' => $searchTerm,
+                'name' => null,
             ];
         }
     }
