@@ -30,52 +30,63 @@ new class extends Component {
         $parser = new ProductSearchParser();
         $this->parsedSearch = $parser->parse($this->search);
 
-        // Recherche avec Typesense
-        $query = Product::search('', function ($typesenseSearchParams, $query) use ($parser) {
-            $filters = [];
-            
-            // Filtre STRICT sur vendor (exact match)
-            if (!empty($this->parsedSearch['vendor'])) {
-                $filters[] = "vendor:={$this->parsedSearch['vendor']}";
-            }
-            
-            // Filtre STRICT sur type (exact match)
-            if (!empty($this->parsedSearch['type'])) {
-                $filters[] = "type:={$this->parsedSearch['type']}";
-            }
-            
-            // Recherche FLEXIBLE sur le nom mais avec tri par pertinence
-            if (!empty($this->parsedSearch['name'])) {
-                $typesenseSearchParams['q'] = $this->parsedSearch['name'];
-                $typesenseSearchParams['query_by'] = 'name';
+        // Vérifier si on a un format parsé (avec des tirets)
+        $hasParsedFormat = !empty($this->parsedSearch['vendor']) || 
+                          !empty($this->parsedSearch['name']) || 
+                          !empty($this->parsedSearch['type']);
+
+        if ($hasParsedFormat) {
+            // Recherche avec filtres si format parsé
+            $query = Product::search('', function ($typesenseSearchParams, $query) {
+                $filters = [];
                 
-                // Configuration pour recherche flexible
-                $typesenseSearchParams['prefix'] = true; // Permet la recherche par préfixe
-                $typesenseSearchParams['num_typos'] = 2; // Tolère 2 fautes de frappe
-                $typesenseSearchParams['typo_tokens_threshold'] = 1; // Nombre minimum de tokens pour activer la tolérance
+                // Filtre sur vendor si présent
+                if (!empty($this->parsedSearch['vendor'])) {
+                    // Normaliser pour recherche insensible à la casse
+                    $vendor = $this->parsedSearch['vendor'];
+                    $filters[] = "vendor:={$vendor}";
+                }
                 
-                // Pondération pour prioriser les correspondances exactes
-                $typesenseSearchParams['query_by_weights'] = '1'; // Poids sur le nom
+                // Filtre sur type si présent
+                if (!empty($this->parsedSearch['type'])) {
+                    $type = $this->parsedSearch['type'];
+                    $filters[] = "type:={$type}";
+                }
                 
-            } else {
-                // Recherche globale si pas de parsing réussi
-                $typesenseSearchParams['q'] = $this->search;
-                $typesenseSearchParams['query_by'] = 'name,vendor,type';
-                $typesenseSearchParams['query_by_weights'] = '3,2,1'; // Prioriser le nom
-            }
-            
-            // Appliquer les filtres
-            if (!empty($filters)) {
-                $typesenseSearchParams['filter_by'] = implode(' && ', $filters);
-            }
-            
-            // TRI PAR PERTINENCE (text match score)
-            $typesenseSearchParams['sort_by'] = '_text_match:desc,created_at:desc';
-            
-            $typesenseSearchParams['per_page'] = 50; // Plus de résultats pour mieux voir la pertinence
-            
-            return $typesenseSearchParams;
-        });
+                // Recherche sur le nom
+                if (!empty($this->parsedSearch['name'])) {
+                    $typesenseSearchParams['q'] = $this->parsedSearch['name'];
+                } else {
+                    $typesenseSearchParams['q'] = $this->search;
+                }
+                
+                $typesenseSearchParams['query_by'] = 'name,vendor,type,variation';
+                
+                // Appliquer les filtres si présents
+                if (!empty($filters)) {
+                    $typesenseSearchParams['filter_by'] = implode(' && ', $filters);
+                }
+                
+                // Configuration de recherche flexible
+                $typesenseSearchParams['prefix'] = true;
+                $typesenseSearchParams['num_typos'] = 2;
+                $typesenseSearchParams['sort_by'] = '_text_match:desc,created_at:desc';
+                $typesenseSearchParams['per_page'] = 50;
+                
+                return $typesenseSearchParams;
+            });
+        } else {
+            // Recherche simple directe sans filtres
+            $query = Product::search($this->search, function ($typesenseSearchParams, $query) {
+                $typesenseSearchParams['query_by'] = 'name,vendor,type,variation';
+                $typesenseSearchParams['prefix'] = true;
+                $typesenseSearchParams['num_typos'] = 2;
+                $typesenseSearchParams['sort_by'] = '_text_match:desc,created_at:desc';
+                $typesenseSearchParams['per_page'] = 50;
+                
+                return $typesenseSearchParams;
+            });
+        }
 
         return $query->paginate(50);
     }
@@ -94,14 +105,14 @@ new class extends Component {
         <label class="block text-sm font-medium text-gray-700 mb-2">
             Recherche de produit
             <span class="text-xs text-gray-500 font-normal ml-2">
-                Format: Marque - Nom - Type (ex: Hermès - Un Jardin Sous la Mer - Eau de Toilette)
+                Recherche libre ou format: Marque - Nom - Type
             </span>
         </label>
         <div class="relative">
             <input 
                 type="text" 
                 wire:model.live.debounce.500ms="search"
-                placeholder="Ex: Hermès - Un Jardin Sous la Mer - Eau de Toilette"
+                placeholder="Ex: Hermès - Un Jardin Sous la Mer ou simplement: un jardin sous la mer"
                 class="w-full px-4 py-3 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             @if($search)
@@ -124,33 +135,36 @@ new class extends Component {
                     <svg class="w-4 h-4 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/>
                     </svg>
-                    Filtres de recherche (triés par pertinence)
+                    Filtres détectés (triés par pertinence)
                 </p>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                     @if(!empty($parsedSearch['vendor']))
-                        <div class="bg-white p-2 rounded border-l-4 border-red-500">
-                            <span class="text-xs text-gray-600 block">Marque (EXACT):</span>
-                            <span class="font-bold text-red-700">{{ $parsedSearch['vendor'] }}</span>
+                        <div class="bg-white p-2 rounded border-l-4 border-blue-500">
+                            <span class="text-xs text-gray-600 block">Marque:</span>
+                            <span class="font-bold text-blue-700">{{ $parsedSearch['vendor'] }}</span>
                         </div>
                     @endif
                     @if(!empty($parsedSearch['name']))
                         <div class="bg-white p-2 rounded border-l-4 border-blue-500">
-                            <span class="text-xs text-gray-600 block">Nom (FLEXIBLE):</span>
+                            <span class="text-xs text-gray-600 block">Nom:</span>
                             <span class="font-bold text-blue-700">{{ $parsedSearch['name'] }}</span>
                         </div>
                     @endif
                     @if(!empty($parsedSearch['type']))
-                        <div class="bg-white p-2 rounded border-l-4 border-red-500">
-                            <span class="text-xs text-gray-600 block">Type (EXACT):</span>
-                            <span class="font-bold text-red-700">{{ $parsedSearch['type'] }}</span>
+                        <div class="bg-white p-2 rounded border-l-4 border-blue-500">
+                            <span class="text-xs text-gray-600 block">Type:</span>
+                            <span class="font-bold text-blue-700">{{ $parsedSearch['type'] }}</span>
                         </div>
                     @endif
                 </div>
-                <p class="text-xs text-blue-600 mt-2 flex items-center">
-                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+            </div>
+        @else
+            <div class="mt-3 p-3 bg-gray-50 rounded-lg">
+                <p class="text-xs text-gray-600 flex items-center">
+                    <svg class="w-4 h-4 mr-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
-                    Les résultats sont triés par pertinence (meilleure correspondance en premier)
+                    Recherche libre sur tous les champs
                 </p>
             </div>
         @endif
@@ -255,15 +269,15 @@ new class extends Component {
                     </svg>
                     <h3 class="text-lg font-medium text-gray-900 mb-2">Aucun résultat trouvé</h3>
                     <p class="text-gray-500 text-sm">
-                        Aucun produit ne correspond à vos critères de recherche.
+                        Aucun produit ne correspond à votre recherche.
                     </p>
                     <div class="mt-4 p-4 bg-blue-50 rounded-lg text-left max-w-md mx-auto">
                         <p class="text-sm font-medium text-gray-700 mb-2">💡 Suggestions :</p>
                         <ul class="text-xs text-gray-600 space-y-1 list-disc list-inside">
-                            <li>Vérifiez l'orthographe de la marque</li>
-                            <li>Essayez avec seulement le nom du produit</li>
-                            <li>Retirez le type si trop spécifique</li>
+                            <li>Vérifiez l'orthographe</li>
                             <li>Utilisez moins de mots</li>
+                            <li>Essayez une recherche plus générale</li>
+                            <li>Recherchez seulement le nom du produit</li>
                         </ul>
                     </div>
                 </div>
