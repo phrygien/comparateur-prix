@@ -244,9 +244,8 @@ return [
                     'default_sorting_field' => 'created_at',
                 ],
                 'search-parameters' => [
-                    'query_by' => 'name',
+                    'query_by' => 'name,vendor,type,variation',
                     'prioritize_exact_match' => true,
-                    'sort_by' => '_text_match:desc',
 
                     // Optionnel : si vous voulez aussi trier par pertinence puis par date
                     // 'sort_by' => '_text_match:desc,created_at:desc',
