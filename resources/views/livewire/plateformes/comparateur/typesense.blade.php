@@ -25,129 +25,58 @@ new class extends Component {
         $productName = $parts[1] ?? null;
         $type = $parts[2] ?? null;
         
-        // Étape 1 : Recherche avec filtres stricts
-        $products = $this->searchWithFilters($vendor, $productName, $type);
-        
-        // Étape 2 : Si pas de résultats, recherche plus flexible sur vendor + name
-        if ($products->isEmpty() && $vendor && $productName) {
-            $products = $this->searchVendorAndName($vendor, $productName);
-        }
-        
-        // Étape 3 : Si toujours pas de résultats, recherche globale
-        if ($products->isEmpty()) {
-            $products = Product::search($searchTerm)
-                ->query(fn($query) => $query->with('website')->orderByDesc('created_at'))
-                ->get();
-        }
-        
-        // Post-filtrage : éliminer les faux positifs
-        $this->products = $this->filterExactMatches($products, $vendor, $productName, $type);
+        // Recherche avec configuration optimale Typesense
+        $this->products = $this->performSearch($vendor, $productName, $type, $searchTerm);
     }
     
-    private function searchWithFilters(?string $vendor, ?string $productName, ?string $type): Collection
+    private function performSearch(?string $vendor, ?string $productName, ?string $type, string $fallbackSearch): Collection
     {
-        if (!$vendor || !$productName) {
-            return collect([]);
-        }
-        
-        return Product::search('', function ($typesenseSearchParams) use ($vendor, $productName, $type) {
-            $filters = [];
-            
-            // Filtre exact sur vendor
-            $filters[] = "vendor:={$vendor}";
-            
-            // Filtre exact sur type si présent
-            if ($type) {
-                // Nettoyer le type (enlever la contenance)
-                $cleanType = preg_replace('/\s*\d+\s*(ml|g|oz|L)\s*$/i', '', $type);
-                $cleanType = trim($cleanType);
-                if ($cleanType) {
-                    $filters[] = "type:={$cleanType}";
-                }
-            }
-            
-            $typesenseSearchParams['q'] = $productName;
-            $typesenseSearchParams['query_by'] = 'name';
-            $typesenseSearchParams['filter_by'] = implode(' && ', $filters);
-            $typesenseSearchParams['prefix'] = false;
-            $typesenseSearchParams['num_typos'] = 1;
-            $typesenseSearchParams['per_page'] = 100;
-            
-            return $typesenseSearchParams;
-        })->query(fn($query) => $query->with('website')->orderByDesc('created_at'))->get();
-    }
-    
-    private function searchVendorAndName(string $vendor, string $productName): Collection
-    {
-        return Product::search('', function ($typesenseSearchParams) use ($vendor, $productName) {
-            $typesenseSearchParams['q'] = $productName;
-            $typesenseSearchParams['query_by'] = 'name';
-            $typesenseSearchParams['filter_by'] = "vendor:={$vendor}";
-            $typesenseSearchParams['prefix'] = true;
-            $typesenseSearchParams['num_typos'] = 2;
-            $typesenseSearchParams['per_page'] = 100;
-            
-            return $typesenseSearchParams;
-        })->query(fn($query) => $query->with('website')->orderByDesc('created_at'))->get();
-    }
-    
-    private function filterExactMatches(Collection $products, ?string $vendor, ?string $productName, ?string $type): Collection
-    {
-        if (!$productName) {
-            return $products;
-        }
-        
-        // Normaliser le nom recherché
-        $targetName = mb_strtolower(trim($productName));
-        $targetWords = preg_split('/\s+/', $targetName, -1, PREG_SPLIT_NO_EMPTY);
-        
-        return $products->filter(function ($product) use ($targetName, $targetWords, $vendor, $type) {
-            $productNameLower = mb_strtolower(trim($product->name));
-            
-            // Vérification 1 : Le nom du produit doit être EXACTEMENT le nom recherché
-            // OU contenir UNIQUEMENT les mots recherchés (pas de mots supplémentaires avant/après)
-            
-            // Cas 1 : Correspondance exacte
-            if ($productNameLower === $targetName) {
-                return true;
-            }
-            
-            // Cas 2 : Le nom du produit ne doit PAS avoir de mots AVANT le premier mot recherché
-            $productWords = preg_split('/\s+/', $productNameLower, -1, PREG_SPLIT_NO_EMPTY);
-            
-            // Trouver la position du premier mot recherché dans le nom du produit
-            $firstWordIndex = null;
-            foreach ($targetWords as $targetWord) {
-                foreach ($productWords as $index => $productWord) {
-                    if (str_contains($productWord, $targetWord) || str_contains($targetWord, $productWord)) {
-                        if ($firstWordIndex === null || $index < $firstWordIndex) {
-                            $firstWordIndex = $index;
-                        }
+        // Si on a un format parsé complet
+        if ($vendor && $productName) {
+            return Product::search($productName, function ($typesenseSearchParams) use ($vendor, $productName, $type) {
+                $filters = [];
+                
+                // Filtre EXACT sur vendor
+                $filters[] = "vendor:={$vendor}";
+                
+                // Filtre sur type si présent
+                if ($type) {
+                    $cleanType = preg_replace('/\s*\d+\s*(ml|g|oz|L)\s*$/i', '', $type);
+                    $cleanType = trim($cleanType);
+                    if ($cleanType) {
+                        $filters[] = "type:={$cleanType}";
                     }
                 }
-            }
-            
-            // Si le premier mot recherché n'est PAS au début du nom du produit, rejeter
-            // Exemple: "Born in Roma Uomo" rejeté car "Uomo" n'est pas au début
-            if ($firstWordIndex !== null && $firstWordIndex > 0) {
-                return false;
-            }
-            
-            // Vérification 2 : Tous les mots recherchés doivent être présents
-            foreach ($targetWords as $targetWord) {
-                if (!str_contains($productNameLower, $targetWord)) {
-                    return false;
-                }
-            }
-            
-            // Vérification 3 : Le nom du produit ne doit pas contenir plus de 2 mots supplémentaires
-            $extraWordsCount = count($productWords) - count($targetWords);
-            if ($extraWordsCount > 2) {
-                return false;
-            }
-            
-            return true;
-        });
+                
+                // Recherche sur le nom du produit
+                $typesenseSearchParams['q'] = $productName;
+                $typesenseSearchParams['query_by'] = 'name';
+                
+                // Configuration pour correspondance EXACTE
+                $typesenseSearchParams['filter_by'] = implode(' && ', $filters);
+                
+                // CLÉS IMPORTANTES pour éviter les faux positifs
+                $typesenseSearchParams['prefix'] = false; // Pas de recherche par préfixe
+                $typesenseSearchParams['num_typos'] = 0; // Aucune tolérance aux fautes
+                $typesenseSearchParams['drop_tokens_threshold'] = 0; // Ne pas supprimer de mots
+                $typesenseSearchParams['prioritize_exact_match'] = true; // Prioriser les correspondances exactes
+                
+                // Tri par pertinence textuelle
+                $typesenseSearchParams['sort_by'] = '_text_match:desc,created_at:desc';
+                
+                // Type de matching : max_score pour prioriser les correspondances exactes
+                $typesenseSearchParams['text_match_type'] = 'max_score';
+                
+                $typesenseSearchParams['per_page'] = 100;
+                
+                return $typesenseSearchParams;
+            })->query(fn($query) => $query->with('website')->orderByDesc('created_at'))->get();
+        }
+        
+        // Recherche de secours si pas de format parsé
+        return Product::search($fallbackSearch)
+            ->query(fn($query) => $query->with('website')->orderByDesc('created_at'))
+            ->get();
     }
     
 }; ?>
@@ -163,15 +92,20 @@ new class extends Component {
 
         @if($products->count() > 0)
             <div class="mb-4 px-4 sm:px-0">
-                <p class="text-sm text-gray-600">
-                    {{ $products->count() }} {{ $products->count() > 1 ? 'produits trouvés' : 'produit trouvé' }}
-                </p>
+                <div class="flex items-center justify-between">
+                    <p class="text-sm text-gray-600">
+                        {{ $products->count() }} {{ $products->count() > 1 ? 'produits trouvés' : 'produit trouvé' }}
+                    </p>
+                    <p class="text-xs text-gray-500">
+                        Triés par pertinence
+                    </p>
+                </div>
             </div>
 
             <!-- Grille de tous les produits -->
             <div class="-mx-px grid grid-cols-2 border-l border-gray-200 sm:mx-0 md:grid-cols-3 lg:grid-cols-4">
-                @foreach($products as $product)
-                    <div class="group relative border-r border-b border-gray-200 p-4 sm:p-6">
+                @foreach($products as $index => $product)
+                    <div class="group relative border-r border-b border-gray-200 p-4 sm:p-6 {{ $index === 0 ? 'bg-green-50/30' : '' }}">
                         <div class="aspect-square rounded-lg bg-gray-200 overflow-hidden">
                             <img 
                                 src="{{ $product->image_url }}" 
@@ -180,6 +114,18 @@ new class extends Component {
                             >
                         </div>
                         <div class="pt-10 pb-4 text-center">
+                            <!-- Badge de meilleure correspondance -->
+                            @if($index === 0)
+                                <div class="mb-2">
+                                    <span class="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-semibold text-green-800">
+                                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                        </svg>
+                                        Meilleure correspondance
+                                    </span>
+                                </div>
+                            @endif
+                            
                             <!-- Badge du site -->
                             @if($product->website)
                                 <div class="mb-2">
@@ -223,6 +169,12 @@ new class extends Component {
                 </svg>
                 <h3 class="mt-2 text-sm font-semibold text-gray-900">Aucun produit trouvé</h3>
                 <p class="mt-1 text-sm text-gray-500">Aucun résultat pour "{{ $name }}"</p>
+                <div class="mt-4 p-4 bg-blue-50 rounded-lg text-left max-w-md mx-auto">
+                    <p class="text-sm font-medium text-gray-700 mb-2">💡 La recherche était trop stricte</p>
+                    <p class="text-xs text-gray-600">
+                        Essayez avec une recherche plus générale ou vérifiez l'orthographe exacte de la marque et du nom du produit.
+                    </p>
+                </div>
             </div>
         @endif
     </div>
