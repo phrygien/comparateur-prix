@@ -4,6 +4,7 @@ use Livewire\Volt\Component;
 use App\Models\Product;
 use App\Services\ProductSearchService;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 new class extends Component {
     public string $name;
@@ -12,6 +13,9 @@ new class extends Component {
     public Collection $products;
     public ?string $extractedVendor = null;
     public ?string $extractedName = null;
+    public ?string $extractedType = null;
+    public ?string $extractedVariation = null;
+    public int $stepResults = 0; // Pour debug: nombre de résultats à chaque étape
 
     public function mount($name, $id, $price): void
     {
@@ -27,41 +31,78 @@ new class extends Component {
 
         $this->extractedVendor = $extracted['vendor'];
         $this->extractedName = $extracted['name'];
+        $this->extractedType = $extracted['type'];
+        $this->extractedVariation = $extracted['variation'];
 
-        // Rechercher
-        $this->products = $this->searchProducts($extracted, $searchTerm);
+        // Rechercher avec filtrage progressif
+        $this->products = $this->searchProductsProgressive($extracted, $searchTerm);
     }
 
-    private function searchProducts(array $extracted, string $fallbackSearch): Collection
+    private function searchProductsProgressive(array $extracted, string $fallbackSearch): Collection
     {
-        // Rechercher par vendor si disponible, sinon utiliser le terme complet
+        $productSearchService = app(ProductSearchService::class);
+
+        // ÉTAPE 1: Recherche Scout par vendor
         $searchQuery = $extracted['vendor'] ?? $fallbackSearch;
+        $results = Product::search($searchQuery)
+            ->query(fn($q) => $q->with('website'))
+            ->get();
 
-        $query = Product::search($searchQuery);
+        $this->stepResults = $results->count();
 
-        // Filtrer par le name extrait avec normalisation SQL
+        // Si pas de résultats après Scout, retourner vide
+        if ($results->isEmpty()) {
+            return collect();
+        }
+
+        // ÉTAPE 2: Filtrer par name (normalisé)
         if (!empty($extracted['name'])) {
-            $query->query(function ($builder) use ($extracted) {
-                $searchName = $extracted['name'];
+            $normalizedSearchName = $productSearchService->normalizeForSearch($extracted['name']);
 
-                $builder->with('website')
-                    ->where(function($q) use ($searchName) {
-                        // Normaliser la colonne name en remplaçant les tirets et espaces
-                        // Comparer avec le terme de recherche normalisé de la même façon
-                        $q->whereRaw(
-                            "REPLACE(REPLACE(LOWER(name), '-', ''), ' ', '') LIKE ?",
-                            ['%' . str_replace(['-', ' '], '', strtolower($searchName)) . '%']
-                        );
-                    })
-                    ->orderByDesc('created_at');
-            });
-        } else {
-            $query->query(function ($builder) {
-                $builder->with('website')->orderByDesc('created_at');
+            $results = $results->filter(function($product) use ($normalizedSearchName) {
+                $normalizedDbName = app(ProductSearchService::class)->normalizeForSearch($product->name);
+
+                // Vérifier si le name normalisé contient le terme recherché
+                return $normalizedDbName && str_contains($normalizedDbName, $normalizedSearchName);
             });
         }
 
-        return $query->get();
+        // Si pas de résultats après filtrage name, retourner ce qu'on a
+        if ($results->isEmpty()) {
+            return $results;
+        }
+
+        // ÉTAPE 3: Filtrer par type (normalisé)
+        if (!empty($extracted['type'])) {
+            $normalizedSearchType = $productSearchService->normalizeForSearch($extracted['type']);
+
+            $results = $results->filter(function($product) use ($normalizedSearchType) {
+                $normalizedDbType = app(ProductSearchService::class)->normalizeForSearch($product->type);
+
+                // Vérifier si le type normalisé contient le terme recherché
+                return $normalizedDbType && str_contains($normalizedDbType, $normalizedSearchType);
+            });
+        }
+
+        // Si pas de résultats après filtrage type, on recule d'un step (on retourne sans le filtre type)
+        if ($results->isEmpty() && !empty($extracted['type'])) {
+            // Refiltrer juste par name
+            $results = Product::search($searchQuery)
+                ->query(fn($q) => $q->with('website'))
+                ->get();
+
+            if (!empty($extracted['name'])) {
+                $normalizedSearchName = $productSearchService->normalizeForSearch($extracted['name']);
+
+                $results = $results->filter(function($product) use ($normalizedSearchName) {
+                    $normalizedDbName = app(ProductSearchService::class)->normalizeForSearch($product->name);
+                    return $normalizedDbName && str_contains($normalizedDbName, $normalizedSearchName);
+                });
+            }
+        }
+
+        // Trier par date de création
+        return $results->sortByDesc('created_at');
     }
 
 }; ?>
@@ -75,20 +116,36 @@ new class extends Component {
             Résultats pour : {{ $name }}
         </h2>
 
-        @if($extractedVendor || $extractedName)
-            <div class="mb-4 px-4 sm:px-0">
-                <p class="text-xs text-gray-500">
+        <!-- Informations d'extraction détaillées -->
+        @if($extractedVendor || $extractedName || $extractedType || $extractedVariation)
+            <div class="mb-4 px-4 sm:px-0 bg-gray-50 p-3 rounded-lg">
+                <p class="text-xs font-semibold text-gray-700 mb-2">Extraction des informations :</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
                     @if($extractedVendor)
-                        Scout recherche: <span class="font-medium">{{ $extractedVendor }}</span>
+                        <div>
+                            <span class="text-gray-600">Vendor (Scout):</span>
+                            <span class="font-medium text-blue-700">{{ $extractedVendor }}</span>
+                        </div>
                     @endif
                     @if($extractedName)
-                        @if($extractedVendor) • @endif
-                        Filtre SQL normalisé: <span class="font-medium">{{ $extractedName }}</span>
-                    @else
-                        @if($extractedVendor) • @endif
-                        <span class="text-amber-600">Aucun name détecté (pas de filtre SQL)</span>
+                        <div>
+                            <span class="text-gray-600">Name (Filtre 1):</span>
+                            <span class="font-medium text-green-700">{{ $extractedName }}</span>
+                        </div>
                     @endif
-                </p>
+                    @if($extractedType)
+                        <div>
+                            <span class="text-gray-600">Type (Filtre 2):</span>
+                            <span class="font-medium text-purple-700">{{ $extractedType }}</span>
+                        </div>
+                    @endif
+                    @if($extractedVariation)
+                        <div>
+                            <span class="text-gray-600">Variation:</span>
+                            <span class="font-medium text-gray-700">{{ $extractedVariation }}</span>
+                        </div>
+                    @endif
+                </div>
             </div>
         @endif
 

@@ -8,37 +8,42 @@ class ProductSearchService
 {
     public function extractProductInfo(string $searchTerm): array
     {
-        $prompt = "Extrais les informations suivantes du nom de produit cosmétique ci-dessous.
+        $prompt = "Extrais les informations suivantes du nom de produit cosmétique/parfum ci-dessous.
 
 Règles IMPORTANTES:
-- vendor: la marque du produit (généralement le premier mot avant le tiret)
-- name: UNIQUEMENT le nom de la gamme/ligne du produit (PAS le type de produit, PAS la cible)
-- Le type de produit (Crème, Sérum, Lotion, Gel, Huile, Masque, Eau de Toilette, Parfum, etc.) ne doit JAMAIS être dans le name
-- La cible (Homme, Femme, Unisexe, Enfant, etc.) ne doit JAMAIS être dans le name
-- Les détails comme le volume (ml, g), les attributs (Nourrissante, Hydratante) ne doivent PAS être dans le name
-- Si tu ne trouves pas le vendor, retourne null
-- Si tu ne trouves pas le name, retourne null
+- vendor: la marque du produit
+- name: le nom de la gamme/ligne du produit (sans la marque, sans le type, sans la variation)
+- type: le type de produit (Eau de Toilette, Eau de Parfum, Crème, Sérum, Lotion, Gel, etc.)
+- variation: les détails comme le volume, la cible (Homme/Femme), les attributs
 
 Exemples:
-- \"Payot - Source Nutrition - Crème Nourrissante 50ml\" → vendor: \"Payot\", name: \"Source Nutrition\"
-- \"Coach Green Homme\" → vendor: \"Coach\", name: \"Green\"
-- \"Dior - Sauvage Eau de Toilette Homme\" → vendor: \"Dior\", name: \"Sauvage\"
-- \"Clarins - Multi-Active - Sérum Anti-Âge\" → vendor: \"Clarins\", name: \"Multi-Active\"
-- \"La Roche-Posay - Effaclar - Gel Purifiant\" → vendor: \"La Roche-Posay\", name: \"Effaclar\"
+- \"Calvin Klein - Eternity For Men - Eau de Toilette Vaporisateur 200 ml\"
+  → vendor: \"Calvin Klein\", name: \"Eternity For Men\", type: \"Eau de Toilette\", variation: \"Vaporisateur 200 ml\"
+
+- \"Payot - Source Nutrition - Crème Nourrissante 50ml\"
+  → vendor: \"Payot\", name: \"Source Nutrition\", type: \"Crème\", variation: \"Nourrissante 50ml\"
+
+- \"Coach Green Homme\"
+  → vendor: \"Coach\", name: \"Green\", type: null, variation: \"Homme\"
+
+- \"Dior - Sauvage Eau de Parfum 100ml\"
+  → vendor: \"Dior\", name: \"Sauvage\", type: \"Eau de Parfum\", variation: \"100ml\"
 
 Produit: {$searchTerm}
 
 Réponds UNIQUEMENT en JSON avec cette structure exacte:
 {
     \"vendor\": \"...\",
-    \"name\": \"...\"
+    \"name\": \"...\",
+    \"type\": \"...\" ou null,
+    \"variation\": \"...\" ou null
 }";
 
         try {
             $result = OpenAI::chat()->create([
                 'model' => 'gpt-4o-mini',
                 'messages' => [
-                    ['role' => 'system', 'content' => 'Tu es un expert en extraction de noms de produits cosmétiques et parfums. Tu extrais UNIQUEMENT la marque (vendor) et le nom de la gamme (name), JAMAIS le type de produit ni la cible (Homme/Femme). Réponds uniquement en JSON valide.'],
+                    ['role' => 'system', 'content' => 'Tu es un expert en extraction de noms de produits cosmétiques et parfums. Sois précis dans l\'extraction de chaque composant. Réponds uniquement en JSON valide.'],
                     ['role' => 'user', 'content' => $prompt],
                 ],
                 'temperature' => 0.1,
@@ -51,12 +56,47 @@ Réponds UNIQUEMENT en JSON avec cette structure exacte:
             return [
                 'vendor' => $data['vendor'] ?? null,
                 'name' => $data['name'] ?? null,
+                'type' => $data['type'] ?? null,
+                'variation' => $data['variation'] ?? null,
             ];
         } catch (\Exception $e) {
             return [
                 'vendor' => null,
                 'name' => null,
+                'type' => null,
+                'variation' => null,
             ];
         }
+    }
+
+    /**
+     * Normalise une chaîne pour la recherche SQL
+     * Enlève les tirets, espaces, accents, met en minuscule
+     */
+    public function normalizeForSearch(?string $text): ?string
+    {
+        if (empty($text)) {
+            return null;
+        }
+
+        // Mettre en minuscule
+        $normalized = mb_strtolower($text, 'UTF-8');
+
+        // Enlever les accents
+        $normalized = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $normalized);
+
+        // Enlever tous les caractères non-alphanumériques sauf les espaces
+        $normalized = preg_replace('/[^a-z0-9\s]/', '', $normalized);
+
+        // Remplacer les espaces multiples par un seul
+        $normalized = preg_replace('/\s+/', ' ', $normalized);
+
+        // Trim
+        $normalized = trim($normalized);
+
+        // Enlever tous les espaces pour la comparaison finale
+        $normalized = str_replace(' ', '', $normalized);
+
+        return $normalized;
     }
 }
