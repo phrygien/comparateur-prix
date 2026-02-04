@@ -28,30 +28,34 @@ new class extends Component {
         $this->extractedVendor = $extracted['vendor'];
         $this->extractedName = $extracted['name'];
 
-        // Rechercher avec Scout (vendor) et filtrer par name
-        $this->products = $this->searchProducts($extracted);
+        // Construire la requête de recherche
+        $this->products = $this->searchProducts($searchTerm, $extracted);
     }
 
-    private function searchProducts(array $extracted): Collection
+    private function searchProducts(string $searchTerm, array $extracted): Collection
     {
-        // Scout recherche par vendor (déjà configuré dans Typesense)
-        $searchQuery = $extracted['vendor'] ?? $extracted['name'];
+        $query = Product::search($searchTerm);
 
-        $query = Product::search($searchQuery);
+        // Ajouter des filtres basés sur l'extraction
+        $query->query(function ($builder) use ($extracted) {
+            $builder->with('website')->orderByDesc('created_at');
 
-        // Filtrer les résultats par le name extrait
-        if (!empty($extracted['name'])) {
-            $query->query(function ($builder) use ($extracted) {
-                $builder->with('website')
-                    ->where('name', 'like', '%' . $extracted['name'] . '%')
-                    ->orderByDesc('created_at');
-            });
-        } else {
-            // Si pas de name extrait, juste trier par date
-            $query->query(function ($builder) {
-                $builder->with('website')->orderByDesc('created_at');
-            });
-        }
+            // Si on a un vendor, filtrer dessus
+            if (!empty($extracted['vendor'])) {
+                $builder->where(function($q) use ($extracted) {
+                    $q->where('vendor', 'like', '%' . $extracted['vendor'] . '%');
+
+                    // Si on a aussi un name, l'ajouter
+                    if (!empty($extracted['name'])) {
+                        $q->where('name', 'like', '%' . $extracted['name'] . '%');
+                    }
+                });
+            }
+            // Sinon, chercher uniquement sur le name
+            elseif (!empty($extracted['name'])) {
+                $builder->where('name', 'like', '%' . $extracted['name'] . '%');
+            }
+        });
 
         return $query->get();
     }
@@ -72,11 +76,11 @@ new class extends Component {
             <div class="mb-4 px-4 sm:px-0">
                 <p class="text-xs text-gray-500">
                     @if($extractedVendor)
-                        Marque détectée: <span class="font-medium">{{ $extractedVendor }}</span>
+                        Marque: <span class="font-medium">{{ $extractedVendor }}</span>
                     @endif
                     @if($extractedName)
                         @if($extractedVendor) • @endif
-                        Produit détecté: <span class="font-medium">{{ $extractedName }}</span>
+                        Produit: <span class="font-medium">{{ $extractedName }}</span>
                     @endif
                 </p>
             </div>
