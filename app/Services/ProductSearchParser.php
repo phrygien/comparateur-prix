@@ -35,4 +35,25 @@ class ProductSearchParser
             'type' => $type,
         ];
     }
+    
+    /**
+     * Prépare le nom pour une recherche stricte
+     * Convertit "Un Jardin sous la mer" en tableau de mots obligatoires
+     */
+    public function prepareStrictNameSearch(string $name): string
+    {
+        // Diviser en mots et retirer les mots vides courts
+        $words = preg_split('/\s+/', mb_strtolower($name), -1, PREG_SPLIT_NO_EMPTY);
+        
+        // Mots à ignorer (articles, prépositions courtes)
+        $stopWords = ['le', 'la', 'les', 'un', 'une', 'des', 'de', 'du', 'a', 'au'];
+        
+        // Filtrer les stop words sauf si c'est crucial pour le sens
+        $importantWords = array_filter($words, function($word) use ($stopWords) {
+            return strlen($word) > 2 || !in_array($word, $stopWords);
+        });
+        
+        // Retourner tous les mots importants
+        return implode(' ', $importantWords);
+    }
 }
