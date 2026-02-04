@@ -44,7 +44,6 @@ pipeline {
                     cd /var/www/comparateur
                     composer require laravel/scout --no-interaction
                     composer require typesense/typesense-php --no-interaction
-                    php artisan vendor:publish --provider="Laravel\\Scout\\ScoutServiceProvider" --force
                 '''
             }
         }

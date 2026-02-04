@@ -2,271 +2,249 @@
 
 use Livewire\Volt\Component;
 use App\Models\Product;
-use Illuminate\Support\Collection;
-use Livewire\Attributes\Url;
+use App\Services\ProductSearchParser;
+use Livewire\WithPagination;
 
 new class extends Component {
-    public string $name;
-    public string $id;
-    public string $price;
-    public Collection $productsBySite;
+    use WithPagination;
 
-    #[Url]
-    public string $variationFilter = '';
+    public string $search = '';
+    public $results = [];
+    public $parsedSearch = [];
+    public bool $showResults = false;
 
-    #[Url]
-    public string $typeFilter = '';
-
-    #[Url]
-    public string $nameFilter = '';
-
-    public function mount($name, $id, $price): void
+    public function updatedSearch()
     {
-        $this->name = $name;
-        $this->id = $id;
-        $this->price = $price;
-
-        if (empty($this->nameFilter)) {
-            $this->nameFilter = $name;
-        }
-
-        $this->filterProducts();
+        $this->resetPage();
+        $this->performSearch();
     }
 
-    public function filterProducts(): void
+    public function performSearch()
     {
-        // Recherche avec Typesense avec filtres
-        $searchTerm = html_entity_decode($this->nameFilter);
-
-        // Construire les options de recherche
-        $searchOptions = [
-            'sort_by' => 'created_at:desc',
-            'per_page' => 100,
-        ];
-
-        // Construire les conditions de filtrage
-        $filterConditions = [];
-
-        if ($this->typeFilter) {
-            $filterConditions[] = "type:= {$this->typeFilter}";
+        if (strlen($this->search) < 3) {
+            $this->results = [];
+            $this->showResults = false;
+            return;
         }
 
-        if ($this->variationFilter) {
-            $filterConditions[] = "variation:= {$this->variationFilter}";
-        }
+        // Parser la recherche
+        $parser = new ProductSearchParser();
+        $this->parsedSearch = $parser->parse($this->search);
 
-        if (!empty($filterConditions)) {
-            $searchOptions['filter_by'] = implode(' && ', $filterConditions);
-        }
+        // Recherche avec Typesense
+        $query = Product::search('', function ($typesenseSearchParams, $query) {
+            $filters = [];
+            
+            // Filtre strict sur vendor si présent
+            if (!empty($this->parsedSearch['vendor'])) {
+                // Utiliser :* pour une correspondance exacte insensible à la casse
+                $filters[] = "vendor:=`{$this->parsedSearch['vendor']}`";
+            }
+            
+            // Filtre strict sur type si présent
+            if (!empty($this->parsedSearch['type'])) {
+                $filters[] = "type:=`{$this->parsedSearch['type']}`";
+            }
+            
+            // Si on a un nom, on cherche dessus
+            if (!empty($this->parsedSearch['name'])) {
+                $typesenseSearchParams['q'] = $this->parsedSearch['name'];
+                $typesenseSearchParams['query_by'] = 'name';
+            } else {
+                // Sinon recherche globale
+                $typesenseSearchParams['q'] = $this->search;
+                $typesenseSearchParams['query_by'] = 'vendor,name,type';
+            }
+            
+            // Appliquer les filtres
+            if (!empty($filters)) {
+                $typesenseSearchParams['filter_by'] = implode(' && ', $filters);
+            }
+            
+            // Configuration stricte
+            $typesenseSearchParams['prefix'] = false;
+            $typesenseSearchParams['num_typos'] = 0;
+            $typesenseSearchParams['per_page'] = 20;
+            
+            return $typesenseSearchParams;
+        });
 
-        $products = Product::search($searchTerm)
-            ->options($searchOptions)
-            ->query(fn($query) => $query->with('website'))
-            ->get();
-
-        $this->productsBySite = $products
-            ->groupBy('web_site_id')
-            ->map(function ($siteProducts) {
-                return $siteProducts
-                    ->groupBy('scrap_reference_id')
-                    ->map(function ($refProducts) {
-                        return $refProducts->sortByDesc('created_at')->first();
-                    })
-                    ->values();
-            });
+        $this->results = $query->paginate(20);
+        $this->showResults = true;
     }
 
-    public function updated($property): void
+    public function clearSearch()
     {
-        if (in_array($property, ['nameFilter', 'typeFilter', 'variationFilter'])) {
-            $this->filterProducts();
-        }
+        $this->search = '';
+        $this->results = [];
+        $this->parsedSearch = [];
+        $this->showResults = false;
     }
 
-    public function resetFilters(): void
+    public function with(): array
     {
-        $this->nameFilter = $this->name;
-        $this->typeFilter = '';
-        $this->variationFilter = '';
-        $this->filterProducts();
+        return [];
     }
-
 }; ?>
 
-<div class="bg-white">
-
-    <livewire:plateformes.detail :id="$id" />
-
-    <div class="mx-auto max-w-7xl overflow-hidden sm:px-6 lg:px-8">
-        <h2 class="text-2xl font-bold text-gray-900 px-4 sm:px-0 py-6">
-            Résultats pour : {{ $name }}
-        </h2>
-
-        <!-- Zone de filtres -->
-        <div class="bg-gray-50 p-4 sm:p-6 mb-6 rounded-lg border border-gray-200">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <!-- Filtre par nom -->
-                <div>
-                    <label for="nameFilter" class="block text-sm font-medium text-gray-700 mb-1">
-                        Nom du produit
-                    </label>
-                    <input
-                        type="text"
-                        id="nameFilter"
-                        wire:model.live.debounce.500ms="nameFilter"
-                        placeholder="Filtrer par nom..."
-                        class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                    >
-                </div>
-
-                <!-- Filtre par type -->
-                <div>
-                    <label for="typeFilter" class="block text-sm font-medium text-gray-700 mb-1">
-                        Type
-                    </label>
-                    <input
-                        type="text"
-                        id="typeFilter"
-                        wire:model.live.debounce.500ms="typeFilter"
-                        placeholder="Filtrer par type..."
-                        class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                    >
-                </div>
-
-                <!-- Filtre par variation -->
-                <div>
-                    <label for="variationFilter" class="block text-sm font-medium text-gray-700 mb-1">
-                        Variation
-                    </label>
-                    <input
-                        type="text"
-                        id="variationFilter"
-                        wire:model.live.debounce.500ms="variationFilter"
-                        placeholder="Filtrer par variation..."
-                        class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                    >
-                </div>
-            </div>
-
-            <!-- Bouton de réinitialisation -->
-            <div class="mt-4 flex justify-end">
-                <button
+<div class="w-full max-w-4xl mx-auto p-6">
+    <div class="mb-6">
+        <label class="block text-sm font-medium text-gray-700 mb-2">
+            Recherche de produit
+            <span class="text-xs text-gray-500 font-normal ml-2">
+                Format: Marque - Nom - Type (ex: Hermès - Un Jardin Sous la Mer - Eau de Toilette)
+            </span>
+        </label>
+        <div class="relative">
+            <input 
+                type="text" 
+                wire:model.live.debounce.500ms="search"
+                placeholder="Ex: Hermès - Un Jardin Sous la Mer - Eau de Toilette"
+                class="w-full px-4 py-3 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            @if($search)
+                <button 
+                    wire:click="clearSearch"
                     type="button"
-                    wire:click="resetFilters"
-                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 >
-                    Réinitialiser les filtres
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
                 </button>
-            </div>
+            @endif
         </div>
 
-        <!-- Statistiques des filtres -->
-        @if($typeFilter || $variationFilter)
-            <div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                <p class="text-sm text-blue-800">
-                    Filtres actifs :
-                    @if($typeFilter)
-                        <span class="inline-flex items-center px-2 py-1 mr-2 text-xs font-medium text-blue-800 bg-blue-100 rounded-full">
-                            Type: {{ $typeFilter }}
-                        </span>
-                    @endif
-                    @if($variationFilter)
-                        <span class="inline-flex items-center px-2 py-1 mr-2 text-xs font-medium text-blue-800 bg-blue-100 rounded-full">
-                            Variation: {{ $variationFilter }}
-                        </span>
-                    @endif
+        <!-- Affichage des critères parsés -->
+        @if(!empty($parsedSearch) && ($parsedSearch['vendor'] || $parsedSearch['name'] || $parsedSearch['type']))
+            <div class="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <p class="font-semibold text-gray-700 mb-2 text-sm flex items-center">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/>
+                    </svg>
+                    Filtres actifs (recherche stricte)
                 </p>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    @if(!empty($parsedSearch['vendor']))
+                        <div class="bg-white p-2 rounded border border-blue-300">
+                            <span class="text-xs text-gray-600 block">Marque (exact):</span>
+                            <span class="font-medium text-blue-700">{{ $parsedSearch['vendor'] }}</span>
+                        </div>
+                    @endif
+                    @if(!empty($parsedSearch['name']))
+                        <div class="bg-white p-2 rounded border border-blue-300">
+                            <span class="text-xs text-gray-600 block">Nom:</span>
+                            <span class="font-medium text-blue-700">{{ $parsedSearch['name'] }}</span>
+                        </div>
+                    @endif
+                    @if(!empty($parsedSearch['type']))
+                        <div class="bg-white p-2 rounded border border-blue-300">
+                            <span class="text-xs text-gray-600 block">Type (exact):</span>
+                            <span class="font-medium text-blue-700">{{ $parsedSearch['type'] }}</span>
+                        </div>
+                    @endif
+                </div>
             </div>
         @endif
+    </div>
 
-        @if($productsBySite->count() > 0)
-            @foreach($productsBySite as $siteId => $siteProducts)
-                @php
-                    $site = $siteProducts->first()->website ?? null;
-                @endphp
+    <!-- Résultats -->
+    @if($showResults)
+        <div class="bg-white rounded-lg shadow-lg border border-gray-200">
+            @if($results->count() > 0)
+                <div class="p-4 border-b bg-gradient-to-r from-blue-50 to-indigo-50">
+                    <p class="text-sm font-medium text-gray-700">
+                        {{ $results->total() }} résultat(s) trouvé(s)
+                    </p>
+                </div>
 
-                <div class="mb-8">
-                    <!-- En-tête du site -->
-                    <div class="bg-gray-50 px-4 sm:px-6 py-4 border-b-2 border-gray-200">
-                        <h3 class="text-lg font-semibold text-gray-900">
-                            {{ $site?->name ?? 'Site inconnu' }}
-                        </h3>
-                        @if($site?->url)
-                            <a href="{{ $site->url }}" target="_blank" class="text-sm text-blue-600 hover:text-blue-800">
-                                {{ $site->url }}
-                            </a>
-                        @endif
-                        <p class="text-sm text-gray-500 mt-1">
-                            {{ $siteProducts->count() }} {{ $siteProducts->count() > 1 ? 'produits' : 'produit' }}
-                        </p>
-                    </div>
-
-                    <!-- Grille des produits du site -->
-                    <div class="-mx-px grid grid-cols-2 border-l border-gray-200 sm:mx-0 md:grid-cols-3 lg:grid-cols-4">
-                        @foreach($siteProducts as $product)
-                            <div class="group relative border-r border-b border-gray-200 p-4 sm:p-6">
-                                <div class="aspect-square rounded-lg bg-gray-200 overflow-hidden">
-                                    <img
-                                        src="{{ $product->image_url }}"
-                                        alt="{{ $product->vendor }} - {{ $product->name }}"
-                                        class="h-full w-full object-cover group-hover:opacity-75"
-                                    >
-                                </div>
-                                <div class="pt-10 pb-4 text-center">
-                                    <h3 class="text-sm font-medium text-gray-900">
-                                        <a href="{{ $product->url }}" target="_blank">
-                                            <span aria-hidden="true" class="absolute inset-0"></span>
-                                            {{ $product->vendor }} - {{ $product->name }}
-                                        </a>
-                                    </h3>
-                                    <div class="mt-3 flex flex-col items-center">
-                                        <p class="text-xs text-gray-600">{{ $product->type }}</p>
-                                        <p class="mt-1 text-xs text-gray-500">{{ $product->variation }}</p>
-                                        @if($product->scrap_reference_id)
-                                            <p class="mt-1 text-xs text-gray-400">Réf: {{ $product->scrap_reference_id }}</p>
-                                        @endif
-                                        @if($product->created_at)
-                                            <p class="mt-1 text-xs text-gray-400">
-                                                Scrapé le {{ $product->created_at->format('d/m/Y') }}
-                                            </p>
+                <div class="divide-y divide-gray-200">
+                    @foreach($results as $product)
+                        <div class="p-4 hover:bg-gray-50 transition-colors duration-150">
+                            <div class="flex items-start gap-4">
+                                @if($product->image_url)
+                                    <div class="flex-shrink-0">
+                                        <img 
+                                            src="{{ $product->image_url }}" 
+                                            alt="{{ $product->name }}"
+                                            class="w-24 h-24 object-cover rounded-lg border border-gray-200"
+                                        />
+                                    </div>
+                                @endif
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-start justify-between gap-2">
+                                        <div class="flex-1">
+                                            <h3 class="font-semibold text-gray-900 text-lg">
+                                                <span class="text-blue-600">{{ $product->vendor }}</span> - {{ $product->name }}
+                                            </h3>
+                                            <div class="mt-1 space-y-1">
+                                                <p class="text-sm text-gray-600">
+                                                    <span class="font-medium">Type:</span> {{ $product->type }}
+                                                </p>
+                                                @if($product->variation)
+                                                    <p class="text-sm text-gray-600">
+                                                        <span class="font-medium">Variation:</span> {{ $product->variation }}
+                                                    </p>
+                                                @endif
+                                            </div>
+                                        </div>
+                                        @if($product->prix_ht)
+                                            <div class="flex-shrink-0 text-right">
+                                                <p class="text-lg font-bold text-blue-600">
+                                                    {{ number_format($product->prix_ht, 2) }} {{ $product->currency ?? '€' }}
+                                                </p>
+                                                <p class="text-xs text-gray-500">HT</p>
+                                            </div>
                                         @endif
                                     </div>
-                                    <p class="mt-4 text-base font-medium text-gray-900">
-                                        {{ $product->prix_ht }} {{ $product->currency }}
-                                    </p>
+                                    @if($product->url)
+                                        <a 
+                                            href="{{ $product->url }}" 
+                                            target="_blank"
+                                            class="inline-flex items-center text-sm text-blue-600 hover:text-blue-800 hover:underline mt-2 font-medium"
+                                        >
+                                            Voir le produit 
+                                            <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                            </svg>
+                                        </a>
+                                    @endif
                                 </div>
                             </div>
-                        @endforeach
-                    </div>
+                        </div>
+                    @endforeach
                 </div>
-            @endforeach
-        @else
-            <div class="text-center py-12">
-                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+
+                <div class="p-4 border-t bg-gray-50">
+                    {{ $results->links() }}
+                </div>
+            @else
+                <div class="p-12 text-center">
+                    <svg class="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <h3 class="text-lg font-medium text-gray-900 mb-2">Aucun résultat trouvé</h3>
+                    <p class="text-gray-500 text-sm">
+                        Aucun produit ne correspond exactement à vos critères de recherche.
+                    </p>
+                    <p class="text-gray-400 text-xs mt-2">
+                        Essayez de modifier les critères ou vérifiez l'orthographe.
+                    </p>
+                </div>
+            @endif
+        </div>
+    @endif
+
+    <!-- Indicateur de chargement -->
+    <div wire:loading class="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-6 shadow-xl">
+            <div class="flex items-center space-x-3">
+                <svg class="animate-spin h-6 w-6 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                <h3 class="mt-2 text-sm font-semibold text-gray-900">Aucun produit trouvé</h3>
-                <p class="mt-1 text-sm text-gray-500">
-                    Aucun résultat pour
-                    @if($nameFilter !== $name)
-                        "{{ $nameFilter }}"
-                    @else
-                        "{{ $name }}"
-                    @endif
-                    @if($typeFilter || $variationFilter)
-                        avec les filtres appliqués
-                    @endif
-                </p>
-                @if($typeFilter || $variationFilter)
-                    <button
-                        type="button"
-                        wire:click="resetFilters"
-                        class="mt-4 px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-800"
-                    >
-                        Réinitialiser les filtres
-                    </button>
-                @endif
+                <span class="text-gray-700 font-medium">Recherche en cours...</span>
             </div>
-        @endif
+        </div>
     </div>
 </div>
