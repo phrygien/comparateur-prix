@@ -12,6 +12,7 @@ new class extends Component {
     public Collection $products;
     public ?string $extractedVendor = null;
     public ?string $extractedName = null;
+    public ?string $normalizedName = null;
 
     public function mount($name, $id, $price): void
     {
@@ -28,22 +29,25 @@ new class extends Component {
         $this->extractedVendor = $extracted['vendor'];
         $this->extractedName = $extracted['name'];
 
+        // Normaliser le name pour la recherche (remplacer espaces par tirets)
+        $this->normalizedName = $productSearchService->normalizeNameForSearch($extracted['name']);
+
         // Rechercher
-        $this->products = $this->searchProducts($extracted);
+        $this->products = $this->searchProducts($extracted, $searchTerm);
     }
 
-    private function searchProducts(array $extracted): Collection
+    private function searchProducts(array $extracted, string $fallbackSearch): Collection
     {
-        // Rechercher UNIQUEMENT par vendor (ou fallback sur name si pas de vendor)
-        $searchQuery = $extracted['vendor'] ?? $extracted['name'];
+        // Rechercher par vendor si disponible, sinon utiliser le terme complet
+        $searchQuery = $extracted['vendor'] ?? $fallbackSearch;
 
         $query = Product::search($searchQuery);
 
-        // PUIS filtrer par le name extrait
-        if (!empty($extracted['name'])) {
-            $query->query(function ($builder) use ($extracted) {
+        // Filtrer par le name normalisé (avec tirets)
+        if (!empty($this->normalizedName)) {
+            $query->query(function ($builder) {
                 $builder->with('website')
-                    ->where('name', 'like', '%' . $extracted['name'] . '%')
+                    ->where('name', 'like', '%' . $this->normalizedName . '%')
                     ->orderByDesc('created_at');
             });
         } else {
@@ -72,9 +76,12 @@ new class extends Component {
                     @if($extractedVendor)
                         Scout recherche: <span class="font-medium">{{ $extractedVendor }}</span>
                     @endif
-                    @if($extractedName)
+                    @if($normalizedName)
                         @if($extractedVendor) • @endif
-                        Filtre SQL: <span class="font-medium">name LIKE '%{{ $extractedName }}%'</span>
+                        Filtre SQL: <span class="font-medium">name LIKE '%{{ $normalizedName }}%'</span>
+                    @else
+                        @if($extractedVendor) • @endif
+                        <span class="text-amber-600">Aucun name détecté (pas de filtre SQL)</span>
                     @endif
                 </p>
             </div>

@@ -56,4 +56,17 @@ Réponds UNIQUEMENT en JSON avec cette structure exacte:
             ];
         }
     }
+
+    /**
+     * Normalise le nom pour la recherche en remplaçant les espaces par des tirets
+     */
+    public function normalizeNameForSearch(?string $name): ?string
+    {
+        if (empty($name)) {
+            return null;
+        }
+
+        // Remplacer les espaces par des tirets
+        return str_replace(' ', '-', $name);
+    }
 }
