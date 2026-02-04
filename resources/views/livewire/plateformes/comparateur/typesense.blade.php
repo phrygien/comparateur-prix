@@ -44,21 +44,24 @@ new class extends Component {
                 $filters[] = "type:={$this->parsedSearch['type']}";
             }
             
-            // Recherche STRICTE sur le nom
+            // Recherche FLEXIBLE sur le nom mais avec tri par pertinence
             if (!empty($this->parsedSearch['name'])) {
-                $searchName = $parser->prepareStrictNameSearch($this->parsedSearch['name']);
-                $typesenseSearchParams['q'] = $searchName;
+                $typesenseSearchParams['q'] = $this->parsedSearch['name'];
                 $typesenseSearchParams['query_by'] = 'name';
                 
-                // CRUCIAL : Exiger que TOUS les mots soient présents dans l'ordre
-                $typesenseSearchParams['prefix'] = false;
-                $typesenseSearchParams['num_typos'] = 1; // Tolérer 1 faute de frappe max
-                $typesenseSearchParams['drop_tokens_threshold'] = 0; // Ne pas ignorer de mots
+                // Configuration pour recherche flexible
+                $typesenseSearchParams['prefix'] = true; // Permet la recherche par préfixe
+                $typesenseSearchParams['num_typos'] = 2; // Tolère 2 fautes de frappe
+                $typesenseSearchParams['typo_tokens_threshold'] = 1; // Nombre minimum de tokens pour activer la tolérance
+                
+                // Pondération pour prioriser les correspondances exactes
+                $typesenseSearchParams['query_by_weights'] = '1'; // Poids sur le nom
                 
             } else {
                 // Recherche globale si pas de parsing réussi
                 $typesenseSearchParams['q'] = $this->search;
                 $typesenseSearchParams['query_by'] = 'name,vendor,type';
+                $typesenseSearchParams['query_by_weights'] = '3,2,1'; // Prioriser le nom
             }
             
             // Appliquer les filtres
@@ -66,43 +69,15 @@ new class extends Component {
                 $typesenseSearchParams['filter_by'] = implode(' && ', $filters);
             }
             
-            $typesenseSearchParams['per_page'] = 20;
-            $typesenseSearchParams['sort_by'] = '_text_match:desc';
+            // TRI PAR PERTINENCE (text match score)
+            $typesenseSearchParams['sort_by'] = '_text_match:desc,created_at:desc';
+            
+            $typesenseSearchParams['per_page'] = 50; // Plus de résultats pour mieux voir la pertinence
             
             return $typesenseSearchParams;
         });
 
-        $rawResults = $query->paginate(20);
-        
-        // Post-filtrage en PHP pour être ULTRA strict sur le nom
-        if (!empty($this->parsedSearch['name'])) {
-            $targetName = mb_strtolower(trim($this->parsedSearch['name']));
-            
-            $filtered = $rawResults->filter(function($product) use ($targetName) {
-                $productName = mb_strtolower(trim($product->name));
-                
-                // Vérifier que le nom contient TOUS les mots importants
-                $targetWords = preg_split('/\s+/', $targetName, -1, PREG_SPLIT_NO_EMPTY);
-                
-                foreach ($targetWords as $word) {
-                    // Ignorer les mots très courts (articles)
-                    if (strlen($word) <= 2 && in_array($word, ['le', 'la', 'un', 'de', 'du', 'au'])) {
-                        continue;
-                    }
-                    
-                    // Chaque mot doit être présent
-                    if (stripos($productName, $word) === false) {
-                        return false;
-                    }
-                }
-                
-                return true;
-            });
-            
-            return $filtered;
-        }
-
-        return $rawResults;
+        return $query->paginate(50);
     }
 
     public function clearSearch()
@@ -117,7 +92,7 @@ new class extends Component {
 <div class="w-full max-w-4xl mx-auto p-6">
     <div class="mb-6">
         <label class="block text-sm font-medium text-gray-700 mb-2">
-            Recherche de produit (stricte)
+            Recherche de produit
             <span class="text-xs text-gray-500 font-normal ml-2">
                 Format: Marque - Nom - Type (ex: Hermès - Un Jardin Sous la Mer - Eau de Toilette)
             </span>
@@ -146,10 +121,10 @@ new class extends Component {
         @if(!empty($parsedSearch) && ($parsedSearch['vendor'] ?? false || $parsedSearch['name'] ?? false || $parsedSearch['type'] ?? false))
             <div class="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                 <p class="font-semibold text-gray-700 mb-2 text-sm flex items-center">
-                    <svg class="w-4 h-4 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                    <svg class="w-4 h-4 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/>
                     </svg>
-                    Filtres STRICTS activés
+                    Filtres de recherche (triés par pertinence)
                 </p>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                     @if(!empty($parsedSearch['vendor']))
@@ -159,9 +134,9 @@ new class extends Component {
                         </div>
                     @endif
                     @if(!empty($parsedSearch['name']))
-                        <div class="bg-white p-2 rounded border-l-4 border-red-500">
-                            <span class="text-xs text-gray-600 block">Nom (EXACT):</span>
-                            <span class="font-bold text-red-700">{{ $parsedSearch['name'] }}</span>
+                        <div class="bg-white p-2 rounded border-l-4 border-blue-500">
+                            <span class="text-xs text-gray-600 block">Nom (FLEXIBLE):</span>
+                            <span class="font-bold text-blue-700">{{ $parsedSearch['name'] }}</span>
                         </div>
                     @endif
                     @if(!empty($parsedSearch['type']))
@@ -171,11 +146,11 @@ new class extends Component {
                         </div>
                     @endif
                 </div>
-                <p class="text-xs text-red-600 mt-2 flex items-center">
+                <p class="text-xs text-blue-600 mt-2 flex items-center">
                     <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
                         <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
                     </svg>
-                    Seuls les produits correspondant EXACTEMENT à tous les critères seront affichés
+                    Les résultats sont triés par pertinence (meilleure correspondance en premier)
                 </p>
             </div>
         @endif
@@ -190,26 +165,45 @@ new class extends Component {
                         <svg class="w-5 h-5 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                         </svg>
-                        {{ $this->results->count() }} résultat(s) exact(s) trouvé(s)
+                        {{ $this->results->total() }} résultat(s) trouvé(s) - triés par pertinence
                     </p>
                 </div>
 
                 <div class="divide-y divide-gray-200">
-                    @foreach($this->results as $product)
-                        <div class="p-4 hover:bg-gray-50 transition-colors duration-150">
+                    @foreach($this->results as $index => $product)
+                        <div class="p-4 hover:bg-gray-50 transition-colors duration-150 {{ $index < 3 ? 'bg-green-50/30' : '' }}">
                             <div class="flex items-start gap-4">
+                                <!-- Badge de pertinence pour les 3 premiers -->
+                                @if($index < 3)
+                                    <div class="flex-shrink-0">
+                                        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center text-white font-bold text-sm shadow-lg">
+                                            {{ $index + 1 }}
+                                        </div>
+                                    </div>
+                                @endif
+                                
                                 @if($product->image_url)
                                     <div class="flex-shrink-0">
                                         <img 
                                             src="{{ $product->image_url }}" 
                                             alt="{{ $product->name }}"
-                                            class="w-24 h-24 object-cover rounded-lg border border-gray-200"
+                                            class="w-24 h-24 object-cover rounded-lg border-2 {{ $index < 3 ? 'border-green-300' : 'border-gray-200' }}"
                                         />
                                     </div>
                                 @endif
                                 <div class="flex-1 min-w-0">
                                     <div class="flex items-start justify-between gap-2">
                                         <div class="flex-1">
+                                            <!-- Indicateur de meilleure correspondance -->
+                                            @if($index === 0)
+                                                <div class="inline-flex items-center px-2 py-1 rounded-full bg-green-100 text-green-800 text-xs font-semibold mb-1">
+                                                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                                    </svg>
+                                                    Meilleure correspondance
+                                                </div>
+                                            @endif
+                                            
                                             <h3 class="font-semibold text-gray-900 text-lg">
                                                 <span class="text-blue-600">{{ $product->vendor }}</span> - {{ $product->name }}
                                             </h3>
@@ -251,24 +245,27 @@ new class extends Component {
                     @endforeach
                 </div>
 
-                <!-- Pagination simple sans objet Paginator -->
-                @if($this->results instanceof \Illuminate\Contracts\Pagination\LengthAwarePaginator)
                 <div class="p-4 border-t bg-gray-50">
                     {{ $this->results->links() }}
                 </div>
-                @endif
             @else
                 <div class="p-12 text-center">
                     <svg class="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
-                    <h3 class="text-lg font-medium text-gray-900 mb-2">Aucun résultat EXACT trouvé</h3>
+                    <h3 class="text-lg font-medium text-gray-900 mb-2">Aucun résultat trouvé</h3>
                     <p class="text-gray-500 text-sm">
-                        Aucun produit ne correspond <strong>exactement</strong> à tous vos critères.
+                        Aucun produit ne correspond à vos critères de recherche.
                     </p>
-                    <p class="text-gray-400 text-xs mt-2">
-                        Vérifiez l'orthographe et le format : Marque - Nom - Type
-                    </p>
+                    <div class="mt-4 p-4 bg-blue-50 rounded-lg text-left max-w-md mx-auto">
+                        <p class="text-sm font-medium text-gray-700 mb-2">💡 Suggestions :</p>
+                        <ul class="text-xs text-gray-600 space-y-1 list-disc list-inside">
+                            <li>Vérifiez l'orthographe de la marque</li>
+                            <li>Essayez avec seulement le nom du produit</li>
+                            <li>Retirez le type si trop spécifique</li>
+                            <li>Utilisez moins de mots</li>
+                        </ul>
+                    </div>
                 </div>
             @endif
         </div>
@@ -282,7 +279,7 @@ new class extends Component {
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                <span class="text-gray-700 font-medium">Recherche stricte en cours...</span>
+                <span class="text-gray-700 font-medium">Recherche en cours...</span>
             </div>
         </div>
     </div>
