@@ -247,7 +247,7 @@ return [
                     'default_sorting_field' => 'created_at',
                 ],
                 'search-parameters' => [
-                    'query_by' => 'vendor,name,type,variation',
+                    'query_by' => 'vendor,name',
                     // Donner plus de poids au vendor et au name
                     'query_by_weights' => '3,3,2,1',
                     // Activer la recherche préfixe pour une meilleure flexibilité
