@@ -2,6 +2,7 @@
 
 use Livewire\Volt\Component;
 use App\Models\Product;
+use App\Services\ProductSearchService;
 use Illuminate\Support\Collection;
 
 new class extends Component {
@@ -9,19 +10,52 @@ new class extends Component {
     public string $id;
     public string $price;
     public Collection $products;
+    public ?string $extractedVendor = null;
+    public ?string $extractedName = null;
 
     public function mount($name, $id, $price): void
     {
         $this->name = $name;
         $this->id = $id;
         $this->price = $price;
-        
+
         $searchTerm = html_entity_decode($this->name);
-        $this->products = Product::search($searchTerm)
-            ->query(fn($query) => $query->with('website')->orderByDesc('created_at'))
-            ->get();
+
+        // Extraire les informations avec OpenAI
+        $productSearchService = app(ProductSearchService::class);
+        $extracted = $productSearchService->extractProductInfo($searchTerm);
+
+        $this->extractedVendor = $extracted['vendor'];
+        $this->extractedName = $extracted['name'];
+
+        // Rechercher avec Scout (vendor) et filtrer par name
+        $this->products = $this->searchProducts($extracted);
     }
-    
+
+    private function searchProducts(array $extracted): Collection
+    {
+        // Scout recherche par vendor (déjà configuré dans Typesense)
+        $searchQuery = $extracted['vendor'] ?? $extracted['name'];
+
+        $query = Product::search($searchQuery);
+
+        // Filtrer les résultats par le name extrait
+        if (!empty($extracted['name'])) {
+            $query->query(function ($builder) use ($extracted) {
+                $builder->with('website')
+                    ->where('name', 'like', '%' . $extracted['name'] . '%')
+                    ->orderByDesc('created_at');
+            });
+        } else {
+            // Si pas de name extrait, juste trier par date
+            $query->query(function ($builder) {
+                $builder->with('website')->orderByDesc('created_at');
+            });
+        }
+
+        return $query->get();
+    }
+
 }; ?>
 
 <div class="bg-white">
@@ -32,6 +66,21 @@ new class extends Component {
         <h2 class="text-2xl font-bold text-gray-900 px-4 sm:px-0 py-6">
             Résultats pour : {{ $name }}
         </h2>
+
+        <!-- Informations d'extraction (optionnel, pour debug) -->
+        @if($extractedVendor || $extractedName)
+            <div class="mb-4 px-4 sm:px-0">
+                <p class="text-xs text-gray-500">
+                    @if($extractedVendor)
+                        Marque détectée: <span class="font-medium">{{ $extractedVendor }}</span>
+                    @endif
+                    @if($extractedName)
+                        @if($extractedVendor) • @endif
+                        Produit détecté: <span class="font-medium">{{ $extractedName }}</span>
+                    @endif
+                </p>
+            </div>
+        @endif
 
         @if($products->count() > 0)
             <div class="mb-4 px-4 sm:px-0">
@@ -45,9 +94,9 @@ new class extends Component {
                 @foreach($products as $product)
                     <div class="group relative border-r border-b border-gray-200 p-4 sm:p-6">
                         <div class="aspect-square rounded-lg bg-gray-200 overflow-hidden">
-                            <img 
-                                src="{{ $product->image_url }}" 
-                                alt="{{ $product->vendor }} - {{ $product->name }}" 
+                            <img
+                                src="{{ $product->image_url }}"
+                                alt="{{ $product->vendor }} - {{ $product->name }}"
                                 class="h-full w-full object-cover group-hover:opacity-75"
                             >
                         </div>
