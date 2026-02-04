@@ -8,7 +8,7 @@ new class extends Component {
     public string $name;
     public string $id;
     public string $price;
-    public Collection $productsBySite;
+    public Collection $products;
 
     public function mount($name, $id, $price): void
     {
@@ -17,20 +17,9 @@ new class extends Component {
         $this->price = $price;
         
         $searchTerm = html_entity_decode($this->name);
-        $products = Product::search($searchTerm)
+        $this->products = Product::search($searchTerm)
             ->query(fn($query) => $query->with('website'))
             ->get();
-
-        $this->productsBySite = $products
-            ->groupBy('web_site_id')
-            ->map(function ($siteProducts) {
-                return $siteProducts
-                    ->groupBy('scrap_reference_id')
-                    ->map(function ($refProducts) {
-                        return $refProducts->sortByDesc('created_at')->first();
-                    })
-                    ->values();
-            });
     }
     
 }; ?>
