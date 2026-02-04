@@ -12,14 +12,17 @@ class ProductSearchService
 
 Règles IMPORTANTES:
 - vendor: la marque du produit (généralement le premier mot avant le tiret)
-- name: UNIQUEMENT le nom de la gamme/ligne du produit (PAS le type de produit)
-- Le type de produit (Crème, Sérum, Lotion, Gel, Huile, Masque, etc.) ne doit JAMAIS être dans le name
+- name: UNIQUEMENT le nom de la gamme/ligne du produit (PAS le type de produit, PAS la cible)
+- Le type de produit (Crème, Sérum, Lotion, Gel, Huile, Masque, Eau de Toilette, Parfum, etc.) ne doit JAMAIS être dans le name
+- La cible (Homme, Femme, Unisexe, Enfant, etc.) ne doit JAMAIS être dans le name
 - Les détails comme le volume (ml, g), les attributs (Nourrissante, Hydratante) ne doivent PAS être dans le name
 - Si tu ne trouves pas le vendor, retourne null
 - Si tu ne trouves pas le name, retourne null
 
 Exemples:
 - \"Payot - Source Nutrition - Crème Nourrissante 50ml\" → vendor: \"Payot\", name: \"Source Nutrition\"
+- \"Coach Green Homme\" → vendor: \"Coach\", name: \"Green\"
+- \"Dior - Sauvage Eau de Toilette Homme\" → vendor: \"Dior\", name: \"Sauvage\"
 - \"Clarins - Multi-Active - Sérum Anti-Âge\" → vendor: \"Clarins\", name: \"Multi-Active\"
 - \"La Roche-Posay - Effaclar - Gel Purifiant\" → vendor: \"La Roche-Posay\", name: \"Effaclar\"
 
@@ -35,7 +38,7 @@ Réponds UNIQUEMENT en JSON avec cette structure exacte:
             $result = OpenAI::chat()->create([
                 'model' => 'gpt-4o-mini',
                 'messages' => [
-                    ['role' => 'system', 'content' => 'Tu es un expert en extraction de noms de produits cosmétiques. Tu extrais UNIQUEMENT la marque (vendor) et le nom de la gamme (name), JAMAIS le type de produit. Réponds uniquement en JSON valide.'],
+                    ['role' => 'system', 'content' => 'Tu es un expert en extraction de noms de produits cosmétiques et parfums. Tu extrais UNIQUEMENT la marque (vendor) et le nom de la gamme (name), JAMAIS le type de produit ni la cible (Homme/Femme). Réponds uniquement en JSON valide.'],
                     ['role' => 'user', 'content' => $prompt],
                 ],
                 'temperature' => 0.1,
@@ -55,18 +58,5 @@ Réponds UNIQUEMENT en JSON avec cette structure exacte:
                 'name' => null,
             ];
         }
-    }
-
-    /**
-     * Normalise le nom pour la recherche en remplaçant les espaces par des tirets
-     */
-    public function normalizeNameForSearch(?string $name): ?string
-    {
-        if (empty($name)) {
-            return null;
-        }
-
-        // Remplacer les espaces par des tirets
-        return str_replace(' ', '-', $name);
     }
 }
