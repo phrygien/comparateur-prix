@@ -244,18 +244,8 @@ return [
                     'default_sorting_field' => 'created_at',
                 ],
                 'search-parameters' => [
-                    // Recherche uniquement par vendor
                     'query_by' => 'vendor,name',
-
-                    // Retirez query_by_weights puisque vous ne recherchez que sur un seul champ
-                    // 'query_by_weights' => '3,3,2,1', // À supprimer
-
-                    // Autres paramètres optionnels selon vos besoins
-                    'prefix' => true,
                     'prioritize_exact_match' => true,
-                    'prioritize_token_position' => true,
-                    'typo_tokens_threshold' => 1,
-                    'per_page' => 10,
                     'sort_by' => '_text_match:desc',
 
                     // Optionnel : si vous voulez aussi trier par pertinence puis par date
