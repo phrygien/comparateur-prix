@@ -166,79 +166,122 @@ new class extends Component {
         }
     }
     
-    /**
-     * Recherche des produits en utilisant Typesense avec filtrage par étapes
-     * ÉTAPE 1: Filtre par vendor
-     * ÉTAPE 2: Recherche par name
-     * ÉTAPE 3: Filtre par type
-     */
-    private function searchProductsFromParsed(): void
-    {
-        if (empty($this->parsedResult)) {
-            return;
-        }
-        
-        $vendor = $this->parsedResult['vendor'] ?? null;
-        $name = $this->parsedResult['name'] ?? null;
-        $type = $this->parsedResult['type'] ?? null;
-        
-        if (!$vendor || !$name) {
-            $this->error = 'Vendor et Name sont requis pour la recherche';
-            return;
-        }
-        
-        // Construction de la query de recherche
-        $searchQuery = $name;
-        
-        // Options de recherche Typesense
-        $searchOptions = [
-            'query_by' => 'name,type,variation',
-            'query_by_weights' => '4,2,1',
-            'filter_by' => 'vendor:=' . $vendor, // ÉTAPE 1: Filtre strict sur vendor
-            'prioritize_exact_match' => true,
-            'prefix' => true,
-            'num_typos' => 1,
-            'typo_tokens_threshold' => 1,
-            'per_page' => 30,
-            'sort_by' => '_text_match:desc',
-            'infix' => 'always',
-            'split_join_tokens' => 'always',
-        ];
-        
-        // ÉTAPE 3: Si le type est présent, l'ajouter au filtre
-        if ($type) {
-            $searchOptions['filter_by'] .= ' && type:*' . $type . '*';
-        }
-        
-        try {
-            // Exécution de la recherche Typesense
-            $results = Product::search($searchQuery)
-                ->options($searchOptions)
-                ->get();
-            
-            // Post-traitement pour affiner et scorer les résultats
-            $this->searchResults = collect($results)
-                ->map(function($product) use ($vendor, $name, $type) {
-                    return $this->calculateProductScore($product, $vendor, $name, $type);
-                })
-                ->filter(function($product) {
-                    // Filtrer les produits avec un score négatif
-                    return $product->match_score > 0;
-                })
-                ->sortByDesc('match_score')
-                ->take(10)
-                ->values();
-            
-            // Si aucun résultat avec filtre strict, essayer une recherche plus souple
-            if ($this->searchResults->isEmpty()) {
-                $this->fallbackSearch($vendor, $name, $type);
-            }
-            
-        } catch (\Exception $e) {
-            $this->error = 'Erreur de recherche Typesense: ' . $e->getMessage();
-            $this->searchResults = collect();
-        }
+/**
+ * Recherche des produits en utilisant Typesense avec filtrage par étapes
+ * ÉTAPE 1: Filtre par vendor
+ * ÉTAPE 2: Recherche par name
+ * ÉTAPE 3: Filtre par type
+ */
+private function searchProductsFromParsed(): void
+{
+    if (empty($this->parsedResult)) {
+        return;
     }
+    
+    $vendor = $this->parsedResult['vendor'] ?? null;
+    $name = $this->parsedResult['name'] ?? null;
+    $type = $this->parsedResult['type'] ?? null;
+    
+    if (!$vendor || !$name) {
+        $this->error = 'Vendor et Name sont requis pour la recherche';
+        return;
+    }
+    
+    // Construction de la query de recherche
+    $searchQuery = $name;
+    
+    // Options de recherche Typesense
+    $searchOptions = [
+        'query_by' => 'name,type,variation',
+        'query_by_weights' => '4,2,1',
+        'filter_by' => 'vendor:=' . $vendor, // ÉTAPE 1: Filtre strict sur vendor
+        'prioritize_exact_match' => true,
+        'prefix' => true,
+        'num_typos' => 1,
+        'typo_tokens_threshold' => 1,
+        'per_page' => 30,
+        'sort_by' => '_text_match:desc',
+        // 'infix' => 'always', // RETIRER CETTE LIGNE - infix est configuré dans le schéma
+        'split_join_tokens' => 'always',
+    ];
+    
+    // ÉTAPE 3: Si le type est présent, l'ajouter au filtre
+    if ($type) {
+        $searchOptions['filter_by'] .= ' && type:*' . $type . '*';
+    }
+    
+    try {
+        // Exécution de la recherche Typesense
+        $results = Product::search($searchQuery)
+            ->options($searchOptions)
+            ->get();
+        
+        // Post-traitement pour affiner et scorer les résultats
+        $this->searchResults = collect($results)
+            ->map(function($product) use ($vendor, $name, $type) {
+                return $this->calculateProductScore($product, $vendor, $name, $type);
+            })
+            ->filter(function($product) {
+                // Filtrer les produits avec un score négatif
+                return $product->match_score > 0;
+            })
+            ->sortByDesc('match_score')
+            ->take(10)
+            ->values();
+        
+        // Si aucun résultat avec filtre strict, essayer une recherche plus souple
+        if ($this->searchResults->isEmpty()) {
+            $this->fallbackSearch($vendor, $name, $type);
+        }
+        
+    } catch (\Exception $e) {
+        $this->error = 'Erreur de recherche Typesense: ' . $e->getMessage();
+        $this->searchResults = collect();
+    }
+}
+
+/**
+ * Recherche de secours avec critères plus souples
+ */
+private function fallbackSearch(?string $vendor, ?string $name, ?string $type): void
+{
+    if (!$vendor || !$name) {
+        return;
+    }
+    
+    // Construction de la query complète
+    $searchParts = array_filter([$vendor, $name, $type]);
+    $searchQuery = implode(' ', $searchParts);
+    
+    $searchOptions = [
+        'query_by' => 'vendor,name,type,variation',
+        'query_by_weights' => '2,4,2,1',
+        'prioritize_exact_match' => true,
+        'prefix' => true,
+        'num_typos' => 2, // Plus tolérant
+        'per_page' => 20,
+        'sort_by' => '_text_match:desc',
+        // 'infix' => 'always', // RETIRER CETTE LIGNE
+    ];
+    
+    try {
+        $results = Product::search($searchQuery)
+            ->options($searchOptions)
+            ->get();
+        
+        $this->searchResults = collect($results)
+            ->map(function($product) use ($vendor, $name, $type) {
+                return $this->calculateProductScore($product, $vendor, $name, $type);
+            })
+            ->filter(fn($product) => $product->match_score > -200) // Plus tolérant
+            ->sortByDesc('match_score')
+            ->take(10)
+            ->values();
+            
+    } catch (\Exception $e) {
+        // Ignorer l'erreur du fallback
+    }
+}
     
     /**
      * Calcule le score de pertinence d'un produit
@@ -322,49 +365,6 @@ new class extends Component {
         $product->match_details = $details;
         
         return $product;
-    }
-    
-    /**
-     * Recherche de secours avec critères plus souples
-     */
-    private function fallbackSearch(?string $vendor, ?string $name, ?string $type): void
-    {
-        if (!$vendor || !$name) {
-            return;
-        }
-        
-        // Construction de la query complète
-        $searchParts = array_filter([$vendor, $name, $type]);
-        $searchQuery = implode(' ', $searchParts);
-        
-        $searchOptions = [
-            'query_by' => 'vendor,name,type,variation',
-            'query_by_weights' => '2,4,2,1',
-            'prioritize_exact_match' => true,
-            'prefix' => true,
-            'num_typos' => 2, // Plus tolérant
-            'per_page' => 20,
-            'sort_by' => '_text_match:desc',
-            'infix' => 'always',
-        ];
-        
-        try {
-            $results = Product::search($searchQuery)
-                ->options($searchOptions)
-                ->get();
-            
-            $this->searchResults = collect($results)
-                ->map(function($product) use ($vendor, $name, $type) {
-                    return $this->calculateProductScore($product, $vendor, $name, $type);
-                })
-                ->filter(fn($product) => $product->match_score > -200) // Plus tolérant
-                ->sortByDesc('match_score')
-                ->take(10)
-                ->values();
-                
-        } catch (\Exception $e) {
-            // Ignorer l'erreur du fallback
-        }
     }
     
     public function testWithExamples(): void
