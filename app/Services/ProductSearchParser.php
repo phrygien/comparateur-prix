@@ -2,58 +2,112 @@
 
 namespace App\Services;
 
+use OpenAI\Client;
+
 class ProductSearchParser
 {
-    public function parse(string $searchText): array
+    private Client $openai;
+
+    public function __construct()
     {
-        // Exemple: "Hermès - Un Jardin Sous la Mer - Eau de Toilette Vaporisateur 100ml"
-        $parts = explode(' - ', $searchText);
-        
-        $vendor = null;
-        $name = null;
-        $type = null;
-        
-        if (count($parts) >= 1) {
-            $vendor = trim($parts[0]);
-        }
-        
-        if (count($parts) >= 2) {
-            $name = trim($parts[1]);
-        }
-        
-        if (count($parts) >= 3) {
-            // Extraire le type (tout sauf la contenance)
-            $typeRaw = trim($parts[2]);
-            // Retirer les contenances comme "100ml", "50ml", etc.
-            $type = preg_replace('/\s*\d+\s*(ml|g|oz|L)\s*$/i', '', $typeRaw);
-            $type = trim($type);
-        }
-        
-        return [
-            'vendor' => $vendor,
-            'name' => $name,
-            'type' => $type,
-        ];
+        $this->openai = \OpenAI::client(env('OPENAI_API_KEY'));
     }
-    
+
     /**
-     * Prépare le nom pour une recherche stricte
-     * Convertit "Un Jardin sous la mer" en tableau de mots obligatoires
+     * Extrait les critères de recherche d'un nom de produit
+     *
+     * @param string $productName
+     * @return array{vendor: string|null, name: string|null, type: string|null, variation: string|null}
      */
-    public function prepareStrictNameSearch(string $name): string
+    public function parseProductName(string $productName): array
     {
-        // Diviser en mots et retirer les mots vides courts
-        $words = preg_split('/\s+/', mb_strtolower($name), -1, PREG_SPLIT_NO_EMPTY);
+        $prompt = $this->buildPrompt($productName);
+
+        try {
+            $response = $this->openai->chat()->create([
+                'model' => 'gpt-4-turbo-preview', // Utilisez 'gpt-4' ou 'gpt-4-turbo-preview'
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => 'Tu es un expert en analyse de noms de produits cosmétiques et parfums. Tu extrais avec précision le vendor (marque), le nom du produit, le type de produit et les variations (contenance, etc.).'
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => $prompt
+                    ]
+                ],
+                'temperature' => 0.1,
+                'response_format' => ['type' => 'json_object'],
+            ]);
+
+            $content = $response->choices[0]->message->content;
+            $parsed = json_decode($content, true);
+
+            return [
+                'vendor' => $parsed['vendor'] ?? null,
+                'name' => $parsed['name'] ?? null,
+                'type' => $parsed['type'] ?? null,
+                'variation' => $parsed['variation'] ?? null,
+            ];
+
+        } catch (\Exception $e) {
+            \Log::error('Erreur lors du parsing du produit: ' . $e->getMessage());
+            
+            return [
+                'vendor' => null,
+                'name' => null,
+                'type' => null,
+                'variation' => null,
+            ];
+        }
+    }
+
+    /**
+     * Construit le prompt pour OpenAI
+     */
+    private function buildPrompt(string $productName): string
+    {
+        return <<<PROMPT
+Analyse le nom de produit suivant et extrais les informations en format JSON strict :
+
+Nom du produit : "$productName"
+
+Règles d'extraction :
+1. **vendor** : La marque ou le fabricant (généralement le premier mot avant le tiret)
+2. **name** : Le nom commercial du produit (entre les tirets, sans le type ni la variation)
+3. **type** : Le type de produit (ex: "Eau de Parfum Vaporisateur", "Eau de Toilette", "Crème", etc.)
+4. **variation** : La contenance ou variation (ex: "30ml", "50ml", "100ml", etc.)
+
+Exemple :
+Entrée : "Cacharel - Ella Ella Flora Azura - Eau de Parfum Vaporisateur 30ml"
+Sortie : {
+  "vendor": "Cacharel",
+  "name": "Ella Ella Flora Azura",
+  "type": "Eau de Parfum Vaporisateur",
+  "variation": "30ml"
+}
+
+Retourne UNIQUEMENT le JSON sans aucun texte additionnel. Si une information n'est pas trouvée, utilise null.
+PROMPT;
+    }
+
+    /**
+     * Parse plusieurs produits en batch
+     *
+     * @param array $productNames
+     * @return array
+     */
+    public function parseMultipleProducts(array $productNames): array
+    {
+        $results = [];
         
-        // Mots à ignorer (articles, prépositions courtes)
-        $stopWords = ['le', 'la', 'les', 'un', 'une', 'des', 'de', 'du', 'a', 'au'];
-        
-        // Filtrer les stop words sauf si c'est crucial pour le sens
-        $importantWords = array_filter($words, function($word) use ($stopWords) {
-            return strlen($word) > 2 || !in_array($word, $stopWords);
-        });
-        
-        // Retourner tous les mots importants
-        return implode(' ', $importantWords);
+        foreach ($productNames as $productName) {
+            $results[] = [
+                'original' => $productName,
+                'parsed' => $this->parseProductName($productName)
+            ];
+        }
+
+        return $results;
     }
 }
