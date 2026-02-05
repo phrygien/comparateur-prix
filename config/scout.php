@@ -246,9 +246,7 @@ return [
                 'search-parameters' => [
                     'query_by' => 'name,vendor,type,variation',
                     'prioritize_exact_match' => true,
-
-                    // Optionnel : si vous voulez aussi trier par pertinence puis par date
-                    // 'sort_by' => '_text_match:desc,created_at:desc',
+                    'sort_by' => '_text_match:desc,created_at:desc',
                 ],
             ],
         ],
