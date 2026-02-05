@@ -16,8 +16,6 @@ new class extends Component {
     public bool $loading = false;
     public ?string $error = null;
     public Collection $searchResults;
-    public bool $debugMode = false;
-    public array $debugInfo = [];
 
     public function mount($name = '', $id = '', $price = ''): void
     {
@@ -33,36 +31,17 @@ new class extends Component {
      */
     private function normalizeForSearch(string $text): string
     {
-        // Conversion en minuscules
         $normalized = Str::lower($text);
-        
-        // Remplacement des caractères accentués
-        $normalized = str_replace(
-            ['à', 'á', 'â', 'ã', 'ä', 'å', 'è', 'é', 'ê', 'ë', 'ì', 'í', 'î', 'ï', 'ò', 'ó', 'ô', 'õ', 'ö', 'ù', 'ú', 'û', 'ü', 'ý', 'ÿ', 'ñ', 'ç'],
-            ['a', 'a', 'a', 'a', 'a', 'a', 'e', 'e', 'e', 'e', 'i', 'i', 'i', 'i', 'o', 'o', 'o', 'o', 'o', 'u', 'u', 'u', 'u', 'y', 'y', 'n', 'c'],
-            $normalized
-        );
-        
-        // Remplacement des apostrophes et guillemets par espaces
-        $normalized = str_replace(['\'', '"', ''', ''', '"', '"'], ' ', $normalized);
-        
-        // Remplacement des tirets et autres séparateurs par espaces
-        $normalized = str_replace(['-', '_', '/', '\\', '|'], ' ', $normalized);
-        
-        // Suppression de tous les caractères non alphanumériques sauf espaces
+        $normalized = str_replace(['-', '_', '/', '\\'], ' ', $normalized);
         $normalized = preg_replace('/[^a-z0-9\s]/', '', $normalized);
-        
-        // Remplacement des espaces multiples par un seul espace
         $normalized = preg_replace('/\s+/', ' ', $normalized);
-        
         return trim($normalized);
     }
     
     /**
      * Vérifie le matching mot par mot et retourne le score
-     * Pour le type, on utilise un matching flexible
      */
-    private function matchWordByWord(string $searchText, string $productText, int $minMatchRatio = 60, bool $isTypeField = false): array
+    private function matchWordByWord(string $searchText, string $productText, int $minMatchRatio = 60): array
     {
         $normalizedProductText = $this->normalizeForSearch($productText);
         
@@ -79,64 +58,38 @@ new class extends Component {
             ];
         }
         
-        // Pour le type, on définit des mots-clés importants (les mots qui définissent vraiment le type de produit)
-        $typeKeywords = ['parfum', 'toilette', 'cologne', 'creme', 'lotion', 'gel', 'serum', 'huile', 'baume', 'shampooing', 'soin', 'mousse', 'spray', 'deodorant', 'eau'];
-        
-        // Mots non-essentiels qu'on peut ignorer dans le type
-        $nonEssentialWords = ['vaporisateur', 'flacon', 'ml', 'bouteille', 'tube', 'pot', 'stick', 'roll', 'on', 'vapo'];
-        
         $wordScores = [];
         $totalWordScore = 0;
-        $keywordFound = false;
-        $keywordsFoundCount = 0;
         
         foreach ($searchWords as $index => $word) {
             if (empty($word)) continue;
-            
-            // Pour le type, si c'est un mot-clé important
-            $isKeyword = $isTypeField && in_array($word, $typeKeywords);
-            $isNonEssential = $isTypeField && in_array($word, $nonEssentialWords);
             
             // Position dans le texte du produit
             $position = mb_strpos($normalizedProductText, $word);
             
             if ($position !== false) {
                 // Le mot est trouvé
-                $wordScore = 0;
+                // Score plus élevé si le mot est au début
+                $positionScore = max(0, 100 - ($position * 2));
                 
-                if ($isKeyword) {
-                    // Les mots-clés du type ont un poids très élevé
-                    $wordScore = 300; // Augmenté pour donner plus de poids aux mots-clés
-                    $keywordFound = true;
-                    $keywordsFoundCount++;
-                } else {
-                    // Score plus élevé si le mot est au début
-                    $positionScore = max(0, 100 - ($position * 2));
-                    
-                    // Score plus élevé pour les premiers mots de la recherche
-                    $orderScore = max(0, 50 - ($index * 10));
-                    
-                    $wordScore = $positionScore + $orderScore;
-                }
+                // Score plus élevé pour les premiers mots de la recherche
+                $orderScore = max(0, 50 - ($index * 10));
                 
+                $wordScore = $positionScore + $orderScore;
                 $totalWordScore += $wordScore;
                 
                 $wordScores[] = [
                     'word' => $word,
                     'found' => true,
                     'position' => $position,
-                    'score' => $wordScore,
-                    'is_keyword' => $isKeyword,
-                    'is_non_essential' => $isNonEssential
+                    'score' => $wordScore
                 ];
             } else {
                 $wordScores[] = [
                     'word' => $word,
                     'found' => false,
                     'position' => null,
-                    'score' => 0,
-                    'is_keyword' => $isKeyword,
-                    'is_non_essential' => $isNonEssential
+                    'score' => 0
                 ];
             }
         }
@@ -145,36 +98,14 @@ new class extends Component {
         $wordsFound = count(array_filter($wordScores, fn($w) => $w['found']));
         $matchRatio = count($searchWords) > 0 ? ($wordsFound / count($searchWords)) * 100 : 0;
         
-        // Pour le type, logique flexible basée sur les mots-clés
-        if ($isTypeField) {
-            // Compte combien de mots-clés on cherche
-            $keywordsInSearch = count(array_filter($searchWords, fn($w) => in_array($w, $typeKeywords)));
-            
-            // RÈGLE SPÉCIALE : Si on a trouvé au moins 1 mot-clé, on accepte TOUJOURS
-            if ($keywordFound) {
-                // Force le match même si le ratio est faible
-                $minMatchRatio = 1; // Pratiquement aucune exigence si mot-clé trouvé
-                
-                // Bonus supplémentaire si on trouve plusieurs mots-clés
-                if ($keywordsFoundCount > 1) {
-                    $totalWordScore += 100;
-                }
-            } elseif ($keywordsInSearch === 0) {
-                // Si pas de mot-clé dans la recherche, on est un peu plus strict
-                $minMatchRatio = 50;
-            }
-        }
-        
         // Vérification du ratio minimum
         if ($matchRatio < $minMatchRatio) {
             return [
                 'matched' => false,
-                'score' => $totalWordScore, // On retourne quand même le score pour debug
+                'score' => 0,
                 'words' => $wordScores,
                 'ratio' => $matchRatio,
-                'in_order' => false,
-                'keyword_found' => $keywordFound,
-                'keywords_count' => $keywordsFoundCount
+                'in_order' => false
             ];
         }
         
@@ -205,9 +136,7 @@ new class extends Component {
             'score' => $totalWordScore,
             'words' => $wordScores,
             'ratio' => $matchRatio,
-            'in_order' => $inOrder,
-            'keyword_found' => $keywordFound,
-            'keywords_count' => $keywordsFoundCount
+            'in_order' => $inOrder
         ];
     }
     
@@ -247,18 +176,6 @@ new class extends Component {
         $name = $this->parsedResult['name'] ?? null;
         $type = $this->parsedResult['type'] ?? null;
         
-        $this->debugInfo = [
-            'search_vendor' => $vendor,
-            'search_name' => $name,
-            'search_type' => $type,
-            'products_fetched' => 0,
-            'products_after_vendor_filter' => 0,
-            'products_rejected_by_name' => 0,
-            'products_rejected_by_type' => 0,
-            'products_accepted' => 0,
-            'name_rejection_details' => [],
-        ];
-        
         // Récupération de tous les produits potentiels avec vendor
         $query = Product::query();
         
@@ -275,7 +192,6 @@ new class extends Component {
         
         // Récupération des résultats
         $results = $query->limit(200)->get();
-        $this->debugInfo['products_fetched'] = $results->count();
         
         // Filtrage côté application avec normalisation et matching mot par mot
         $filtered = $results->filter(function($product) use ($vendor, $name, $type) {
@@ -298,23 +214,11 @@ new class extends Component {
                 }
             }
             
-            $this->debugInfo['products_after_vendor_filter']++;
-            
-            // Vérification name mot par mot (OBLIGATOIRE - au moins 70% des mots)
+            // Vérification name mot par mot (OBLIGATOIRE - au moins 80% des mots)
             if ($name) {
-                $nameMatch = $this->matchWordByWord($name, $product->name ?? '', 70, false);
+                $nameMatch = $this->matchWordByWord($name, $product->name ?? '', 80);
                 
                 if (!$nameMatch['matched']) {
-                    $this->debugInfo['products_rejected_by_name']++;
-                    if ($this->debugMode) {
-                        $this->debugInfo['name_rejection_details'][] = [
-                            'product_name' => $product->name,
-                            'product_name_normalized' => $this->normalizeForSearch($product->name ?? ''),
-                            'search_name_normalized' => $this->normalizeForSearch($name),
-                            'match_ratio' => $nameMatch['ratio'] ?? 0,
-                            'words' => $nameMatch['words'] ?? [],
-                        ];
-                    }
                     return false; // Pas assez de mots qui matchent dans le name
                 }
                 
@@ -326,34 +230,20 @@ new class extends Component {
                 return false; // Pas de name = exclusion
             }
             
-            // Vérification type mot par mot avec logique TRÈS flexible
+            // Vérification type mot par mot (OBLIGATOIRE - au moins 70% des mots)
             if ($type) {
-                $typeMatch = $this->matchWordByWord($type, $product->type ?? '', 70, true);
+                $typeMatch = $this->matchWordByWord($type, $product->type ?? '', 70);
                 
-                // LOGIQUE SIMPLIFIÉE : Si au moins 1 mot-clé trouvé, on accepte
-                if ($typeMatch['keyword_found']) {
-                    // On force le match si mot-clé trouvé
-                    if (!$typeMatch['matched']) {
-                        $typeMatch['matched'] = true;
-                        $typeMatch['score'] = max(200, $typeMatch['score']); // Score minimum garanti
-                    }
-                }
-                
-                // Si toujours pas de match ET pas de mot-clé, on rejette
                 if (!$typeMatch['matched']) {
-                    $this->debugInfo['products_rejected_by_type']++;
-                    return false;
+                    return false; // Pas assez de mots qui matchent dans le type
                 }
                 
                 $score += $typeMatch['score'];
                 $details['type_words'] = $typeMatch['words'];
                 $details['type_match_ratio'] = $typeMatch['ratio'];
                 $details['type_in_order'] = $typeMatch['in_order'];
-                $details['type_keyword_found'] = $typeMatch['keyword_found'] ?? false;
-                $details['type_keywords_count'] = $typeMatch['keywords_count'] ?? 0;
             }
             
-            $this->debugInfo['products_accepted']++;
             $product->match_score = $score;
             $product->match_details = $details;
             return $score > 0;
@@ -379,7 +269,6 @@ new class extends Component {
                 'Dior - J\'adore - Eau de Parfum 50ml',
                 'Chanel - N°5 - Eau de Toilette Spray 100ml',
                 'Shiseido Men - Revitalisant Total Crème - Recharge 50 ml',
-                'Yves Saint Laurent - Libre Berry Crush - Eau de Parfum Vaporisateur 30ml',
             ];
             
             $this->products = collect($parser->parseMultipleProducts($examples));
@@ -414,7 +303,7 @@ new class extends Component {
                 type="text" 
                 id="product-name"
                 wire:model="name"
-                placeholder="Ex: Yves Saint Laurent - Libre Berry Crush - Eau de Parfum Vaporisateur 30ml"
+                placeholder="Ex: Cacharel - Ella Ella Flora Azura - Eau de Parfum Vaporisateur 30ml"
                 class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
         </div>
@@ -445,101 +334,7 @@ new class extends Component {
             >
                 🗑️ Effacer
             </button>
-            
-            <button 
-                wire:click="$toggle('debugMode')"
-                class="px-6 py-2 {{ $debugMode ? 'bg-purple-600' : 'bg-purple-400' }} text-white rounded-lg hover:bg-purple-700 transition"
-            >
-                {{ $debugMode ? '🐛 Debug ON' : '🐛 Debug OFF' }}
-            </button>
         </div>
-        
-        {{-- Informations de debug --}}
-        @if($debugMode && !empty($debugInfo))
-            <div class="mb-6 p-4 bg-purple-50 border border-purple-300 rounded-lg">
-                <h3 class="text-sm font-bold text-purple-900 mb-2">🐛 Informations de Debug</h3>
-                <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs mb-4">
-                    <div class="bg-white p-2 rounded">
-                        <span class="font-semibold">Recherche Vendor:</span>
-                        <p class="text-purple-700">{{ $debugInfo['search_vendor'] ?? 'N/A' }}</p>
-                    </div>
-                    <div class="bg-white p-2 rounded">
-                        <span class="font-semibold">Recherche Name:</span>
-                        <p class="text-purple-700">{{ $debugInfo['search_name'] ?? 'N/A' }}</p>
-                    </div>
-                    <div class="bg-white p-2 rounded">
-                        <span class="font-semibold">Recherche Type:</span>
-                        <p class="text-purple-700">{{ $debugInfo['search_type'] ?? 'N/A' }}</p>
-                    </div>
-                    <div class="bg-blue-100 p-2 rounded">
-                        <span class="font-semibold">Produits DB:</span>
-                        <p class="text-blue-700 font-bold">{{ $debugInfo['products_fetched'] ?? 0 }}</p>
-                    </div>
-                    <div class="bg-green-100 p-2 rounded">
-                        <span class="font-semibold">Après filtre Vendor:</span>
-                        <p class="text-green-700 font-bold">{{ $debugInfo['products_after_vendor_filter'] ?? 0 }}</p>
-                    </div>
-                    <div class="bg-red-100 p-2 rounded">
-                        <span class="font-semibold">Rejetés (Name):</span>
-                        <p class="text-red-700 font-bold">{{ $debugInfo['products_rejected_by_name'] ?? 0 }}</p>
-                    </div>
-                    <div class="bg-orange-100 p-2 rounded">
-                        <span class="font-semibold">Rejetés (Type):</span>
-                        <p class="text-orange-700 font-bold">{{ $debugInfo['products_rejected_by_type'] ?? 0 }}</p>
-                    </div>
-                    <div class="bg-green-200 p-2 rounded">
-                        <span class="font-semibold">Acceptés:</span>
-                        <p class="text-green-800 font-bold">{{ $debugInfo['products_accepted'] ?? 0 }}</p>
-                    </div>
-                </div>
-                
-                {{-- Détails des rejets NAME --}}
-                @if(!empty($debugInfo['name_rejection_details']))
-                    <div class="mt-4 bg-red-50 p-3 rounded border border-red-200">
-                        <h4 class="text-xs font-bold text-red-900 mb-2">❌ Détails des rejets NAME (premiers 5)</h4>
-                        <div class="space-y-2">
-                            @foreach(array_slice($debugInfo['name_rejection_details'], 0, 5) as $rejection)
-                                <div class="bg-white p-2 rounded text-xs border border-red-100">
-                                    <div class="mb-1">
-                                        <span class="font-semibold text-gray-700">Produit:</span>
-                                        <span class="text-gray-900">{{ $rejection['product_name'] ?? 'N/A' }}</span>
-                                    </div>
-                                    <div class="mb-1">
-                                        <span class="font-semibold text-gray-700">Normalisé:</span>
-                                        <span class="text-gray-600 font-mono">{{ $rejection['product_name_normalized'] ?? 'N/A' }}</span>
-                                    </div>
-                                    <div class="mb-1">
-                                        <span class="font-semibold text-gray-700">Recherche normalisée:</span>
-                                        <span class="text-purple-600 font-mono">{{ $rejection['search_name_normalized'] ?? 'N/A' }}</span>
-                                    </div>
-                                    <div class="mb-1">
-                                        <span class="font-semibold text-gray-700">Match ratio:</span>
-                                        <span class="text-red-700 font-bold">{{ round($rejection['match_ratio'] ?? 0) }}%</span>
-                                        <span class="text-gray-500">(minimum: 70%)</span>
-                                    </div>
-                                    <div>
-                                        <span class="font-semibold text-gray-700">Mots:</span>
-                                        <div class="flex gap-1 flex-wrap mt-1">
-                                            @foreach($rejection['words'] ?? [] as $wordInfo)
-                                                @if($wordInfo['found'])
-                                                    <span class="bg-green-100 text-green-800 px-1.5 py-0.5 rounded text-xs">
-                                                        ✓ {{ $wordInfo['word'] }}
-                                                    </span>
-                                                @else
-                                                    <span class="bg-red-100 text-red-800 px-1.5 py-0.5 rounded text-xs">
-                                                        ✗ {{ $wordInfo['word'] }}
-                                                    </span>
-                                                @endif
-                                            @endforeach
-                                        </div>
-                                    </div>
-                                </div>
-                            @endforeach
-                        </div>
-                    </div>
-                @endif
-            </div>
-        @endif
         
         {{-- Message d'erreur --}}
         @if($error)
@@ -611,11 +406,6 @@ new class extends Component {
                                                         Type: {{ round($result->match_details['type_match_ratio']) }}%
                                                     </span>
                                                 @endif
-                                                @if(isset($result->match_details['type_keywords_count']) && $result->match_details['type_keywords_count'] > 0)
-                                                    <span class="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded">
-                                                        🔑 {{ $result->match_details['type_keywords_count'] }} mot(s)-clé
-                                                    </span>
-                                                @endif
                                                 @if(isset($result->match_details['name_in_order']) && $result->match_details['name_in_order'])
                                                     <span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
                                                         ✓ Ordre Name
@@ -656,8 +446,8 @@ new class extends Component {
                                                     <div class="flex gap-1 flex-wrap mt-1">
                                                         @foreach($result->match_details['type_words'] as $wordInfo)
                                                             @if($wordInfo['found'])
-                                                                <span class="text-xs {{ isset($wordInfo['is_keyword']) && $wordInfo['is_keyword'] ? 'bg-yellow-50 text-yellow-800 border-yellow-300' : 'bg-green-50 text-green-800 border-green-200' }} px-2 py-1 rounded border">
-                                                                    {{ isset($wordInfo['is_keyword']) && $wordInfo['is_keyword'] ? '🔑' : '✓' }} {{ $wordInfo['word'] }}
+                                                                <span class="text-xs bg-green-50 text-green-800 px-2 py-1 rounded border border-green-200">
+                                                                    ✓ {{ $wordInfo['word'] }}
                                                                 </span>
                                                             @else
                                                                 <span class="text-xs bg-red-50 text-red-800 px-2 py-1 rounded border border-red-200">
@@ -700,8 +490,8 @@ new class extends Component {
             </div>
         @elseif(!empty($parsedResult) && $searchResults->isEmpty())
             <div class="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-500 text-yellow-700 rounded">
-                <p class="font-medium">⚠️ Aucun produit trouvé avec ces critères</p>
-                <p class="text-sm mt-1">Les produits doivent avoir au moins 80% des mots du name qui correspondent. Pour le type, au moins un mot-clé important (parfum, toilette, eau, crème, etc.) doit être présent.</p>
+                <p class="font-medium">⚠️ Aucun produit trouvé avec ces critères stricts</p>
+                <p class="text-sm mt-1">Les produits doivent avoir au moins 80% des mots du name et 70% des mots du type qui correspondent.</p>
             </div>
         @endif
         
