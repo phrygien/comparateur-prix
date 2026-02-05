@@ -279,8 +279,17 @@ new class extends Component {
             if ($type) {
                 $typeMatch = $this->matchWordByWord($type, $product->type ?? '', 70, true);
                 
+                // Si le type ne matche pas, on vérifie si c'est juste à cause de mots non-essentiels
+                // comme "vaporisateur", "spray", "flacon", etc.
                 if (!$typeMatch['matched']) {
-                    return false; // Pas assez de mots qui matchent dans le type
+                    // Si au moins un mot-clé a été trouvé, on accepte quand même
+                    if (isset($typeMatch['keyword_found']) && $typeMatch['keyword_found']) {
+                        // On force le match avec un score réduit
+                        $typeMatch['matched'] = true;
+                        $typeMatch['score'] = max(100, $typeMatch['score']); // Score minimum
+                    } else {
+                        return false; // Pas de mot-clé trouvé = exclusion
+                    }
                 }
                 
                 $score += $typeMatch['score'];
@@ -544,7 +553,7 @@ new class extends Component {
         @elseif(!empty($parsedResult) && $searchResults->isEmpty())
             <div class="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-500 text-yellow-700 rounded">
                 <p class="font-medium">⚠️ Aucun produit trouvé avec ces critères</p>
-                <p class="text-sm mt-1">Les produits doivent avoir au moins 80% des mots du name qui correspondent et au moins un mot-clé important du type (parfum, toilette, eau, crème, etc.) si un type est spécifié.</p>
+                <p class="text-sm mt-1">Les produits doivent avoir au moins 80% des mots du name qui correspondent. Pour le type, au moins un mot-clé important (parfum, toilette, eau, crème, etc.) doit être présent.</p>
             </div>
         @endif
         
