@@ -102,8 +102,8 @@ new class extends Component {
                 wire:loading.attr="disabled"
                 class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
             >
-                <span wire:loading.remove wire:target="parseProduct">Analyser</span>
-                <span wire:loading wire:target="parseProduct">Analyse en cours...</span>
+                <span wire:loading.remove wire:target="parseProduct">🔍 Analyser</span>
+                <span wire:loading wire:target="parseProduct">⏳ Analyse en cours...</span>
             </button>
             
             <button 
@@ -111,8 +111,8 @@ new class extends Component {
                 wire:loading.attr="disabled"
                 class="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
             >
-                <span wire:loading.remove wire:target="testWithExamples">Tester avec exemples</span>
-                <span wire:loading wire:target="testWithExamples">Chargement...</span>
+                <span wire:loading.remove wire:target="testWithExamples">📋 Tester avec exemples</span>
+                <span wire:loading wire:target="testWithExamples">⏳ Chargement...</span>
             </button>
             
             <button 
@@ -187,3 +187,16 @@ new class extends Component {
                                 </div>
                             </div>
                         </div>
+                    @endforeach
+                </div>
+            </div>
+        @endif
+        
+        {{-- État vide --}}
+        @if(empty($parsedResult) && $products->isEmpty() && !$error && !$loading)
+            <div class="text-center py-8 text-gray-500">
+                <p class="text-lg">👆 Entrez un nom de produit ou testez avec les exemples</p>
+            </div>
+        @endif
+    </div>
+</div>
