@@ -4,6 +4,7 @@ use Livewire\Volt\Component;
 use App\Models\Product;
 use App\Services\ProductSearchParser;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 new class extends Component {
     public string $name = '';
@@ -23,6 +24,22 @@ new class extends Component {
         $this->price = $price;
         $this->products = collect();
         $this->searchResults = collect();
+    }
+    
+    /**
+     * Normalise un texte pour la recherche
+     * - Convertit en minuscules
+     * - Supprime les tirets, underscores
+     * - Supprime les espaces multiples
+     * - Supprime les caractères spéciaux
+     */
+    private function normalizeForSearch(string $text): string
+    {
+        $normalized = Str::lower($text);
+        $normalized = str_replace(['-', '_', '/', '\\'], ' ', $normalized);
+        $normalized = preg_replace('/[^a-z0-9\s]/', '', $normalized);
+        $normalized = preg_replace('/\s+/', ' ', $normalized);
+        return trim($normalized);
     }
     
     public function parseProduct(): void
@@ -61,26 +78,86 @@ new class extends Component {
         $name = $this->parsedResult['name'] ?? null;
         $type = $this->parsedResult['type'] ?? null;
         
-        // Construction de la requête
+        // Récupération de tous les produits potentiels
         $query = Product::query();
         
-        // Filtre par vendor (exact match)
+        // Filtrage initial large
         if ($vendor) {
-            $query->where('vendor', $vendor);
+            $normalizedVendor = $this->normalizeForSearch($vendor);
+            $query->where(function($q) use ($vendor, $normalizedVendor) {
+                $q->where('vendor', $vendor)
+                  ->orWhere('vendor', 'LIKE', '%' . $vendor . '%')
+                  ->orWhereRaw('LOWER(REPLACE(REPLACE(REPLACE(vendor, "-", " "), "_", " "), "  ", " ")) LIKE ?', 
+                               ['%' . $normalizedVendor . '%']);
+            });
         }
         
-        // Filtre par name (LIKE)
-        if ($name) {
-            $query->where('name', 'LIKE', '%' . $name . '%');
-        }
+        // Récupération des résultats
+        $results = $query->limit(100)->get();
         
-        // Filtre par type (exact match ou LIKE selon la précision)
-        if ($type) {
-            $query->where('type', 'LIKE', '%' . $type . '%');
-        }
+        // Filtrage côté application avec normalisation
+        $filtered = $results->filter(function($product) use ($vendor, $name, $type) {
+            $score = 0;
+            
+            // Vérification vendor
+            if ($vendor) {
+                $normalizedVendor = $this->normalizeForSearch($vendor);
+                $normalizedProductVendor = $this->normalizeForSearch($product->vendor ?? '');
+                
+                if ($normalizedProductVendor === $normalizedVendor) {
+                    $score += 100; // Match exact
+                } elseif (Str::contains($normalizedProductVendor, $normalizedVendor)) {
+                    $score += 50; // Match partiel
+                } else {
+                    return false; // Pas de match vendor = exclusion
+                }
+            }
+            
+            // Vérification name
+            if ($name) {
+                $normalizedName = $this->normalizeForSearch($name);
+                $normalizedProductName = $this->normalizeForSearch($product->name ?? '');
+                
+                // Découpe en mots pour recherche partielle
+                $nameWords = explode(' ', $normalizedName);
+                $matchedWords = 0;
+                
+                foreach ($nameWords as $word) {
+                    if (!empty($word) && Str::contains($normalizedProductName, $word)) {
+                        $matchedWords++;
+                    }
+                }
+                
+                // Au moins 60% des mots doivent matcher
+                $wordMatchRatio = count($nameWords) > 0 ? $matchedWords / count($nameWords) : 0;
+                
+                if ($wordMatchRatio >= 0.6) {
+                    $score += (int)($wordMatchRatio * 100);
+                } else {
+                    return false; // Pas assez de mots qui matchent
+                }
+            }
+            
+            // Vérification type
+            if ($type) {
+                $normalizedType = $this->normalizeForSearch($type);
+                $normalizedProductType = $this->normalizeForSearch($product->type ?? '');
+                
+                if (Str::contains($normalizedProductType, $normalizedType) || 
+                    Str::contains($normalizedType, $normalizedProductType)) {
+                    $score += 30;
+                }
+            }
+            
+            $product->match_score = $score;
+            return $score > 0;
+        });
         
-        // Limite à 10 résultats
-        $this->searchResults = $query->limit(10)->get();
+        // Tri par score et limite à 10
+        $this->searchResults = $filtered
+            ->sortByDesc('match_score')
+            ->take(10)
+            ->values();
     }
     
     public function testWithExamples(): void
@@ -216,8 +293,13 @@ new class extends Component {
                                 @endif
                                 <div class="flex-1">
                                     <div class="flex justify-between items-start mb-2">
-                                        <div>
-                                            <span class="text-xs font-semibold text-blue-600 uppercase">{{ $result->vendor }}</span>
+                                        <div class="flex-1">
+                                            <div class="flex items-center gap-2">
+                                                <span class="text-xs font-semibold text-blue-600 uppercase">{{ $result->vendor }}</span>
+                                                <span class="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">
+                                                    Score: {{ $result->match_score ?? 0 }}
+                                                </span>
+                                            </div>
                                             <h4 class="text-lg font-semibold text-gray-900">{{ $result->name }}</h4>
                                         </div>
                                         <div class="text-right">
