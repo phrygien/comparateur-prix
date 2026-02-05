@@ -191,25 +191,29 @@ return [
                         [
                             'name' => 'vendor',
                             'type' => 'string',
-                            'infix' => true,
                         ],
                         [
                             'name' => 'name',
                             'type' => 'string',
-                            'infix' => true,
                         ],
                         [
                             'name' => 'type',
                             'type' => 'string',
-                            'infix' => true,
-                            'facet' => true
                         ],
                         [
                             'name' => 'variation',
                             'type' => 'string',
                             'optional' => true,
-                            'facet' => true, // Facet uniquement sur variation
-                            'infix' => true,
+                        ],
+                        [
+                            'name' => 'embedding',
+                            'type' => 'float[]',
+                            'embed' => [
+                                'from' => ['vendor, name, type, variation'],
+                                'model_config' => [
+                                    'model_name' => 'ts/all-MiniLM-L12-v2'
+                                ]
+                            ]
                         ],
                         [
                             'name' => 'prix_ht',
@@ -249,11 +253,7 @@ return [
                     'default_sorting_field' => 'created_at',
                 ],
                 'search-parameters' => [
-                    'query_by' => 'name,vendor,type,variation',
-                    'prioritize_exact_match' => true,
-                    'sort_by' => '_text_match:desc,created_at:desc',
-                    'facet_by' => 'type,variation', // Facet uniquement sur variation
-                    'max_facet_values' => 100,
+                    'query_by' => 'vendor,name,type,variation',
                 ],
             ],
         ],
