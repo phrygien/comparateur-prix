@@ -28,10 +28,6 @@ new class extends Component {
     
     /**
      * Normalise un texte pour la recherche
-     * - Convertit en minuscules
-     * - Supprime les tirets, underscores
-     * - Supprime les espaces multiples
-     * - Supprime les caractères spéciaux
      */
     private function normalizeForSearch(string $text): string
     {
@@ -78,10 +74,10 @@ new class extends Component {
         $name = $this->parsedResult['name'] ?? null;
         $type = $this->parsedResult['type'] ?? null;
         
-        // Récupération de tous les produits potentiels
+        // Récupération de tous les produits potentiels avec vendor
         $query = Product::query();
         
-        // Filtrage initial large
+        // Filtrage initial par vendor
         if ($vendor) {
             $normalizedVendor = $this->normalizeForSearch($vendor);
             $query->where(function($q) use ($vendor, $normalizedVendor) {
@@ -93,11 +89,12 @@ new class extends Component {
         }
         
         // Récupération des résultats
-        $results = $query->limit(100)->get();
+        $results = $query->limit(200)->get();
         
-        // Filtrage côté application avec normalisation
+        // Filtrage côté application avec normalisation et matching mot par mot
         $filtered = $results->filter(function($product) use ($vendor, $name, $type) {
             $score = 0;
+            $details = [];
             
             // Vérification vendor
             if ($vendor) {
@@ -105,37 +102,94 @@ new class extends Component {
                 $normalizedProductVendor = $this->normalizeForSearch($product->vendor ?? '');
                 
                 if ($normalizedProductVendor === $normalizedVendor) {
-                    $score += 100; // Match exact
+                    $score += 100;
+                    $details['vendor_match'] = 'exact';
                 } elseif (Str::contains($normalizedProductVendor, $normalizedVendor)) {
-                    $score += 50; // Match partiel
+                    $score += 50;
+                    $details['vendor_match'] = 'partial';
                 } else {
-                    return false; // Pas de match vendor = exclusion
+                    return false;
                 }
             }
             
-            // Vérification name
+            // Vérification name mot par mot
             if ($name) {
-                $normalizedName = $this->normalizeForSearch($name);
                 $normalizedProductName = $this->normalizeForSearch($product->name ?? '');
                 
-                // Découpe en mots pour recherche partielle
-                $nameWords = explode(' ', $normalizedName);
-                $matchedWords = 0;
+                // Découpe le nom extrait en mots
+                $searchWords = array_filter(explode(' ', $this->normalizeForSearch($name)));
                 
-                foreach ($nameWords as $word) {
-                    if (!empty($word) && Str::contains($normalizedProductName, $word)) {
-                        $matchedWords++;
+                $wordScores = [];
+                $totalWordScore = 0;
+                
+                foreach ($searchWords as $index => $word) {
+                    if (empty($word)) continue;
+                    
+                    // Position dans le nom du produit
+                    $position = mb_strpos($normalizedProductName, $word);
+                    
+                    if ($position !== false) {
+                        // Le mot est trouvé
+                        // Score plus élevé si le mot est au début
+                        $positionScore = max(0, 100 - ($position * 2));
+                        
+                        // Score plus élevé pour les premiers mots de la recherche
+                        $orderScore = max(0, 50 - ($index * 10));
+                        
+                        $wordScore = $positionScore + $orderScore;
+                        $totalWordScore += $wordScore;
+                        
+                        $wordScores[] = [
+                            'word' => $word,
+                            'found' => true,
+                            'position' => $position,
+                            'score' => $wordScore
+                        ];
+                    } else {
+                        $wordScores[] = [
+                            'word' => $word,
+                            'found' => false,
+                            'position' => null,
+                            'score' => 0
+                        ];
                     }
                 }
                 
-                // Au moins 60% des mots doivent matcher
-                $wordMatchRatio = count($nameWords) > 0 ? $matchedWords / count($nameWords) : 0;
+                // Calcul du pourcentage de mots trouvés
+                $wordsFound = count(array_filter($wordScores, fn($w) => $w['found']));
+                $matchRatio = count($searchWords) > 0 ? $wordsFound / count($searchWords) : 0;
                 
-                if ($wordMatchRatio >= 0.6) {
-                    $score += (int)($wordMatchRatio * 100);
-                } else {
-                    return false; // Pas assez de mots qui matchent
+                // Il faut au moins 60% des mots qui matchent
+                if ($matchRatio < 0.6) {
+                    return false;
                 }
+                
+                // Bonus si tous les mots sont trouvés
+                if ($matchRatio === 1.0) {
+                    $totalWordScore += 100;
+                }
+                
+                // Bonus si les mots sont dans le bon ordre
+                $inOrder = true;
+                $lastPosition = -1;
+                foreach ($wordScores as $ws) {
+                    if ($ws['found']) {
+                        if ($ws['position'] < $lastPosition) {
+                            $inOrder = false;
+                            break;
+                        }
+                        $lastPosition = $ws['position'];
+                    }
+                }
+                
+                if ($inOrder && $wordsFound > 1) {
+                    $totalWordScore += 50;
+                }
+                
+                $score += $totalWordScore;
+                $details['name_words'] = $wordScores;
+                $details['name_match_ratio'] = $matchRatio;
+                $details['name_in_order'] = $inOrder;
             }
             
             // Vérification type
@@ -146,10 +200,12 @@ new class extends Component {
                 if (Str::contains($normalizedProductType, $normalizedType) || 
                     Str::contains($normalizedType, $normalizedProductType)) {
                     $score += 30;
+                    $details['type_match'] = true;
                 }
             }
             
             $product->match_score = $score;
+            $product->match_details = $details;
             return $score > 0;
         });
         
@@ -294,13 +350,40 @@ new class extends Component {
                                 <div class="flex-1">
                                     <div class="flex justify-between items-start mb-2">
                                         <div class="flex-1">
-                                            <div class="flex items-center gap-2">
+                                            <div class="flex items-center gap-2 flex-wrap">
                                                 <span class="text-xs font-semibold text-blue-600 uppercase">{{ $result->vendor }}</span>
                                                 <span class="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">
                                                     Score: {{ $result->match_score ?? 0 }}
                                                 </span>
+                                                @if(isset($result->match_details['name_match_ratio']))
+                                                    <span class="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
+                                                        Match: {{ round($result->match_details['name_match_ratio'] * 100) }}%
+                                                    </span>
+                                                @endif
+                                                @if(isset($result->match_details['name_in_order']) && $result->match_details['name_in_order'])
+                                                    <span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                                                        ✓ Ordre
+                                                    </span>
+                                                @endif
                                             </div>
-                                            <h4 class="text-lg font-semibold text-gray-900">{{ $result->name }}</h4>
+                                            <h4 class="text-lg font-semibold text-gray-900 mt-1">{{ $result->name }}</h4>
+                                            
+                                            {{-- Détails du matching mot par mot --}}
+                                            @if(isset($result->match_details['name_words']))
+                                                <div class="mt-2 flex gap-1 flex-wrap">
+                                                    @foreach($result->match_details['name_words'] as $wordInfo)
+                                                        @if($wordInfo['found'])
+                                                            <span class="text-xs bg-green-50 text-green-800 px-2 py-1 rounded border border-green-200">
+                                                                ✓ {{ $wordInfo['word'] }}
+                                                            </span>
+                                                        @else
+                                                            <span class="text-xs bg-red-50 text-red-800 px-2 py-1 rounded border border-red-200">
+                                                                ✗ {{ $wordInfo['word'] }}
+                                                            </span>
+                                                        @endif
+                                                    @endforeach
+                                                </div>
+                                            @endif
                                         </div>
                                         <div class="text-right">
                                             <p class="text-lg font-bold text-green-600">
@@ -308,7 +391,7 @@ new class extends Component {
                                             </p>
                                         </div>
                                     </div>
-                                    <div class="grid grid-cols-2 gap-2 text-sm text-gray-600">
+                                    <div class="grid grid-cols-2 gap-2 text-sm text-gray-600 mt-2">
                                         <div>
                                             <span class="font-medium">Type:</span> {{ $result->type ?? 'N/A' }}
                                         </div>
