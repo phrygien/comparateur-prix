@@ -10,7 +10,7 @@ class ProductSearchParser
 
     public function __construct()
     {
-        $this->openai = \OpenAI::client(env('OPENAI_API_KEY'));
+        $this->openai = \OpenAI::client(config('services.openai.api_key'));
     }
 
     /**
@@ -25,11 +25,11 @@ class ProductSearchParser
 
         try {
             $response = $this->openai->chat()->create([
-                'model' => 'gpt-4-turbo-preview', // Utilisez 'gpt-4' ou 'gpt-4-turbo-preview'
+                'model' => 'gpt-4-turbo-preview',
                 'messages' => [
                     [
                         'role' => 'system',
-                        'content' => 'Tu es un expert en analyse de noms de produits cosmétiques et parfums. Tu extrais avec précision le vendor (marque), le nom du produit, le type de produit et les variations (contenance, etc.).'
+                        'content' => 'Tu es un expert en analyse de noms de produits cosmétiques et parfums. Tu extrais avec précision le vendor (marque complète), le nom du produit, le type de produit et les variations.'
                     ],
                     [
                         'role' => 'user',
@@ -72,19 +72,38 @@ Analyse le nom de produit suivant et extrais les informations en format JSON str
 
 Nom du produit : "$productName"
 
-Règles d'extraction :
-1. **vendor** : La marque ou le fabricant (généralement le premier mot avant le tiret)
-2. **name** : Le nom commercial du produit (entre les tirets, sans le type ni la variation)
-3. **type** : Le type de produit (ex: "Eau de Parfum Vaporisateur", "Eau de Toilette", "Crème", etc.)
-4. **variation** : La contenance ou variation (ex: "30ml", "50ml", "100ml", etc.)
+Règles d'extraction IMPORTANTES :
+1. **vendor** : TOUT ce qui est AVANT le premier tiret " - ". Cela peut inclure plusieurs mots (ex: "Shiseido Men", "Yves Saint Laurent", "Estée Lauder").
+2. **name** : Le nom commercial du produit entre les tirets, SANS le type ni la variation.
+3. **type** : Le type de produit (ex: "Eau de Parfum Vaporisateur", "Crème", "Revitalisant Total Crème", etc.)
+4. **variation** : La contenance ou variation à la fin (ex: "30ml", "50 ml", "100ml", "Recharge 50 ml", etc.)
 
-Exemple :
+ATTENTION : Le vendor inclut TOUS les mots avant le premier " - " (tiret avec espaces).
+
+Exemples :
+
 Entrée : "Cacharel - Ella Ella Flora Azura - Eau de Parfum Vaporisateur 30ml"
 Sortie : {
   "vendor": "Cacharel",
   "name": "Ella Ella Flora Azura",
   "type": "Eau de Parfum Vaporisateur",
   "variation": "30ml"
+}
+
+Entrée : "Shiseido Men - Revitalisant Total Crème - Recharge 50 ml"
+Sortie : {
+  "vendor": "Shiseido Men",
+  "name": "Revitalisant Total Crème",
+  "type": "Recharge",
+  "variation": "50 ml"
+}
+
+Entrée : "Yves Saint Laurent - Black Opium - Eau de Parfum 90ml"
+Sortie : {
+  "vendor": "Yves Saint Laurent",
+  "name": "Black Opium",
+  "type": "Eau de Parfum",
+  "variation": "90ml"
 }
 
 Retourne UNIQUEMENT le JSON sans aucun texte additionnel. Si une information n'est pas trouvée, utilise null.
