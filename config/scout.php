@@ -209,7 +209,7 @@ return [
                             'name' => 'embedding',
                             'type' => 'float[]',
                             'embed' => [
-                                'from' => ['vendor, name, type, variation'],
+                                'from' => ['vendor', 'name', 'type', 'variation'],
                                 'model_config' => [
                                     'model_name' => 'ts/all-MiniLM-L12-v2'
                                 ]
