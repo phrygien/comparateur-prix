@@ -39,14 +39,105 @@ new class extends Component {
     }
     
     /**
-     * Formate le prix en float
+     * Vérifie le matching mot par mot et retourne le score
      */
-    private function formatPrice($price): float
+    private function matchWordByWord(string $searchText, string $productText, int $minMatchRatio = 60): array
     {
-        if (is_null($price)) {
-            return 0.0;
+        $normalizedProductText = $this->normalizeForSearch($productText);
+        
+        // Découpe le texte de recherche en mots
+        $searchWords = array_filter(explode(' ', $this->normalizeForSearch($searchText)));
+        
+        if (empty($searchWords)) {
+            return [
+                'matched' => false,
+                'score' => 0,
+                'words' => [],
+                'ratio' => 0,
+                'in_order' => false
+            ];
         }
-        return (float) $price;
+        
+        $wordScores = [];
+        $totalWordScore = 0;
+        
+        foreach ($searchWords as $index => $word) {
+            if (empty($word)) continue;
+            
+            // Position dans le texte du produit
+            $position = mb_strpos($normalizedProductText, $word);
+            
+            if ($position !== false) {
+                // Le mot est trouvé
+                // Score plus élevé si le mot est au début
+                $positionScore = max(0, 100 - ($position * 2));
+                
+                // Score plus élevé pour les premiers mots de la recherche
+                $orderScore = max(0, 50 - ($index * 10));
+                
+                $wordScore = $positionScore + $orderScore;
+                $totalWordScore += $wordScore;
+                
+                $wordScores[] = [
+                    'word' => $word,
+                    'found' => true,
+                    'position' => $position,
+                    'score' => $wordScore
+                ];
+            } else {
+                $wordScores[] = [
+                    'word' => $word,
+                    'found' => false,
+                    'position' => null,
+                    'score' => 0
+                ];
+            }
+        }
+        
+        // Calcul du pourcentage de mots trouvés
+        $wordsFound = count(array_filter($wordScores, fn($w) => $w['found']));
+        $matchRatio = count($searchWords) > 0 ? ($wordsFound / count($searchWords)) * 100 : 0;
+        
+        // Vérification du ratio minimum
+        if ($matchRatio < $minMatchRatio) {
+            return [
+                'matched' => false,
+                'score' => 0,
+                'words' => $wordScores,
+                'ratio' => $matchRatio,
+                'in_order' => false
+            ];
+        }
+        
+        // Bonus si tous les mots sont trouvés
+        if ($matchRatio === 100) {
+            $totalWordScore += 100;
+        }
+        
+        // Bonus si les mots sont dans le bon ordre
+        $inOrder = true;
+        $lastPosition = -1;
+        foreach ($wordScores as $ws) {
+            if ($ws['found']) {
+                if ($ws['position'] < $lastPosition) {
+                    $inOrder = false;
+                    break;
+                }
+                $lastPosition = $ws['position'];
+            }
+        }
+        
+        if ($inOrder && $wordsFound > 1) {
+            $totalWordScore += 50;
+        }
+        
+        return [
+            'matched' => true,
+            'score' => $totalWordScore,
+            'words' => $wordScores,
+            'ratio' => $matchRatio,
+            'in_order' => $inOrder
+        ];
     }
     
     public function parseProduct(): void
@@ -107,7 +198,7 @@ new class extends Component {
             $score = 0;
             $details = [];
             
-            // Vérification vendor
+            // Vérification vendor (doit matcher)
             if ($vendor) {
                 $normalizedVendor = $this->normalizeForSearch($vendor);
                 $normalizedProductVendor = $this->normalizeForSearch($product->vendor ?? '');
@@ -119,100 +210,38 @@ new class extends Component {
                     $score += 50;
                     $details['vendor_match'] = 'partial';
                 } else {
-                    return false;
+                    return false; // Pas de match vendor = exclusion
                 }
             }
             
-            // Vérification name mot par mot
+            // Vérification name mot par mot (OBLIGATOIRE - au moins 80% des mots)
             if ($name) {
-                $normalizedProductName = $this->normalizeForSearch($product->name ?? '');
+                $nameMatch = $this->matchWordByWord($name, $product->name ?? '', 80);
                 
-                // Découpe le nom extrait en mots
-                $searchWords = array_filter(explode(' ', $this->normalizeForSearch($name)));
-                
-                $wordScores = [];
-                $totalWordScore = 0;
-                
-                foreach ($searchWords as $index => $word) {
-                    if (empty($word)) continue;
-                    
-                    // Position dans le nom du produit
-                    $position = mb_strpos($normalizedProductName, $word);
-                    
-                    if ($position !== false) {
-                        // Le mot est trouvé
-                        // Score plus élevé si le mot est au début
-                        $positionScore = max(0, 100 - ($position * 2));
-                        
-                        // Score plus élevé pour les premiers mots de la recherche
-                        $orderScore = max(0, 50 - ($index * 10));
-                        
-                        $wordScore = $positionScore + $orderScore;
-                        $totalWordScore += $wordScore;
-                        
-                        $wordScores[] = [
-                            'word' => $word,
-                            'found' => true,
-                            'position' => $position,
-                            'score' => $wordScore
-                        ];
-                    } else {
-                        $wordScores[] = [
-                            'word' => $word,
-                            'found' => false,
-                            'position' => null,
-                            'score' => 0
-                        ];
-                    }
+                if (!$nameMatch['matched']) {
+                    return false; // Pas assez de mots qui matchent dans le name
                 }
                 
-                // Calcul du pourcentage de mots trouvés
-                $wordsFound = count(array_filter($wordScores, fn($w) => $w['found']));
-                $matchRatio = count($searchWords) > 0 ? $wordsFound / count($searchWords) : 0;
-                
-                // Il faut au moins 60% des mots qui matchent
-                if ($matchRatio < 0.6) {
-                    return false;
-                }
-                
-                // Bonus si tous les mots sont trouvés
-                if ($matchRatio === 1.0) {
-                    $totalWordScore += 100;
-                }
-                
-                // Bonus si les mots sont dans le bon ordre
-                $inOrder = true;
-                $lastPosition = -1;
-                foreach ($wordScores as $ws) {
-                    if ($ws['found']) {
-                        if ($ws['position'] < $lastPosition) {
-                            $inOrder = false;
-                            break;
-                        }
-                        $lastPosition = $ws['position'];
-                    }
-                }
-                
-                if ($inOrder && $wordsFound > 1) {
-                    $totalWordScore += 50;
-                }
-                
-                $score += $totalWordScore;
-                $details['name_words'] = $wordScores;
-                $details['name_match_ratio'] = $matchRatio;
-                $details['name_in_order'] = $inOrder;
+                $score += $nameMatch['score'];
+                $details['name_words'] = $nameMatch['words'];
+                $details['name_match_ratio'] = $nameMatch['ratio'];
+                $details['name_in_order'] = $nameMatch['in_order'];
+            } else {
+                return false; // Pas de name = exclusion
             }
             
-            // Vérification type
+            // Vérification type mot par mot (OBLIGATOIRE - au moins 70% des mots)
             if ($type) {
-                $normalizedType = $this->normalizeForSearch($type);
-                $normalizedProductType = $this->normalizeForSearch($product->type ?? '');
+                $typeMatch = $this->matchWordByWord($type, $product->type ?? '', 70);
                 
-                if (Str::contains($normalizedProductType, $normalizedType) || 
-                    Str::contains($normalizedType, $normalizedProductType)) {
-                    $score += 30;
-                    $details['type_match'] = true;
+                if (!$typeMatch['matched']) {
+                    return false; // Pas assez de mots qui matchent dans le type
                 }
+                
+                $score += $typeMatch['score'];
+                $details['type_words'] = $typeMatch['words'];
+                $details['type_match_ratio'] = $typeMatch['ratio'];
+                $details['type_in_order'] = $typeMatch['in_order'];
             }
             
             $product->match_score = $score;
@@ -369,31 +398,64 @@ new class extends Component {
                                                 </span>
                                                 @if(isset($result->match_details['name_match_ratio']))
                                                     <span class="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
-                                                        Match: {{ round($result->match_details['name_match_ratio'] * 100) }}%
+                                                        Name: {{ round($result->match_details['name_match_ratio']) }}%
+                                                    </span>
+                                                @endif
+                                                @if(isset($result->match_details['type_match_ratio']))
+                                                    <span class="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded">
+                                                        Type: {{ round($result->match_details['type_match_ratio']) }}%
                                                     </span>
                                                 @endif
                                                 @if(isset($result->match_details['name_in_order']) && $result->match_details['name_in_order'])
                                                     <span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
-                                                        ✓ Ordre
+                                                        ✓ Ordre Name
+                                                    </span>
+                                                @endif
+                                                @if(isset($result->match_details['type_in_order']) && $result->match_details['type_in_order'])
+                                                    <span class="text-xs bg-cyan-100 text-cyan-700 px-2 py-1 rounded">
+                                                        ✓ Ordre Type
                                                     </span>
                                                 @endif
                                             </div>
                                             <h4 class="text-lg font-semibold text-gray-900 mt-1">{{ $result->name }}</h4>
                                             
-                                            {{-- Détails du matching mot par mot --}}
+                                            {{-- Détails du matching NAME mot par mot --}}
                                             @if(isset($result->match_details['name_words']))
-                                                <div class="mt-2 flex gap-1 flex-wrap">
-                                                    @foreach($result->match_details['name_words'] as $wordInfo)
-                                                        @if($wordInfo['found'])
-                                                            <span class="text-xs bg-green-50 text-green-800 px-2 py-1 rounded border border-green-200">
-                                                                ✓ {{ $wordInfo['word'] }}
-                                                            </span>
-                                                        @else
-                                                            <span class="text-xs bg-red-50 text-red-800 px-2 py-1 rounded border border-red-200">
-                                                                ✗ {{ $wordInfo['word'] }}
-                                                            </span>
-                                                        @endif
-                                                    @endforeach
+                                                <div class="mt-2">
+                                                    <span class="text-xs font-semibold text-gray-600">Name matching:</span>
+                                                    <div class="flex gap-1 flex-wrap mt-1">
+                                                        @foreach($result->match_details['name_words'] as $wordInfo)
+                                                            @if($wordInfo['found'])
+                                                                <span class="text-xs bg-green-50 text-green-800 px-2 py-1 rounded border border-green-200">
+                                                                    ✓ {{ $wordInfo['word'] }}
+                                                                </span>
+                                                            @else
+                                                                <span class="text-xs bg-red-50 text-red-800 px-2 py-1 rounded border border-red-200">
+                                                                    ✗ {{ $wordInfo['word'] }}
+                                                                </span>
+                                                            @endif
+                                                        @endforeach
+                                                    </div>
+                                                </div>
+                                            @endif
+                                            
+                                            {{-- Détails du matching TYPE mot par mot --}}
+                                            @if(isset($result->match_details['type_words']))
+                                                <div class="mt-2">
+                                                    <span class="text-xs font-semibold text-gray-600">Type matching:</span>
+                                                    <div class="flex gap-1 flex-wrap mt-1">
+                                                        @foreach($result->match_details['type_words'] as $wordInfo)
+                                                            @if($wordInfo['found'])
+                                                                <span class="text-xs bg-green-50 text-green-800 px-2 py-1 rounded border border-green-200">
+                                                                    ✓ {{ $wordInfo['word'] }}
+                                                                </span>
+                                                            @else
+                                                                <span class="text-xs bg-red-50 text-red-800 px-2 py-1 rounded border border-red-200">
+                                                                    ✗ {{ $wordInfo['word'] }}
+                                                                </span>
+                                                            @endif
+                                                        @endforeach
+                                                    </div>
                                                 </div>
                                             @endif
                                         </div>
@@ -428,7 +490,8 @@ new class extends Component {
             </div>
         @elseif(!empty($parsedResult) && $searchResults->isEmpty())
             <div class="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-500 text-yellow-700 rounded">
-                <p class="font-medium">⚠️ Aucun produit trouvé avec ces critères</p>
+                <p class="font-medium">⚠️ Aucun produit trouvé avec ces critères stricts</p>
+                <p class="text-sm mt-1">Les produits doivent avoir au moins 80% des mots du name et 70% des mots du type qui correspondent.</p>
             </div>
         @endif
         
