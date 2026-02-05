@@ -40,8 +40,9 @@ new class extends Component {
     
     /**
      * Vérifie le matching mot par mot et retourne le score
+     * Pour le type, on utilise un matching flexible
      */
-    private function matchWordByWord(string $searchText, string $productText, int $minMatchRatio = 60): array
+    private function matchWordByWord(string $searchText, string $productText, int $minMatchRatio = 60, bool $isTypeField = false): array
     {
         $normalizedProductText = $this->normalizeForSearch($productText);
         
@@ -58,38 +59,56 @@ new class extends Component {
             ];
         }
         
+        // Pour le type, on définit des mots-clés importants
+        $typeKeywords = ['parfum', 'toilette', 'cologne', 'creme', 'lotion', 'gel', 'serum', 'huile', 'baume', 'shampooing', 'soin'];
+        
         $wordScores = [];
         $totalWordScore = 0;
+        $keywordFound = false;
         
         foreach ($searchWords as $index => $word) {
             if (empty($word)) continue;
+            
+            // Pour le type, si c'est un mot-clé important
+            $isKeyword = $isTypeField && in_array($word, $typeKeywords);
             
             // Position dans le texte du produit
             $position = mb_strpos($normalizedProductText, $word);
             
             if ($position !== false) {
                 // Le mot est trouvé
-                // Score plus élevé si le mot est au début
-                $positionScore = max(0, 100 - ($position * 2));
+                $wordScore = 0;
                 
-                // Score plus élevé pour les premiers mots de la recherche
-                $orderScore = max(0, 50 - ($index * 10));
+                if ($isKeyword) {
+                    // Les mots-clés du type ont un poids très élevé
+                    $wordScore = 200;
+                    $keywordFound = true;
+                } else {
+                    // Score plus élevé si le mot est au début
+                    $positionScore = max(0, 100 - ($position * 2));
+                    
+                    // Score plus élevé pour les premiers mots de la recherche
+                    $orderScore = max(0, 50 - ($index * 10));
+                    
+                    $wordScore = $positionScore + $orderScore;
+                }
                 
-                $wordScore = $positionScore + $orderScore;
                 $totalWordScore += $wordScore;
                 
                 $wordScores[] = [
                     'word' => $word,
                     'found' => true,
                     'position' => $position,
-                    'score' => $wordScore
+                    'score' => $wordScore,
+                    'is_keyword' => $isKeyword
                 ];
             } else {
                 $wordScores[] = [
                     'word' => $word,
                     'found' => false,
                     'position' => null,
-                    'score' => 0
+                    'score' => 0,
+                    'is_keyword' => $isKeyword
                 ];
             }
         }
@@ -98,6 +117,12 @@ new class extends Component {
         $wordsFound = count(array_filter($wordScores, fn($w) => $w['found']));
         $matchRatio = count($searchWords) > 0 ? ($wordsFound / count($searchWords)) * 100 : 0;
         
+        // Pour le type, on est plus flexible si au moins un mot-clé important est trouvé
+        if ($isTypeField && $keywordFound) {
+            // Si un mot-clé important est trouvé, on réduit l'exigence du ratio
+            $minMatchRatio = 40; // Au lieu de 70%
+        }
+        
         // Vérification du ratio minimum
         if ($matchRatio < $minMatchRatio) {
             return [
@@ -105,7 +130,8 @@ new class extends Component {
                 'score' => 0,
                 'words' => $wordScores,
                 'ratio' => $matchRatio,
-                'in_order' => false
+                'in_order' => false,
+                'keyword_found' => $keywordFound
             ];
         }
         
@@ -136,7 +162,8 @@ new class extends Component {
             'score' => $totalWordScore,
             'words' => $wordScores,
             'ratio' => $matchRatio,
-            'in_order' => $inOrder
+            'in_order' => $inOrder,
+            'keyword_found' => $keywordFound
         ];
     }
     
@@ -216,7 +243,7 @@ new class extends Component {
             
             // Vérification name mot par mot (OBLIGATOIRE - au moins 80% des mots)
             if ($name) {
-                $nameMatch = $this->matchWordByWord($name, $product->name ?? '', 80);
+                $nameMatch = $this->matchWordByWord($name, $product->name ?? '', 80, false);
                 
                 if (!$nameMatch['matched']) {
                     return false; // Pas assez de mots qui matchent dans le name
@@ -230,9 +257,9 @@ new class extends Component {
                 return false; // Pas de name = exclusion
             }
             
-            // Vérification type mot par mot (OBLIGATOIRE - au moins 70% des mots)
+            // Vérification type mot par mot avec logique flexible
             if ($type) {
-                $typeMatch = $this->matchWordByWord($type, $product->type ?? '', 70);
+                $typeMatch = $this->matchWordByWord($type, $product->type ?? '', 70, true);
                 
                 if (!$typeMatch['matched']) {
                     return false; // Pas assez de mots qui matchent dans le type
@@ -242,6 +269,7 @@ new class extends Component {
                 $details['type_words'] = $typeMatch['words'];
                 $details['type_match_ratio'] = $typeMatch['ratio'];
                 $details['type_in_order'] = $typeMatch['in_order'];
+                $details['type_keyword_found'] = $typeMatch['keyword_found'] ?? false;
             }
             
             $product->match_score = $score;
@@ -406,6 +434,11 @@ new class extends Component {
                                                         Type: {{ round($result->match_details['type_match_ratio']) }}%
                                                     </span>
                                                 @endif
+                                                @if(isset($result->match_details['type_keyword_found']) && $result->match_details['type_keyword_found'])
+                                                    <span class="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded">
+                                                        🔑 Mot-clé Type
+                                                    </span>
+                                                @endif
                                                 @if(isset($result->match_details['name_in_order']) && $result->match_details['name_in_order'])
                                                     <span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
                                                         ✓ Ordre Name
@@ -446,8 +479,8 @@ new class extends Component {
                                                     <div class="flex gap-1 flex-wrap mt-1">
                                                         @foreach($result->match_details['type_words'] as $wordInfo)
                                                             @if($wordInfo['found'])
-                                                                <span class="text-xs bg-green-50 text-green-800 px-2 py-1 rounded border border-green-200">
-                                                                    ✓ {{ $wordInfo['word'] }}
+                                                                <span class="text-xs {{ isset($wordInfo['is_keyword']) && $wordInfo['is_keyword'] ? 'bg-yellow-50 text-yellow-800 border-yellow-300' : 'bg-green-50 text-green-800 border-green-200' }} px-2 py-1 rounded border">
+                                                                    {{ isset($wordInfo['is_keyword']) && $wordInfo['is_keyword'] ? '🔑' : '✓' }} {{ $wordInfo['word'] }}
                                                                 </span>
                                                             @else
                                                                 <span class="text-xs bg-red-50 text-red-800 px-2 py-1 rounded border border-red-200">
@@ -490,8 +523,8 @@ new class extends Component {
             </div>
         @elseif(!empty($parsedResult) && $searchResults->isEmpty())
             <div class="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-500 text-yellow-700 rounded">
-                <p class="font-medium">⚠️ Aucun produit trouvé avec ces critères stricts</p>
-                <p class="text-sm mt-1">Les produits doivent avoir au moins 80% des mots du name et 70% des mots du type qui correspondent.</p>
+                <p class="font-medium">⚠️ Aucun produit trouvé avec ces critères</p>
+                <p class="text-sm mt-1">Les produits doivent avoir au moins 80% des mots du name qui correspondent et contenir un mot-clé important du type (parfum, toilette, crème, etc.).</p>
             </div>
         @endif
         
