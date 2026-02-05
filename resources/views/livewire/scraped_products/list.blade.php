@@ -2,7 +2,7 @@
 
 use Livewire\Volt\Component;
 use App\Models\Site;
-use App\Models\Product;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Pagination\LengthAwarePaginator;
 
 new class extends Component {
@@ -10,7 +10,7 @@ new class extends Component {
     public $name = '';
     public $type = '';
     public $variation = '';
-    public $site_ids = [];
+    public $site_ids = []; // Changé de site_id à site_ids (array)
     public $showResults = false;
     public $currentPage = 1;
     public $perPage = 50;
@@ -53,41 +53,50 @@ new class extends Component {
 
     public function exportCsv()
     {
-        set_time_limit(700);
+        // Augmenter les limites pour les exports volumineux
+        set_time_limit(700); // 5 minutes
         ini_set('memory_limit', '512M');
 
-        // Récupérer tous les résultats via pagination
-        $allProducts = collect();
-        $page = 1;
-        
-        do {
-            $searchQuery = $this->buildSearchQuery();
-            
-            $pageResults = Product::search($searchQuery, function ($typesenseSearch, $query, $options) use ($page) {
-                $filters = $this->buildFilters();
-                if (!empty($filters)) {
-                    $options['filter_by'] = $filters;
-                }
-                $options['per_page'] = 250;
-                $options['page'] = $page;
-                $options['sort_by'] = 'vendor:asc';
-                return $options;
-            })->get();
-            
-            $allProducts = $allProducts->merge($pageResults);
-            $page++;
-        } while ($pageResults->count() === 250);
+        // Récupérer tous les résultats filtrés (sans pagination)
+        $query = DB::table('last_price_scraped_product')
+            ->select('*');
 
-        $products = $allProducts;
+        $query->where('variation', '!=', 'Standard');
 
-        // Le reste du code Excel reste identique
+        if (!empty($this->vendor)) {
+            $query->where('vendor', 'like', '%' . $this->vendor . '%');
+        }
+
+        if (!empty($this->name)) {
+            $query->where('name', 'like', '%' . $this->name . '%');
+        }
+
+        if (!empty($this->type)) {
+            $query->where('type', 'like', '%' . $this->type . '%');
+        }
+
+        if (!empty($this->variation)) {
+            $query->where('variation', 'like', '%' . $this->variation . '%');
+        }
+
+        if (!empty($this->site_ids) && count($this->site_ids) > 0) {
+            $query->whereIn('web_site_id', $this->site_ids);
+        }
+
+        $products = $query->orderBy('vendor', 'asc')->get();
+
+        // Créer un fichier Excel avec PhpSpreadsheet
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
+
+        // Définir le titre de la feuille
         $sheet->setTitle('Produits Concurrents');
 
+        // En-têtes
         $headers = ['Vendeur', 'Nom du produit', 'Type', 'Variation', 'Prix HT', 'Devise', 'Site web', 'URL Produit', 'Date de scraping', 'Image'];
         $sheet->fromArray($headers, null, 'A1');
 
+        // Style de l'en-tête - Fond bleu avec texte blanc
         $headerStyle = [
             'font' => [
                 'bold' => true,
@@ -110,8 +119,11 @@ new class extends Component {
             ]
         ];
         $sheet->getStyle('A1:J1')->applyFromArray($headerStyle);
+
+        // Augmenter la hauteur de la ligne d'en-tête
         $sheet->getRowDimension(1)->setRowHeight(25);
 
+        // Données
         $row = 2;
         foreach ($products as $product) {
             $site = Site::find($product->web_site_id);
@@ -124,6 +136,7 @@ new class extends Component {
             $sheet->setCellValue('F' . $row, $product->currency ?? '');
             $sheet->setCellValue('G' . $row, $site ? $site->name : '');
 
+            // URL Produit - Avec texte "Voir le produit"
             if (!empty($product->url) && filter_var($product->url, FILTER_VALIDATE_URL)) {
                 $sheet->setCellValue('H' . $row, 'Voir le produit');
                 $sheet->getCell('H' . $row)->getHyperlink()->setUrl($product->url);
@@ -139,6 +152,7 @@ new class extends Component {
 
             $sheet->setCellValue('I' . $row, $product->created_at ? \Carbon\Carbon::parse($product->created_at)->format('d/m/Y H:i:s') : '');
 
+            // Image URL - Avec texte "Voir image"
             if (!empty($product->image_url) && filter_var($product->image_url, FILTER_VALIDATE_URL)) {
                 $sheet->setCellValue('J' . $row, 'Voir image');
                 $sheet->getCell('J' . $row)->getHyperlink()->setUrl($product->image_url);
@@ -152,6 +166,7 @@ new class extends Component {
                 $sheet->setCellValue('J' . $row, 'Pas d\'image');
             }
 
+            // Alterner les couleurs de lignes
             if ($row % 2 == 0) {
                 $sheet->getStyle('A' . $row . ':J' . $row)->getFill()
                     ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
@@ -163,6 +178,7 @@ new class extends Component {
 
         $lastRow = $row - 1;
 
+        // Bordures pour toutes les cellules de données
         $sheet->getStyle('A1:J' . $lastRow)->applyFromArray([
             'borders' => [
                 'allBorders' => [
@@ -172,20 +188,25 @@ new class extends Component {
             ]
         ]);
 
-        $sheet->getColumnDimension('A')->setWidth(20);
-        $sheet->getColumnDimension('B')->setWidth(50);
-        $sheet->getColumnDimension('C')->setWidth(20);
-        $sheet->getColumnDimension('D')->setWidth(20);
-        $sheet->getColumnDimension('E')->setWidth(12);
-        $sheet->getColumnDimension('F')->setWidth(8);
-        $sheet->getColumnDimension('G')->setWidth(25);
-        $sheet->getColumnDimension('H')->setWidth(18);
-        $sheet->getColumnDimension('I')->setWidth(20);
-        $sheet->getColumnDimension('J')->setWidth(15);
+        // Largeurs de colonnes
+        $sheet->getColumnDimension('A')->setWidth(20);  // Vendeur
+        $sheet->getColumnDimension('B')->setWidth(50);  // Nom
+        $sheet->getColumnDimension('C')->setWidth(20);  // Type
+        $sheet->getColumnDimension('D')->setWidth(20);  // Variation
+        $sheet->getColumnDimension('E')->setWidth(12);  // Prix
+        $sheet->getColumnDimension('F')->setWidth(8);   // Devise
+        $sheet->getColumnDimension('G')->setWidth(25);  // Site
+        $sheet->getColumnDimension('H')->setWidth(18);  // URL Produit (réduit car texte court)
+        $sheet->getColumnDimension('I')->setWidth(20);  // Date
+        $sheet->getColumnDimension('J')->setWidth(15);  // Image (réduit car texte court)
 
+        // Appliquer l'auto-filtre sur les en-têtes
         $sheet->setAutoFilter('A1:J' . $lastRow);
+
+        // Figer la première ligne (en-têtes)
         $sheet->freezePane('A2');
 
+        // Ajouter une note d'information
         $infoRow = $lastRow + 3;
         $sheet->setCellValue('A' . $infoRow, '💡 Conseil : Utilisez les filtres dans les en-têtes pour filtrer par Vendeur, Variation ou Site web');
         $sheet->getStyle('A' . $infoRow)->applyFromArray([
@@ -196,90 +217,88 @@ new class extends Component {
         ]);
         $sheet->mergeCells('A' . $infoRow . ':J' . $infoRow);
 
+        // Créer le writer Excel
         $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+
+        // Nom du fichier
         $filename = 'produits_concurrents_' . date('Y-m-d_His') . '.xlsx';
+
+        // Créer un fichier temporaire
         $temp_file = tempnam(sys_get_temp_dir(), 'excel_');
         $writer->save($temp_file);
 
+        // Retourner le fichier en téléchargement
         return response()->download($temp_file, $filename)->deleteFileAfterSend(true);
     }
 
-    /**
-     * Construit la requête de recherche pour Typesense
-     */
-    private function buildSearchQuery()
+    private function escapeCsv($value)
     {
-        // Si tous les champs sont vides, on fait une recherche globale
-        $searchTerms = array_filter([
-            $this->vendor,
-            $this->name,
-            $this->type,
-            $this->variation
-        ]);
-
-        // Si on n'a aucun terme de recherche, on utilise '*' pour tout récupérer
-        return empty($searchTerms) ? '*' : implode(' ', $searchTerms);
+        // Méthode gardée pour compatibilité mais non utilisée
+        if (strpos($value, ';') !== false || strpos($value, '"') !== false || strpos($value, "\n") !== false) {
+            return '"' . str_replace('"', '""', $value) . '"';
+        }
+        return $value;
     }
 
-    /**
-     * Construit les filtres Typesense
-     */
-    private function buildFilters()
+    public function with()
     {
-        $filters = [];
+        if (!$this->showResults) {
+            return [
+                'products' => collect(),
+                'sites' => Site::orderBy('name')->get(),
+                'paginator' => null,
+            ];
+        }
 
-        // Filtre : exclure les variations "Standard"
-        $filters[] = 'variation:!=Standard';
+        $query = DB::table('last_price_scraped_product')
+            ->select('*');
+
+        $query->where('variation', '!=', 'Standard');
+
+        if (!empty($this->vendor)) {
+            $query->where('vendor', 'like', '%' . $this->vendor . '%');
+        }
+
+        if (!empty($this->name)) {
+            $query->where('name', 'like', '%' . $this->name . '%');
+        }
+
+        if (!empty($this->type)) {
+            $query->where('type', 'like', '%' . $this->type . '%');
+        }
+
+        if (!empty($this->variation)) {
+            $query->where('variation', 'like', '%' . $this->variation . '%');
+        }
 
         // Filtre multi-sites
         if (!empty($this->site_ids) && count($this->site_ids) > 0) {
-            $siteFilter = 'web_site_id:[' . implode(',', $this->site_ids) . ']';
-            $filters[] = $siteFilter;
+            $query->whereIn('web_site_id', $this->site_ids);
         }
 
-        return implode(' && ', $filters);
-    }
+        $totalResults = $query->count();
 
-public function with()
-{
-    if (!$this->showResults) {
+        $products = $query->orderBy('vendor', 'asc')
+            ->skip(($this->currentPage - 1) * $this->perPage)
+            ->take($this->perPage)
+            ->get();
+
+        $paginator = new LengthAwarePaginator(
+            $products,
+            $totalResults,
+            $this->perPage,
+            $this->currentPage,
+            ['path' => request()->url()]
+        );
+
         return [
-            'products' => collect(),
+            'products' => $products,
             'sites' => Site::orderBy('name')->get(),
-            'paginator' => null,
-            'totalResults' => 0,
-            'totalPages' => 0,
+            'paginator' => $paginator,
+            'totalResults' => $totalResults,
+            'totalPages' => ceil($totalResults / $this->perPage),
         ];
     }
-
-    $searchQuery = $this->buildSearchQuery();
-    
-    // Recherche avec Typesense et pagination
-    $paginatedResults = Product::search($searchQuery, function ($typesenseSearch, $query, $options) {
-        // Appliquer les filtres
-        $filters = $this->buildFilters();
-        if (!empty($filters)) {
-            $options['filter_by'] = $filters;
-        }
-
-        // Configuration de la recherche
-        $options['per_page'] = $this->perPage;
-        $options['page'] = $this->currentPage;
-        
-        // Tri par vendor (alphabétique)
-        $options['sort_by'] = 'vendor:asc';
-
-        return $options;
-    })->paginate($this->perPage, 'page', $this->currentPage);
-
-    return [
-        'products' => collect($paginatedResults->items()), // Convertir en collection
-        'sites' => Site::orderBy('name')->get(),
-        'paginator' => $paginatedResults,
-        'totalResults' => $paginatedResults->total(),
-        'totalPages' => $paginatedResults->lastPage(),
-    ];
-}
 }; ?>
 
 <div>
