@@ -10,11 +10,7 @@ new class extends Component {
     public string $price;
     public Collection $productsBySite;
     public array $facets = [];
-    public array $selectedFilters = [
-        'web_site_id' => [],
-        'type' => [],
-        'variation' => [],
-    ];
+    public array $selectedVariations = [];
 
     public function mount($name, $id, $price): void
     {
@@ -32,20 +28,18 @@ new class extends Component {
         // Construction de la requête de recherche
         $searchQuery = Product::search($searchTerm);
 
-        // Ajout des filtres sélectionnés
-        $filters = [];
-        foreach ($this->selectedFilters as $field => $values) {
-            if (!empty($values)) {
-                $filters[] = $field . ':=[' . implode(',', $values) . ']';
-            }
-        }
-        if (!empty($filters)) {
-            $searchQuery->options(['filter_by' => implode(' && ', $filters)]);
+        // Ajout du filtre sur les variations sélectionnées
+        if (!empty($this->selectedVariations)) {
+            $searchQuery->options([
+                'filter_by' => 'variation:=[' . implode(',', array_map(function($v) {
+                    return str_replace("'", "\\'", $v);
+                }, $this->selectedVariations)) . ']'
+            ]);
         }
 
         // Ajout des options de recherche
         $searchQuery->options([
-            'facet_by' => 'web_site_id,type,variation',
+            'facet_by' => 'variation',
             'group_by' => 'scrap_reference_id',
             'group_limit' => 1,
             'sort_by' => 'created_at:desc',
@@ -77,15 +71,15 @@ new class extends Component {
         $this->productsBySite = $products->groupBy('web_site_id');
     }
 
-    public function toggleFilter(string $field, string|int $value): void
+    public function toggleVariation(string $value): void
     {
-        $key = array_search($value, $this->selectedFilters[$field]);
+        $key = array_search($value, $this->selectedVariations);
         
         if ($key !== false) {
-            unset($this->selectedFilters[$field][$key]);
-            $this->selectedFilters[$field] = array_values($this->selectedFilters[$field]);
+            unset($this->selectedVariations[$key]);
+            $this->selectedVariations = array_values($this->selectedVariations);
         } else {
-            $this->selectedFilters[$field][] = $value;
+            $this->selectedVariations[] = $value;
         }
         
         $this->searchProducts();
@@ -93,11 +87,7 @@ new class extends Component {
 
     public function clearFilters(): void
     {
-        $this->selectedFilters = [
-            'web_site_id' => [],
-            'type' => [],
-            'variation' => [],
-        ];
+        $this->selectedVariations = [];
         $this->searchProducts();
     }
     
@@ -114,106 +104,46 @@ new class extends Component {
 
         @if($productsBySite->count() > 0)
             <!-- Section des filtres -->
-            <div class="bg-gray-50 border-y border-gray-200 px-4 sm:px-6 py-4 mb-6">
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-lg font-semibold text-gray-900">Filtres</h3>
-                    @if(collect($selectedFilters)->flatten()->isNotEmpty())
-                        <button 
-                            wire:click="clearFilters" 
-                            class="text-sm text-blue-600 hover:text-blue-800"
-                        >
-                            Réinitialiser les filtres
-                        </button>
-                    @endif
+            @php
+                $variationFacet = collect($facets)->firstWhere('field_name', 'variation');
+            @endphp
+            @if($variationFacet && isset($variationFacet['counts']) && count($variationFacet['counts']) > 0)
+                <div class="bg-gray-50 border-y border-gray-200 px-4 sm:px-6 py-4 mb-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-semibold text-gray-900">Filtrer par variation</h3>
+                        @if(!empty($selectedVariations))
+                            <button 
+                                wire:click="clearFilters" 
+                                class="text-sm text-blue-600 hover:text-blue-800"
+                            >
+                                Réinitialiser les filtres
+                            </button>
+                        @endif
+                    </div>
+
+                    <div class="space-y-2 max-h-64 overflow-y-auto">
+                        @foreach($variationFacet['counts'] as $facet)
+                            @php
+                                $isSelected = in_array($facet['value'], $selectedVariations);
+                            @endphp
+                            <label class="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 p-2 rounded">
+                                <input 
+                                    type="checkbox" 
+                                    wire:click="toggleVariation('{{ addslashes($facet['value']) }}')"
+                                    {{ $isSelected ? 'checked' : '' }}
+                                    class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                >
+                                <span class="text-sm text-gray-600 flex-1">
+                                    {{ $facet['value'] }}
+                                </span>
+                                <span class="text-xs text-gray-400 bg-gray-200 px-2 py-1 rounded-full">
+                                    {{ $facet['count'] }}
+                                </span>
+                            </label>
+                        @endforeach
+                    </div>
                 </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <!-- Filtre par site -->
-                    @if(isset($facets[0]) && $facets[0]['field_name'] === 'web_site_id')
-                        <div>
-                            <h4 class="text-sm font-medium text-gray-700 mb-2">Sites Web</h4>
-                            <div class="space-y-2 max-h-64 overflow-y-auto">
-                                @foreach($facets[0]['counts'] as $facet)
-                                    @php
-                                        $website = \App\Models\Website::find($facet['value']);
-                                        $isSelected = in_array($facet['value'], $selectedFilters['web_site_id']);
-                                    @endphp
-                                    <label class="flex items-center space-x-2 cursor-pointer">
-                                        <input 
-                                            type="checkbox" 
-                                            wire:click="toggleFilter('web_site_id', {{ $facet['value'] }})"
-                                            {{ $isSelected ? 'checked' : '' }}
-                                            class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                        >
-                                        <span class="text-sm text-gray-600">
-                                            {{ $website?->name ?? 'Site inconnu' }} 
-                                            <span class="text-gray-400">({{ $facet['count'] }})</span>
-                                        </span>
-                                    </label>
-                                @endforeach
-                            </div>
-                        </div>
-                    @endif
-
-                    <!-- Filtre par type -->
-                    @php
-                        $typeFacet = collect($facets)->firstWhere('field_name', 'type');
-                    @endphp
-                    @if($typeFacet && isset($typeFacet['counts']))
-                        <div>
-                            <h4 class="text-sm font-medium text-gray-700 mb-2">Types</h4>
-                            <div class="space-y-2 max-h-64 overflow-y-auto">
-                                @foreach($typeFacet['counts'] as $facet)
-                                    @php
-                                        $isSelected = in_array($facet['value'], $selectedFilters['type']);
-                                    @endphp
-                                    <label class="flex items-center space-x-2 cursor-pointer">
-                                        <input 
-                                            type="checkbox" 
-                                            wire:click="toggleFilter('type', '{{ $facet['value'] }}')"
-                                            {{ $isSelected ? 'checked' : '' }}
-                                            class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                        >
-                                        <span class="text-sm text-gray-600">
-                                            {{ $facet['value'] }} 
-                                            <span class="text-gray-400">({{ $facet['count'] }})</span>
-                                        </span>
-                                    </label>
-                                @endforeach
-                            </div>
-                        </div>
-                    @endif
-
-                    <!-- Filtre par variation -->
-                    @php
-                        $variationFacet = collect($facets)->firstWhere('field_name', 'variation');
-                    @endphp
-                    @if($variationFacet && isset($variationFacet['counts']))
-                        <div>
-                            <h4 class="text-sm font-medium text-gray-700 mb-2">Variations</h4>
-                            <div class="space-y-2 max-h-64 overflow-y-auto">
-                                @foreach($variationFacet['counts'] as $facet)
-                                    @php
-                                        $isSelected = in_array($facet['value'], $selectedFilters['variation']);
-                                    @endphp
-                                    <label class="flex items-center space-x-2 cursor-pointer">
-                                        <input 
-                                            type="checkbox" 
-                                            wire:click="toggleFilter('variation', '{{ $facet['value'] }}')"
-                                            {{ $isSelected ? 'checked' : '' }}
-                                            class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                        >
-                                        <span class="text-sm text-gray-600">
-                                            {{ $facet['value'] }} 
-                                            <span class="text-gray-400">({{ $facet['count'] }})</span>
-                                        </span>
-                                    </label>
-                                @endforeach
-                            </div>
-                        </div>
-                    @endif
-                </div>
-            </div>
+            @endif
 
             @foreach($productsBySite as $siteId => $siteProducts)
                 @php
@@ -256,7 +186,9 @@ new class extends Component {
                                     </h3>
                                     <div class="mt-3 flex flex-col items-center">
                                         <p class="text-xs text-gray-600">{{ $product->type }}</p>
-                                        <p class="mt-1 text-xs text-gray-500">{{ $product->variation }}</p>
+                                        @if($product->variation)
+                                            <p class="mt-1 text-xs font-medium text-blue-600">{{ $product->variation }}</p>
+                                        @endif
                                         @if($product->scrap_reference_id)
                                             <p class="mt-1 text-xs text-gray-400">Réf: {{ $product->scrap_reference_id }}</p>
                                         @endif
