@@ -29,14 +29,8 @@ new class extends Component {
     {
         $searchTerm = html_entity_decode($this->name);
         
-        // Construction des paramètres de recherche
-        $searchParams = [
-            'query_by' => 'name,vendor,type,variation',
-            'facet_by' => 'web_site_id,type,variation',
-            'group_by' => 'scrap_reference_id',
-            'group_limit' => 1,
-            'sort_by' => 'created_at:desc',
-        ];
+        // Construction de la requête de recherche
+        $searchQuery = Product::search($searchTerm);
 
         // Ajout des filtres sélectionnés
         $filters = [];
@@ -46,21 +40,41 @@ new class extends Component {
             }
         }
         if (!empty($filters)) {
-            $searchParams['filter_by'] = implode(' && ', $filters);
+            $searchQuery->options(['filter_by' => implode(' && ', $filters)]);
         }
 
-        // Recherche avec Typesense
-        $searchResult = Product::search($searchTerm, function ($typesenseSearch, $query, $searchParams) {
-            return $typesenseSearch->with($searchParams);
-        }, $searchParams)
-            ->query(fn($query) => $query->with('website'))
-            ->get();
+        // Ajout des options de recherche
+        $searchQuery->options([
+            'facet_by' => 'web_site_id,type,variation',
+            'group_by' => 'scrap_reference_id',
+            'group_limit' => 1,
+            'sort_by' => 'created_at:desc',
+            'max_facet_values' => 100,
+        ]);
 
-        // Récupération des facettes
-        $this->facets = $searchResult->metadata['facet_counts'] ?? [];
+        // Exécution de la recherche avec eager loading
+        $searchResult = $searchQuery
+            ->query(fn($query) => $query->with('website'))
+            ->raw();
+
+        // Récupération des facettes depuis les métadonnées
+        $this->facets = $searchResult['facet_counts'] ?? [];
+
+        // Récupération des IDs des produits trouvés
+        $productIds = collect($searchResult['hits'] ?? [])
+            ->pluck('document.id')
+            ->toArray();
+
+        // Charger les produits avec leurs relations
+        $products = Product::with('website')
+            ->whereIn('id', $productIds)
+            ->get()
+            ->sortBy(function ($product) use ($productIds) {
+                return array_search($product->id, $productIds);
+            });
 
         // Grouper les produits par site
-        $this->productsBySite = $searchResult->groupBy('web_site_id');
+        $this->productsBySite = $products->groupBy('web_site_id');
     }
 
     public function toggleFilter(string $field, string|int $value): void
@@ -115,11 +129,11 @@ new class extends Component {
 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <!-- Filtre par site -->
-                    @if(isset($facets['web_site_id']['counts']) && count($facets['web_site_id']['counts']) > 0)
+                    @if(isset($facets[0]) && $facets[0]['field_name'] === 'web_site_id')
                         <div>
                             <h4 class="text-sm font-medium text-gray-700 mb-2">Sites Web</h4>
-                            <div class="space-y-2">
-                                @foreach($facets['web_site_id']['counts'] as $facet)
+                            <div class="space-y-2 max-h-64 overflow-y-auto">
+                                @foreach($facets[0]['counts'] as $facet)
                                     @php
                                         $website = \App\Models\Website::find($facet['value']);
                                         $isSelected = in_array($facet['value'], $selectedFilters['web_site_id']);
@@ -142,11 +156,14 @@ new class extends Component {
                     @endif
 
                     <!-- Filtre par type -->
-                    @if(isset($facets['type']['counts']) && count($facets['type']['counts']) > 0)
+                    @php
+                        $typeFacet = collect($facets)->firstWhere('field_name', 'type');
+                    @endphp
+                    @if($typeFacet && isset($typeFacet['counts']))
                         <div>
                             <h4 class="text-sm font-medium text-gray-700 mb-2">Types</h4>
-                            <div class="space-y-2">
-                                @foreach($facets['type']['counts'] as $facet)
+                            <div class="space-y-2 max-h-64 overflow-y-auto">
+                                @foreach($typeFacet['counts'] as $facet)
                                     @php
                                         $isSelected = in_array($facet['value'], $selectedFilters['type']);
                                     @endphp
@@ -168,11 +185,14 @@ new class extends Component {
                     @endif
 
                     <!-- Filtre par variation -->
-                    @if(isset($facets['variation']['counts']) && count($facets['variation']['counts']) > 0)
+                    @php
+                        $variationFacet = collect($facets)->firstWhere('field_name', 'variation');
+                    @endphp
+                    @if($variationFacet && isset($variationFacet['counts']))
                         <div>
                             <h4 class="text-sm font-medium text-gray-700 mb-2">Variations</h4>
-                            <div class="space-y-2">
-                                @foreach($facets['variation']['counts'] as $facet)
+                            <div class="space-y-2 max-h-64 overflow-y-auto">
+                                @foreach($variationFacet['counts'] as $facet)
                                     @php
                                         $isSelected = in_array($facet['value'], $selectedFilters['variation']);
                                     @endphp
