@@ -191,24 +191,25 @@ return [
                         [
                             'name' => 'vendor',
                             'type' => 'string',
-                            'infix' => true, // Activer infix
+                            'infix' => true,
                         ],
                         [
                             'name' => 'name',
                             'type' => 'string',
-                            'infix' => true, // Activer infix
+                            'infix' => true,
                         ],
                         [
                             'name' => 'type',
                             'type' => 'string',
                             'facet' => true,
-                            'infix' => true, // Activer infix
+                            'infix' => true,
                         ],
                         [
                             'name' => 'variation',
                             'type' => 'string',
                             'optional' => true,
-                            'infix' => true, // Activer infix
+                            'facet' => true, // Ajout de facet
+                            'infix' => true,
                         ],
                         [
                             'name' => 'prix_ht',
@@ -231,6 +232,7 @@ return [
                         [
                             'name' => 'web_site_id',
                             'type' => 'int32',
+                            'facet' => true, // Ajout de facet
                         ],
                         [
                             'name' => 'scrap_reference_id',
@@ -251,6 +253,8 @@ return [
                     'query_by' => 'name,vendor,type,variation',
                     'prioritize_exact_match' => true,
                     'sort_by' => '_text_match:desc,created_at:desc',
+                    'facet_by' => 'web_site_id,type,variation', // Ajout des facettes
+                    'max_facet_values' => 100,
                 ],
             ],
         ],
