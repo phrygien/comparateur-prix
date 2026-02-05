@@ -59,12 +59,13 @@ new class extends Component {
             ];
         }
         
-        // Pour le type, on définit des mots-clés importants
-        $typeKeywords = ['parfum', 'toilette', 'cologne', 'creme', 'lotion', 'gel', 'serum', 'huile', 'baume', 'shampooing', 'soin'];
+        // Pour le type, on définit des mots-clés importants (les mots qui définissent vraiment le type de produit)
+        $typeKeywords = ['parfum', 'toilette', 'cologne', 'creme', 'lotion', 'gel', 'serum', 'huile', 'baume', 'shampooing', 'soin', 'mousse', 'spray', 'deodorant', 'eau'];
         
         $wordScores = [];
         $totalWordScore = 0;
         $keywordFound = false;
+        $keywordsFoundCount = 0;
         
         foreach ($searchWords as $index => $word) {
             if (empty($word)) continue;
@@ -81,8 +82,9 @@ new class extends Component {
                 
                 if ($isKeyword) {
                     // Les mots-clés du type ont un poids très élevé
-                    $wordScore = 200;
+                    $wordScore = 300; // Augmenté pour donner plus de poids aux mots-clés
                     $keywordFound = true;
+                    $keywordsFoundCount++;
                 } else {
                     // Score plus élevé si le mot est au début
                     $positionScore = max(0, 100 - ($position * 2));
@@ -117,10 +119,24 @@ new class extends Component {
         $wordsFound = count(array_filter($wordScores, fn($w) => $w['found']));
         $matchRatio = count($searchWords) > 0 ? ($wordsFound / count($searchWords)) * 100 : 0;
         
-        // Pour le type, on est plus flexible si au moins un mot-clé important est trouvé
-        if ($isTypeField && $keywordFound) {
-            // Si un mot-clé important est trouvé, on réduit l'exigence du ratio
-            $minMatchRatio = 40; // Au lieu de 70%
+        // Pour le type, logique flexible basée sur les mots-clés
+        if ($isTypeField) {
+            // Compte combien de mots-clés on cherche
+            $keywordsInSearch = count(array_filter($searchWords, fn($w) => in_array($w, $typeKeywords)));
+            
+            if ($keywordsInSearch > 0 && $keywordFound) {
+                // Si on cherche des mots-clés et qu'on en trouve au moins un
+                // On accepte même si seulement 1 mot sur 4 matche (ex: "eau" match dans "Eau de Parfum Vaporisateur")
+                $minMatchRatio = 25; // Très flexible - au moins 1 mot-clé suffit
+                
+                // Bonus supplémentaire si on trouve plusieurs mots-clés
+                if ($keywordsFoundCount > 1) {
+                    $totalWordScore += 100;
+                }
+            } elseif ($keywordsInSearch === 0) {
+                // Si pas de mot-clé dans la recherche, on est un peu plus strict
+                $minMatchRatio = 50;
+            }
         }
         
         // Vérification du ratio minimum
@@ -131,7 +147,8 @@ new class extends Component {
                 'words' => $wordScores,
                 'ratio' => $matchRatio,
                 'in_order' => false,
-                'keyword_found' => $keywordFound
+                'keyword_found' => $keywordFound,
+                'keywords_count' => $keywordsFoundCount
             ];
         }
         
@@ -163,7 +180,8 @@ new class extends Component {
             'words' => $wordScores,
             'ratio' => $matchRatio,
             'in_order' => $inOrder,
-            'keyword_found' => $keywordFound
+            'keyword_found' => $keywordFound,
+            'keywords_count' => $keywordsFoundCount
         ];
     }
     
@@ -270,6 +288,7 @@ new class extends Component {
                 $details['type_match_ratio'] = $typeMatch['ratio'];
                 $details['type_in_order'] = $typeMatch['in_order'];
                 $details['type_keyword_found'] = $typeMatch['keyword_found'] ?? false;
+                $details['type_keywords_count'] = $typeMatch['keywords_count'] ?? 0;
             }
             
             $product->match_score = $score;
@@ -297,6 +316,7 @@ new class extends Component {
                 'Dior - J\'adore - Eau de Parfum 50ml',
                 'Chanel - N°5 - Eau de Toilette Spray 100ml',
                 'Shiseido Men - Revitalisant Total Crème - Recharge 50 ml',
+                'Yves Saint Laurent - Libre Berry Crush - Eau de Parfum Vaporisateur 30ml',
             ];
             
             $this->products = collect($parser->parseMultipleProducts($examples));
@@ -331,7 +351,7 @@ new class extends Component {
                 type="text" 
                 id="product-name"
                 wire:model="name"
-                placeholder="Ex: Cacharel - Ella Ella Flora Azura - Eau de Parfum Vaporisateur 30ml"
+                placeholder="Ex: Yves Saint Laurent - Libre Berry Crush - Eau de Parfum Vaporisateur 30ml"
                 class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
         </div>
@@ -434,9 +454,9 @@ new class extends Component {
                                                         Type: {{ round($result->match_details['type_match_ratio']) }}%
                                                     </span>
                                                 @endif
-                                                @if(isset($result->match_details['type_keyword_found']) && $result->match_details['type_keyword_found'])
+                                                @if(isset($result->match_details['type_keywords_count']) && $result->match_details['type_keywords_count'] > 0)
                                                     <span class="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded">
-                                                        🔑 Mot-clé Type
+                                                        🔑 {{ $result->match_details['type_keywords_count'] }} mot(s)-clé
                                                     </span>
                                                 @endif
                                                 @if(isset($result->match_details['name_in_order']) && $result->match_details['name_in_order'])
@@ -524,7 +544,7 @@ new class extends Component {
         @elseif(!empty($parsedResult) && $searchResults->isEmpty())
             <div class="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-500 text-yellow-700 rounded">
                 <p class="font-medium">⚠️ Aucun produit trouvé avec ces critères</p>
-                <p class="text-sm mt-1">Les produits doivent avoir au moins 80% des mots du name qui correspondent et contenir un mot-clé important du type (parfum, toilette, crème, etc.).</p>
+                <p class="text-sm mt-1">Les produits doivent avoir au moins 80% des mots du name qui correspondent et au moins un mot-clé important du type (parfum, toilette, eau, crème, etc.) si un type est spécifié.</p>
             </div>
         @endif
         
