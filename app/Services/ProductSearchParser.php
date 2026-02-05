@@ -8,9 +8,10 @@ class ProductSearchParser
 {
     private Client $openai;
 
+
     public function __construct()
     {
-        $this->openai = \OpenAI::client(config('services.openai.api_key'));
+        $this->openai = \OpenAI::client(env('OPENAI_API_KEY'));
     }
 
     /**
