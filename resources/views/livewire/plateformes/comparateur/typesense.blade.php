@@ -38,6 +38,17 @@ new class extends Component {
         return trim($normalized);
     }
     
+    /**
+     * Formate le prix en float
+     */
+    private function formatPrice($price): float
+    {
+        if (is_null($price)) {
+            return 0.0;
+        }
+        return (float) $price;
+    }
+    
     public function parseProduct(): void
     {
         $this->loading = true;
@@ -345,6 +356,7 @@ new class extends Component {
                                         src="{{ $result->image_url }}" 
                                         alt="{{ $result->name }}"
                                         class="w-20 h-20 object-cover rounded"
+                                        onerror="this.style.display='none'"
                                     />
                                 @endif
                                 <div class="flex-1">
@@ -387,7 +399,7 @@ new class extends Component {
                                         </div>
                                         <div class="text-right">
                                             <p class="text-lg font-bold text-green-600">
-                                                {{ number_format($result->prix_ht, 2) }} {{ $result->currency }}
+                                                {{ number_format((float)($result->prix_ht ?? 0), 2) }} {{ $result->currency ?? '' }}
                                             </p>
                                         </div>
                                     </div>
