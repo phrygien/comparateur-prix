@@ -240,44 +240,46 @@ new class extends Component {
         return implode(' && ', $filters);
     }
 
-    public function with()
-    {
-        if (!$this->showResults) {
-            return [
-                'products' => collect(),
-                'sites' => Site::orderBy('name')->get(),
-                'paginator' => null,
-            ];
-        }
-
-        $searchQuery = $this->buildSearchQuery();
-        
-        // Recherche avec Typesense et pagination
-        $paginatedResults = Product::search($searchQuery, function ($typesenseSearch, $query, $options) {
-            // Appliquer les filtres
-            $filters = $this->buildFilters();
-            if (!empty($filters)) {
-                $options['filter_by'] = $filters;
-            }
-
-            // Configuration de la recherche
-            $options['per_page'] = $this->perPage;
-            $options['page'] = $this->currentPage;
-            
-            // Tri par vendor (alphabétique)
-            $options['sort_by'] = 'vendor:asc';
-
-            return $options;
-        })->paginate($this->perPage, 'page', $this->currentPage);
-
+public function with()
+{
+    if (!$this->showResults) {
         return [
-            'products' => $paginatedResults->items(),
+            'products' => collect(),
             'sites' => Site::orderBy('name')->get(),
-            'paginator' => $paginatedResults,
-            'totalResults' => $paginatedResults->total(),
-            'totalPages' => $paginatedResults->lastPage(),
+            'paginator' => null,
+            'totalResults' => 0,
+            'totalPages' => 0,
         ];
     }
+
+    $searchQuery = $this->buildSearchQuery();
+    
+    // Recherche avec Typesense et pagination
+    $paginatedResults = Product::search($searchQuery, function ($typesenseSearch, $query, $options) {
+        // Appliquer les filtres
+        $filters = $this->buildFilters();
+        if (!empty($filters)) {
+            $options['filter_by'] = $filters;
+        }
+
+        // Configuration de la recherche
+        $options['per_page'] = $this->perPage;
+        $options['page'] = $this->currentPage;
+        
+        // Tri par vendor (alphabétique)
+        $options['sort_by'] = 'vendor:asc';
+
+        return $options;
+    })->paginate($this->perPage, 'page', $this->currentPage);
+
+    return [
+        'products' => collect($paginatedResults->items()), // Convertir en collection
+        'sites' => Site::orderBy('name')->get(),
+        'paginator' => $paginatedResults,
+        'totalResults' => $paginatedResults->total(),
+        'totalPages' => $paginatedResults->lastPage(),
+    ];
+}
 }; ?>
 
 <div>
