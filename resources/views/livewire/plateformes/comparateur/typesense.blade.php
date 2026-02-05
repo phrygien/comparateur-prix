@@ -9,6 +9,8 @@ new class extends Component {
     public string $id;
     public string $price;
     public Collection $productsBySite;
+    public array $selectedTypes = [];
+    public array $availableTypes = [];
 
     public function mount($name, $id, $price): void
     {
@@ -16,12 +18,30 @@ new class extends Component {
         $this->id = $id;
         $this->price = $price;
         
-        $searchTerm = html_entity_decode($this->name);
-        $products = Product::search($searchTerm)
-            ->query(fn($query) => $query->with('website'))
-            ->get();
+        $this->loadProducts();
+    }
 
-        $this->productsBySite = $products
+    public function loadProducts(): void
+    {
+        $searchTerm = html_entity_decode($this->name);
+        
+        $search = Product::search($searchTerm)
+            ->query(fn($query) => $query->with('website'));
+
+        // Appliquer le filtre par type si des types sont sélectionnés
+        if (!empty($this->selectedTypes)) {
+            $search->where('type', $this->selectedTypes);
+        }
+
+        $results = $search->get();
+        $products = $results instanceof \Illuminate\Pagination\LengthAwarePaginator 
+            ? $results->items() 
+            : $results;
+
+        // Récupérer les facets pour les types disponibles
+        $this->availableTypes = $this->getTypeFacets($searchTerm);
+
+        $this->productsBySite = collect($products)
             ->groupBy('web_site_id')
             ->map(function ($siteProducts) {
                 return $siteProducts
@@ -32,17 +52,98 @@ new class extends Component {
                     ->values();
             });
     }
-    
+
+    protected function getTypeFacets(string $searchTerm): array
+    {
+        // Effectuer une recherche pour obtenir les facets
+        $search = Product::search($searchTerm);
+        
+        try {
+            $rawResults = $search->raw();
+            
+            if (isset($rawResults['facet_counts']) && is_array($rawResults['facet_counts'])) {
+                foreach ($rawResults['facet_counts'] as $facet) {
+                    if ($facet['field_name'] === 'type') {
+                        return collect($facet['counts'])
+                            ->map(fn($count) => [
+                                'value' => $count['value'],
+                                'count' => $count['count']
+                            ])
+                            ->toArray();
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            // En cas d'erreur, retourner un tableau vide
+        }
+
+        return [];
+    }
+
+    public function updatedSelectedTypes(): void
+    {
+        $this->loadProducts();
+    }
+
+    public function clearFilters(): void
+    {
+        $this->selectedTypes = [];
+        $this->loadProducts();
+    }
 }; ?>
 
 <div class="bg-white">
-
     <livewire:plateformes.detail :id="$id" />
 
     <div class="mx-auto max-w-7xl overflow-hidden sm:px-6 lg:px-8">
-        <h2 class="text-2xl font-bold text-gray-900 px-4 sm:px-0 py-6">
-            Résultats pour : {{ $name }}
-        </h2>
+        <div class="px-4 sm:px-0 py-6">
+            <h2 class="text-2xl font-bold text-gray-900">
+                Résultats pour : {{ $name }}
+            </h2>
+
+            <!-- Filtres -->
+            @if(count($availableTypes) > 0)
+                <div class="mt-6 bg-gray-50 rounded-lg p-4 border border-gray-200">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-sm font-semibold text-gray-900">Filtrer par type</h3>
+                        @if(count($selectedTypes) > 0)
+                            <button 
+                                wire:click="clearFilters" 
+                                class="text-xs text-blue-600 hover:text-blue-800"
+                            >
+                                Effacer les filtres
+                            </button>
+                        @endif
+                    </div>
+                    
+                    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                        @foreach($availableTypes as $type)
+                            <label class="flex items-start space-x-2 cursor-pointer group">
+                                <input 
+                                    type="checkbox" 
+                                    wire:model.live="selectedTypes"
+                                    value="{{ $type['value'] }}"
+                                    class="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                >
+                                <span class="text-sm text-gray-700 group-hover:text-gray-900">
+                                    {{ $type['value'] }}
+                                    <span class="text-gray-500">({{ $type['count'] }})</span>
+                                </span>
+                            </label>
+                        @endforeach
+                    </div>
+
+                    @if(count($selectedTypes) > 0)
+                        <div class="mt-3 pt-3 border-t border-gray-200">
+                            <p class="text-xs text-gray-600">
+                                Filtres actifs: 
+                                <span class="font-medium">{{ implode(', ', $selectedTypes) }}</span>
+                            </p>
+                        </div>
+                    @endif
+                </div>
+            @endif
+        </div>
 
         @if($productsBySite->count() > 0)
             @foreach($productsBySite as $siteId => $siteProducts)
@@ -111,7 +212,13 @@ new class extends Component {
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <h3 class="mt-2 text-sm font-semibold text-gray-900">Aucun produit trouvé</h3>
-                <p class="mt-1 text-sm text-gray-500">Aucun résultat pour "{{ $name }}"</p>
+                <p class="mt-1 text-sm text-gray-500">
+                    @if(count($selectedTypes) > 0)
+                        Aucun résultat pour "{{ $name }}" avec les filtres sélectionnés
+                    @else
+                        Aucun résultat pour "{{ $name }}"
+                    @endif
+                </p>
             </div>
         @endif
     </div>

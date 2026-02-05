@@ -180,82 +180,83 @@ return [
             'retry_interval_seconds' => env('TYPESENSE_RETRY_INTERVAL_SECONDS', 1),
         ],
         // 'max_total_results' => env('TYPESENSE_MAX_TOTAL_RESULTS', 1000),
-'model-settings' => [
-    \App\Models\Product::class => [
-        'collection-schema' => [
-            'fields' => [
-                [
-                    'name' => 'id',
-                    'type' => 'string',
+        'model-settings' => [
+            \App\Models\Product::class => [
+                'collection-schema' => [
+                    'fields' => [
+                        [
+                            'name' => 'id',
+                            'type' => 'string',
+                        ],
+                        [
+                            'name' => 'vendor',
+                            'type' => 'string',
+                            'infix' => true,
+                        ],
+                        [
+                            'name' => 'name',
+                            'type' => 'string',
+                            'infix' => true,
+                        ],
+                        [
+                            'name' => 'type',
+                            'type' => 'string',
+                            'infix' => true,
+                            'facet' => true
+                        ],
+                        [
+                            'name' => 'variation',
+                            'type' => 'string',
+                            'optional' => true,
+                            'facet' => true, // Facet uniquement sur variation
+                            'infix' => true,
+                        ],
+                        [
+                            'name' => 'prix_ht',
+                            'type' => 'string',
+                        ],
+                        [
+                            'name' => 'currency',
+                            'type' => 'string',
+                        ],
+                        [
+                            'name' => 'url',
+                            'type' => 'string',
+                            'optional' => true,
+                        ],
+                        [
+                            'name' => 'image_url',
+                            'type' => 'string',
+                            'optional' => true,
+                        ],
+                        [
+                            'name' => 'web_site_id',
+                            'type' => 'int32',
+                        ],
+                        [
+                            'name' => 'scrap_reference_id',
+                            'type' => 'int32',
+                        ],
+                        [
+                            'name' => 'created_at',
+                            'type' => 'int64',
+                        ],
+                        [
+                            'name' => 'updated_at',
+                            'type' => 'int64',
+                        ],
+                    ],
+                    'default_sorting_field' => 'created_at',
                 ],
-                [
-                    'name' => 'vendor',
-                    'type' => 'string',
-                    'infix' => true,
-                ],
-                [
-                    'name' => 'name',
-                    'type' => 'string',
-                    'infix' => true,
-                ],
-                [
-                    'name' => 'type',
-                    'type' => 'string',
-                    'infix' => true,
-                ],
-                [
-                    'name' => 'variation',
-                    'type' => 'string',
-                    'optional' => true,
-                    'facet' => true, // Facet uniquement sur variation
-                    'infix' => true,
-                ],
-                [
-                    'name' => 'prix_ht',
-                    'type' => 'string',
-                ],
-                [
-                    'name' => 'currency',
-                    'type' => 'string',
-                ],
-                [
-                    'name' => 'url',
-                    'type' => 'string',
-                    'optional' => true,
-                ],
-                [
-                    'name' => 'image_url',
-                    'type' => 'string',
-                    'optional' => true,
-                ],
-                [
-                    'name' => 'web_site_id',
-                    'type' => 'int32',
-                ],
-                [
-                    'name' => 'scrap_reference_id',
-                    'type' => 'int32',
-                ],
-                [
-                    'name' => 'created_at',
-                    'type' => 'int64',
-                ],
-                [
-                    'name' => 'updated_at',
-                    'type' => 'int64',
+                'search-parameters' => [
+                    'query_by' => 'name,vendor,type,variation',
+                    'prioritize_exact_match' => true,
+                    'sort_by' => '_text_match:desc,created_at:desc',
+                    'facet_by' => 'type,variation', // Facet uniquement sur variation
+                    'max_facet_values' => 100,
                 ],
             ],
-            'default_sorting_field' => 'created_at',
         ],
-        'search-parameters' => [
-            'query_by' => 'name,vendor,type,variation',
-            'prioritize_exact_match' => true,
-            'sort_by' => '_text_match:desc,created_at:desc',
-            'facet_by' => 'variation', // Facet uniquement sur variation
-            'max_facet_values' => 100,
-        ],
-    ],
-],
         'import_action' => env('TYPESENSE_IMPORT_ACTION', 'upsert'),
     ],
 
