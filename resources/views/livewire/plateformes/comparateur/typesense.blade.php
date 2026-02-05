@@ -14,6 +14,7 @@ new class extends Component {
     public array $parsedResult = [];
     public bool $loading = false;
     public ?string $error = null;
+    public Collection $searchResults;
 
     public function mount($name = '', $id = '', $price = ''): void
     {
@@ -21,6 +22,7 @@ new class extends Component {
         $this->id = $id;
         $this->price = $price;
         $this->products = collect();
+        $this->searchResults = collect();
     }
     
     public function parseProduct(): void
@@ -28,6 +30,7 @@ new class extends Component {
         $this->loading = true;
         $this->error = null;
         $this->parsedResult = [];
+        $this->searchResults = collect();
         
         try {
             if (empty($this->name)) {
@@ -38,11 +41,46 @@ new class extends Component {
             $parser = new ProductSearchParser();
             $this->parsedResult = $parser->parseProductName($this->name);
             
+            // Recherche des produits après le parsing
+            $this->searchProductsFromParsed();
+            
         } catch (\Exception $e) {
             $this->error = 'Erreur: ' . $e->getMessage();
         } finally {
             $this->loading = false;
         }
+    }
+    
+    private function searchProductsFromParsed(): void
+    {
+        if (empty($this->parsedResult)) {
+            return;
+        }
+        
+        $vendor = $this->parsedResult['vendor'] ?? null;
+        $name = $this->parsedResult['name'] ?? null;
+        $type = $this->parsedResult['type'] ?? null;
+        
+        // Construction de la requête
+        $query = Product::query();
+        
+        // Filtre par vendor (exact match)
+        if ($vendor) {
+            $query->where('vendor', $vendor);
+        }
+        
+        // Filtre par name (LIKE)
+        if ($name) {
+            $query->where('name', 'LIKE', '%' . $name . '%');
+        }
+        
+        // Filtre par type (exact match ou LIKE selon la précision)
+        if ($type) {
+            $query->where('type', 'LIKE', '%' . $type . '%');
+        }
+        
+        // Limite à 10 résultats
+        $this->searchResults = $query->limit(10)->get();
     }
     
     public function testWithExamples(): void
@@ -57,6 +95,7 @@ new class extends Component {
                 'Cacharel - Ella Ella Flora Azura - Eau de Parfum Vaporisateur 30ml',
                 'Dior - J\'adore - Eau de Parfum 50ml',
                 'Chanel - N°5 - Eau de Toilette Spray 100ml',
+                'Shiseido Men - Revitalisant Total Crème - Recharge 50 ml',
             ];
             
             $this->products = collect($parser->parseMultipleProducts($examples));
@@ -73,11 +112,12 @@ new class extends Component {
         $this->name = '';
         $this->parsedResult = [];
         $this->products = collect();
+        $this->searchResults = collect();
         $this->error = null;
     }
 }; ?>
 
-<div class="max-w-4xl mx-auto p-6">
+<div class="max-w-6xl mx-auto p-6">
     <div class="bg-white rounded-lg shadow-lg p-6">
         <h2 class="text-2xl font-bold mb-6 text-gray-800">🧪 Test Product Search Parser</h2>
         
@@ -102,7 +142,7 @@ new class extends Component {
                 wire:loading.attr="disabled"
                 class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
             >
-                <span wire:loading.remove wire:target="parseProduct">🔍 Analyser</span>
+                <span wire:loading.remove wire:target="parseProduct">🔍 Analyser & Rechercher</span>
                 <span wire:loading wire:target="parseProduct">⏳ Analyse en cours...</span>
             </button>
             
@@ -154,6 +194,64 @@ new class extends Component {
                         </div>
                     </div>
                 </div>
+            </div>
+        @endif
+        
+        {{-- Résultats de recherche --}}
+        @if($searchResults->isNotEmpty())
+            <div class="mb-6">
+                <h3 class="text-lg font-semibold mb-3 text-gray-800">
+                    🎯 Produits trouvés ({{ $searchResults->count() }})
+                </h3>
+                <div class="space-y-3">
+                    @foreach($searchResults as $result)
+                        <div class="bg-white border border-gray-300 rounded-lg p-4 hover:shadow-md transition">
+                            <div class="flex items-start gap-4">
+                                @if($result->image_url)
+                                    <img 
+                                        src="{{ $result->image_url }}" 
+                                        alt="{{ $result->name }}"
+                                        class="w-20 h-20 object-cover rounded"
+                                    />
+                                @endif
+                                <div class="flex-1">
+                                    <div class="flex justify-between items-start mb-2">
+                                        <div>
+                                            <span class="text-xs font-semibold text-blue-600 uppercase">{{ $result->vendor }}</span>
+                                            <h4 class="text-lg font-semibold text-gray-900">{{ $result->name }}</h4>
+                                        </div>
+                                        <div class="text-right">
+                                            <p class="text-lg font-bold text-green-600">
+                                                {{ number_format($result->prix_ht, 2) }} {{ $result->currency }}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2 text-sm text-gray-600">
+                                        <div>
+                                            <span class="font-medium">Type:</span> {{ $result->type ?? 'N/A' }}
+                                        </div>
+                                        <div>
+                                            <span class="font-medium">Variation:</span> {{ $result->variation ?? 'N/A' }}
+                                        </div>
+                                    </div>
+                                    @if($result->url)
+                                        <a 
+                                            href="{{ $result->url }}" 
+                                            target="_blank"
+                                            class="inline-block mt-2 text-sm text-blue-600 hover:underline"
+                                        >
+                                            Voir le produit →
+                                        </a>
+                                    @endif
+                                </div>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+        @elseif(!empty($parsedResult) && $searchResults->isEmpty())
+            <div class="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-500 text-yellow-700 rounded">
+                <p class="font-medium">⚠️ Aucun produit trouvé avec ces critères</p>
             </div>
         @endif
         
