@@ -56,28 +56,13 @@ new class extends Component {
         set_time_limit(700);
         ini_set('memory_limit', '512M');
 
-        // Utiliser Typesense pour récupérer tous les résultats
-        $searchQuery = $this->buildSearchQuery();
-        
-        // Pour l'export, on récupère tout (pas de pagination)
-        $results = Product::search($searchQuery, function ($typesenseSearch, $query, $options) {
-            $filters = $this->buildFilters();
-            if (!empty($filters)) {
-                $options['filter_by'] = $filters;
-            }
-            
-            // Récupérer jusqu'à 250 résultats par page (limite Typesense)
-            // Pour plus, il faudra faire plusieurs requêtes
-            $options['per_page'] = 250;
-            $options['page'] = 1;
-            
-            return $options;
-        })->get();
-
-        // Si vous avez potentiellement plus de 250 résultats, utilisez cette approche :
+        // Récupérer tous les résultats via pagination
         $allProducts = collect();
         $page = 1;
+        
         do {
+            $searchQuery = $this->buildSearchQuery();
+            
             $pageResults = Product::search($searchQuery, function ($typesenseSearch, $query, $options) use ($page) {
                 $filters = $this->buildFilters();
                 if (!empty($filters)) {
@@ -85,6 +70,7 @@ new class extends Component {
                 }
                 $options['per_page'] = 250;
                 $options['page'] = $page;
+                $options['sort_by'] = 'vendor:asc';
                 return $options;
             })->get();
             
@@ -266,8 +252,8 @@ new class extends Component {
 
         $searchQuery = $this->buildSearchQuery();
         
-        // Recherche avec Typesense
-        $results = Product::search($searchQuery, function ($typesenseSearch, $query, $options) {
+        // Recherche avec Typesense et pagination
+        $paginatedResults = Product::search($searchQuery, function ($typesenseSearch, $query, $options) {
             // Appliquer les filtres
             $filters = $this->buildFilters();
             if (!empty($filters)) {
@@ -282,25 +268,14 @@ new class extends Component {
             $options['sort_by'] = 'vendor:asc';
 
             return $options;
-        });
-
-        $products = $results->get();
-        $totalResults = $results->total();
-
-        $paginator = new LengthAwarePaginator(
-            $products,
-            $totalResults,
-            $this->perPage,
-            $this->currentPage,
-            ['path' => request()->url()]
-        );
+        })->paginate($this->perPage, 'page', $this->currentPage);
 
         return [
-            'products' => $products,
+            'products' => $paginatedResults->items(),
             'sites' => Site::orderBy('name')->get(),
-            'paginator' => $paginator,
-            'totalResults' => $totalResults,
-            'totalPages' => ceil($totalResults / $this->perPage),
+            'paginator' => $paginatedResults,
+            'totalResults' => $paginatedResults->total(),
+            'totalPages' => $paginatedResults->lastPage(),
         ];
     }
 }; ?>
