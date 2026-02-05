@@ -166,12 +166,6 @@ new class extends Component {
         }
     }
     
-    /**
-     * Recherche des produits en utilisant Typesense avec filtrage par étapes
-     * ÉTAPE 1: Filtre par vendor
-     * ÉTAPE 2: Recherche par name
-     * ÉTAPE 3: Filtre par type
-     */
     private function searchProductsFromParsed(): void
     {
         if (empty($this->parsedResult)) {
@@ -182,189 +176,84 @@ new class extends Component {
         $name = $this->parsedResult['name'] ?? null;
         $type = $this->parsedResult['type'] ?? null;
         
-        if (!$vendor || !$name) {
-            $this->error = 'Vendor et Name sont requis pour la recherche';
-            return;
-        }
+        // Récupération de tous les produits potentiels avec vendor
+        $query = Product::query();
         
-        // Construction de la query de recherche
-        $searchQuery = $name;
-        
-        // Options de recherche Typesense
-        $searchOptions = [
-            'query_by' => 'name,type,variation',
-            'query_by_weights' => '4,2,1',
-            'filter_by' => 'vendor:=' . $vendor, // ÉTAPE 1: Filtre strict sur vendor
-            'prioritize_exact_match' => true,
-            'prefix' => true,
-            'num_typos' => 1,
-            'typo_tokens_threshold' => 1,
-            'per_page' => 30,
-            'sort_by' => '_text_match:desc',
-            'infix' => 'always',
-            'split_join_tokens' => 'always',
-        ];
-        
-        // ÉTAPE 3: Si le type est présent, l'ajouter au filtre
-        if ($type) {
-            $searchOptions['filter_by'] .= ' && type:*' . $type . '*';
-        }
-        
-        try {
-            // Exécution de la recherche Typesense
-            $results = Product::search($searchQuery)
-                ->options($searchOptions)
-                ->get();
-            
-            // Post-traitement pour affiner et scorer les résultats
-            $this->searchResults = collect($results)
-                ->map(function($product) use ($vendor, $name, $type) {
-                    return $this->calculateProductScore($product, $vendor, $name, $type);
-                })
-                ->filter(function($product) {
-                    // Filtrer les produits avec un score négatif
-                    return $product->match_score > 0;
-                })
-                ->sortByDesc('match_score')
-                ->take(10)
-                ->values();
-            
-            // Si aucun résultat avec filtre strict, essayer une recherche plus souple
-            if ($this->searchResults->isEmpty()) {
-                $this->fallbackSearch($vendor, $name, $type);
-            }
-            
-        } catch (\Exception $e) {
-            $this->error = 'Erreur de recherche Typesense: ' . $e->getMessage();
-            $this->searchResults = collect();
-        }
-    }
-    
-    /**
-     * Calcule le score de pertinence d'un produit
-     */
-    private function calculateProductScore($product, ?string $vendor, ?string $name, ?string $type): mixed
-    {
-        $score = 0;
-        $details = [];
-        
-        // SCORE VENDOR (0-100 points)
+        // Filtrage initial par vendor
         if ($vendor) {
             $normalizedVendor = $this->normalizeForSearch($vendor);
-            $normalizedProductVendor = $this->normalizeForSearch($product->vendor ?? '');
-            
-            if ($normalizedProductVendor === $normalizedVendor) {
-                $score += 100;
-                $details['vendor_match'] = 'exact';
-            } elseif (Str::contains($normalizedProductVendor, $normalizedVendor)) {
-                $score += 50;
-                $details['vendor_match'] = 'partial';
-            } else {
-                // Vendor ne match pas = score très bas
-                $score -= 500;
-                $details['vendor_match'] = 'none';
-            }
+            $query->where(function($q) use ($vendor, $normalizedVendor) {
+                $q->where('vendor', $vendor)
+                  ->orWhere('vendor', 'LIKE', '%' . $vendor . '%')
+                  ->orWhereRaw('LOWER(REPLACE(REPLACE(REPLACE(vendor, "-", " "), "_", " "), "  ", " ")) LIKE ?', 
+                               ['%' . $normalizedVendor . '%']);
+            });
         }
         
-        // SCORE NAME (0-300+ points) - Le plus important
-        if ($name) {
-            $nameMatch = $this->matchWordByWord($name, $product->name ?? '', 70);
+        // Récupération des résultats
+        $results = $query->limit(200)->get();
+        
+        // Filtrage côté application avec normalisation et matching mot par mot
+        $filtered = $results->filter(function($product) use ($vendor, $name, $type) {
+            $score = 0;
+            $details = [];
             
-            if ($nameMatch['matched']) {
-                $score += $nameMatch['score'];
-                $details['name_match'] = [
-                    'ratio' => $nameMatch['ratio'],
-                    'in_order' => $nameMatch['in_order'],
-                    'words' => $nameMatch['words'],
-                ];
+            // Vérification vendor (doit matcher)
+            if ($vendor) {
+                $normalizedVendor = $this->normalizeForSearch($vendor);
+                $normalizedProductVendor = $this->normalizeForSearch($product->vendor ?? '');
                 
-                // Bonus si match à 100%
-                if ($nameMatch['ratio'] === 100.0) {
+                if ($normalizedProductVendor === $normalizedVendor) {
                     $score += 100;
-                }
-            } else {
-                // Name ne match pas assez = score très bas
-                $score -= 1000;
-                $details['name_match'] = [
-                    'ratio' => $nameMatch['ratio'],
-                    'matched' => false,
-                ];
-            }
-        }
-        
-        // SCORE TYPE (0-200+ points)
-        if ($type) {
-            $typeMatch = $this->matchWordByWord($type, $product->type ?? '', 60);
-            
-            if ($typeMatch['matched']) {
-                $score += $typeMatch['score'];
-                $details['type_match'] = [
-                    'ratio' => $typeMatch['ratio'],
-                    'in_order' => $typeMatch['in_order'],
-                    'words' => $typeMatch['words'],
-                ];
-                
-                // Bonus si match à 100%
-                if ($typeMatch['ratio'] === 100.0) {
+                    $details['vendor_match'] = 'exact';
+                } elseif (Str::contains($normalizedProductVendor, $normalizedVendor)) {
                     $score += 50;
+                    $details['vendor_match'] = 'partial';
+                } else {
+                    return false; // Pas de match vendor = exclusion
                 }
-            } else {
-                // Type ne match pas = pénalité légère
-                $score -= 50;
-                $details['type_match'] = [
-                    'ratio' => $typeMatch['ratio'],
-                    'matched' => false,
-                ];
             }
-        }
-        
-        $product->match_score = $score;
-        $product->match_details = $details;
-        
-        return $product;
-    }
-    
-    /**
-     * Recherche de secours avec critères plus souples
-     */
-    private function fallbackSearch(?string $vendor, ?string $name, ?string $type): void
-    {
-        if (!$vendor || !$name) {
-            return;
-        }
-        
-        // Construction de la query complète
-        $searchParts = array_filter([$vendor, $name, $type]);
-        $searchQuery = implode(' ', $searchParts);
-        
-        $searchOptions = [
-            'query_by' => 'vendor,name,type,variation',
-            'query_by_weights' => '2,4,2,1',
-            'prioritize_exact_match' => true,
-            'prefix' => true,
-            'num_typos' => 2, // Plus tolérant
-            'per_page' => 20,
-            'sort_by' => '_text_match:desc',
-            'infix' => 'always',
-        ];
-        
-        try {
-            $results = Product::search($searchQuery)
-                ->options($searchOptions)
-                ->get();
             
-            $this->searchResults = collect($results)
-                ->map(function($product) use ($vendor, $name, $type) {
-                    return $this->calculateProductScore($product, $vendor, $name, $type);
-                })
-                ->filter(fn($product) => $product->match_score > -200) // Plus tolérant
-                ->sortByDesc('match_score')
-                ->take(10)
-                ->values();
+            // Vérification name mot par mot (OBLIGATOIRE - au moins 80% des mots)
+            if ($name) {
+                $nameMatch = $this->matchWordByWord($name, $product->name ?? '', 80);
                 
-        } catch (\Exception $e) {
-            // Ignorer l'erreur du fallback
-        }
+                if (!$nameMatch['matched']) {
+                    return false; // Pas assez de mots qui matchent dans le name
+                }
+                
+                $score += $nameMatch['score'];
+                $details['name_words'] = $nameMatch['words'];
+                $details['name_match_ratio'] = $nameMatch['ratio'];
+                $details['name_in_order'] = $nameMatch['in_order'];
+            } else {
+                return false; // Pas de name = exclusion
+            }
+            
+            // Vérification type mot par mot (OBLIGATOIRE - au moins 70% des mots)
+            if ($type) {
+                $typeMatch = $this->matchWordByWord($type, $product->type ?? '', 70);
+                
+                if (!$typeMatch['matched']) {
+                    return false; // Pas assez de mots qui matchent dans le type
+                }
+                
+                $score += $typeMatch['score'];
+                $details['type_words'] = $typeMatch['words'];
+                $details['type_match_ratio'] = $typeMatch['ratio'];
+                $details['type_in_order'] = $typeMatch['in_order'];
+            }
+            
+            $product->match_score = $score;
+            $product->match_details = $details;
+            return $score > 0;
+        });
+        
+        // Tri par score et limite à 10
+        $this->searchResults = $filtered
+            ->sortByDesc('match_score')
+            ->take(10)
+            ->values();
     }
     
     public function testWithExamples(): void

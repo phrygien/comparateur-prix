@@ -245,8 +245,14 @@ return [
                 ],
                 'search-parameters' => [
                     'query_by' => 'name,vendor,type,variation',
+                    'query_by_weights' => '4,2,3,1', // Priorités
                     'prioritize_exact_match' => true,
+                    'prefix' => true,
+                    'infix' => 'always',
+                    'num_typos' => 1,
+                    'typo_tokens_threshold' => 1,
                     'sort_by' => '_text_match:desc,created_at:desc',
+                    'split_join_tokens' => 'always',
                 ],
             ],
         ],
