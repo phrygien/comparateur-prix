@@ -33,10 +33,28 @@ new class extends Component {
      */
     private function normalizeForSearch(string $text): string
     {
+        // Conversion en minuscules
         $normalized = Str::lower($text);
-        $normalized = str_replace(['-', '_', '/', '\\'], ' ', $normalized);
+        
+        // Remplacement des caractères accentués
+        $normalized = str_replace(
+            ['à', 'á', 'â', 'ã', 'ä', 'å', 'è', 'é', 'ê', 'ë', 'ì', 'í', 'î', 'ï', 'ò', 'ó', 'ô', 'õ', 'ö', 'ù', 'ú', 'û', 'ü', 'ý', 'ÿ', 'ñ', 'ç'],
+            ['a', 'a', 'a', 'a', 'a', 'a', 'e', 'e', 'e', 'e', 'i', 'i', 'i', 'i', 'o', 'o', 'o', 'o', 'o', 'u', 'u', 'u', 'u', 'y', 'y', 'n', 'c'],
+            $normalized
+        );
+        
+        // Remplacement des apostrophes et guillemets par espaces
+        $normalized = str_replace(['\'', '"', ''', ''', '"', '"'], ' ', $normalized);
+        
+        // Remplacement des tirets et autres séparateurs par espaces
+        $normalized = str_replace(['-', '_', '/', '\\', '|'], ' ', $normalized);
+        
+        // Suppression de tous les caractères non alphanumériques sauf espaces
         $normalized = preg_replace('/[^a-z0-9\s]/', '', $normalized);
+        
+        // Remplacement des espaces multiples par un seul espace
         $normalized = preg_replace('/\s+/', ' ', $normalized);
+        
         return trim($normalized);
     }
     
@@ -238,6 +256,7 @@ new class extends Component {
             'products_rejected_by_name' => 0,
             'products_rejected_by_type' => 0,
             'products_accepted' => 0,
+            'name_rejection_details' => [],
         ];
         
         // Récupération de tous les produits potentiels avec vendor
@@ -281,12 +300,21 @@ new class extends Component {
             
             $this->debugInfo['products_after_vendor_filter']++;
             
-            // Vérification name mot par mot (OBLIGATOIRE - au moins 80% des mots)
+            // Vérification name mot par mot (OBLIGATOIRE - au moins 70% des mots)
             if ($name) {
-                $nameMatch = $this->matchWordByWord($name, $product->name ?? '', 80, false);
+                $nameMatch = $this->matchWordByWord($name, $product->name ?? '', 70, false);
                 
                 if (!$nameMatch['matched']) {
                     $this->debugInfo['products_rejected_by_name']++;
+                    if ($this->debugMode) {
+                        $this->debugInfo['name_rejection_details'][] = [
+                            'product_name' => $product->name,
+                            'product_name_normalized' => $this->normalizeForSearch($product->name ?? ''),
+                            'search_name_normalized' => $this->normalizeForSearch($name),
+                            'match_ratio' => $nameMatch['ratio'] ?? 0,
+                            'words' => $nameMatch['words'] ?? [],
+                        ];
+                    }
                     return false; // Pas assez de mots qui matchent dans le name
                 }
                 
@@ -430,7 +458,7 @@ new class extends Component {
         @if($debugMode && !empty($debugInfo))
             <div class="mb-6 p-4 bg-purple-50 border border-purple-300 rounded-lg">
                 <h3 class="text-sm font-bold text-purple-900 mb-2">🐛 Informations de Debug</h3>
-                <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs mb-4">
                     <div class="bg-white p-2 rounded">
                         <span class="font-semibold">Recherche Vendor:</span>
                         <p class="text-purple-700">{{ $debugInfo['search_vendor'] ?? 'N/A' }}</p>
@@ -464,6 +492,52 @@ new class extends Component {
                         <p class="text-green-800 font-bold">{{ $debugInfo['products_accepted'] ?? 0 }}</p>
                     </div>
                 </div>
+                
+                {{-- Détails des rejets NAME --}}
+                @if(!empty($debugInfo['name_rejection_details']))
+                    <div class="mt-4 bg-red-50 p-3 rounded border border-red-200">
+                        <h4 class="text-xs font-bold text-red-900 mb-2">❌ Détails des rejets NAME (premiers 5)</h4>
+                        <div class="space-y-2">
+                            @foreach(array_slice($debugInfo['name_rejection_details'], 0, 5) as $rejection)
+                                <div class="bg-white p-2 rounded text-xs border border-red-100">
+                                    <div class="mb-1">
+                                        <span class="font-semibold text-gray-700">Produit:</span>
+                                        <span class="text-gray-900">{{ $rejection['product_name'] ?? 'N/A' }}</span>
+                                    </div>
+                                    <div class="mb-1">
+                                        <span class="font-semibold text-gray-700">Normalisé:</span>
+                                        <span class="text-gray-600 font-mono">{{ $rejection['product_name_normalized'] ?? 'N/A' }}</span>
+                                    </div>
+                                    <div class="mb-1">
+                                        <span class="font-semibold text-gray-700">Recherche normalisée:</span>
+                                        <span class="text-purple-600 font-mono">{{ $rejection['search_name_normalized'] ?? 'N/A' }}</span>
+                                    </div>
+                                    <div class="mb-1">
+                                        <span class="font-semibold text-gray-700">Match ratio:</span>
+                                        <span class="text-red-700 font-bold">{{ round($rejection['match_ratio'] ?? 0) }}%</span>
+                                        <span class="text-gray-500">(minimum: 70%)</span>
+                                    </div>
+                                    <div>
+                                        <span class="font-semibold text-gray-700">Mots:</span>
+                                        <div class="flex gap-1 flex-wrap mt-1">
+                                            @foreach($rejection['words'] ?? [] as $wordInfo)
+                                                @if($wordInfo['found'])
+                                                    <span class="bg-green-100 text-green-800 px-1.5 py-0.5 rounded text-xs">
+                                                        ✓ {{ $wordInfo['word'] }}
+                                                    </span>
+                                                @else
+                                                    <span class="bg-red-100 text-red-800 px-1.5 py-0.5 rounded text-xs">
+                                                        ✗ {{ $wordInfo['word'] }}
+                                                    </span>
+                                                @endif
+                                            @endforeach
+                                        </div>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
             </div>
         @endif
         
