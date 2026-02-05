@@ -237,6 +237,7 @@ return [
                         [
                             'name' => 'scrap_reference_id',
                             'type' => 'int32',
+                            'facet' => true
                         ],
                         [
                             'name' => 'created_at',
