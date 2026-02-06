@@ -218,6 +218,7 @@ return [
                         [
                             'name' => 'prix_ht',
                             'type' => 'string',
+                            'facet' => true
                         ],
                         [
                             'name' => 'currency',
