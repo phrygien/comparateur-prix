@@ -32,8 +32,9 @@ Route::middleware(['check.auth', 'boutique.cache'])->group(function () {
     Route::get('/search', function() {
         
         return Product::search(request('q', '*'))->options([
-            'query_by' => 'embedding'
+            'query_by' => 'embedding',
+            'exclude_fields' => 'embedding'
         ])->raw();
-        
+
     });
 });
