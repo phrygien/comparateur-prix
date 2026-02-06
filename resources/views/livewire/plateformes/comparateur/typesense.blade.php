@@ -114,7 +114,7 @@ Réponds UNIQUEMENT en format JSON avec ces clés: vendor, name, type, variation
         try {
             // Rechercher les produits du même vendor dans la base de données - LIMITE 300
             $products = Product::where('vendor', 'LIKE', "%{$this->vendor}%")
-                ->limit(300)
+                ->limit(10)
                 ->get();
 
             $this->totalProductsChecked = $products->count();
