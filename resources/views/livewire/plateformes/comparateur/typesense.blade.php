@@ -20,6 +20,7 @@ new class extends Component {
     // Nouveaux champs pour la recherche
     public bool $isSearching = false;
     public ?Collection $similarProducts = null;
+    public ?Collection $perfectMatches = null;
     public ?Product $matchedProduct = null;
     public ?float $similarityScore = null;
     public int $totalProductsChecked = 0;
@@ -107,30 +108,54 @@ Réponds UNIQUEMENT en format JSON avec ces clés: vendor, name, type, variation
 
         $this->isSearching = true;
         $this->similarProducts = collect();
+        $this->perfectMatches = collect();
         $this->matchedProduct = null;
         $this->similarityScore = null;
         $this->totalProductsChecked = 0;
 
         try {
-            // Rechercher les produits du même vendor dans la base de données - LIMITE 300
-            $products = Product::where('vendor', 'LIKE', "%{$this->vendor}%")
-                ->limit(10)
+            // Recherche optimisée avec vendor, name et type
+            $query = Product::query();
+            
+            // Filtrer par vendor (obligatoire)
+            $query->where('vendor', 'LIKE', "%{$this->vendor}%");
+            
+            // Filtrer par type si disponible (réduit considérablement les résultats)
+            if ($this->type) {
+                $query->where('type', 'LIKE', "%{$this->type}%");
+            }
+            
+            // Optionnel: filtrer aussi par une partie du nom pour réduire encore plus
+            // Prendre les premiers mots du nom pour la recherche
+            $nameWords = explode(' ', $this->productName);
+            if (count($nameWords) > 0) {
+                $firstWord = $nameWords[0];
+                if (strlen($firstWord) > 3) { // Uniquement si le mot est assez long
+                    $query->where('name', 'LIKE', "%{$firstWord}%");
+                }
+            }
+            
+            // Limiter à 300 et sélectionner uniquement les colonnes nécessaires pour économiser la RAM
+            $products = $query->select(['id', 'vendor', 'name', 'type', 'variation', 'prix_ht', 'currency', 'url', 'web_site_id'])
+                ->limit(300)
                 ->get();
 
             $this->totalProductsChecked = $products->count();
 
             if ($products->isEmpty()) {
-                logger()->info("Aucun produit trouvé pour le vendor: {$this->vendor}");
+                logger()->info("Aucun produit trouvé pour le vendor: {$this->vendor}, type: {$this->type}");
                 $this->isSearching = false;
                 return;
             }
 
-            $bestMatch = null;
             $bestScore = 0;
+            $checkedCount = 0;
 
-            // Pour chaque produit trouvé, calculer la similarité
+            // Traiter tous les produits sans arrêt précoce
             foreach ($products as $product) {
                 try {
+                    $checkedCount++;
+                    
                     // Appeler l'API de similarité
                     $similarityResponse = Http::timeout(10)->post('http://127.0.0.1:8000/similarity', [
                         'text1' => $this->productName,
@@ -141,30 +166,52 @@ Réponds UNIQUEMENT en format JSON avec ces clés: vendor, name, type, variation
                         $similarityData = $similarityResponse->json();
                         $score = $similarityData['similarity'] ?? 0;
                         
-                        // Ajouter à la collection avec le score
+                        // Ajouter le score au produit
                         $product->similarity_score = round($score, 4);
-                        $this->similarProducts->push($product);
-
-                        // Garder le meilleur match
-                        if ($score > $bestScore) {
-                            $bestScore = $score;
-                            $bestMatch = $product;
+                        
+                        // Séparer les perfect matches (>= 93%) et les autres (>= 60%)
+                        if ($score >= 0.93) {
+                            $this->perfectMatches->push($product);
+                            
+                            // Mettre à jour le meilleur match
+                            if ($score > $bestScore) {
+                                $bestScore = $score;
+                                $this->matchedProduct = $product;
+                                $this->similarityScore = $score;
+                            }
+                        } elseif ($score >= 0.90) {
+                            // Ne garder que les produits avec un score > 0.60 pour économiser la RAM
+                            $this->similarProducts->push($product);
                         }
                     }
+                    
+                    // Libérer la mémoire toutes les 50 itérations
+                    if ($checkedCount % 50 === 0) {
+                        gc_collect_cycles();
+                    }
+                    
                 } catch (\Exception $e) {
                     logger()->error("Similarity API error for product {$product->id}: " . $e->getMessage());
                     continue;
                 }
             }
 
-            // Trier par score de similarité (décroissant)
-            $this->similarProducts = $this->similarProducts->sortByDesc('similarity_score')->values();
+            // Trier les perfect matches par score décroissant
+            $this->perfectMatches = $this->perfectMatches
+                ->sortByDesc('similarity_score')
+                ->values();
 
-            // Définir le meilleur match si le score est >= 0.93
-            if ($bestMatch && $bestScore >= 0.93) {
-                $this->matchedProduct = $bestMatch;
-                $this->similarityScore = $bestScore;
-            }
+            // Trier les autres produits similaires par score décroissant et limiter à 10
+            $this->similarProducts = $this->similarProducts
+                ->sortByDesc('similarity_score')
+                ->take(10)
+                ->values();
+
+            logger()->info("Recherche terminée: {$this->perfectMatches->count()} perfect matches, {$this->similarProducts->count()} autres similaires");
+            
+            // Libérer la mémoire
+            unset($products);
+            gc_collect_cycles();
 
         } catch (\Exception $e) {
             logger()->error('Similarity search error: ' . $e->getMessage());
@@ -224,7 +271,7 @@ Réponds UNIQUEMENT en format JSON avec ces clés: vendor, name, type, variation
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                <span class="font-medium">Recherche de produits similaires... (max 300 produits)</span>
+                <span class="font-medium">Analyse complète en cours (vendor + type + name)...</span>
             </div>
         </div>
     @endif
@@ -234,76 +281,90 @@ Réponds UNIQUEMENT en format JSON avec ces clés: vendor, name, type, variation
             <div class="bg-gray-100 border border-gray-300 rounded-lg p-3 inline-block">
                 <span class="text-sm font-medium text-gray-700">
                     📊 {{ $totalProductsChecked }} produit{{ $totalProductsChecked > 1 ? 's' : '' }} analysé{{ $totalProductsChecked > 1 ? 's' : '' }}
-                    @if($totalProductsChecked >= 300)
-                        <span class="text-orange-600">(limite atteinte)</span>
+                    @if($perfectMatches && $perfectMatches->isNotEmpty())
+                        | <span class="text-green-600 font-bold">{{ $perfectMatches->count() }} perfect match{{ $perfectMatches->count() > 1 ? 'es' : '' }} (≥93%)</span>
+                    @endif
+                    @if($similarProducts && $similarProducts->isNotEmpty())
+                        | {{ $similarProducts->count() }} similaire{{ $similarProducts->count() > 1 ? 's' : '' }} (60-93%)
                     @endif
                 </span>
             </div>
         </div>
     @endif
 
-    @if(!$isSearching && $matchedProduct)
+    @if(!$isSearching && $perfectMatches && $perfectMatches->isNotEmpty())
         <div class="mt-6 border-t-2 border-green-500 pt-6">
             <h3 class="text-xl font-bold mb-4 text-green-700 flex items-center gap-2">
                 <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
                     <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
                 </svg>
-                Correspondance Parfaite Trouvée! (≥ 93%)
+                {{ $perfectMatches->count() }} Correspondance{{ $perfectMatches->count() > 1 ? 's' : '' }} Parfaite{{ $perfectMatches->count() > 1 ? 's' : '' }} (≥ 93%)
             </h3>
-            <div class="bg-gradient-to-br from-green-50 to-emerald-100 border-2 border-green-300 rounded-xl p-6">
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <span class="font-semibold text-gray-700 block mb-1">Produit correspondant:</span>
-                        <p class="text-gray-900 text-lg font-medium">{{ $matchedProduct->name }}</p>
+            <div class="space-y-4">
+                @foreach($perfectMatches as $index => $product)
+                    <div class="bg-gradient-to-br from-green-50 to-emerald-100 border-2 {{ $index === 0 ? 'border-green-500' : 'border-green-300' }} rounded-xl p-6">
+                        @if($index === 0)
+                            <div class="mb-2">
+                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-600 text-white">
+                                    🏆 MEILLEUR MATCH
+                                </span>
+                            </div>
+                        @endif
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <span class="font-semibold text-gray-700 block mb-1">Produit:</span>
+                                <p class="text-gray-900 text-lg font-medium">{{ $product->name }}</p>
+                            </div>
+                            <div>
+                                <span class="font-semibold text-gray-700 block mb-1">Vendor:</span>
+                                <p class="text-gray-900">{{ $product->vendor }}</p>
+                            </div>
+                            <div>
+                                <span class="font-semibold text-gray-700 block mb-1">Type:</span>
+                                <p class="text-gray-900">{{ $product->type ?? 'N/A' }}</p>
+                            </div>
+                            <div>
+                                <span class="font-semibold text-gray-700 block mb-1">Variation:</span>
+                                <p class="text-gray-900">{{ $product->variation ?? 'N/A' }}</p>
+                            </div>
+                            <div>
+                                <span class="font-semibold text-gray-700 block mb-1">Score:</span>
+                                <p class="text-green-700 text-2xl font-bold">{{ number_format($product->similarity_score * 100, 2) }}%</p>
+                            </div>
+                            <div>
+                                <span class="font-semibold text-gray-700 block mb-1">ID:</span>
+                                <p class="text-gray-900 font-mono">{{ $product->id }}</p>
+                            </div>
+                            <div>
+                                <span class="font-semibold text-gray-700 block mb-1">Prix HT:</span>
+                                <p class="text-gray-900">{{ $product->prix_ht }} {{ $product->currency }}</p>
+                            </div>
+                            <div>
+                                <span class="font-semibold text-gray-700 block mb-1">Site:</span>
+                                <p class="text-gray-900">{{ $product->website->name ?? 'N/A' }}</p>
+                            </div>
+                        </div>
+                        @if($product->url)
+                            <div class="mt-4">
+                                <a href="{{ $product->url }}" target="_blank" class="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                    </svg>
+                                    Voir le produit
+                                </a>
+                            </div>
+                        @endif
                     </div>
-                    <div>
-                        <span class="font-semibold text-gray-700 block mb-1">Vendor:</span>
-                        <p class="text-gray-900">{{ $matchedProduct->vendor }}</p>
-                    </div>
-                    <div>
-                        <span class="font-semibold text-gray-700 block mb-1">Type:</span>
-                        <p class="text-gray-900">{{ $matchedProduct->type ?? 'N/A' }}</p>
-                    </div>
-                    <div>
-                        <span class="font-semibold text-gray-700 block mb-1">Variation:</span>
-                        <p class="text-gray-900">{{ $matchedProduct->variation ?? 'N/A' }}</p>
-                    </div>
-                    <div>
-                        <span class="font-semibold text-gray-700 block mb-1">Score de similarité:</span>
-                        <p class="text-green-700 text-2xl font-bold">{{ number_format($similarityScore * 100, 2) }}%</p>
-                    </div>
-                    <div>
-                        <span class="font-semibold text-gray-700 block mb-1">ID Produit:</span>
-                        <p class="text-gray-900 font-mono">{{ $matchedProduct->id }}</p>
-                    </div>
-                    <div>
-                        <span class="font-semibold text-gray-700 block mb-1">Prix HT:</span>
-                        <p class="text-gray-900">{{ $matchedProduct->prix_ht }} {{ $matchedProduct->currency }}</p>
-                    </div>
-                    <div>
-                        <span class="font-semibold text-gray-700 block mb-1">Site:</span>
-                        <p class="text-gray-900">{{ $matchedProduct->website->name ?? 'N/A' }}</p>
-                    </div>
-                </div>
-                @if($matchedProduct->url)
-                    <div class="mt-4">
-                        <a href="{{ $matchedProduct->url }}" target="_blank" class="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-                            </svg>
-                            Voir le produit
-                        </a>
-                    </div>
-                @endif
+                @endforeach
             </div>
         </div>
     @endif
 
-    @if(!$isSearching && $similarProducts && $similarProducts->isNotEmpty() && !$matchedProduct)
+    @if(!$isSearching && $similarProducts && $similarProducts->isNotEmpty())
         <div class="mt-6 border-t-2 border-gray-200 pt-6">
-            <h3 class="text-xl font-bold mb-4 text-gray-800">Produits Similaires Trouvés (< 93%):</h3>
+            <h3 class="text-xl font-bold mb-4 text-gray-800">Top 10 Produits Similaires (60-93%):</h3>
             <div class="space-y-3">
-                @foreach($similarProducts->take(5) as $product)
+                @foreach($similarProducts as $product)
                     <div class="bg-white border-2 border-gray-200 hover:border-gray-300 rounded-lg p-4 transition">
                         <div class="flex justify-between items-start gap-4">
                             <div class="flex-1">
@@ -334,15 +395,18 @@ Réponds UNIQUEMENT en format JSON avec ces clés: vendor, name, type, variation
         </div>
     @endif
 
-    @if(!$isSearching && $isProcessed && (!$similarProducts || $similarProducts->isEmpty()) && $vendor)
+    @if(!$isSearching && $isProcessed && (!$perfectMatches || $perfectMatches->isEmpty()) && (!$similarProducts || $similarProducts->isEmpty()) && $vendor)
         <div class="mt-6 border-t-2 border-gray-200 pt-6">
             <div class="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4 flex items-start gap-3">
                 <svg class="w-6 h-6 text-yellow-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                     <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
                 </svg>
                 <div>
-                    <p class="text-yellow-800 font-semibold">Aucun produit trouvé</p>
-                    <p class="text-yellow-700 text-sm mt-1">Aucun produit trouvé pour le vendor "{{ $vendor }}" dans la base de données (max 300 produits).</p>
+                    <p class="text-yellow-800 font-semibold">Aucun produit similaire trouvé (≥60%)</p>
+                    <p class="text-yellow-700 text-sm mt-1">
+                        Critères de recherche: Vendor="{{ $vendor }}"
+                        @if($type), Type="{{ $type }}"@endif
+                    </p>
                 </div>
             </div>
         </div>
