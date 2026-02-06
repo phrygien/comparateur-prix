@@ -206,6 +206,16 @@ return [
                             'optional' => true,
                         ],
                         [
+                            'name' => 'embedding',
+                            'type' => 'float[]',
+                            'embed' => [
+                                'from' => ['vendor', 'name', 'type', 'variation'],
+                                'model_config' => [
+                                    'model_name' => 'ts/all-MiniLM-L12-v2'
+                                ]
+                            ]
+                        ],
+                        [
                             'name' => 'prix_ht',
                             'type' => 'string',
                         ],
@@ -243,7 +253,7 @@ return [
                     'default_sorting_field' => 'created_at',
                 ],
                 'search-parameters' => [
-                    'query_by' => 'vendor',
+                    'query_by' => 'vendor,name,type,variation',
                 ],
             ],
         ],
