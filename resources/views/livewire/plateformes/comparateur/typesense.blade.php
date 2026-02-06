@@ -36,18 +36,38 @@ new class extends Component {
                 'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
                 'Content-Type' => 'application/json',
             ])->post('https://api.openai.com/v1/chat/completions', [
-                'model' => 'gpt-4o-mini', // ou 'gpt-4' selon vos besoins
+                'model' => 'gpt-4o-mini',
                 'messages' => [
                     [
                         'role' => 'system',
-                        'content' => 'Tu es un assistant spécialisé dans l\'extraction d\'informations de produits cosmétiques et parfums. Tu dois extraire: Vendor (marque), name (nom du produit), type (ex: Eau de Toilette, Eau de Parfum, etc.), et variation (ex: 100ml, 50ml, etc.). Réponds UNIQUEMENT en format JSON avec ces clés exactes: vendor, name, type, variation. Si une information n\'est pas disponible, utilise null.'
+                        'content' => 'Tu es un expert en extraction d\'informations de produits cosmétiques et parfums.
+
+Règles d\'extraction:
+- Vendor: La marque du produit (ex: Coach, Biotherm, Dior)
+- Name: Le nom complet du produit sans la marque (ex: Coach Green Homme, Life Plankton)
+- Type: Le type de produit de manière générale (ex: Eau de Toilette, Eau de Parfum, Lait pour le corps, Crème visage, Sérum, Gel douche, etc.)
+- Variation: La contenance ou taille (ex: 100ml, 50ml, 40ml, 200ml)
+
+Exemples:
+1. "Coach - Coach Green Homme - Eau de Toilette 100 ml"
+   → vendor: "Coach", name: "Coach Green Homme", type: "Eau de Toilette", variation: "100ml"
+
+2. "Biotherm - Life Plankton - Lait pour le corps lissant et raffermissant 40ml"
+   → vendor: "Biotherm", name: "Life Plankton", type: "Lait pour le corps", variation: "40ml"
+
+3. "Dior - J\'adore - Eau de Parfum 50ml"
+   → vendor: "Dior", name: "J\'adore", type: "Eau de Parfum", variation: "50ml"
+
+IMPORTANT: Pour le type, garde uniquement la catégorie générale (Lait pour le corps, Crème visage, etc.) sans les descriptions marketing (lissant, raffermissant, hydratant, etc.)
+
+Réponds UNIQUEMENT en format JSON avec ces clés: vendor, name, type, variation.'
                     ],
                     [
                         'role' => 'user',
                         'content' => "Extrait les informations de ce produit: {$this->name}"
                     ]
                 ],
-                'temperature' => 0.3,
+                'temperature' => 0.2,
                 'response_format' => ['type' => 'json_object']
             ]);
 
