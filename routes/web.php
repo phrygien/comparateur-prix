@@ -3,6 +3,7 @@
 use App\Livewire\Boutiques\Boutique;
 use App\Livewire\Boutiques\NosBoutique;
 use Livewire\Volt\Volt;
+use App\Models\Product;
 
 // Route publique
 Volt::route('/', 'auth.login')->name('login');
@@ -27,4 +28,10 @@ Route::middleware(['check.auth', 'boutique.cache'])->group(function () {
     Volt::route('/executer-comparateur/{name}/{id}/{price}/execute', 'plateformes.execute-comparateur')->name('execute-comparateur');
 
     Volt::route('find-product/{name}/{id}/{price}/concurent', 'plateformes.comparateur.typesense')->name('find-product-concurent');
+
+    Route::get('/search', function () {
+        return Product::search(request('q', *))->options([
+            'query_by' => 'embedding'
+        ])->raw();
+    });
 });
