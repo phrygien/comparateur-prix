@@ -206,16 +206,6 @@ return [
                             'optional' => true,
                         ],
                         [
-                            'name' => 'embedding',
-                            'type' => 'float[]',
-                            'embed' => [
-                                'from' => ['vendor', 'name'],
-                                'model_config' => [
-                                    'model_name' => 'ts/all-MiniLM-L12-v2'
-                                ]
-                            ]
-                        ],
-                        [
                             'name' => 'prix_ht',
                             'type' => 'string',
                             'facet' => true
