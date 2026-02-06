@@ -29,9 +29,11 @@ Route::middleware(['check.auth', 'boutique.cache'])->group(function () {
 
     Volt::route('find-product/{name}/{id}/{price}/concurent', 'plateformes.comparateur.typesense')->name('find-product-concurent');
 
-    Route::get('/search', function () {
-        return Product::search(request('q', *))->options([
+    Route::get('/search', function() {
+        
+        return Product::search(request('q', '*'))->options([
             'query_by' => 'embedding'
         ])->raw();
+        
     });
 });
