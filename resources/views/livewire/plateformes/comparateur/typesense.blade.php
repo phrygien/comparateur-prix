@@ -166,10 +166,10 @@ new class extends Component {
 
             {{-- Price Difference Column --}}
             @scope('cell_price_diff', $product)
-            @php
-                $priceDiff = $this->calculatePriceDifference($product->prix_ht ?? 0);
-            @endphp
-            @if($price)
+            @if($this->price)
+                @php
+                    $priceDiff = $this->calculatePriceDifference($product->prix_ht ?? 0);
+                @endphp
                 <div class="flex items-center gap-1">
                     @if($priceDiff['isCheaper'])
                         <svg class="size-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
