@@ -244,7 +244,7 @@ return [
                     'default_sorting_field' => 'created_at',
                 ],
                 'search-parameters' => [
-                    'query_by' => 'vendor,name,type,variation',
+                    'query_by' => 'ean',
                 ],
             ],
         ],

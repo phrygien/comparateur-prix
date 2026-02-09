@@ -46,6 +46,7 @@ class Product extends Model
             'prix_ht' => $this->prix_ht,
             'currency' => $this->currency,
             'url' => $this->url,
+            'ean' => (string) $this->ean,
             'scrap_reference_id' => (int) $this->scrap_reference_id,
             'created_at' => $this->created_at?->timestamp ?? 0,
             'updated_at' => $this->updated_at?->timestamp ?? 0,

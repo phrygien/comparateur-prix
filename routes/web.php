@@ -27,10 +27,10 @@ Route::middleware(['check.auth', 'boutique.cache'])->group(function () {
     Route::get('/nos-boutique', NosBoutique::class)->name('nos-boutiques');
     Volt::route('/executer-comparateur/{name}/{id}/{price}/execute', 'plateformes.execute-comparateur')->name('execute-comparateur');
 
-    Volt::route('find-product/{name}/{id}/{price}/concurent', 'plateformes.comparateur.typesense')->name('find-product-concurent');
+    Volt::route('find-product/{ean}/{id}/{price}/concurent', 'plateformes.comparateur.typesense')->name('find-product-concurent');
 
     Route::get('/search', function() {
-        
+
         return Product::search(request('q', '*'))->options([
             'query_by' => 'embedding',
             'exclude_fields' => 'embedding'
