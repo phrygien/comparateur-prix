@@ -161,7 +161,7 @@
                 @foreach($products as $product)
                 <a
                     href="{{ route('find-product-concurent', [
-                        utf8_encode($product->ean),
+                        utf8_encode($product->sku),
                         $product->id,
                         $product->special_price ?? $product->price ?? 0
                     ]) }}"
