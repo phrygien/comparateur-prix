@@ -25,8 +25,10 @@ new class extends Component {
             return collect([]);
         }
 
-        // Recherche directe par EAN avec Typesense
-        return Product::search($this->searchEan)->get();
+        // Recherche directe par EAN avec Eloquent
+        return Product::with('website')
+            ->where('ean', $this->searchEan)
+            ->get();
     }
 
     public function calculatePriceDifference($comparePrice): array
@@ -96,24 +98,39 @@ new class extends Component {
         <ul role="list" class="divide-y divide-gray-100">
             @forelse($this->products as $product)
                 @php
-                    $priceDiff = $this->calculatePriceDifference($product->price ?? 0);
+                    $priceDiff = $this->calculatePriceDifference($product->prix_ht ?? 0);
                 @endphp
                 <li class="flex items-center justify-between gap-x-6 py-5 px-4 hover:bg-gray-50">
                     <div class="flex min-w-0 gap-x-4 flex-1">
-                        @if(isset($product->image))
-                            <img class="size-12 flex-none rounded bg-gray-50 object-cover" src="{{ $product->image }}" alt="{{ $product->name ?? 'Product' }}">
+                        @if($product->image_url)
+                            <img class="size-12 flex-none rounded bg-gray-50 object-cover" src="{{ $product->image_url }}" alt="{{ $product->name ?? 'Product' }}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                            <div class="size-12 flex-none rounded bg-gray-200 items-center justify-center hidden">
+                                <svg class="size-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                </svg>
+                            </div>
                         @else
                             <div class="size-12 flex-none rounded bg-gray-200 flex items-center justify-center">
                                 <svg class="size-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                                 </svg>
                             </div>
                         @endif
                         <div class="min-w-0 flex-auto">
                             <p class="text-sm/6 font-semibold text-gray-900">{{ $product->name ?? 'Sans nom' }}</p>
                             <p class="mt-1 text-xs/5 text-gray-500">EAN: {{ $product->ean ?? 'N/A' }}</p>
-                            @if(isset($product->supplier))
-                                <p class="mt-1 text-xs/5 text-gray-500">Fournisseur: {{ $product->supplier }}</p>
+                            @if($product->vendor)
+                                <p class="mt-1 text-xs/5 text-gray-500">Vendeur: {{ $product->vendor }}</p>
+                            @endif
+                            @if($product->website)
+                                <p class="mt-1 text-xs/5 text-indigo-600 font-medium">
+                                <span class="inline-flex items-center gap-1">
+                                    <svg class="size-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
+                                    </svg>
+                                    {{ $product->website->name ?? $product->website->url ?? 'Site' }}
+                                </span>
+                                </p>
                             @endif
                         </div>
                     </div>
@@ -122,7 +139,7 @@ new class extends Component {
                         <!-- Price Column -->
                         <div class="text-right">
                             <p class="text-sm font-semibold text-gray-900">
-                                {{ number_format($product->price ?? 0, 2) }} €
+                                {{ number_format($product->prix_ht ?? 0, 2) }} {{ $product->currency ?? '€' }}
                             </p>
                             @if($price)
                                 <p class="text-xs font-medium mt-1 {{ $priceDiff['isCheaper'] ? 'text-green-600' : 'text-red-600' }}">
@@ -133,12 +150,20 @@ new class extends Component {
                         </div>
 
                         <!-- View Button -->
-                        <a
-                            href="#"
-                            class="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-900 ring-1 shadow-xs ring-gray-300 ring-inset hover:bg-gray-50"
-                        >
-                            Voir
-                        </a>
+                        @if($product->url)
+                            <a
+                                href="{{ $product->url }}"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-900 ring-1 shadow-xs ring-gray-300 ring-inset hover:bg-gray-50"
+                            >
+                                Voir
+                            </a>
+                        @else
+                            <span class="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-400 ring-1 shadow-xs ring-gray-200 ring-inset cursor-not-allowed">
+                            N/A
+                        </span>
+                        @endif
                     </div>
                 </li>
             @empty
