@@ -240,6 +240,10 @@ return [
                             'name' => 'updated_at',
                             'type' => 'int64',
                         ],
+                        [
+                            'name' => 'ean',
+                            'type' => 'string',
+                        ],
                     ],
                     'default_sorting_field' => 'created_at',
                 ],
