@@ -1,9 +1,9 @@
 <div>
     <x-header title="Nos produits" subtitle="Les produits de notre boutique à comparer" no-separator>
         <x-slot:middle class="!justify-end">
-            <x-input 
-                icon="o-bolt" 
-                placeholder="Rechercher..." 
+            <x-input
+                icon="o-bolt"
+                placeholder="Rechercher..."
                 wire:model.live.debounce.500ms="search"
             />
         </x-slot:middle>
@@ -39,11 +39,11 @@
                                     <label class="label">
                                         <span class="label-text font-semibold">Nom du produit</span>
                                     </label>
-                                    <input 
-                                        type="text" 
+                                    <input
+                                        type="text"
                                         wire:model="filterName"
                                         placeholder="Rechercher un parfum..."
-                                        class="input input-bordered w-full" 
+                                        class="input input-bordered w-full"
                                     />
                                 </div>
 
@@ -68,11 +68,11 @@
                                     <label class="label">
                                         <span class="label-text font-semibold">Marque</span>
                                     </label>
-                                    <input 
-                                        type="text" 
+                                    <input
+                                        type="text"
                                         wire:model="filterMarque"
                                         placeholder="Entrer la marque du produit ..."
-                                        class="input input-bordered w-full" 
+                                        class="input input-bordered w-full"
                                     />
                                 </div>
 
@@ -93,11 +93,11 @@
                                     <label class="label">
                                         <span class="label-text font-semibold">Type de parfum</span>
                                     </label>
-                                    <input 
-                                        type="text" 
+                                    <input
+                                        type="text"
                                         wire:model="filterType"
                                         placeholder="Entrer le type du produit ..."
-                                        class="input input-bordered w-full" 
+                                        class="input input-bordered w-full"
                                     />
                                 </div>
 
@@ -106,25 +106,25 @@
                                     <label class="label">
                                         <span class="label-text font-semibold">EAN</span>
                                     </label>
-                                    <input 
-                                        type="text" 
+                                    <input
+                                        type="text"
                                         wire:model="filterEAN"
                                         placeholder="Entrer l'EAN du produit ..."
-                                        class="input input-bordered w-full" 
+                                        class="input input-bordered w-full"
                                     />
                                 </div>
 
                                 <!-- Boutons d'action -->
                                 <div class="flex gap-2">
-                                    <button 
-                                        type="button" 
+                                    <button
+                                        type="button"
                                         wire:click="applyFilters"
                                         class="btn btn-primary flex-1"
                                     >
                                         Appliquer
                                     </button>
-                                    <button 
-                                        type="button" 
+                                    <button
+                                        type="button"
                                         wire:click="resetFilters"
                                         class="btn btn-ghost flex-1"
                                     >
@@ -134,7 +134,7 @@
                             </div>
                         </div>
                     </div>
-                </div> 
+                </div>
             </div>
         </x-slot:actions>
     </x-header>
@@ -147,7 +147,7 @@
                 <span class="ml-2 badge badge-primary">Recherche: "{{ $search }}"</span>
             @endif
         </p>
-        
+
         <!-- Info éléments par page -->
         <p class="text-sm text-gray-500">
             {{ $perPage }} éléments par page
@@ -159,41 +159,41 @@
         @if(count($products) > 0)
             <div class="grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 lg:grid-cols-5 lg:gap-x-8">
                 @foreach($products as $product)
-                <a 
-                    href="{{ route('execute-comparateur', [
-                        utf8_encode($product->title), 
-                        $product->id, 
+                <a
+                    href="{{ route('find-product-concurent', [
+                        utf8_encode($product->sku),
+                        $product->id,
                         $product->special_price ?? $product->price ?? 0
-                    ]) }}" 
+                    ]) }}"
                     class="group text-sm"
                     x-on:click="$dispatch('show-competitor-loading')"
                     wire:navigate
                 >
                         <div class="aspect-square w-full rounded-lg bg-gray-100 overflow-hidden">
                             @if($product->thumbnail)
-                                <img 
+                                <img
                                     src="{{ asset('https://www.cosma-parfumeries.com/media/catalog/product/' . $product->thumbnail) }}"
                                     alt="{{ $product->title }}"
                                     class="w-full h-full object-cover group-hover:opacity-75 transition-opacity"
                                     onerror="this.src='https://images.unsplash.com/photo-1541643600914-78b084683601?w=800&q=80'"
                                 >
                             @else
-                                <img 
+                                <img
                                     src="https://images.unsplash.com/photo-1541643600914-78b084683601?w=800&q=80"
                                     alt="Parfum"
                                     class="w-full h-full object-cover group-hover:opacity-75 transition-opacity"
                                 >
                             @endif
                         </div>
-                        
+
                         <h3 class="mt-4 font-medium text-gray-900 line-clamp-2">
                             {{ utf8_encode($product->title) }}
                         </h3>
-                        
+
                         @if($product->vendor)
                             <p class="text-gray-500 italic">{{ utf8_encode($product->vendor) }}</p>
                         @endif
-                        
+
                         <div class="mt-2">
                             @if($product->special_price && $product->special_price < $product->price)
                                 <div class="flex items-center gap-2">
@@ -222,9 +222,9 @@
                 <p class="mt-1 text-sm text-gray-500">Essayez de modifier vos critères de recherche.</p>
                 @if($search || $filterName || $filterMarque || $filterType || $filterCapacity)
                     <div class="mt-6">
-                        <button 
-                            wire:click="resetFilters" 
-                            type="button" 
+                        <button
+                            wire:click="resetFilters"
+                            type="button"
                             class="btn btn-primary"
                         >
                             Réinitialiser les filtres
@@ -240,16 +240,16 @@
                 <div class="group text-sm animate-pulse">
                     <!-- Image skeleton avec ombre -->
                     <div class="aspect-square w-full rounded-lg bg-gray-300 overflow-hidden shadow-md"></div>
-                    
+
                     <!-- Titre skeleton -->
                     <div class="mt-4 h-4 bg-gray-300 rounded w-3/4 shadow-sm"></div>
-                    
+
                     <!-- Marque skeleton -->
                     <div class="mt-2 h-3 bg-gray-200 rounded w-1/2 shadow-sm"></div>
-                    
+
                     <!-- Prix skeleton -->
                     <div class="mt-2 h-4 bg-gray-300 rounded w-1/3 shadow-sm"></div>
-                    
+
                     <!-- Stock skeleton -->
                     <div class="mt-1 h-3 bg-gray-200 rounded w-1/4 shadow-sm"></div>
                 </div>
@@ -262,14 +262,14 @@
         <div class="mt-8 flex justify-between items-center">
             <!-- Info pagination -->
             <div class="text-sm text-gray-600">
-                Page {{ $currentPage }} sur {{ $totalPages }} - 
+                Page {{ $currentPage }} sur {{ $totalPages }} -
                 {{ $totalItems }} produit(s) au total
             </div>
 
             <!-- Contrôles de pagination -->
             <div class="join">
                 <!-- Bouton Précédent -->
-                <button 
+                <button
                     wire:click="previousPage"
                     class="join-item btn"
                     @if($currentPage == 1) disabled @endif
@@ -279,7 +279,7 @@
 
                 <!-- Première page -->
                 @if($currentPage > 3)
-                    <button 
+                    <button
                         wire:click="goToPage(1)"
                         class="join-item btn"
                     >
@@ -292,7 +292,7 @@
 
                 <!-- Pages autour de la page courante -->
                 @for($i = max(1, $currentPage - 2); $i <= min($totalPages, $currentPage + 2); $i++)
-                    <button 
+                    <button
                         wire:click="goToPage({{ $i }})"
                         class="join-item btn {{ $currentPage == $i ? 'btn-active' : '' }}"
                     >
@@ -305,7 +305,7 @@
                     @if($currentPage < $totalPages - 3)
                         <button class="join-item btn btn-disabled" disabled>...</button>
                     @endif
-                    <button 
+                    <button
                         wire:click="goToPage({{ $totalPages }})"
                         class="join-item btn"
                     >
@@ -314,7 +314,7 @@
                 @endif
 
                 <!-- Bouton Suivant -->
-                <button 
+                <button
                     wire:click="nextPage"
                     class="join-item btn"
                     @if($currentPage == $totalPages) disabled @endif
@@ -335,7 +335,7 @@
     </div>
 
     <!-- Loading indicator pour recherche de prix concurrent -->
-    <div 
+    <div
         x-data="{ show: false }"
         x-on:show-competitor-loading.window="show = true"
         x-show="show"
@@ -355,22 +355,22 @@
                     <div class="loading loading-spinner loading-md text-primary"></div>
                 </div> --}}
             </div>
-            
+
             <!-- Texte principal -->
             <h3 class="text-xl font-bold text-gray-800 mb-2 text-center">
                 Recherche de prix concurrent
             </h3>
-            
+
             <!-- Texte secondaire -->
             {{-- <p class="text-sm text-gray-600 text-center mb-4">
                 Nous comparons les prix pour vous trouver
             </p> --}}
-            
+
             <!-- Barre de progression animée -->
             <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
                 <div class="bg-primary h-full rounded-full" style="animation: loading 2s ease-in-out infinite;"></div>
             </div>
-            
+
             <p class="text-xs text-gray-500 mt-4">Veuillez patienter quelques instants...</p>
         </div>
     </div>
