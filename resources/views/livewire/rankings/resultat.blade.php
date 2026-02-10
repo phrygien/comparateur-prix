@@ -113,11 +113,30 @@ new class extends Component {
 
         $comparisons = $topProducts->map(function ($topProduct) use ($sites) {
             // Rechercher les produits scrapés correspondants par EAN UNIQUEMENT pour les sites sélectionnés
-            $scrapedProducts = Product::where('ean', $topProduct->ean)
-                ->whereIn('web_site_id', [1, 2, 8, 16])
-                ->with('website')
-                ->get()
-                ->keyBy('web_site_id');
+            // $scrapedProducts = Product::where('ean', $topProduct->ean)
+            //     ->whereIn('web_site_id', [1, 2, 8, 16])
+            //     ->with('website')
+            //     ->get()
+            //     ->keyBy('web_site_id');
+            $scrapedProducts = DB::table(DB::raw('(
+                SELECT *
+                FROM (
+                    SELECT
+                        sp.*,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY sp.url, sp.vendor, sp.name, sp.type, sp.variation
+                            ORDER BY sp.created_at DESC
+                        ) AS row_num
+                    FROM scraped_product sp
+                ) AS t
+                WHERE t.row_num = 1
+            ) as last_prices'))
+            ->whereIn('web_site_id', [1, 2, 8, 16])
+            ->where('name', $topProduct->name) // ou 'ean' selon votre besoin
+            ->orderBy('vendor', 'ASC')
+            ->get()
+            ->keyBy('vendor');
+
 
             // Créer un tableau avec les données du top produit
             $comparison = [
