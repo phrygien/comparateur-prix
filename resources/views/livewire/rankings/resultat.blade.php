@@ -304,7 +304,7 @@ new class extends Component {
 
         <x-stat title="Gain ( % )" description="Pourcentage gain" value="{{ $percentage_gain_marche }}" icon="o-arrow-trending-up"/>
 
-        <x-stat title="Perte" description="" value="34" tooltip-left="{{ $somme_perte }}" />
+        <x-stat title="Perte" description="" value="{{ $somme_perte }}" tooltip-left="{{ $somme_perte }}" />
 
         <x-stat title="Perte (%)" description="Pourcentage perte" value="{{ $percentage_perte_marche }}" icon="o-arrow-trending-down" class="text-orange-500"
             color="text-pink-500" />
