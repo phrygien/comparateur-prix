@@ -126,7 +126,8 @@ new class extends Component {
                 'target_google' => $this->calculTargetGoogle( (1-($topProduct->pamp*1.2)/$topProduct->prix_vente_cosma)*100),
                 'sites' => [],
                 'prix_moyen_marche' => null,
-                'percentage_marche' => null
+                'percentage_marche' => null,
+                'difference_marche' => null
             ];
 
             //somme du prix du marche
@@ -172,6 +173,7 @@ new class extends Component {
                 //calcule du porcentage
                 $priceDiff_marche = $comparison['prix_moyen_marche'] - $topProduct->prix_vente_cosma;
                 $comparison['percentage_marche'] = round(($priceDiff_marche / $topProduct->prix_vente_cosma) * 100, 2);
+                $comparison['difference_marche'] = $priceDiff_marche;
             }
 
             return $comparison;
@@ -501,7 +503,7 @@ new class extends Component {
                                     <div class="flex flex-col gap-1 items-end">
                                         <a  
                                             target="_blank"
-                                            class="link link-primary text-xs font-semibold"
+                                            class="link-primary text-xs font-semibold"
                                         >
                                             {{ number_format($comparison['prix_moyen_marche'], 2) }} €
                                         </a>
