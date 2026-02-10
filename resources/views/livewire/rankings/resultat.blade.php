@@ -125,7 +125,12 @@ new class extends Component {
                 'marge' => (1-($topProduct->pamp*1.2)/$topProduct->prix_vente_cosma)*100,
                 'target_google' => $this->calculTargetGoogle( (1-($topProduct->pamp*1.2)/$topProduct->prix_vente_cosma)*100),
                 'sites' => [],
+                'prix_moyen_marche' => null
             ];
+
+            //somme du prix du marche
+            $somme_prix_marche = 0;
+            $nombre_site = 0;
 
             // Pour chaque site, ajouter le prix ou null
             foreach ($sites as $site) {
@@ -150,9 +155,17 @@ new class extends Component {
                         'price_diff' => $priceDiff,
                         'price_percentage' => $pricePercentage,
                     ];
+
+                    $somme_prix_marche += $scrapedProduct->prix_ht;
+                    $nombre_site ++;
+
                 } else {
                     $comparison['sites'][$site->id] = null;
                 }
+            }
+
+            if($somme_prix_marche > 0){
+                $comparison['prix_moyen_marche'] = $somme_prix_marche/$nombre_site;
             }
 
             return $comparison;
@@ -384,6 +397,7 @@ new class extends Component {
                             @foreach($sites as $site)
                                 <th class="bg-base-200 text-right">{{ $site->name }}</th>
                             @endforeach
+                            <th class="bg-base-200 text-right">Prix marche</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -462,6 +476,9 @@ new class extends Component {
                                         @endif
                                     </td>
                                 @endforeach
+                                <td class="text-right text-xs">
+                                    {{ number_format($comparison['prix_moyen_marche'], 2) }} 
+                                </td>
                             </tr>
                         @endforeach
                     </tbody>
