@@ -207,8 +207,8 @@ new class extends Component {
             'sites' => $sites,
             'totalPages' => $this->totalPages,
             'totalProducts' => $totalProducts,
-            'somme_gain' => $this->somme_gain,
-            'somme_perte' => $this->somme_perte,
+            'somme_gain' => ($this->somme_gain)/$this->perPage,
+            'somme_perte' => ($this->somme_perte)/$this->perPage,
             'percentage_gain_marche' => $this->percentage_gain_marche,
             'percentage_perte_marche' => $this->percentage_perte_marche
         ];
@@ -302,15 +302,15 @@ new class extends Component {
     <div class="grid grid-cols-4 gap-4">
         <x-stat title="Competitif" value="{{ number_format($somme_gain, 0, ',', ' ') }} € " tooltip="Hello" color="text-primary" />
     
-        <x-stat title="Competitif ( % )" description="Pourcentage gain"
-            value="{{ number_format($percentage_gain_marche, 2, ',', ' ') }} %" icon="o-arrow-trending-up" />
+        <x-stat title="Competitif ( % )" description=""
+            class="text-green-500" color="text-green-500" colvalue="{{ number_format($percentage_gain_marche, 2, ',', ' ') }} %" icon="o-arrow-trending-up" />
     
         <x-stat title="Lacune" value="{{ number_format($somme_perte, 0, ',', ' ') }} €"
             tooltip-left="{{ number_format($somme_perte, 0, ',', ' ') }}" />
     
-        <x-stat title="Lacune (%)" description="Pourcentage perte"
+        <x-stat title="Lacune (%)" description=""
             value="{{ number_format($percentage_perte_marche, 2, ',', ' ') }} %" icon="o-arrow-trending-down"
-            class="text-orange-500" color="text-pink-500" />
+            class="text-pink-500" color="text-pink-500" />
 
     </div>
 
