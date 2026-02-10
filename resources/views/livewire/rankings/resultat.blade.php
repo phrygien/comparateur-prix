@@ -17,7 +17,6 @@ new class extends Component {
     public $sortField = 'rank_qty'; // Par défaut, trier par rang quantity
     public $sortDirection = 'asc'; // Par défaut, ordre ascendant
 
-
     // calcule perte et gain sur le marche
     public $somme_prix_marche_total = 0;
     public $somme_gain = 0;
@@ -73,10 +72,147 @@ new class extends Component {
 
     public function updatedPerPage()
     {
-        // Retourner à la première page quand on change le nombre par page
         $this->currentPage = 1;
     }
 
+    // public function with(): array
+    // {
+    //     // Récupérer les informations de l'import
+    //     $import = HistoImportTopFile::find($this->histoId);
+
+    //     if (!$import) {
+    //         return [
+    //             'import' => null,
+    //             'comparisons' => collect([]),
+    //             'sites' => collect([]),
+    //             'totalPages' => 0,
+    //         ];
+    //     }
+
+    //     // Récupérer uniquement les sites spécifiques
+    //     $sites = Site::whereIn('id', [1, 2, 8, 16])
+    //         ->orderBy('name')
+    //         ->get();
+
+    //     // Compter le total de produits
+    //     $totalProducts = TopProduct::where('histo_import_top_file_id', $this->histoId)
+    //         ->whereNotNull('ean')
+    //         ->where('ean', '!=', '')
+    //         ->count();
+
+    //     $this->totalPages = (int) ceil($totalProducts / $this->perPage);
+
+    //     // Récupérer les top produits avec pagination et tri
+    //     $topProducts = TopProduct::where('histo_import_top_file_id', $this->histoId)
+    //         ->whereNotNull('ean')
+    //         ->where('ean', '!=', '')
+    //         ->orderBy($this->sortField, $this->sortDirection)
+    //         ->skip(($this->currentPage - 1) * $this->perPage)
+    //         ->take($this->perPage)
+    //         ->get();
+
+    //     $comparisons = $topProducts->map(function ($topProduct) use ($sites) {
+    //         // Rechercher les produits scrapés correspondants par EAN UNIQUEMENT pour les sites sélectionnés
+    //         $scrapedProducts = Product::where('ean', $topProduct->ean)
+    //             ->whereIn('web_site_id', [1, 2, 8, 16])
+    //             ->with('website')
+    //             ->get()
+    //             ->keyBy('web_site_id');
+
+    //         // Créer un tableau avec les données du top produit
+    //         $comparison = [
+    //             'rank_qty' => $topProduct->rank_qty,
+    //             'rank_ca' => $topProduct->rank_chriffre_affaire,
+    //             'ean' => $topProduct->ean,
+    //             'designation' => $topProduct->designation,
+    //             'marque' => $topProduct->marque,
+    //             'prix_cosma' => $topProduct->prix_vente_cosma,
+    //             'pght' => $topProduct->pght,
+    //             'pamp' => $topProduct->pamp,
+    //             'marge' => (1 - ($topProduct->pamp * 1.2) / $topProduct->prix_vente_cosma) * 100,
+    //             'target_google' => $this->calculTargetGoogle((1 - ($topProduct->pamp * 1.2) / $topProduct->prix_vente_cosma) * 100),
+    //             'sites' => [],
+    //             'prix_moyen_marche' => null,
+    //             'percentage_marche' => null,
+    //             'difference_marche' => null
+    //         ];
+
+    //         //somme du prix du marche
+    //         $somme_prix_marche = 0;
+    //         $nombre_site = 0;
+    //         $priceDiff_marche = 0;
+
+    //         // Pour chaque site, ajouter le prix ou null
+    //         foreach ($sites as $site) {
+    //             if (isset($scrapedProducts[$site->id])) {
+    //                 $scrapedProduct = $scrapedProducts[$site->id];
+
+    //                 // Calculer la différence de prix et le pourcentage
+    //                 $priceDiff = null;
+    //                 $pricePercentage = null;
+
+    //                 // FIX: Vérifier explicitement que les prix sont > 0 pour éviter la division par zéro
+    //                 if ($topProduct->prix_vente_cosma > 0 && $scrapedProduct->prix_ht > 0) {
+    //                     $priceDiff = $scrapedProduct->prix_ht - $topProduct->prix_vente_cosma;
+    //                     $pricePercentage = round(($priceDiff / $topProduct->prix_vente_cosma) * 100, 2);
+    //                 }
+
+    //                 $comparison['sites'][$site->id] = [
+    //                     'prix_ht' => $scrapedProduct->prix_ht,
+    //                     'url' => $scrapedProduct->url,
+    //                     'name' => $scrapedProduct->name,
+    //                     'vendor' => $scrapedProduct->vendor,
+    //                     'price_diff' => $priceDiff,
+    //                     'price_percentage' => $pricePercentage,
+    //                 ];
+
+    //                 $somme_prix_marche += $scrapedProduct->prix_ht;
+    //                 $nombre_site++;
+
+    //             } else {
+    //                 $comparison['sites'][$site->id] = null;
+    //             }
+    //         }
+
+    //         if ($somme_prix_marche > 0) {
+    //             $comparison['prix_moyen_marche'] = $somme_prix_marche / $nombre_site;
+    //             //calcule du porcentage
+    //             $priceDiff_marche = $comparison['prix_moyen_marche'] - $topProduct->prix_vente_cosma;
+    //             $comparison['percentage_marche'] = round(($priceDiff_marche / $topProduct->prix_vente_cosma) * 100, 2);
+    //             $comparison['difference_marche'] = $priceDiff_marche;
+
+    //             //moyen general
+    //             $this->somme_prix_marche_total += $comparison['prix_moyen_marche'];
+    //             if ($priceDiff_marche > 0) {
+    //                 $this->somme_gain += $priceDiff_marche;
+    //             } else {
+    //                 $this->somme_perte += $priceDiff_marche;
+    //             }
+    //         }
+
+    //         return $comparison;
+    //     });
+
+    //     // recapitulatif de gain
+    //     $this->percentage_gain_marche = ((($this->somme_prix_marche_total + $this->somme_gain) * 100) / $this->somme_prix_marche_total) - 100;
+
+    //     // recapitulatif de gain
+    //     $this->percentage_perte_marche = ((($this->somme_prix_marche_total + $this->somme_perte) * 100) / $this->somme_prix_marche_total) - 100;
+
+    //     return [
+    //         'import' => $import,
+    //         'comparisons' => $comparisons,
+    //         'sites' => $sites,
+    //         'totalPages' => $this->totalPages,
+    //         'totalProducts' => $totalProducts,
+    //         'somme_gain' => $this->somme_gain,
+    //         'somme_perte' => $this->somme_perte,
+    //         'percentage_gain_marche' => $this->percentage_gain_marche,
+    //         'percentage_perte_marche' => $this->percentage_perte_marche
+    //     ];
+    // }
+
+    
     public function with(): array
     {
         // Récupérer les informations de l'import
@@ -115,9 +251,9 @@ new class extends Component {
 
         $comparisons = $topProducts->map(function ($topProduct) use ($sites) {
             // Rechercher les produits scrapés correspondants par EAN UNIQUEMENT pour les sites sélectionnés
-            $scrapedProducts = Product::where('ean', $topProduct->ean)
+            $scrapedProducts = DB::table('last_price_scraped_product')
+                ->where('ean', $topProduct->ean)
                 ->whereIn('web_site_id', [1, 2, 8, 16])
-                ->with('website')
                 ->get()
                 ->keyBy('web_site_id');
 
@@ -275,7 +411,7 @@ new class extends Component {
 
     public function exportResults()
     {
-        // TODO: Implémenter l'export Excel/CSV
+        
     }
 }; ?>
 
@@ -300,15 +436,15 @@ new class extends Component {
     </x-header>
 
     <div class="grid grid-cols-4 gap-4">
-        <x-stat title="Competitif" value="{{ number_format($somme_gain, 0, ',', ' ') }} € " tooltip="Hello" color="text-primary" />
+        <x-stat title="Competitif en moyenne" value="{{ number_format($somme_gain, 0, ',', ' ') }} € " tooltip="" color="text-primary" />
     
-        <x-stat title="Competitif ( % )" description="Pourcentage gain"
+        <x-stat class="text-green-500" title="Competitif ( % )" description=""
             value="{{ number_format($percentage_gain_marche, 2, ',', ' ') }} %" icon="o-arrow-trending-up" />
     
-        <x-stat title="Lacune" value="{{ number_format($somme_perte, 0, ',', ' ') }} €"
+        <x-stat title="Lacune en moyenne" value="{{ number_format($somme_perte, 0, ',', ' ') }} €"
             tooltip-left="{{ number_format($somme_perte, 0, ',', ' ') }}" />
     
-        <x-stat title="Lacune (%)" description="Pourcentage perte"
+        <x-stat title="Lacune (%)" description=""
             value="{{ number_format($percentage_perte_marche, 2, ',', ' ') }} %" icon="o-arrow-trending-down"
             class="text-orange-500" color="text-pink-500" />
 
