@@ -37,6 +37,12 @@ new class extends Component {
         $this->currentPage = 1;
     }
 
+    public function updatedPerPage()
+    {
+        // Retourner à la première page quand on change le nombre par page
+        $this->currentPage = 1;
+    }
+
     public function with(): array
     {
         // Récupérer les informations de l'import
@@ -103,7 +109,8 @@ new class extends Component {
                     $priceDiff = null;
                     $pricePercentage = null;
                     
-                    if ($topProduct->prix_vente_cosma && $scrapedProduct->prix_ht) {
+                    // FIX: Vérifier explicitement que les prix sont > 0 pour éviter la division par zéro
+                    if ($topProduct->prix_vente_cosma > 0 && $scrapedProduct->prix_ht > 0) {
                         $priceDiff = $scrapedProduct->prix_ht - $topProduct->prix_vente_cosma;
                         $pricePercentage = round(($priceDiff / $topProduct->prix_vente_cosma) * 100, 2);
                     }
@@ -233,9 +240,28 @@ new class extends Component {
     @else
         <div class="mt-4">
             <div class="flex justify-between items-center mb-4">
-                <div class="text-sm text-gray-600">
-                    {{ $totalProducts }} produit(s) trouvé(s) - 
-                    Page {{ $currentPage }} sur {{ $totalPages }}
+                <div class="flex items-center gap-4">
+                    <div class="text-sm text-gray-600">
+                        {{ $totalProducts }} produit(s) trouvé(s) - 
+                        Page {{ $currentPage }} sur {{ $totalPages }}
+                    </div>
+                    
+                    <!-- Select pour changer le nombre d'éléments par page -->
+                    <div class="flex items-center gap-2">
+                        <label for="perPage" class="text-sm text-gray-600">Afficher:</label>
+                        <select 
+                            id="perPage"
+                            wire:model.live="perPage" 
+                            class="select select-sm select-bordered w-24"
+                        >
+                            <option value="25">25</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                            <option value="200">200</option>
+                            <option value="500">500</option>
+                        </select>
+                        <span class="text-sm text-gray-600">par page</span>
+                    </div>
                 </div>
                 
                 <div class="join">
