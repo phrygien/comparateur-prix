@@ -37,6 +37,31 @@ new class extends Component {
         $this->currentPage = 1;
     }
 
+    public function calculTargetGoogle($marge_percent){
+        switch (true) {
+            case ($marge_percent >= 20 && $marge_percent <= 22):
+                return 800;
+                break;
+            case ($marge_percent > 22 && $marge_percent <= 25):
+                return 700;
+                break;
+            case ($marge_percent > 25 && $marge_percent <= 30):
+                return 650;
+                break;
+            case ($marge_percent > 30 && $marge_percent <= 32):
+                return 600;
+                break;
+            case ($marge_percent > 32 && $marge_percent <= 35):
+                return 500;
+                break;
+            case ($marge_percent > 35 && $marge_percent <= 40):
+                return 400;
+                break;
+            default:
+                return 350;
+        }
+    }
+
     public function updatedPerPage()
     {
         // Retourner à la première page quand on change le nombre par page
@@ -97,6 +122,8 @@ new class extends Component {
                 'prix_cosma' => $topProduct->prix_vente_cosma,
                 'pght' => $topProduct->pght,
                 'pamp' => $topProduct->pamp,
+                'marge' => (1-($topProduct->pamp*1.2)/$topProduct->prix_vente_cosma),
+                'target_google' => $this->calculTargetGoogle((1-($topProduct->pamp*1.2)/$topProduct->prix_vente_cosma)),
                 'sites' => [],
             ];
 
@@ -352,6 +379,8 @@ new class extends Component {
                             <th class="bg-base-200 text-right">Prix Cosma</th>
                             <th class="bg-base-200 text-right">PGHT</th>
                             <th class="bg-base-200 text-right">PAMP</th>
+                            <th class="bg-base-200 text-right">Marge</th>
+                            <th class="bg-base-200 text-right">Target google</th>
                             @foreach($sites as $site)
                                 <th class="bg-base-200 text-right">{{ $site->name }}</th>
                             @endforeach
@@ -379,6 +408,12 @@ new class extends Component {
                                 </td>
                                 <td class="text-right text-xs">
                                     {{ number_format($comparison['pamp'], 2) }} €
+                                </td>
+                                <td class="text-right text-xs">
+                                    {{ number_format($comparison['marge'], 2) }} €
+                                </td>
+                                <td class="text-right text-xs">
+                                    {{ number_format($comparison['target_google'], 2) }} €
                                 </td>
                                 @foreach($sites as $site)
                                     <td class="text-right">
