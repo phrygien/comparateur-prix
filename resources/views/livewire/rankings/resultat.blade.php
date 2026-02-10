@@ -440,7 +440,7 @@ new class extends Component {
                             <th class="bg-base-200 text-right">PGHT</th>
                             <th class="bg-base-200 text-right">PAMP</th>
                             <th class="bg-base-200 text-right">Marge</th>
-                            <th class="bg-base-200 text-right">Target google</th>
+{{--                            <th class="bg-base-200 text-right">Target google</th>--}}
                             @foreach($sites as $site)
                                 <th class="bg-base-200 text-right">{{ $site->name }}</th>
                             @endforeach
@@ -473,28 +473,28 @@ new class extends Component {
                                 <td class="text-right text-xs">
                                     {{ number_format($comparison['marge'], 2) }} %
                                 </td>
-                                <td class="text-right text-xs">
-                                    {{ number_format($comparison['target_google'], 2) }}
-                                </td>
+{{--                                <td class="text-right text-xs">--}}
+{{--                                    {{ number_format($comparison['target_google'], 2) }}--}}
+{{--                                </td>--}}
                                 @foreach($sites as $site)
                                     <td class="text-right">
                                         @if($comparison['sites'][$site->id])
                                             @php
-                $siteData = $comparison['sites'][$site->id];
+                                            $siteData = $comparison['sites'][$site->id];
 
-                // Déterminer la classe de couleur
-                // ROUGE si prix Top Produit > prix Scraped (Top est plus cher)
-                // VERT si prix Top Produit < prix Scraped (Top est moins cher)
-                $textClass = '';
-                if ($siteData['price_percentage'] !== null) {
-                    if ($comparison['prix_cosma'] > $siteData['prix_ht']) {
-                        // Prix Cosma SUPÉRIEUR au prix du site = ROUGE
-                        $textClass = 'text-error';
-                    } else {
-                        // Prix Cosma INFÉRIEUR au prix du site = VERT
-                        $textClass = 'text-success';
-                    }
-                }
+                                            // Déterminer la classe de couleur
+                                            // ROUGE si prix Top Produit > prix Scraped (Top est plus cher)
+                                            // VERT si prix Top Produit < prix Scraped (Top est moins cher)
+                                            $textClass = '';
+                                            if ($siteData['price_percentage'] !== null) {
+                                                if ($comparison['prix_cosma'] > $siteData['prix_ht']) {
+                                                    // Prix Cosma SUPÉRIEUR au prix du site = ROUGE
+                                                    $textClass = 'text-error';
+                                                } else {
+                                                    // Prix Cosma INFÉRIEUR au prix du site = VERT
+                                                    $textClass = 'text-success';
+                                                }
+                                            }
                                             @endphp
                                             <div class="flex flex-col gap-1 items-end">
                                                 <a
@@ -525,19 +525,19 @@ new class extends Component {
                                 @endforeach
                                 <td class="text-right text-xs">
                                     @php
-        // Déterminer la classe de couleur
-        // ROUGE si prix Top Produit > prix Scraped (Top est plus cher)
-        // VERT si prix Top Produit < prix Scraped (Top est moins cher)
-        $textClassMoyen = '';
-        if ($comparison['prix_moyen_marche'] !== null) {
-            if ($comparison['prix_cosma'] > $comparison['prix_moyen_marche']) {
-                // Prix Cosma SUPÉRIEUR au prix du site = ROUGE
-                $textClassMoyen = 'text-error';
-            } else {
-                // Prix Cosma INFÉRIEUR au prix du site = VERT
-                $textClassMoyen = 'text-success';
-            }
-        }
+                                    // Déterminer la classe de couleur
+                                    // ROUGE si prix Top Produit > prix Scraped (Top est plus cher)
+                                    // VERT si prix Top Produit < prix Scraped (Top est moins cher)
+                                    $textClassMoyen = '';
+                                    if ($comparison['prix_moyen_marche'] !== null) {
+                                        if ($comparison['prix_cosma'] > $comparison['prix_moyen_marche']) {
+                                            // Prix Cosma SUPÉRIEUR au prix du site = ROUGE
+                                            $textClassMoyen = 'text-error';
+                                        } else {
+                                            // Prix Cosma INFÉRIEUR au prix du site = VERT
+                                            $textClassMoyen = 'text-success';
+                                        }
+                                    }
                                     @endphp
                                     <div class="flex flex-col gap-1 items-end">
                                         <a
