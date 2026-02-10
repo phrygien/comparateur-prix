@@ -391,7 +391,7 @@ new class extends Component {
                             <td>{{ $histo->created_at->format('d/m/Y H:i') }}</td>
                             <td>
                                 <div class="flex gap-2">
-                                    <x-button icon="o-eye" class="btn-primary btn-sm btn-soft" link="/ranking-result" />
+                                    <x-button icon="o-eye" class="btn-primary btn-sm btn-soft" link="/ranking-result/{{ $histo->id }}" />
                                     <button 
                                         wire:click="telecharger({{ $histo->id }})"
                                         class="btn btn-sm btn-ghost"

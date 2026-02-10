@@ -30,5 +30,5 @@ Route::middleware(['check.auth', 'boutique.cache'])->group(function () {
     Volt::route('find-product/{ean}/{id}/{price}/concurent', 'plateformes.comparateur.typesense')->name('find-product-concurent');
 
     Volt::route('/import-file', 'rankings.import-file')->name('import-file');
-    Volt::route('/ranking-result', 'rankings.resultat')->name('ranking-resultat');
+    Volt::route('/ranking-result/{id}', 'rankings.resultat')->name('ranking-resultat');
 });
