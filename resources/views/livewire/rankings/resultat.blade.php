@@ -413,13 +413,14 @@ new class extends Component {
                             $pricePercentage = round(($priceDiff / $topProduct->prix_vente_cosma) * 100, 2);
                         }
 
-                        // Format: "Prix € (+X%)" ou "Prix € (-X%)"
+                        // Format: "Prix € (+X%)" ou "Prix € (-X%)" avec EAN
                         $cellValue = number_format($scrapedProduct->prix_ht, 2, ',', ' ') . ' €';
                         if ($pricePercentage !== null) {
                             $cellValue .= ' (' . ($pricePercentage > 0 ? '+' : '') . $pricePercentage . '%)';
                         }
-                        if ($scrapedProduct->vendor) {
-                            $cellValue .= "\n" . $scrapedProduct->vendor;
+                        // Afficher l'EAN au lieu du vendor
+                        if ($scrapedProduct->ean) {
+                            $cellValue .= "\n" . $scrapedProduct->ean;
                         }
 
                         $sheet->setCellValue($cellCoord, $cellValue);
