@@ -527,22 +527,24 @@ new class extends Component {
                 ->getAlignment()
                 ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_RIGHT);
 
-            // === TÉLÉCHARGEMENT ===
+            // === SAUVEGARDE FICHIER TEMPORAIRE ===
             $fileName = 'comparaison_prix_' . str_replace([' ', '.'], '_', $import->nom_fichier) . '_' . date('Y-m-d_His') . '.xlsx';
+            $filePath = storage_path('app/public/exports/' . $fileName);
+
+            // Créer le répertoire si nécessaire
+            if (!file_exists(storage_path('app/public/exports'))) {
+                mkdir(storage_path('app/public/exports'), 0755, true);
+            }
 
             $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+            $writer->save($filePath);
 
-            // Headers pour le téléchargement
-            header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-            header('Content-Disposition: attachment;filename="' . $fileName . '"');
-            header('Cache-Control: max-age=0');
-
-            $writer->save('php://output');
-            exit;
+            // Retourner le téléchargement via Livewire
+            return response()->download($filePath, $fileName)->deleteFileAfterSend(true);
 
         } catch (\Exception $e) {
             session()->flash('error', 'Erreur lors de l\'export: ' . $e->getMessage());
-            \Log::error('Export error: ' . $e->getMessage());
+            \Log::error('Export error: ' . $e->getMessage() . ' | Line: ' . $e->getLine());
         }
     }
 
