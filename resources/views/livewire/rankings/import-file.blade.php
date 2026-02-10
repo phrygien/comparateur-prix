@@ -34,19 +34,27 @@ new class extends Component {
     }
 
     /**
+     * Récupère une valeur de tableau en toute sécurité
+     */
+    private function getValue($row, $index, $default = '')
+    {
+        return isset($row[$index]) ? $row[$index] : $default;
+    }
+
+    /**
      * Nettoie et convertit une valeur monétaire
      */
     private function cleanPrice($value)
     {
-        if (empty($value)) {
+        if (empty($value) || !is_scalar($value)) {
             return 0;
         }
         
         // Enlever les espaces, € et convertir , en .
-        $cleaned = str_replace([' ', '€', ' '], '', $value);
+        $cleaned = str_replace([' ', '€', ' '], '', (string)$value);
         $cleaned = str_replace(',', '.', $cleaned);
         
-        return (float) $cleaned;
+        return is_numeric($cleaned) ? (float)$cleaned : 0;
     }
 
     /**
@@ -54,7 +62,21 @@ new class extends Component {
      */
     private function cleanText($value)
     {
-        return trim($value ?? '');
+        if ($value === null || $value === '') {
+            return '';
+        }
+        return trim((string)$value);
+    }
+
+    /**
+     * Nettoie une valeur entière
+     */
+    private function cleanInt($value)
+    {
+        if (empty($value) || !is_scalar($value)) {
+            return 0;
+        }
+        return (int)$value;
     }
 
     public function importer()
@@ -87,26 +109,40 @@ new class extends Component {
             $rows = $worksheet->toArray();
 
             // Ignorer la première ligne (en-têtes)
-            array_shift($rows);
+            $headers = array_shift($rows);
+            
+            // Log des en-têtes pour debug
+            \Log::info('Headers du fichier Excel:', $headers);
 
             // Filtrer les lignes vides
             $rows = array_filter($rows, function($row) {
-                return !empty(array_filter($row));
+                // Vérifier qu'au moins une cellule contient une valeur
+                return !empty(array_filter($row, function($cell) {
+                    return $cell !== null && $cell !== '';
+                }));
             });
 
             $this->totalRows = count($rows);
             $imported = 0;
             $errors = [];
+            $skipped = 0;
             $batchSize = 100;
 
             // Traiter par lots de 100
-            $chunks = array_chunk($rows, $batchSize);
+            $chunks = array_chunk($rows, $batchSize, true); // preserve keys
 
             foreach ($chunks as $chunkIndex => $chunk) {
                 $batchData = [];
 
-                foreach ($chunk as $index => $row) {
+                foreach ($chunk as $rowIndex => $row) {
                     try {
+                        // Vérifier que la ligne a au moins quelques colonnes essentielles
+                        if (count($row) < 6) {
+                            $skipped++;
+                            $errors[] = "Ligne " . ($rowIndex + 2) . ": Ligne incomplète (moins de 6 colonnes)";
+                            continue;
+                        }
+
                         // Structure du fichier Excel:
                         // 0: Ranking Quantité
                         // 1: Ranking CA
@@ -122,38 +158,60 @@ new class extends Component {
                         // 11: PAMP
                         // 12: Prix de Vente Cosma
 
-                        $batchData[] = [
+                        $data = [
                             'histo_import_top_file_id' => $histoImport->id,
-                            'rank_qty' => (int) ($row[0] ?? 0),
-                            'rank_chriffre_affaire' => (int) ($row[1] ?? 0),
-                            'marque' => $this->cleanText($row[2]),
-                            'groupe' => $this->cleanText($row[3]),
-                            'designation' => $this->cleanText($row[4]),
-                            'ean' => $this->cleanText($row[5]),
-                            'freezed_stock' => (int) ($row[6] ?? 0),
-                            'export' => $this->cleanText($row[7]),
-                            'supprime' => $this->cleanText($row[8]),
-                            'nouveaute' => $this->cleanText($row[9]),
-                            'pght' => $this->cleanPrice($row[10]),
-                            'pamp' => $this->cleanPrice($row[11]),
-                            'prix_vente_cosma' => $this->cleanPrice($row[12]),
+                            'rank_qty' => $this->cleanInt($this->getValue($row, 0, 0)),
+                            'rank_chriffre_affaire' => $this->cleanInt($this->getValue($row, 1, 0)),
+                            'marque' => $this->cleanText($this->getValue($row, 2)),
+                            'groupe' => $this->cleanText($this->getValue($row, 3)),
+                            'designation' => $this->cleanText($this->getValue($row, 4)),
+                            'ean' => $this->cleanText($this->getValue($row, 5)),
+                            'freezed_stock' => $this->cleanInt($this->getValue($row, 6, 0)),
+                            'export' => $this->cleanText($this->getValue($row, 7)),
+                            'supprime' => $this->cleanText($this->getValue($row, 8)),
+                            'nouveaute' => $this->cleanText($this->getValue($row, 9)),
+                            'pght' => $this->cleanPrice($this->getValue($row, 10, 0)),
+                            'pamp' => $this->cleanPrice($this->getValue($row, 11, 0)),
+                            'prix_vente_cosma' => $this->cleanPrice($this->getValue($row, 12, 0)),
                             'created_at' => now(),
                             'updated_at' => now(),
                         ];
+
+                        // Validation minimale : au moins un EAN
+                        if (empty($data['ean'])) {
+                            $skipped++;
+                            $errors[] = "Ligne " . ($rowIndex + 2) . ": EAN manquant";
+                            continue;
+                        }
+
+                        $batchData[] = $data;
+                        
                     } catch (\Exception $e) {
-                        $globalIndex = ($chunkIndex * $batchSize) + $index + 2;
-                        $errors[] = "Ligne $globalIndex: " . $e->getMessage();
+                        $skipped++;
+                        $errors[] = "Ligne " . ($rowIndex + 2) . ": " . $e->getMessage();
                     }
                 }
 
                 // Insertion par lot
                 if (!empty($batchData)) {
-                    TopProduct::insert($batchData);
-                    $imported += count($batchData);
+                    try {
+                        TopProduct::insert($batchData);
+                        $imported += count($batchData);
+                    } catch (\Exception $e) {
+                        $errors[] = "Erreur insertion lot " . ($chunkIndex + 1) . ": " . $e->getMessage();
+                        \Log::error('Erreur insertion batch:', [
+                            'chunk' => $chunkIndex,
+                            'error' => $e->getMessage(),
+                            'data_sample' => array_slice($batchData, 0, 2)
+                        ]);
+                    }
                 }
 
                 // Mettre à jour la progression
-                $this->importProgress = round(($imported / $this->totalRows) * 100);
+                $processedRows = $imported + $skipped;
+                $this->importProgress = $this->totalRows > 0 
+                    ? round(($processedRows / $this->totalRows) * 100) 
+                    : 0;
                 
                 // Petit délai pour permettre au navigateur de se rafraîchir
                 usleep(10000); // 10ms
@@ -163,16 +221,22 @@ new class extends Component {
 
             // Message de succès
             $message = "$imported produit(s) importé(s) avec succès sur {$this->totalRows} ligne(s).";
+            if ($skipped > 0) {
+                $message .= " $skipped ligne(s) ignorée(s).";
+            }
             if (!empty($errors)) {
                 $message .= " " . count($errors) . " erreur(s) détectée(s).";
                 
                 // Sauvegarder les erreurs dans un fichier log
                 $errorLog = "Erreurs d'importation - " . now()->format('Y-m-d H:i:s') . "\n\n";
+                $errorLog .= "Fichier: $fileName\n";
+                $errorLog .= "Total lignes: {$this->totalRows}\n";
+                $errorLog .= "Importées: $imported\n";
+                $errorLog .= "Ignorées: $skipped\n\n";
                 $errorLog .= implode("\n", $errors);
-                Storage::disk('public')->put(
-                    'top_products/errors/' . time() . '_errors.txt',
-                    $errorLog
-                );
+                
+                $errorFileName = 'top_products/errors/' . time() . '_errors.txt';
+                Storage::disk('public')->put($errorFileName, $errorLog);
             }
 
             $this->reset(['file', 'importProgress', 'totalRows', 'isImporting']);
@@ -182,6 +246,11 @@ new class extends Component {
 
         } catch (\Exception $e) {
             DB::rollBack();
+            
+            \Log::error('Erreur globale importation:', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             
             $this->reset(['importProgress', 'totalRows', 'isImporting']);
             session()->flash('error', 'Erreur lors de l\'importation: ' . $e->getMessage());
