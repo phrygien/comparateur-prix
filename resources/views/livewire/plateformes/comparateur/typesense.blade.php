@@ -34,17 +34,25 @@ new class extends Component {
     public function calculatePriceDifference($comparePrice): array
     {
         if (empty($this->price) || empty($comparePrice)) {
-            return ['percentage' => 0, 'isCheaper' => false];
+            return [
+                'percentage' => 0,
+                'amount' => 0,
+                'isCheaper' => false,
+                'label' => ''
+            ];
         }
 
         $basePrice = floatval($this->price);
         $otherPrice = floatval($comparePrice);
 
-        $difference = (($otherPrice - $basePrice) / $basePrice) * 100;
+        $difference = (($basePrice - $otherPrice) / $otherPrice) * 100;
+        $amountDiff = $basePrice - $otherPrice;
 
         return [
-            'percentage' => round($difference, 2),
-            'isCheaper' => $otherPrice < $basePrice
+            'percentage' => round(abs($difference), 2),
+            'amount' => round(abs($amountDiff), 2),
+            'isCheaper' => $basePrice < $otherPrice,
+            'label' => $basePrice < $otherPrice ? 'Moins cher' : 'Plus cher'
         ];
     }
 
@@ -137,19 +145,29 @@ new class extends Component {
                 @php
                     $priceDiff = $this->calculatePriceDifference($product->prix_ht ?? 0);
                 @endphp
-                <div class="flex items-center gap-1">
-                    @if($priceDiff['isCheaper'])
-                        <svg class="size-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
-                        </svg>
-                    @else
-                        <svg class="size-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/>
-                        </svg>
-                    @endif
-                    <span class="text-sm font-bold {{ $priceDiff['isCheaper'] ? 'text-green-600' : 'text-red-600' }}">
-                            {{ abs($priceDiff['percentage']) }}%
+                <div class="flex flex-col gap-1">
+                    <div class="flex items-center gap-1">
+                        @if($priceDiff['isCheaper'])
+                            <svg class="size-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+                            </svg>
+                        @else
+                            <svg class="size-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/>
+                            </svg>
+                        @endif
+                        <span class="text-xs font-medium {{ $priceDiff['isCheaper'] ? 'text-green-600' : 'text-red-600' }}">
+                            {{ $priceDiff['label'] }}
                         </span>
+                    </div>
+                    <div class="flex flex-col text-xs">
+                        <span class="font-bold {{ $priceDiff['isCheaper'] ? 'text-green-600' : 'text-red-600' }}">
+                            {{ $priceDiff['percentage'] }}%
+                        </span>
+                        <span class="text-gray-600">
+                            {{ number_format($priceDiff['amount'], 2) }} €
+                        </span>
+                    </div>
                 </div>
             @else
                 <span class="text-xs text-gray-400">-</span>
