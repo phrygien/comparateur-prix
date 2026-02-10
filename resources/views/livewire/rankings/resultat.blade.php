@@ -125,12 +125,15 @@ new class extends Component {
                 'marge' => (1-($topProduct->pamp*1.2)/$topProduct->prix_vente_cosma)*100,
                 'target_google' => $this->calculTargetGoogle( (1-($topProduct->pamp*1.2)/$topProduct->prix_vente_cosma)*100),
                 'sites' => [],
-                'prix_moyen_marche' => null
+                'prix_moyen_marche' => null,
+                'percentage_marche' => null
             ];
 
             //somme du prix du marche
             $somme_prix_marche = 0;
             $nombre_site = 0;
+            $priceDiff_marche = 0;
+            $pricePercentage_marche = 0;
 
             // Pour chaque site, ajouter le prix ou null
             foreach ($sites as $site) {
@@ -166,6 +169,9 @@ new class extends Component {
 
             if($somme_prix_marche > 0){
                 $comparison['prix_moyen_marche'] = $somme_prix_marche/$nombre_site;
+                //calcule du porcentage
+                $priceDiff_marche = $comparison['prix_moyen_marche'] - $topProduct->prix_vente_cosma;
+                $comparison['percentage_marche'] = round(($priceDiff_marche / $topProduct->prix_vente_cosma) * 100, 2);
             }
 
             return $comparison;
@@ -477,7 +483,35 @@ new class extends Component {
                                     </td>
                                 @endforeach
                                 <td class="text-right text-xs">
-                                    {{ number_format($comparison['prix_moyen_marche'], 2) }} 
+                                    @php
+                                        // Déterminer la classe de couleur
+                                        // ROUGE si prix Top Produit > prix Scraped (Top est plus cher)
+                                        // VERT si prix Top Produit < prix Scraped (Top est moins cher)
+                                        $textClassMoyen = '';
+                                        if ($comparison['prix_moyen_marche'] !== null) {
+                                            if ($comparison['prix_cosma'] > $comparison['prix_moyen_marche']) {
+                                                // Prix Cosma SUPÉRIEUR au prix du site = ROUGE
+                                                $textClassMoyen = 'text-error';
+                                            } else {
+                                                // Prix Cosma INFÉRIEUR au prix du site = VERT
+                                                $textClassMoyen = 'text-success';
+                                            }
+                                        }
+                                    @endphp
+                                    <div class="flex flex-col gap-1 items-end">
+                                        <a  
+                                            target="_blank"
+                                            class="link link-primary text-xs font-semibold"
+                                        >
+                                            {{ number_format($comparison['prix_moyen_marche'], 2) }} €
+                                        </a>
+                                        
+                                        @if($comparison['percentage_marche'] !== null)
+                                            <span class="text-xs {{ $textClassMoyen }} font-bold">
+                                                {{ $comparison['percentage_marche'] > 0 ? '+' : '' }}{{ $comparison['percentage_marche'] }}%
+                                            </span>
+                                        @endif
+                                    </div>
                                 </td>
                             </tr>
                         @endforeach
