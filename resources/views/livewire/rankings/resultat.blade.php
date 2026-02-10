@@ -12,10 +12,29 @@ new class extends Component {
     public $perPage = 20;
     public $currentPage = 1;
     public $totalPages = 0;
+    
+    // Paramètres de tri
+    public $sortField = 'rank_qty'; // Par défaut, trier par rang quantity
+    public $sortDirection = 'asc'; // Par défaut, ordre ascendant
 
     public function mount($id)
     {
         $this->histoId = $id;
+    }
+
+    public function sortBy($field)
+    {
+        // Si on clique sur la même colonne, inverser la direction
+        if ($this->sortField === $field) {
+            $this->sortDirection = $this->sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            // Sinon, changer de colonne et mettre en ascendant
+            $this->sortField = $field;
+            $this->sortDirection = 'asc';
+        }
+        
+        // Retourner à la première page lors du tri
+        $this->currentPage = 1;
     }
 
     public function with(): array
@@ -45,11 +64,11 @@ new class extends Component {
 
         $this->totalPages = (int) ceil($totalProducts / $this->perPage);
 
-        // Récupérer les top produits avec pagination
+        // Récupérer les top produits avec pagination et tri
         $topProducts = TopProduct::where('histo_import_top_file_id', $this->histoId)
             ->whereNotNull('ean')
             ->where('ean', '!=', '')
-            ->orderBy('rank_qty')
+            ->orderBy($this->sortField, $this->sortDirection)
             ->skip(($this->currentPage - 1) * $this->perPage)
             ->take($this->perPage)
             ->get();
@@ -255,8 +274,52 @@ new class extends Component {
                 <table class="table table-xs table-pin-rows table-pin-cols">
                     <thead>
                         <tr>
-                            <th class="bg-base-200">Rang Qty</th>
-                            <th class="bg-base-200">Rang CA</th>
+                            <th class="bg-base-200">
+                                <button 
+                                    wire:click="sortBy('rank_qty')" 
+                                    class="flex items-center gap-1 hover:text-primary transition-colors cursor-pointer"
+                                >
+                                    Rang Qty
+                                    @if($sortField === 'rank_qty')
+                                        @if($sortDirection === 'asc')
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+                                            </svg>
+                                        @else
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                            </svg>
+                                        @endif
+                                    @else
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                                        </svg>
+                                    @endif
+                                </button>
+                            </th>
+                            <th class="bg-base-200">
+                                <button 
+                                    wire:click="sortBy('rank_chriffre_affaire')" 
+                                    class="flex items-center gap-1 hover:text-primary transition-colors cursor-pointer"
+                                >
+                                    Rang CA
+                                    @if($sortField === 'rank_chriffre_affaire')
+                                        @if($sortDirection === 'asc')
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+                                            </svg>
+                                        @else
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                            </svg>
+                                        @endif
+                                    @else
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                                        </svg>
+                                    @endif
+                                </button>
+                            </th>
                             <th class="bg-base-200">EAN</th>
                             <th class="bg-base-200">Désignation</th>
                             <th class="bg-base-200">Marque</th>
