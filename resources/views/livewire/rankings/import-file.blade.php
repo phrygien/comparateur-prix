@@ -43,7 +43,6 @@ new class extends Component {
             return 0;
         }
         
-        // Enlever les espaces, € et convertir , en .
         $cleaned = str_replace([' ', '€', ' '], '', (string)$value);
         $cleaned = str_replace(',', '.', $cleaned);
         
@@ -72,6 +71,24 @@ new class extends Component {
         return (int)$value;
     }
 
+    /**
+     * Génère un hash unique pour le fichier
+     */
+    private function generateFileHash($filePath)
+    {
+        return hash_file('sha256', $filePath);
+    }
+
+    /**
+     * Vérifie si le fichier a déjà été importé
+     */
+    private function isFileAlreadyImported($originalFileName, $fileHash)
+    {
+        return HistoImportTopFile::where('nom_fichier', $originalFileName)
+            ->orWhere('file_hash', $fileHash)
+            ->exists();
+    }
+
     public function importer()
     {
         // Validation
@@ -79,20 +96,41 @@ new class extends Component {
             'file' => 'required|mimes:xlsx,xls|max:51200', // Max 50MB
         ]);
 
-        $this->isImporting = true;
-        $this->importProgress = 0;
-
         try {
+            // Vérifier si le fichier existe déjà AVANT de le sauvegarder
+            $tempPath = $this->file->getRealPath();
+            $fileHash = $this->generateFileHash($tempPath);
+            $originalFileName = $this->file->getClientOriginalName();
+
+            // Vérifier si le fichier a déjà été importé
+            $existingImport = HistoImportTopFile::where('file_hash', $fileHash)
+                ->orWhere('nom_fichier', $originalFileName)
+                ->first();
+
+            if ($existingImport) {
+                session()->flash('error', 
+                    "Ce fichier a déjà été importé le " . 
+                    $existingImport->created_at->format('d/m/Y à H:i') . 
+                    " (" . $existingImport->top_products_count . " produits)."
+                );
+                $this->reset('file');
+                return;
+            }
+
+            $this->isImporting = true;
+            $this->importProgress = 0;
+
             DB::beginTransaction();
 
             // Sauvegarder le fichier
-            $fileName = time() . '_' . $this->file->getClientOriginalName();
+            $fileName = time() . '_' . $originalFileName;
             $filePath = $this->file->storeAs('top_products', $fileName, 'public');
 
-            // Enregistrer dans histo_import_top_file
+            // Enregistrer dans histo_import_top_file avec le hash
             $histoImport = HistoImportTopFile::create([
-                'nom_fichier' => $fileName,
+                'nom_fichier' => $originalFileName,
                 'chemin_fichier' => $filePath,
+                'file_hash' => $fileHash,
             ]);
 
             // Charger le fichier Excel
@@ -191,7 +229,7 @@ new class extends Component {
                 $message .= " " . count($errors) . " erreur(s) détectée(s).";
                 
                 $errorLog = "Erreurs d'importation - " . now()->format('Y-m-d H:i:s') . "\n\n";
-                $errorLog .= "Fichier: $fileName\n";
+                $errorLog .= "Fichier: $originalFileName\n";
                 $errorLog .= "Total lignes: {$this->totalRows}\n";
                 $errorLog .= "Importées: $imported\n";
                 $errorLog .= "Ignorées: $skipped\n\n";
