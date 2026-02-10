@@ -490,22 +490,26 @@ new class extends Component {
 
             $sheet->setCellValue('A' . $row, 'Compétitif en moyenne:');
             $sheet->setCellValue('B' . $row, number_format($somme_gain, 2, ',', ' ') . ' €');
-            $sheet->getStyle('B' . $row)->getFont()->getColor()->setRGB('00B050')->setBold(true);
+            $sheet->getStyle('B' . $row)->getFont()->getColor()->setRGB('00B050');
+            $sheet->getStyle('B' . $row)->getFont()->setBold(true);
             $row++;
 
             $sheet->setCellValue('A' . $row, 'Compétitif (%):');
             $sheet->setCellValue('B' . $row, number_format($percentage_gain_marche, 2, ',', ' ') . ' %');
-            $sheet->getStyle('B' . $row)->getFont()->getColor()->setRGB('00B050')->setBold(true);
+            $sheet->getStyle('B' . $row)->getFont()->getColor()->setRGB('00B050');
+            $sheet->getStyle('B' . $row)->getFont()->setBold(true);
             $row++;
 
             $sheet->setCellValue('A' . $row, 'Lacune en moyenne:');
             $sheet->setCellValue('B' . $row, number_format($somme_perte, 2, ',', ' ') . ' €');
-            $sheet->getStyle('B' . $row)->getFont()->getColor()->setRGB('FF6B00')->setBold(true);
+            $sheet->getStyle('B' . $row)->getFont()->getColor()->setRGB('FF6B00');
+            $sheet->getStyle('B' . $row)->getFont()->setBold(true);
             $row++;
 
             $sheet->setCellValue('A' . $row, 'Lacune (%):');
             $sheet->setCellValue('B' . $row, number_format($percentage_perte_marche, 2, ',', ' ') . ' %');
-            $sheet->getStyle('B' . $row)->getFont()->getColor()->setRGB('FF6B00')->setBold(true);
+            $sheet->getStyle('B' . $row)->getFont()->getColor()->setRGB('FF6B00');
+            $sheet->getStyle('B' . $row)->getFont()->setBold(true);
 
             // === FORMATAGE ===
             // Auto-size des colonnes
