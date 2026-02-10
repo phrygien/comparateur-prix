@@ -289,11 +289,11 @@ new class extends Component {
                 ->orderBy('name')
                 ->get();
 
-            // Récupérer les 100 premiers produits pour l'export
+            // Récupérer les 100 premiers produits selon le Rang Qty
             $topProducts = TopProduct::where('histo_import_top_file_id', $this->histoId)
                 ->whereNotNull('ean')
                 ->where('ean', '!=', '')
-                ->orderBy($this->sortField, $this->sortDirection)
+                ->orderBy('rank_qty', 'asc')
                 ->limit(100)
                 ->get();
 
