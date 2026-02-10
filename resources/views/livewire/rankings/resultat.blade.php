@@ -303,7 +303,7 @@ new class extends Component {
         <x-stat title="Competitif" value="{{ number_format($somme_gain, 0, ',', ' ') }} € " tooltip="Hello" color="text-primary" />
     
         <x-stat title="Competitif ( % )" description=""
-            class="text-green-500" color="text-green-500" colvalue="{{ number_format($percentage_gain_marche, 2, ',', ' ') }} %" icon="o-arrow-trending-up" />
+            colvalue="{{ number_format($percentage_gain_marche, 2, ',', ' ') }} %" icon="o-arrow-trending-up" />
     
         <x-stat title="Lacune" value="{{ number_format($somme_perte, 0, ',', ' ') }} €"
             tooltip-left="{{ number_format($somme_perte, 0, ',', ' ') }}" />
