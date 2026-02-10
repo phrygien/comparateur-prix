@@ -290,7 +290,7 @@ new class extends Component {
     }
 }; ?>
 
-<div class="max-w-7xl">
+<div class="max-w-7xl mx-auto">
     <x-header title="Importer" subtitle="Importer le fichier de top product" separator />
 
     {{-- Messages flash --}}
