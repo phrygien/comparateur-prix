@@ -109,34 +109,15 @@ new class extends Component {
             ->orderBy($this->sortField, $this->sortDirection)
             ->skip(($this->currentPage - 1) * $this->perPage)
             ->take($this->perPage)
-            ->limit(100)
             ->get();
 
         $comparisons = $topProducts->map(function ($topProduct) use ($sites) {
-            // Rechercher les produits scrapés correspondants par EAN UNIQUEMENT pour les sites sélectionnés
-            // $scrapedProducts = Product::where('ean', $topProduct->ean)
-            //     ->whereIn('web_site_id', [1, 2, 8, 16])
-            //     ->with('website')
-            //     ->get()
-            //     ->keyBy('web_site_id');
-            $scrapedProducts = DB::table(DB::raw('(
-                SELECT *
-                FROM (
-                    SELECT
-                        sp.*,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY sp.url, sp.vendor, sp.name, sp.type, sp.variation
-                            ORDER BY sp.created_at DESC
-                        ) AS row_num
-                    FROM scraped_product sp
-                ) AS t
-                WHERE t.row_num = 1
-            ) as last_prices'))
-            ->whereIn('web_site_id', [1, 2, 8, 16])
-            ->where('ean', $topProduct->ean) // ou 'ean' selon votre besoin
-            ->orderBy('vendor', 'ASC')
-            ->get()
-            ->keyBy('web_site_id');
+             //Rechercher les produits scrapés correspondants par EAN UNIQUEMENT pour les sites sélectionnés
+             $scrapedProducts = Product::where('ean', $topProduct->ean)
+                 ->whereIn('web_site_id', [1, 2, 8, 16])
+                 ->with('website')
+                 ->get()
+                 ->keyBy('web_site_id');
 
             // Créer un tableau avec les données du top produit
             $comparison = [
@@ -292,7 +273,7 @@ new class extends Component {
 
     public function exportResults()
     {
-        
+
     }
 }; ?>
 
@@ -318,13 +299,13 @@ new class extends Component {
 
     <div class="grid grid-cols-4 gap-4">
         <x-stat title="Competitif en moyenne" value="{{ number_format($somme_gain, 0, ',', ' ') }} € " tooltip="" color="text-primary" />
-    
+
         <x-stat class="text-green-500" title="Competitif ( % )" description=""
             value="{{ number_format($percentage_gain_marche, 2, ',', ' ') }} %" icon="o-arrow-trending-up" />
-    
+
         <x-stat title="Lacune en moyenne" value="{{ number_format($somme_perte, 0, ',', ' ') }} €"
             tooltip-left="{{ number_format($somme_perte, 0, ',', ' ') }}" />
-    
+
         <x-stat title="Lacune (%)" description=""
             value="{{ number_format($percentage_perte_marche, 2, ',', ' ') }} %" icon="o-arrow-trending-down"
             class="text-orange-500" color="text-pink-500" />
@@ -348,16 +329,16 @@ new class extends Component {
             <div class="flex justify-between items-center mb-4">
                 <div class="flex items-center gap-4">
                     <div class="text-sm text-gray-600">
-                        {{ $totalProducts }} produit(s) trouvé(s) - 
+                        {{ $totalProducts }} produit(s) trouvé(s) -
                         Page {{ $currentPage }} sur {{ $totalPages }}
                     </div>
-                    
+
                     <!-- Select pour changer le nombre d'éléments par page -->
                     <div class="flex items-center gap-2">
                         <label for="perPage" class="text-sm text-gray-600">Afficher:</label>
-                        <select 
+                        <select
                             id="perPage"
-                            wire:model.live="perPage" 
+                            wire:model.live="perPage"
                             class="select select-sm select-bordered w-24"
                         >
                             <option value="25">25</option>
@@ -369,19 +350,19 @@ new class extends Component {
                         <span class="text-sm text-gray-600">par page</span>
                     </div>
                 </div>
-                
+
                 <div class="join">
-                    <button 
+                    <button
                         class="join-item btn btn-sm"
                         wire:click="previousPage"
                         @if($currentPage === 1) disabled @endif
                     >
                         «
                     </button>
-                    
+
                     @foreach($this->getPaginationButtons() as $button)
                         @if($button['type'] === 'page')
-                            <button 
+                            <button
                                 class="join-item btn btn-sm {{ $button['value'] === $currentPage ? 'btn-active' : '' }}"
                                 wire:click="goToPage({{ $button['value'] }})"
                             >
@@ -391,8 +372,8 @@ new class extends Component {
                             <button class="join-item btn btn-sm btn-disabled">...</button>
                         @endif
                     @endforeach
-                    
-                    <button 
+
+                    <button
                         class="join-item btn btn-sm"
                         wire:click="nextPage"
                         @if($currentPage === $totalPages) disabled @endif
@@ -407,8 +388,8 @@ new class extends Component {
                     <thead>
                         <tr>
                             <th class="bg-base-200">
-                                <button 
-                                    wire:click="sortBy('rank_qty')" 
+                                <button
+                                    wire:click="sortBy('rank_qty')"
                                     class="flex items-center gap-1 hover:text-primary transition-colors cursor-pointer"
                                 >
                                     Rang Qty
@@ -430,8 +411,8 @@ new class extends Component {
                                 </button>
                             </th>
                             <th class="bg-base-200">
-                                <button 
-                                    wire:click="sortBy('rank_chriffre_affaire')" 
+                                <button
+                                    wire:click="sortBy('rank_chriffre_affaire')"
                                     class="flex items-center gap-1 hover:text-primary transition-colors cursor-pointer"
                                 >
                                     Rang CA
@@ -493,7 +474,7 @@ new class extends Component {
                                     {{ number_format($comparison['marge'], 2) }} %
                                 </td>
                                 <td class="text-right text-xs">
-                                    {{ number_format($comparison['target_google'], 2) }} 
+                                    {{ number_format($comparison['target_google'], 2) }}
                                 </td>
                                 @foreach($sites as $site)
                                     <td class="text-right">
@@ -516,21 +497,21 @@ new class extends Component {
                 }
                                             @endphp
                                             <div class="flex flex-col gap-1 items-end">
-                                                <a 
-                                                    href="{{ $siteData['url'] }}" 
+                                                <a
+                                                    href="{{ $siteData['url'] }}"
                                                     target="_blank"
                                                     class="link link-primary text-xs font-semibold"
                                                     title="{{ $siteData['name'] }}"
                                                 >
                                                     {{ number_format($siteData['prix_ht'], 2) }} €
                                                 </a>
-                                                
+
                                                 @if($siteData['price_percentage'] !== null)
                                                     <span class="text-xs {{ $textClass }} font-bold">
                                                         {{ $siteData['price_percentage'] > 0 ? '+' : '' }}{{ $siteData['price_percentage'] }}%
                                                     </span>
                                                 @endif
-                                                
+
                                                 @if($siteData['vendor'])
                                                     <span class="text-xs text-gray-500 truncate max-w-[120px]" title="{{ $siteData['vendor'] }}">
                                                         {{ Str::limit($siteData['vendor'], 15) }}
@@ -559,13 +540,13 @@ new class extends Component {
         }
                                     @endphp
                                     <div class="flex flex-col gap-1 items-end">
-                                        <a  
+                                        <a
                                             target="_blank"
                                             class="link-primary text-xs font-semibold"
                                         >
                                             {{ number_format($comparison['prix_moyen_marche'], 2) }} €
                                         </a>
-                                        
+
                                         @if($comparison['percentage_marche'] !== null)
                                             <span class="text-xs {{ $textClassMoyen }} font-bold">
                                                 {{ $comparison['percentage_marche'] > 0 ? '+' : '' }}{{ $comparison['percentage_marche'] }}%
@@ -582,17 +563,17 @@ new class extends Component {
             <!-- Pagination en bas -->
             <div class="flex justify-center mt-6">
                 <div class="join">
-                    <button 
+                    <button
                         class="join-item btn btn-sm"
                         wire:click="previousPage"
                         @if($currentPage === 1) disabled @endif
                     >
                         «
                     </button>
-                    
+
                     @foreach($this->getPaginationButtons() as $button)
                         @if($button['type'] === 'page')
-                            <button 
+                            <button
                                 class="join-item btn btn-sm {{ $button['value'] === $currentPage ? 'btn-active' : '' }}"
                                 wire:click="goToPage({{ $button['value'] }})"
                             >
@@ -602,8 +583,8 @@ new class extends Component {
                             <button class="join-item btn btn-sm btn-disabled">...</button>
                         @endif
                     @endforeach
-                    
-                    <button 
+
+                    <button
                         class="join-item btn btn-sm"
                         wire:click="nextPage"
                         @if($currentPage === $totalPages) disabled @endif
