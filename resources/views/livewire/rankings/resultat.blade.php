@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 
 new class extends Component {
     public $histoId;
-    public $perPage = 20;
+    public $perPage = 100;
     public $currentPage = 1;
     public $totalPages = 0;
     
