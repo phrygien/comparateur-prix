@@ -12,7 +12,7 @@ new class extends Component {
     public $perPage = 100;
     public $currentPage = 1;
     public $totalPages = 0;
-    
+
     // Paramètres de tri
     public $sortField = 'rank_qty'; // Par défaut, trier par rang quantity
     public $sortDirection = 'asc'; // Par défaut, ordre ascendant
@@ -32,12 +32,13 @@ new class extends Component {
             $this->sortField = $field;
             $this->sortDirection = 'asc';
         }
-        
+
         // Retourner à la première page lors du tri
         $this->currentPage = 1;
     }
 
-    public function calculTargetGoogle($marge_percent){
+    public function calculTargetGoogle($marge_percent)
+    {
         switch (true) {
             case ($marge_percent >= 20 && $marge_percent <= 22):
                 return 800;
@@ -72,7 +73,7 @@ new class extends Component {
     {
         // Récupérer les informations de l'import
         $import = HistoImportTopFile::find($this->histoId);
-        
+
         if (!$import) {
             return [
                 'import' => null,
@@ -129,8 +130,8 @@ new class extends Component {
                 'prix_cosma' => $topProduct->prix_vente_cosma,
                 'pght' => $topProduct->pght,
                 'pamp' => $topProduct->pamp,
-                'marge' => (1-($topProduct->pamp*1.2)/$topProduct->prix_vente_cosma)*100,
-                'target_google' => $this->calculTargetGoogle( (1-($topProduct->pamp*1.2)/$topProduct->prix_vente_cosma)*100),
+                'marge' => (1 - ($topProduct->pamp * 1.2) / $topProduct->prix_vente_cosma) * 100,
+                'target_google' => $this->calculTargetGoogle((1 - ($topProduct->pamp * 1.2) / $topProduct->prix_vente_cosma) * 100),
                 'sites' => [],
                 'prix_moyen_marche' => null,
                 'percentage_marche' => null,
@@ -147,17 +148,17 @@ new class extends Component {
             foreach ($sites as $site) {
                 if (isset($scrapedProducts[$site->id])) {
                     $scrapedProduct = $scrapedProducts[$site->id];
-                    
+
                     // Calculer la différence de prix et le pourcentage
                     $priceDiff = null;
                     $pricePercentage = null;
-                    
+
                     // FIX: Vérifier explicitement que les prix sont > 0 pour éviter la division par zéro
                     if ($topProduct->prix_vente_cosma > 0 && $scrapedProduct->prix_ht > 0) {
                         $priceDiff = $scrapedProduct->prix_ht - $topProduct->prix_vente_cosma;
                         $pricePercentage = round(($priceDiff / $topProduct->prix_vente_cosma) * 100, 2);
                     }
-                    
+
                     $comparison['sites'][$site->id] = [
                         'prix_ht' => $scrapedProduct->prix_ht,
                         'url' => $scrapedProduct->url,
@@ -168,15 +169,15 @@ new class extends Component {
                     ];
 
                     $somme_prix_marche += $scrapedProduct->prix_ht;
-                    $nombre_site ++;
+                    $nombre_site++;
 
                 } else {
                     $comparison['sites'][$site->id] = null;
                 }
             }
 
-            if($somme_prix_marche > 0){
-                $comparison['prix_moyen_marche'] = $somme_prix_marche/$nombre_site;
+            if ($somme_prix_marche > 0) {
+                $comparison['prix_moyen_marche'] = $somme_prix_marche / $nombre_site;
                 //calcule du porcentage
                 $priceDiff_marche = $comparison['prix_moyen_marche'] - $topProduct->prix_vente_cosma;
                 $comparison['percentage_marche'] = round(($priceDiff_marche / $topProduct->prix_vente_cosma) * 100, 2);
@@ -184,9 +185,9 @@ new class extends Component {
 
                 //moyen general
                 $somme_prix_marche += $comparison['prix_moyen_marche'];
-                if($priceDiff_marche > 0){
+                if ($priceDiff_marche > 0) {
                     $somme_gain += $priceDiff_marche;
-                }else{
+                } else {
                     $somme_perte += $priceDiff_marche;
                 }
             }
@@ -195,10 +196,10 @@ new class extends Component {
         });
 
         // recapitulatif de gain
-        $percentage_gain_marche = ((($somme_prix_marche + $somme_gain)*100) / $somme_prix_marche) - 100;
+        $percentage_gain_marche = ((($somme_prix_marche + $somme_gain) * 100) / $somme_prix_marche) - 100;
 
         // recapitulatif de gain
-        $percentage_perte_marche = ((($somme_prix_marche + $somme_perte)*100) / $somme_prix_marche) - 100;
+        $percentage_perte_marche = ((($somme_prix_marche + $somme_perte) * 100) / $somme_prix_marche) - 100;
 
         return [
             'import' => $import,
@@ -209,7 +210,7 @@ new class extends Component {
             'somme_gain' => $somme_gain,
             'somme_perte' => $somme_perte,
             'percentage_gain_marche' => $percentage_gain_marche,
-            'percentage_perte_marche' => $percentage_perte_marche 
+            'percentage_perte_marche' => $percentage_perte_marche
         ];
     }
 
@@ -297,6 +298,17 @@ new class extends Component {
             />
         </x-slot:actions>
     </x-header>
+
+    <div class="grid grid-cols-4 gap-4">
+        <x-stat title="Gain" value="{{ $somme_gain }}" tooltip="Hello" color="text-primary" />
+
+        <x-stat title="Gain ( % )" description="Pourcentage gain" value="{{ $percentage_gain_marche }}" icon="o-arrow-trending-up"/>
+
+        <x-stat title="Perte" description="" value="34" tooltip-left="{{ $somme_perte }}" />
+
+        <x-stat title="Perte (%)" description="Pourcentage perte" value="{{ $percentage_perte_marche }}" icon="o-arrow-trending-down" class="text-orange-500"
+            color="text-pink-500" />
+    </div>
 
     @if(!$import)
         <x-card class="mt-4">
@@ -466,21 +478,21 @@ new class extends Component {
                                     <td class="text-right">
                                         @if($comparison['sites'][$site->id])
                                             @php
-                                                $siteData = $comparison['sites'][$site->id];
-                                                
-                                                // Déterminer la classe de couleur
-                                                // ROUGE si prix Top Produit > prix Scraped (Top est plus cher)
-                                                // VERT si prix Top Produit < prix Scraped (Top est moins cher)
-                                                $textClass = '';
-                                                if ($siteData['price_percentage'] !== null) {
-                                                    if ($comparison['prix_cosma'] > $siteData['prix_ht']) {
-                                                        // Prix Cosma SUPÉRIEUR au prix du site = ROUGE
-                                                        $textClass = 'text-error';
-                                                    } else {
-                                                        // Prix Cosma INFÉRIEUR au prix du site = VERT
-                                                        $textClass = 'text-success';
-                                                    }
-                                                }
+                $siteData = $comparison['sites'][$site->id];
+
+                // Déterminer la classe de couleur
+                // ROUGE si prix Top Produit > prix Scraped (Top est plus cher)
+                // VERT si prix Top Produit < prix Scraped (Top est moins cher)
+                $textClass = '';
+                if ($siteData['price_percentage'] !== null) {
+                    if ($comparison['prix_cosma'] > $siteData['prix_ht']) {
+                        // Prix Cosma SUPÉRIEUR au prix du site = ROUGE
+                        $textClass = 'text-error';
+                    } else {
+                        // Prix Cosma INFÉRIEUR au prix du site = VERT
+                        $textClass = 'text-success';
+                    }
+                }
                                             @endphp
                                             <div class="flex flex-col gap-1 items-end">
                                                 <a 
@@ -511,19 +523,19 @@ new class extends Component {
                                 @endforeach
                                 <td class="text-right text-xs">
                                     @php
-                                        // Déterminer la classe de couleur
-                                        // ROUGE si prix Top Produit > prix Scraped (Top est plus cher)
-                                        // VERT si prix Top Produit < prix Scraped (Top est moins cher)
-                                        $textClassMoyen = '';
-                                        if ($comparison['prix_moyen_marche'] !== null) {
-                                            if ($comparison['prix_cosma'] > $comparison['prix_moyen_marche']) {
-                                                // Prix Cosma SUPÉRIEUR au prix du site = ROUGE
-                                                $textClassMoyen = 'text-error';
-                                            } else {
-                                                // Prix Cosma INFÉRIEUR au prix du site = VERT
-                                                $textClassMoyen = 'text-success';
-                                            }
-                                        }
+        // Déterminer la classe de couleur
+        // ROUGE si prix Top Produit > prix Scraped (Top est plus cher)
+        // VERT si prix Top Produit < prix Scraped (Top est moins cher)
+        $textClassMoyen = '';
+        if ($comparison['prix_moyen_marche'] !== null) {
+            if ($comparison['prix_cosma'] > $comparison['prix_moyen_marche']) {
+                // Prix Cosma SUPÉRIEUR au prix du site = ROUGE
+                $textClassMoyen = 'text-error';
+            } else {
+                // Prix Cosma INFÉRIEUR au prix du site = VERT
+                $textClassMoyen = 'text-success';
+            }
+        }
                                     @endphp
                                     <div class="flex flex-col gap-1 items-end">
                                         <a  
