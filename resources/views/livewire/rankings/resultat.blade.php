@@ -109,6 +109,7 @@ new class extends Component {
             ->orderBy($this->sortField, $this->sortDirection)
             ->skip(($this->currentPage - 1) * $this->perPage)
             ->take($this->perPage)
+            ->limit(100)
             ->get();
 
         $comparisons = $topProducts->map(function ($topProduct) use ($sites) {
@@ -132,9 +133,8 @@ new class extends Component {
                 WHERE t.row_num = 1
             ) as last_prices'))
             ->whereIn('web_site_id', [1, 2, 8, 16])
-            ->where('ean', $topProduct->ean)
+            ->where('ean', $topProduct->ean) // ou 'ean' selon votre besoin
             ->orderBy('vendor', 'ASC')
-            ->limit(100)
             ->get()
             ->keyBy('web_site_id');
 
