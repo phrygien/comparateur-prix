@@ -29,12 +29,5 @@ Route::middleware(['check.auth', 'boutique.cache'])->group(function () {
 
     Volt::route('find-product/{ean}/{id}/{price}/concurent', 'plateformes.comparateur.typesense')->name('find-product-concurent');
 
-    Route::get('/search', function() {
-
-        return Product::search(request('q', '*'))->options([
-            'query_by' => 'embedding',
-            'exclude_fields' => 'embedding'
-        ])->raw();
-
-    });
+    Volt::route('/import-file', 'rankings.import-file')->name('import-file');
 });
