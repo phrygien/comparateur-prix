@@ -153,6 +153,7 @@
                                     </a>
                                 </li>
 
+                                @if(auth::user()->email == 'admin@admin.com')
                                 <li>
                                     <a href="/top-product" class="group flex gap-x-3 rounded-md p-2 text-sm/6 font-semibold {{ request()->is('import-file*') ? 'bg-indigo-700 text-white' : 'text-indigo-200 hover:text-white hover:bg-indigo-700' }}">
                                         <svg class="size-6 shrink-0 {{ request()->is('import-file*') ? 'text-white' : 'text-indigo-200 group-hover:text-white' }}" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -161,6 +162,7 @@
                                         Importer Ranking File
                                     </a>
                                 </li>
+                                @endif
 
                             </ul>
                         </li>
