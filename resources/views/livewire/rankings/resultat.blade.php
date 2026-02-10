@@ -209,7 +209,7 @@ new class extends Component {
             'somme_gain' => $somme_gain,
             'somme_perte' => $somme_perte,
             'percentage_gain_marche' => $percentage_gain_marche,
-            'percentage_perte_marche' => $percentage_perte_marche
+            'percentage_perte_marche' => $percentage_perte_marche 
         ];
     }
 
