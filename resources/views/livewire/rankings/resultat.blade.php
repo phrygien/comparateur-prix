@@ -300,15 +300,15 @@ new class extends Component {
     </x-header>
 
     <div class="grid grid-cols-4 gap-4">
-        <x-stat title="Gain" value="{{ number_format($somme_gain, 0, ',', ' ') }} € " tooltip="Hello" color="text-primary" />
+        <x-stat title="Competitif" value="{{ number_format($somme_gain, 0, ',', ' ') }} € " tooltip="Hello" color="text-primary" />
     
-        <x-stat title="Gain ( % )" description="Pourcentage gain"
+        <x-stat title="Competitif ( % )" description="Pourcentage gain"
             value="{{ number_format($percentage_gain_marche, 2, ',', ' ') }} %" icon="o-arrow-trending-up" />
     
-        <x-stat title="Perte" value="{{ number_format($somme_perte, 0, ',', ' ') }} €"
+        <x-stat title="Lacune" value="{{ number_format($somme_perte, 0, ',', ' ') }} €"
             tooltip-left="{{ number_format($somme_perte, 0, ',', ' ') }}" />
     
-        <x-stat title="Perte (%)" description="Pourcentage perte"
+        <x-stat title="Lacune (%)" description="Pourcentage perte"
             value="{{ number_format($percentage_perte_marche, 2, ',', ' ') }} %" icon="o-arrow-trending-down"
             class="text-orange-500" color="text-pink-500" />
 
