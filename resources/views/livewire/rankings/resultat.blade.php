@@ -445,7 +445,9 @@ new class extends Component {
                 if ($somme_prix_marche > 0) {
                     $prix_moyen_marche = $somme_prix_marche / $nombre_site;
                     $priceDiff_marche = $prix_moyen_marche - $topProduct->prix_vente_cosma;
-                    $percentage_marche = round(($priceDiff_marche / $topProduct->prix_vente_cosma) * 100, 2);
+                    $percentage_marche = $topProduct->prix_vente_cosma > 0
+                        ? round(($priceDiff_marche / $topProduct->prix_vente_cosma) * 100, 2)
+                        : 0;
 
                     $cellValue = number_format($prix_moyen_marche, 2, ',', ' ') . ' € (' . ($percentage_marche > 0 ? '+' : '') . $percentage_marche . '%)';
                     $sheet->setCellValue($cellCoord, $cellValue);
@@ -549,6 +551,7 @@ new class extends Component {
             \Log::error('Export error: ' . $e->getMessage() . ' | Line: ' . $e->getLine());
         }
     }
+
 }; ?>
 
 <div class="w-full">
