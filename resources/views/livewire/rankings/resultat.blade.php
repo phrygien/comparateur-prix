@@ -370,7 +370,9 @@ new class extends Component {
                     ->keyBy('web_site_id');
 
                 // Calculer la marge
-                $marge = (1 - ($topProduct->pamp * 1.2) / $topProduct->prix_vente_cosma) * 100;
+                $marge = $topProduct->prix_vente_cosma > 0
+                    ? (1 - ($topProduct->pamp * 1.2) / $topProduct->prix_vente_cosma) * 100
+                    : 0;
 
                 // Colonnes de base
                 $sheet->setCellValue('A' . $row, $topProduct->rank_qty);
@@ -547,7 +549,6 @@ new class extends Component {
             \Log::error('Export error: ' . $e->getMessage() . ' | Line: ' . $e->getLine());
         }
     }
-
 }; ?>
 
 <div class="w-full">
