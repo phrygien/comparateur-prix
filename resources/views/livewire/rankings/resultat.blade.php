@@ -132,10 +132,10 @@ new class extends Component {
                 WHERE t.row_num = 1
             ) as last_prices'))
             ->whereIn('web_site_id', [1, 2, 8, 16])
-            ->where('name', $topProduct->name) // ou 'ean' selon votre besoin
+            ->where('ean', $topProduct->ean) // ou 'ean' selon votre besoin
             ->orderBy('vendor', 'ASC')
             ->get()
-            ->keyBy('vendor');
+            ->keyBy('web_site_id');
 
 
             // Créer un tableau avec les données du top produit
