@@ -289,11 +289,12 @@ new class extends Component {
                 ->orderBy('name')
                 ->get();
 
-            // Récupérer TOUS les produits (pas de pagination pour l'export)
+            // Récupérer les 100 premiers produits pour l'export
             $topProducts = TopProduct::where('histo_import_top_file_id', $this->histoId)
                 ->whereNotNull('ean')
                 ->where('ean', '!=', '')
                 ->orderBy($this->sortField, $this->sortDirection)
+                ->limit(100)
                 ->get();
 
             // Créer le spreadsheet
@@ -555,7 +556,6 @@ new class extends Component {
             \Log::error('Export error: ' . $e->getMessage() . ' | Line: ' . $e->getLine());
         }
     }
-
 }; ?>
 
 <div class="w-full">
