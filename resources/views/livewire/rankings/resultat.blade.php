@@ -17,6 +17,14 @@ new class extends Component {
     public $sortField = 'rank_qty'; // Par défaut, trier par rang quantity
     public $sortDirection = 'asc'; // Par défaut, ordre ascendant
 
+
+    // calcule perte et gain sur le marche
+    public $somme_prix_marche_total = 0;
+    public $somme_gain = 0;
+    public $somme_perte = 0;
+    public $percentage_gain_marche = 0;
+    public $percentage_perte_marche = 0;
+
     public function mount($id)
     {
         $this->histoId = $id;
@@ -105,13 +113,6 @@ new class extends Component {
             ->take($this->perPage)
             ->get();
 
-        // calcule perte et gain sur le marche
-        $somme_prix_marche = 0;
-        $somme_gain = 0;
-        $somme_perte = 0;
-        $percentage_gain_marche = 0;
-        $percentage_perte_marche = 0;
-
         $comparisons = $topProducts->map(function ($topProduct) use ($sites) {
             // Rechercher les produits scrapés correspondants par EAN UNIQUEMENT pour les sites sélectionnés
             $scrapedProducts = Product::where('ean', $topProduct->ean)
@@ -184,11 +185,11 @@ new class extends Component {
                 $comparison['difference_marche'] = $priceDiff_marche;
 
                 //moyen general
-                $somme_prix_marche += $comparison['prix_moyen_marche'];
+                $this->somme_prix_marche_total += $comparison['prix_moyen_marche'];
                 if ($priceDiff_marche > 0) {
-                    $somme_gain += $priceDiff_marche;
+                    $this->somme_gain += $priceDiff_marche;
                 } else {
-                    $somme_perte += $priceDiff_marche;
+                    $this->somme_perte += $priceDiff_marche;
                 }
             }
 
@@ -196,10 +197,10 @@ new class extends Component {
         });
 
         // recapitulatif de gain
-        $percentage_gain_marche = ((($somme_prix_marche + $somme_gain) * 100) / $somme_prix_marche) - 100;
+        $percentage_gain_marche = ((($this->somme_prix_marche_total + $this->somme_gain) * 100) / $this->somme_prix_marche) - 100;
 
         // recapitulatif de gain
-        $percentage_perte_marche = ((($somme_prix_marche + $somme_perte) * 100) / $somme_prix_marche) - 100;
+        $percentage_perte_marche = ((($this->somme_prix_marche_total + $this->somme_perte) * 100) / $this->somme_prix_marche_total) - 100;
 
         return [
             'import' => $import,
@@ -207,8 +208,8 @@ new class extends Component {
             'sites' => $sites,
             'totalPages' => $this->totalPages,
             'totalProducts' => $totalProducts,
-            'somme_gain' => $somme_gain,
-            'somme_perte' => $somme_perte,
+            'somme_gain' => $this->somme_gain,
+            'somme_perte' => $this->somme_perte,
             'percentage_gain_marche' => $percentage_gain_marche,
             'percentage_perte_marche' => $percentage_perte_marche
         ];
