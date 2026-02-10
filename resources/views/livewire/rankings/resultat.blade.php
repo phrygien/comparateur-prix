@@ -79,14 +79,23 @@ new class extends Component {
             foreach ($sites as $site) {
                 if (isset($scrapedProducts[$site->id])) {
                     $scrapedProduct = $scrapedProducts[$site->id];
+                    
+                    // Calculer la différence de prix et le pourcentage
+                    $priceDiff = null;
+                    $pricePercentage = null;
+                    
+                    if ($topProduct->prix_vente_cosma && $scrapedProduct->prix_ht) {
+                        $priceDiff = $scrapedProduct->prix_ht - $topProduct->prix_vente_cosma;
+                        $pricePercentage = round(($priceDiff / $topProduct->prix_vente_cosma) * 100, 2);
+                    }
+                    
                     $comparison['sites'][$site->id] = [
                         'prix_ht' => $scrapedProduct->prix_ht,
                         'url' => $scrapedProduct->url,
                         'name' => $scrapedProduct->name,
                         'vendor' => $scrapedProduct->vendor,
-                        'diff' => $topProduct->prix_vente_cosma 
-                            ? round((($scrapedProduct->prix_ht - $topProduct->prix_vente_cosma) / $topProduct->prix_vente_cosma) * 100, 2)
-                            : null,
+                        'price_diff' => $priceDiff,
+                        'price_percentage' => $pricePercentage,
                     ];
                 } else {
                     $comparison['sites'][$site->id] = null;
@@ -287,12 +296,22 @@ new class extends Component {
                                         @if($comparison['sites'][$site->id])
                                             @php
                                                 $siteData = $comparison['sites'][$site->id];
-                                                $diffClass = '';
-                                                if ($siteData['diff'] !== null) {
-                                                    $diffClass = $siteData['diff'] < 0 ? 'text-success' : 'text-error';
+                                                
+                                                // Déterminer la classe de couleur
+                                                // ROUGE si prix Top Produit > prix Scraped (Top est plus cher)
+                                                // VERT si prix Top Produit < prix Scraped (Top est moins cher)
+                                                $textClass = '';
+                                                if ($siteData['price_percentage'] !== null) {
+                                                    if ($comparison['prix_cosma'] > $siteData['prix_ht']) {
+                                                        // Prix Cosma SUPÉRIEUR au prix du site = ROUGE
+                                                        $textClass = 'text-error';
+                                                    } else {
+                                                        // Prix Cosma INFÉRIEUR au prix du site = VERT
+                                                        $textClass = 'text-success';
+                                                    }
                                                 }
                                             @endphp
-                                            <div class="flex flex-col gap-1">
+                                            <div class="flex flex-col gap-1 items-end">
                                                 <a 
                                                     href="{{ $siteData['url'] }}" 
                                                     target="_blank"
@@ -301,13 +320,15 @@ new class extends Component {
                                                 >
                                                     {{ number_format($siteData['prix_ht'], 2) }} €
                                                 </a>
-                                                @if($siteData['diff'] !== null)
-                                                    <span class="text-xs {{ $diffClass }} font-bold">
-                                                        {{ $siteData['diff'] > 0 ? '+' : '' }}{{ $siteData['diff'] }}%
+                                                
+                                                @if($siteData['price_percentage'] !== null)
+                                                    <span class="text-xs {{ $textClass }} font-bold">
+                                                        {{ $siteData['price_percentage'] > 0 ? '+' : '' }}{{ $siteData['price_percentage'] }}%
                                                     </span>
                                                 @endif
+                                                
                                                 @if($siteData['vendor'])
-                                                    <span class="text-xs text-gray-500 truncate" title="{{ $siteData['vendor'] }}">
+                                                    <span class="text-xs text-gray-500 truncate max-w-[120px]" title="{{ $siteData['vendor'] }}">
                                                         {{ Str::limit($siteData['vendor'], 15) }}
                                                     </span>
                                                 @endif
