@@ -207,8 +207,8 @@ new class extends Component {
             'sites' => $sites,
             'totalPages' => $this->totalPages,
             'totalProducts' => $totalProducts,
-            'somme_gain' => ($this->somme_gain)/$this->perPage,
-            'somme_perte' => ($this->somme_perte)/$this->perPage,
+            'somme_gain' => $this->somme_gain,
+            'somme_perte' => $this->somme_perte,
             'percentage_gain_marche' => $this->percentage_gain_marche,
             'percentage_perte_marche' => $this->percentage_perte_marche
         ];
@@ -300,12 +300,12 @@ new class extends Component {
     </x-header>
 
     <div class="grid grid-cols-4 gap-4">
-        <x-stat title="Competitif en moyenne" value="{{ number_format($somme_gain, 0, ',', ' ') }} € " tooltip="Hello" color="text-primary" />
+        <x-stat title="Competitif" value="{{ number_format($somme_gain, 0, ',', ' ') }} € " tooltip="Hello" color="text-primary" />
     
         <x-stat title="Competitif ( % )" description=""
             class="text-green-500" color="text-green-500" colvalue="{{ number_format($percentage_gain_marche, 2, ',', ' ') }} %" icon="o-arrow-trending-up" />
     
-        <x-stat title="Lacune en moyenne" value="{{ number_format($somme_perte, 0, ',', ' ') }} €"
+        <x-stat title="Lacune" value="{{ number_format($somme_perte, 0, ',', ' ') }} €"
             tooltip-left="{{ number_format($somme_perte, 0, ',', ' ') }}" />
     
         <x-stat title="Lacune (%)" description=""
