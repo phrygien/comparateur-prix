@@ -104,6 +104,13 @@ new class extends Component {
             ->take($this->perPage)
             ->get();
 
+        // calcule perte et gain sur le marche
+        $somme_prix_marche = 0;
+        $somme_gain = 0;
+        $somme_perte = 0;
+        $percentage_gain_marche = 0;
+        $percentage_perte_marche = 0;
+
         $comparisons = $topProducts->map(function ($topProduct) use ($sites) {
             // Rechercher les produits scrapés correspondants par EAN UNIQUEMENT pour les sites sélectionnés
             $scrapedProducts = Product::where('ean', $topProduct->ean)
@@ -174,10 +181,24 @@ new class extends Component {
                 $priceDiff_marche = $comparison['prix_moyen_marche'] - $topProduct->prix_vente_cosma;
                 $comparison['percentage_marche'] = round(($priceDiff_marche / $topProduct->prix_vente_cosma) * 100, 2);
                 $comparison['difference_marche'] = $priceDiff_marche;
+
+                //moyen general
+                $somme_prix_marche += $comparison['prix_moyen_marche'];
+                if($priceDiff_marche > 0){
+                    $somme_gain += $priceDiff_marche;
+                }else{
+                    $somme_perte += $priceDiff_marche;
+                }
             }
 
             return $comparison;
         });
+
+        // recapitulatif de gain
+        $percentage_gain_marche = ((($somme_prix_marche + $somme_gain)*100) / $somme_prix_marche) - 100;
+
+        // recapitulatif de gain
+        $percentage_perte_marche = ((($somme_prix_marche + $somme_perte)*100) / $somme_prix_marche) - 100;
 
         return [
             'import' => $import,
@@ -185,6 +206,10 @@ new class extends Component {
             'sites' => $sites,
             'totalPages' => $this->totalPages,
             'totalProducts' => $totalProducts,
+            'somme_gain' => $somme_gain,
+            'somme_perte' => $somme_perte,
+            'percentage_gain_marche' => $percentage_gain_marche,
+            'percentage_perte_marche' => $percentage_perte_marche
         ];
     }
 
