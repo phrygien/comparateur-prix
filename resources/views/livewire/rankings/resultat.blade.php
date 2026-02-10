@@ -122,8 +122,8 @@ new class extends Component {
                 'prix_cosma' => $topProduct->prix_vente_cosma,
                 'pght' => $topProduct->pght,
                 'pamp' => $topProduct->pamp,
-                'marge' => (1-($topProduct->pamp*1.2)/$topProduct->prix_vente_cosma),
-                'target_google' => $this->calculTargetGoogle((1-($topProduct->pamp*1.2)/$topProduct->prix_vente_cosma)),
+                'marge' => (1-($topProduct->pamp*1.2)/$topProduct->prix_vente_cosma)*100,
+                'target_google' => $this->calculTargetGoogle( (1-($topProduct->pamp*1.2)/$topProduct->prix_vente_cosma)*100),
                 'sites' => [],
             ];
 
@@ -410,10 +410,10 @@ new class extends Component {
                                     {{ number_format($comparison['pamp'], 2) }} €
                                 </td>
                                 <td class="text-right text-xs">
-                                    {{ number_format($comparison['marge'], 2) }} €
+                                    {{ number_format($comparison['marge'], 2) }} %
                                 </td>
                                 <td class="text-right text-xs">
-                                    {{ number_format($comparison['target_google'], 2) }} €
+                                    {{ number_format($comparison['target_google'], 2) }} 
                                 </td>
                                 @foreach($sites as $site)
                                     <td class="text-right">
