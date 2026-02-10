@@ -325,7 +325,7 @@ new class extends Component {
             </div>
         </x-card>
     @else
-        <div class="mt-4">
+        <div class="mt-5">
             <div class="flex justify-between items-center mb-4">
                 <div class="flex items-center gap-4">
                     <div class="text-sm text-gray-600">
