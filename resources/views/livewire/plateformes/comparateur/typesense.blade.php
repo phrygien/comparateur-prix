@@ -52,7 +52,7 @@ new class extends Component {
             'percentage' => round(abs($difference), 2),
             'amount' => round(abs($amountDiff), 2),
             'isCheaper' => $basePrice < $otherPrice,
-            'label' => $basePrice < $otherPrice ? 'Moins cher' : 'Plus cher'
+            'label' => $basePrice < $otherPrice ? 'Moins cher que nous' : 'Plus cher que nous'
         ];
     }
 
