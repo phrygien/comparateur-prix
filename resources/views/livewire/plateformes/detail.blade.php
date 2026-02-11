@@ -227,7 +227,7 @@ new class extends Component {
         }
     }
 }" 
-@scroll.window.throttle.50ms="handleScroll()">
+@scroll.window.throttle.50ms="handleScroll()" class="max-w-7xl mx-auto">
     
     <!-- Layout compact horizontal -->
     <div class="w-full px-4 py-4 sm:px-6 lg:px-10" 
