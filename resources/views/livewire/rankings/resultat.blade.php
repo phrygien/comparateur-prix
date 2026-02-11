@@ -620,10 +620,10 @@ new class extends Component {
 
     <div dir="ltr">
         <div class="me-8 ...">
-            <h2>Analyse produits affichés ( {{ $perPage }} produits)</h2>
+            <h2>Stats produits affichés ( {{ $perPage }} produits)</h2>
         </div>
     </div>
-
+    <br>
     <div class="grid grid-cols-4 gap-4">
         <x-stat
             title="Moins chers en moyenne de"
