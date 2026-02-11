@@ -26,17 +26,11 @@ new class extends Component {
         ];
     }
 
-    /**
-     * Récupère une valeur de tableau en toute sécurité
-     */
     private function getValue($row, $index, $default = '')
     {
         return isset($row[$index]) ? $row[$index] : $default;
     }
 
-    /**
-     * Nettoie et convertit une valeur monétaire
-     */
     private function cleanPrice($value)
     {
         if (empty($value) || !is_scalar($value)) {
@@ -49,9 +43,6 @@ new class extends Component {
         return is_numeric($cleaned) ? (float)$cleaned : 0;
     }
 
-    /**
-     * Nettoie une valeur texte
-     */
     private function cleanText($value)
     {
         if ($value === null || $value === '') {
@@ -60,9 +51,6 @@ new class extends Component {
         return trim((string)$value);
     }
 
-    /**
-     * Nettoie une valeur entière
-     */
     private function cleanInt($value)
     {
         if (empty($value) || !is_scalar($value)) {
@@ -71,17 +59,11 @@ new class extends Component {
         return (int)$value;
     }
 
-    /**
-     * Génère un hash unique pour le fichier
-     */
     private function generateFileHash($filePath)
     {
         return hash_file('sha256', $filePath);
     }
 
-    /**
-     * Vérifie si le fichier a déjà été importé
-     */
     private function isFileAlreadyImported($originalFileName, $fileHash)
     {
         return HistoImportTopFile::where('nom_fichier', $originalFileName)
@@ -91,18 +73,15 @@ new class extends Component {
 
     public function importer()
     {
-        // Validation
         $this->validate([
-            'file' => 'required|mimes:xlsx,xls|max:51200', // Max 50MB
+            'file' => 'required|mimes:xlsx,xls|max:51200',
         ]);
 
         try {
-            // Vérifier si le fichier existe déjà AVANT de le sauvegarder
             $tempPath = $this->file->getRealPath();
             $fileHash = $this->generateFileHash($tempPath);
             $originalFileName = $this->file->getClientOriginalName();
 
-            // Vérifier si le fichier a déjà été importé
             $existingImport = HistoImportTopFile::where('file_hash', $fileHash)
                 ->orWhere('nom_fichier', $originalFileName)
                 ->first();
@@ -122,27 +101,22 @@ new class extends Component {
 
             DB::beginTransaction();
 
-            // Sauvegarder le fichier
             $fileName = time() . '_' . $originalFileName;
             $filePath = $this->file->storeAs('top_products', $fileName, 'public');
 
-            // Enregistrer dans histo_import_top_file avec le hash
             $histoImport = HistoImportTopFile::create([
                 'nom_fichier' => $originalFileName,
                 'chemin_fichier' => $filePath,
                 'file_hash' => $fileHash,
             ]);
 
-            // Charger le fichier Excel
             $fullPath = Storage::disk('public')->path($filePath);
             $spreadsheet = IOFactory::load($fullPath);
             $worksheet = $spreadsheet->getActiveSheet();
             $rows = $worksheet->toArray();
 
-            // Ignorer la première ligne (en-têtes)
             $headers = array_shift($rows);
 
-            // Filtrer les lignes vides
             $rows = array_filter($rows, function($row) {
                 return !empty(array_filter($row, function($cell) {
                     return $cell !== null && $cell !== '';
@@ -155,7 +129,6 @@ new class extends Component {
             $skipped = 0;
             $batchSize = 100;
 
-            // Traiter par lots de 100
             $chunks = array_chunk($rows, $batchSize, true);
 
             foreach ($chunks as $chunkIndex => $chunk) {
@@ -251,9 +224,6 @@ new class extends Component {
         }
     }
 
-    /**
-     * Télécharge le fichier modèle d'importation
-     */
     public function getModel()
     {
         $modelPath = public_path('Model_importation_ranking.xlsx');
@@ -313,7 +283,6 @@ new class extends Component {
         </x-slot:actions>
     </x-header>
 
-    {{-- Messages flash --}}
     @if (session()->has('success'))
         <x-alert icon="o-check-circle" class="alert-success mb-4">
             {{ session('success') }}
@@ -326,15 +295,18 @@ new class extends Component {
         </x-alert>
     @endif
 
-    {{-- Formulaire d'import --}}
     <x-form wire:submit="importer">
-        <x-file 
-            wire:model="file" 
-            label="Ranking File" 
-            hint="Format xlsx/xls - Max 50MB" 
-            accept="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-            :disabled="$isImporting"
-        />
+        <div wire:ignore>
+            <label class="block text-sm font-medium mb-2">Ranking File</label>
+            <input 
+                type="file" 
+                wire:model="file"
+                class="filepond"
+                accept=".xlsx,.xls"
+                data-max-file-size="50MB"
+            />
+            <p class="text-sm text-gray-500 mt-1">Format xlsx/xls - Max 50MB</p>
+        </div>
         
         @error('file') 
             <span class="text-error text-sm mt-1">{{ $message }}</span> 
@@ -351,14 +323,12 @@ new class extends Component {
         </x-slot:actions>
     </x-form>
 
-    {{-- Indicateur de chargement du fichier --}}
     <div wire:loading wire:target="file" class="mt-4">
         <x-alert icon="o-arrow-path" class="alert-info">
             Chargement du fichier...
         </x-alert>
     </div>
 
-    {{-- Barre de progression de l'import --}}
     @if ($isImporting || $importProgress > 0)
         <div class="mt-4" wire:poll.500ms>
             <x-alert icon="o-arrow-path" class="alert-info">
@@ -383,7 +353,6 @@ new class extends Component {
         </div>
     @endif
 
-    {{-- Historique des imports --}}
     <div class="mt-8">
         <x-header title="Historique des imports" separator />
 
@@ -450,7 +419,6 @@ new class extends Component {
             </table>
         </div>
 
-        {{-- Pagination --}}
         @if ($historiques->hasPages())
             <div class="mt-4">
                 {{ $historiques->links() }}
@@ -458,3 +426,53 @@ new class extends Component {
         @endif
     </div>
 </div>
+
+@push('scripts')
+<link href="https://unpkg.com/filepond@^4/dist/filepond.css" rel="stylesheet" />
+<link href="https://unpkg.com/filepond-plugin-image-preview/dist/filepond-plugin-image-preview.css" rel="stylesheet" />
+
+<script src="https://unpkg.com/filepond-plugin-file-validate-type/dist/filepond-plugin-file-validate-type.js"></script>
+<script src="https://unpkg.com/filepond-plugin-file-validate-size/dist/filepond-plugin-file-validate-size.js"></script>
+<script src="https://unpkg.com/filepond@^4/dist/filepond.js"></script>
+
+<script>
+    FilePond.registerPlugin(
+        FilePondPluginFileValidateType,
+        FilePondPluginFileValidateSize
+    );
+
+    const pond = FilePond.create(document.querySelector('.filepond'), {
+        labelIdle: 'Glissez-déposez votre fichier ou <span class="filepond--label-action">Parcourir</span>',
+        labelFileProcessing: 'Envoi en cours',
+        labelFileProcessingComplete: 'Envoi terminé',
+        labelFileProcessingAborted: 'Envoi annulé',
+        labelFileProcessingError: 'Erreur lors de l\'envoi',
+        labelTapToCancel: 'Cliquer pour annuler',
+        labelTapToRetry: 'Cliquer pour réessayer',
+        labelTapToUndo: 'Cliquer pour annuler',
+        labelButtonRemoveItem: 'Supprimer',
+        labelButtonAbortItemLoad: 'Annuler',
+        labelButtonRetryItemLoad: 'Réessayer',
+        labelButtonAbortItemProcessing: 'Annuler',
+        labelButtonUndoItemProcessing: 'Annuler',
+        labelButtonRetryItemProcessing: 'Réessayer',
+        labelButtonProcessItem: 'Envoyer',
+        labelMaxFileSizeExceeded: 'Fichier trop volumineux',
+        labelMaxFileSize: 'La taille maximale est de {filesize}',
+        labelFileTypeNotAllowed: 'Type de fichier invalide',
+        fileValidateTypeLabelExpectedTypes: 'Formats acceptés: {allButLastType} ou {lastType}',
+        acceptedFileTypes: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'],
+        maxFileSize: '50MB',
+        credits: false,
+        allowMultiple: false,
+        server: {
+            process: (fieldName, file, metadata, load, error, progress, abort) => {
+                @this.upload('file', file, load, error, progress);
+            },
+            revert: (filename, load) => {
+                @this.removeUpload('file', filename, load);
+            }
+        }
+    });
+</script>
+@endpush
