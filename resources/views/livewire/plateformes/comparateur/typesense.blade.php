@@ -65,8 +65,7 @@ new class extends Component {
 
 }; ?>
 
-<div >
-    <div class="w-full max-w-5xl mx-auto p-6">
+<div class="w-full max-w-7xl mx-auto p-6">
     <livewire:plateformes.detail :id="$id" />
 
     @if($this->products->count() > 0)
@@ -183,5 +182,4 @@ new class extends Component {
             </p>
         </div>
     @endif
-    </div>
 </div>
