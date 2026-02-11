@@ -942,4 +942,32 @@ new class extends Component {
             </div>
         </div>
     @endif
+
+
+    <!-- Loading indicator Livewire -->
+    <div wire:loading.class.remove="hidden" class="hidden fixed inset-0 z-50 flex items-center justify-center">
+        <div class="flex flex-col items-center justify-center bg-white/90 rounded-2xl p-8 shadow-2xl border border-white/20 min-w-[200px]">
+            <div class="loading loading-spinner loading-lg text-primary mb-4"></div>
+            <p class="text-lg font-semibold text-gray-800">Chargement</p>
+            <p class="text-sm text-gray-600 mt-1">Veuillez patienter...</p>
+        </div>
+    </div>
+
+    <!-- Styles inline pour l'animation -->
+    <style>
+        @keyframes loading {
+            0% {
+                width: 0%;
+                margin-left: 0%;
+            }
+            50% {
+                width: 50%;
+                margin-left: 25%;
+            }
+            100% {
+                width: 0%;
+                margin-left: 100%;
+            }
+        }
+    </style>
 </div>
