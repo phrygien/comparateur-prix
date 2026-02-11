@@ -599,6 +599,15 @@ new class extends Component {
 }; ?>
 
 <div class="w-full">
+    <!-- Loading indicator Livewire -->
+    <div wire:loading class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+        <div class="flex flex-col items-center justify-center bg-white rounded-2xl p-8 shadow-2xl min-w-[250px]">
+            <div class="loading loading-spinner loading-lg text-primary mb-4"></div>
+            <p class="text-lg font-semibold text-gray-800">Chargement</p>
+            <p class="text-sm text-gray-600 mt-1">Veuillez patienter...</p>
+        </div>
+    </div>
+
     <x-header title="Ranking" subtitle="Comparaison des prix des produits classés" separator>
         <x-slot:middle class="!justify-end">
             @if($import)
@@ -614,6 +623,7 @@ new class extends Component {
                 label="Exporter résultat"
                 class="btn-primary"
                 wire:click="exportResults"
+                wire:loading.attr="disabled"
             />
         </x-slot:actions>
     </x-header>
@@ -687,6 +697,7 @@ new class extends Component {
                             id="perPage"
                             wire:model.live="perPage"
                             class="select select-sm select-bordered w-24"
+                            wire:loading.attr="disabled"
                         >
                             <option value="25">25</option>
                             <option value="50">50</option>
@@ -702,6 +713,7 @@ new class extends Component {
                     <button
                         class="join-item btn btn-sm"
                         wire:click="previousPage"
+                        wire:loading.attr="disabled"
                         @if($currentPage === 1) disabled @endif
                     >
                         «
@@ -712,6 +724,7 @@ new class extends Component {
                             <button
                                 class="join-item btn btn-sm {{ $button['value'] === $currentPage ? 'btn-active' : '' }}"
                                 wire:click="goToPage({{ $button['value'] }})"
+                                wire:loading.attr="disabled"
                             >
                                 {{ $button['value'] }}
                             </button>
@@ -723,6 +736,7 @@ new class extends Component {
                     <button
                         class="join-item btn btn-sm"
                         wire:click="nextPage"
+                        wire:loading.attr="disabled"
                         @if($currentPage === $totalPages) disabled @endif
                     >
                         »
@@ -737,6 +751,7 @@ new class extends Component {
                             <th class="bg-base-200">
                                 <button
                                     wire:click="sortBy('rank_qty')"
+                                    wire:loading.attr="disabled"
                                     class="flex items-center gap-1 hover:text-primary transition-colors cursor-pointer"
                                 >
                                     Rang Qty
@@ -760,6 +775,7 @@ new class extends Component {
                             <th class="bg-base-200">
                                 <button
                                     wire:click="sortBy('rank_chriffre_affaire')"
+                                    wire:loading.attr="disabled"
                                     class="flex items-center gap-1 hover:text-primary transition-colors cursor-pointer"
                                 >
                                     Rang CA
@@ -913,6 +929,7 @@ new class extends Component {
                     <button
                         class="join-item btn btn-sm"
                         wire:click="previousPage"
+                        wire:loading.attr="disabled"
                         @if($currentPage === 1) disabled @endif
                     >
                         «
@@ -923,6 +940,7 @@ new class extends Component {
                             <button
                                 class="join-item btn btn-sm {{ $button['value'] === $currentPage ? 'btn-active' : '' }}"
                                 wire:click="goToPage({{ $button['value'] }})"
+                                wire:loading.attr="disabled"
                             >
                                 {{ $button['value'] }}
                             </button>
@@ -934,6 +952,7 @@ new class extends Component {
                     <button
                         class="join-item btn btn-sm"
                         wire:click="nextPage"
+                        wire:loading.attr="disabled"
                         @if($currentPage === $totalPages) disabled @endif
                     >
                         »
