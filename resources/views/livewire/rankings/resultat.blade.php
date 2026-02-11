@@ -618,6 +618,12 @@ new class extends Component {
         </x-slot:actions>
     </x-header>
 
+    <div dir="ltr">
+        <div class="ms-8">
+            <h3>Analyse produits affichés</h3>
+        </div>
+    </div>
+
     <div class="grid grid-cols-4 gap-4">
         <x-stat
             title="Moins chers en moyenne de"
