@@ -122,6 +122,15 @@ new class extends Component {
                  ->get()
                  ->keyBy('web_site_id');
 
+            //Calcule marge et target
+            $marge = null;
+            $target_google = null;
+
+            if($topProduct->prix_vente_cosma > 0){
+                $marge = (1 - ($topProduct->pamp * 1.2) / $topProduct->prix_vente_cosma) * 100;
+                $target_google = $this->calculTargetGoogle((1 - ($topProduct->pamp * 1.2) / $topProduct->prix_vente_cosma) * 100);
+            }
+
             // Créer un tableau avec les données du top produit
             $comparison = [
                 'rank_qty' => $topProduct->rank_qty,
@@ -132,8 +141,8 @@ new class extends Component {
                 'prix_cosma' => $topProduct->prix_vente_cosma,
                 'pght' => $topProduct->pght,
                 'pamp' => $topProduct->pamp,
-                'marge' => (1 - ($topProduct->pamp * 1.2) / $topProduct->prix_vente_cosma) * 100,
-                'target_google' => $this->calculTargetGoogle((1 - ($topProduct->pamp * 1.2) / $topProduct->prix_vente_cosma) * 100),
+                'marge' => $marge,
+                'target_google' => $target_google,
                 'sites' => [],
                 'prix_moyen_marche' => null,
                 'percentage_marche' => null,
