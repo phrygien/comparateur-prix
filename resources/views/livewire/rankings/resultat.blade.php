@@ -45,6 +45,12 @@ new class extends Component {
 
         // Retourner à la première page lors du tri
         $this->currentPage = 1;
+
+        $this->somme_prix_marche_total = 0;
+        $this->somme_gain = 0;
+        $this->somme_perte = 0;
+        $this->percentage_gain_marche = 0;
+        $this->percentage_perte_marche = 0;
     }
 
     public function calculTargetGoogle($marge_percent)
