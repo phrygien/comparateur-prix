@@ -119,22 +119,25 @@
         <!-- Static sidebar for desktop -->
         <div class="hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:flex-col transition-all duration-300"
              :class="sidebarMinimized ? 'lg:w-20' : 'lg:w-72'">
-            <div class="flex grow flex-col gap-y-5 overflow-y-auto bg-indigo-600 px-6">
-                <div class="flex h-16 shrink-0 items-center justify-between">
+            <div class="flex grow flex-col gap-y-5 overflow-y-auto bg-indigo-600 px-6 relative">
+                
+                <!-- Minimize button positioned on the right border -->
+                <button @click="sidebarMinimized = !sidebarMinimized" 
+                        class="absolute right-0 top-1/2 -translate-y-1/2 translate-x-full p-1.5 bg-indigo-600 text-indigo-200 hover:text-white hover:bg-indigo-700 transition-colors rounded-r-md border border-l-0 border-indigo-400 z-10">
+                    <svg x-show="!sidebarMinimized" class="size-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M18.75 19.5l-7.5-7.5 7.5-7.5m-6 15L5.25 12l7.5-7.5" />
+                    </svg>
+                    <svg x-show="sidebarMinimized" class="size-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 4.5l7.5 7.5-7.5 7.5m-6-15l7.5 7.5-7.5 7.5" />
+                    </svg>
+                </button>
+
+                <div class="flex h-16 shrink-0 items-center">
                     {{-- <div x-show="!sidebarMinimized" x-transition>
                         <x-app-brand />
                     </div> --}}
-                    <button @click="sidebarMinimized = !sidebarMinimized" 
-                            class="p-1.5 rounded-md text-indigo-200 hover:text-white hover:bg-indigo-700 transition-colors"
-                            :class="sidebarMinimized && 'mx-auto'">
-                        <svg x-show="!sidebarMinimized" class="size-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M18.75 19.5l-7.5-7.5 7.5-7.5m-6 15L5.25 12l7.5-7.5" />
-                        </svg>
-                        <svg x-show="sidebarMinimized" class="size-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 4.5l7.5 7.5-7.5 7.5m-6-15l7.5 7.5-7.5 7.5" />
-                        </svg>
-                    </button>
                 </div>
+                
                 <nav class="flex flex-1 flex-col">
                     <ul role="list" class="flex flex-1 flex-col gap-y-7">
                         <li>
