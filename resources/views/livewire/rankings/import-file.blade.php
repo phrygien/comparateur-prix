@@ -251,6 +251,20 @@ new class extends Component {
         }
     }
 
+    /**
+     * Télécharge le fichier modèle d'importation
+     */
+    public function getModel()
+    {
+        $modelPath = 'Model_importation_ranking.xlsx';
+        
+        if (Storage::disk('public')->exists($modelPath)) {
+            return Storage::disk('public')->download($modelPath, 'Model_importation_ranking.xlsx');
+        }
+        
+        session()->flash('error', 'Fichier modèle introuvable.');
+    }
+
     public function telecharger($id)
     {
         $histo = HistoImportTopFile::findOrFail($id);
@@ -291,7 +305,13 @@ new class extends Component {
 }; ?>
 
 <div class="max-w-7xl mx-auto">
-    <x-header title="Importer" subtitle="Importer le fichier de top product" separator />
+    <x-header title="Importer" subtitle="Importer le fichier de top product" separator>
+        <x-slot:middle class="!justify-end">
+        </x-slot:middle>
+        <x-slot:actions>
+            <x-button label="Model fichier" wire:click="getModel()" icon="o-arrow-down-tray" class="btn-primary" />
+        </x-slot:actions>
+    </x-header>
 
     {{-- Messages flash --}}
     @if (session()->has('success'))
