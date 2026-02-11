@@ -256,13 +256,13 @@ new class extends Component {
      */
     public function getModel()
     {
-        $modelPath = 'Model_importation_ranking.xlsx';
+        $modelPath = public_path('Model_importation_ranking.xlsx');
         
-        if (Storage::disk('public')->exists($modelPath)) {
-            return Storage::disk('public')->download($modelPath, 'Model_importation_ranking.xlsx');
+        if (file_exists($modelPath)) {
+            return response()->download($modelPath, 'Model_importation_ranking.xlsx');
         }
         
-        session()->flash('error', 'Fichier modèle introuvable.');
+        session()->flash('error', 'Fichier modèle introuvable dans le dossier public.');
     }
 
     public function telecharger($id)
