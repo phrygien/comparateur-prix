@@ -76,6 +76,12 @@ new class extends Component {
     public function updatedPerPage()
     {
         $this->currentPage = 1;
+
+        $this->somme_prix_marche_total = 0;
+        $this->somme_gain = 0;
+        $this->somme_perte = 0;
+        $this->percentage_gain_marche = 0;
+        $this->percentage_perte_marche = 0;
     }
 
     public function with(): array
@@ -228,6 +234,12 @@ new class extends Component {
     {
         if ($page >= 1 && $page <= $this->totalPages) {
             $this->currentPage = $page;
+
+            $this->somme_prix_marche_total = 0;
+            $this->somme_gain = 0;
+            $this->somme_perte = 0;
+            $this->percentage_gain_marche = 0;
+            $this->percentage_perte_marche = 0;
         }
     }
 
@@ -235,6 +247,12 @@ new class extends Component {
     {
         if ($this->currentPage > 1) {
             $this->currentPage--;
+
+            $this->somme_prix_marche_total = 0;
+            $this->somme_gain = 0;
+            $this->somme_perte = 0;
+            $this->percentage_gain_marche = 0;
+            $this->percentage_perte_marche = 0;
         }
     }
 
@@ -242,6 +260,12 @@ new class extends Component {
     {
         if ($this->currentPage < $this->totalPages) {
             $this->currentPage++;
+
+            $this->somme_prix_marche_total = 0;
+            $this->somme_gain = 0;
+            $this->somme_perte = 0;
+            $this->percentage_gain_marche = 0;
+            $this->percentage_perte_marche = 0;
         }
     }
 
