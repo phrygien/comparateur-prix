@@ -45,6 +45,12 @@ new class extends Component {
 
         // Retourner à la première page lors du tri
         $this->currentPage = 1;
+
+        $this->somme_prix_marche_total = 0;
+        $this->somme_gain = 0;
+        $this->somme_perte = 0;
+        $this->percentage_gain_marche = 0;
+        $this->percentage_perte_marche = 0;
     }
 
     public function calculTargetGoogle($marge_percent)
@@ -76,6 +82,12 @@ new class extends Component {
     public function updatedPerPage()
     {
         $this->currentPage = 1;
+
+        $this->somme_prix_marche_total = 0;
+        $this->somme_gain = 0;
+        $this->somme_perte = 0;
+        $this->percentage_gain_marche = 0;
+        $this->percentage_perte_marche = 0;
     }
 
     public function with(): array
@@ -122,6 +134,15 @@ new class extends Component {
                  ->get()
                  ->keyBy('web_site_id');
 
+            //Calcule marge et target
+            $marge = null;
+            $target_google = null;
+
+            if($topProduct->prix_vente_cosma > 0){
+                $marge = (1 - ($topProduct->pamp * 1.2) / $topProduct->prix_vente_cosma) * 100;
+                $target_google = $this->calculTargetGoogle((1 - ($topProduct->pamp * 1.2) / $topProduct->prix_vente_cosma) * 100);
+            }
+
             // Créer un tableau avec les données du top produit
             $comparison = [
                 'rank_qty' => $topProduct->rank_qty,
@@ -132,8 +153,8 @@ new class extends Component {
                 'prix_cosma' => $topProduct->prix_vente_cosma,
                 'pght' => $topProduct->pght,
                 'pamp' => $topProduct->pamp,
-                'marge' => (1 - ($topProduct->pamp * 1.2) / $topProduct->prix_vente_cosma) * 100,
-                'target_google' => $this->calculTargetGoogle((1 - ($topProduct->pamp * 1.2) / $topProduct->prix_vente_cosma) * 100),
+                'marge' => $marge,
+                'target_google' => $target_google,
                 'sites' => [],
                 'prix_moyen_marche' => null,
                 'percentage_marche' => null,
@@ -177,7 +198,7 @@ new class extends Component {
                 }
             }
 
-            if ($somme_prix_marche > 0) {
+            if ($somme_prix_marche > 0 && $topProduct->prix_vente_cosma > 0) {
                 $comparison['prix_moyen_marche'] = $somme_prix_marche / $nombre_site;
                 //calcule du porcentage
                 $priceDiff_marche = $comparison['prix_moyen_marche'] - $topProduct->prix_vente_cosma;
@@ -219,6 +240,12 @@ new class extends Component {
     {
         if ($page >= 1 && $page <= $this->totalPages) {
             $this->currentPage = $page;
+
+            $this->somme_prix_marche_total = 0;
+            $this->somme_gain = 0;
+            $this->somme_perte = 0;
+            $this->percentage_gain_marche = 0;
+            $this->percentage_perte_marche = 0;
         }
     }
 
@@ -226,6 +253,12 @@ new class extends Component {
     {
         if ($this->currentPage > 1) {
             $this->currentPage--;
+
+            $this->somme_prix_marche_total = 0;
+            $this->somme_gain = 0;
+            $this->somme_perte = 0;
+            $this->percentage_gain_marche = 0;
+            $this->percentage_perte_marche = 0;
         }
     }
 
@@ -233,6 +266,12 @@ new class extends Component {
     {
         if ($this->currentPage < $this->totalPages) {
             $this->currentPage++;
+
+            $this->somme_prix_marche_total = 0;
+            $this->somme_gain = 0;
+            $this->somme_perte = 0;
+            $this->percentage_gain_marche = 0;
+            $this->percentage_perte_marche = 0;
         }
     }
 
@@ -591,9 +630,9 @@ new class extends Component {
         <x-stat
             class="text-green-500"
             title="Moins chers en moyenne de ( % )"
-            description=""
+            description="sur certains produits"
             value="{{ number_format( abs($percentage_gain_marche) , 2, ',', ' ') }} %"
-            icon="o-arrow-trending-up"
+            icon="o-arrow-trending-down"
         />
 
         <x-stat
@@ -605,10 +644,10 @@ new class extends Component {
 
         <x-stat
             title="Plus chers en moyenne de (%)"
-            description=""
             value="{{ number_format( abs($percentage_perte_marche) , 2, ',', ' ') }} %"
-            icon="o-arrow-trending-down"
-            class="text-orange-500"
+            description="sur certains produits"
+            icon="o-arrow-trending-up"
+            class="text-pink-500"
             color="text-pink-500"
         />
 
