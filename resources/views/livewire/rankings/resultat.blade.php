@@ -591,9 +591,9 @@ new class extends Component {
         <x-stat
             class="text-green-500"
             title="Moins chers en moyenne de ( % )"
-            description=""
+            description="sur certains produits"
             value="{{ number_format( abs($percentage_gain_marche) , 2, ',', ' ') }} %"
-            icon="o-arrow-trending-up"
+            icon="o-arrow-trending-down"
         />
 
         <x-stat
@@ -605,10 +605,10 @@ new class extends Component {
 
         <x-stat
             title="Plus chers en moyenne de (%)"
-            description=""
             value="{{ number_format( abs($percentage_perte_marche) , 2, ',', ' ') }} %"
-            icon="o-arrow-trending-down"
-            class="text-orange-500"
+            description="sur certains produits"
+            icon="o-arrow-trending-up"
+            class="text-pink-500"
             color="text-pink-500"
         />
 
