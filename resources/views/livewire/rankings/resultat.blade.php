@@ -328,12 +328,12 @@ public function exportResults()
             ->orderBy('name')
             ->get();
 
-        // Récupérer les 100 premiers produits selon le Rang Qty
+        // Récupérer les produits selon le tri et la pagination actuels
         $topProducts = TopProduct::where('histo_import_top_file_id', $this->histoId)
             ->whereNotNull('ean')
             ->where('ean', '!=', '')
-            ->orderBy('rank_qty', 'asc')
-            ->limit(100)
+            ->orderBy($this->sortField, $this->sortDirection)
+            ->limit($this->perPage)
             ->get();
 
         // Créer le spreadsheet
@@ -532,6 +532,22 @@ public function exportResults()
         $sheet->getStyle('A' . $row)->getFont()->setBold(true)->setSize(14);
         $row++;
 
+        // Informations sur le tri et la pagination
+        $sortFieldLabel = $this->sortField === 'rank_qty' ? 'Rang Qty' : 'Rang CA';
+        $sortDirectionLabel = $this->sortDirection === 'asc' ? 'Ascendant' : 'Descendant';
+        
+        $sheet->setCellValue('A' . $row, 'Tri appliqué:');
+        $sheet->setCellValue('B' . $row, $sortFieldLabel . ' (' . $sortDirectionLabel . ')');
+        $sheet->getStyle('A' . $row)->getFont()->setBold(true);
+        $row++;
+
+        $sheet->setCellValue('A' . $row, 'Nombre de produits exportés:');
+        $sheet->setCellValue('B' . $row, $productCount);
+        $sheet->getStyle('A' . $row)->getFont()->setBold(true);
+        $row++;
+        
+        $row++; // Ligne vide
+
         $sheet->setCellValue('A' . $row, 'Moins chers en moyenne de X sur certains produits');
         $sheet->setCellValue('B' . $row, $productCount > 0 ? number_format(abs($somme_gain / $productCount), 2, ',', ' ') . ' €' : 'N/A');
         $sheet->getStyle('B' . $row)->getFont()->getColor()->setRGB('00B050');
@@ -580,7 +596,8 @@ public function exportResults()
             ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_RIGHT);
 
         // === SAUVEGARDE FICHIER TEMPORAIRE ===
-        $fileName = 'comparaison_prix_' . str_replace([' ', '.'], '_', $import->nom_fichier) . '_' . date('Y-m-d_His') . '.xlsx';
+        $sortInfo = $sortFieldLabel . '_' . $sortDirectionLabel;
+        $fileName = 'comparaison_prix_' . str_replace([' ', '.'], '_', $import->nom_fichier) . '_' . $sortInfo . '_' . $this->perPage . 'produits_' . date('Y-m-d_His') . '.xlsx';
         $filePath = storage_path('app/public/exports/' . $fileName);
 
         // Créer le répertoire si nécessaire
