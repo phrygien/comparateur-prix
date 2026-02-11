@@ -309,7 +309,7 @@ new class extends Component {
         <x-slot:middle class="!justify-end">
         </x-slot:middle>
         <x-slot:actions>
-            <x-button label="Model fichier" wire:click="getModel()" icon="o-arrow-down-tray" class="btn-primary" />
+            <x-button label="Telecharger le Model fichier ici" wire:click="getModel()" icon="o-arrow-down-tray" class="btn-primary" />
         </x-slot:actions>
     </x-header>
 

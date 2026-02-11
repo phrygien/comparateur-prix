@@ -21,6 +21,7 @@ class HistoImportTopFile extends Model
     protected $fillable = [
         'nom_fichier',
         'chemin_fichier',
+        'file_hash'
     ];
 
     /**
