@@ -491,25 +491,25 @@ new class extends Component {
             $row++;
 
             $sheet->setCellValue('A' . $row, 'Moins chers en moyenne de X sur certains produits');
-            $sheet->setCellValue('B' . $row, abs(number_format($somme_gain, 2, ',', ' ')) . ' €');
+            $sheet->setCellValue('B' . $row, number_format( abs($somme_gain / $perPage) , 2, ',', ' ') . ' €');
             $sheet->getStyle('B' . $row)->getFont()->getColor()->setRGB('00B050');
             $sheet->getStyle('B' . $row)->getFont()->setBold(true);
             $row++;
 
             $sheet->setCellValue('A' . $row, 'Moins chers en moyenne de (%):');
-            $sheet->setCellValue('B' . $row, abs(number_format($percentage_gain_marche, 2, ',', ' ')) . ' %');
+            $sheet->setCellValue('B' . $row, number_format( abs($percentage_gain_marche) , 2, ',', ' ') . ' %');
             $sheet->getStyle('B' . $row)->getFont()->getColor()->setRGB('00B050');
             $sheet->getStyle('B' . $row)->getFont()->setBold(true);
             $row++;
 
             $sheet->setCellValue('A' . $row, 'Plus chers en moyenne de X sur certains produits');
-            $sheet->setCellValue('B' . $row, abs(number_format($somme_perte, 2, ',', ' ')) . ' €');
+            $sheet->setCellValue('B' . $row, number_format( abs($somme_perte / $perPage) , 2, ',', ' ') . ' €');
             $sheet->getStyle('B' . $row)->getFont()->getColor()->setRGB('FF6B00');
             $sheet->getStyle('B' . $row)->getFont()->setBold(true);
             $row++;
 
             $sheet->setCellValue('A' . $row, 'Plus chers en moyenne de (%):');
-            $sheet->setCellValue('B' . $row, abs(number_format($percentage_perte_marche, 2, ',', ' ')) . ' %');
+            $sheet->setCellValue('B' . $row, number_format( abs($percentage_perte_marche) , 2, ',', ' ') . ' %');
             $sheet->getStyle('B' . $row)->getFont()->getColor()->setRGB('FF6B00');
             $sheet->getStyle('B' . $row)->getFont()->setBold(true);
 
@@ -582,7 +582,7 @@ new class extends Component {
     <div class="grid grid-cols-4 gap-4">
         <x-stat
             title="Moins chers en moyenne de"
-            value="{{ abs(number_format($somme_gain / $perPage, 2, ',', ' ')) }} €"
+            value="{{ number_format( abs($somme_gain / $perPage) , 2, ',', ' ') }} €"
             description="sur certains produits"
             tooltip=""
             color="text-primary"
@@ -592,21 +592,21 @@ new class extends Component {
             class="text-green-500"
             title="Moins chers en moyenne de ( % )"
             description=""
-            value="{{ abs(number_format($percentage_gain_marche, 2, ',', ' ')) }} %"
+            value="{{ number_format( abs($percentage_gain_marche) , 2, ',', ' ') }} %"
             icon="o-arrow-trending-up"
         />
 
         <x-stat
             title="Plus chers en moyenne de"
-            value="{{ abs(number_format($perPage > 0 ? $somme_perte / $perPage : 0, 2, ',', ' ')) }} €"
+            value="{{ number_format($perPage > 0 ? abs($somme_perte / $perPage) : 0, 2, ',', ' ') }} €"
             description="sur certains produits"
-            tooltip-left="{{ abs(number_format($perPage > 0 ? $somme_perte / $perPage : 0, 2, ',', ' ')) }}"
+            tooltip-left="{{ number_format($perPage > 0 ? abs($somme_perte / $perPage) : 0, 2, ',', ' ') }}"
         />
 
         <x-stat
             title="Plus chers en moyenne de (%)"
             description=""
-            value="{{ abs(number_format($percentage_perte_marche, 2, ',', ' ')) }} %"
+            value="{{ number_format( abs($percentage_perte_marche) , 2, ',', ' ') }} %"
             icon="o-arrow-trending-down"
             class="text-orange-500"
             color="text-pink-500"
