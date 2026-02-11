@@ -665,13 +665,13 @@ public function exportResults()
     @if(!$import)
         <x-card class="mt-4">
             <div class="text-center py-8 text-error">
-                Import non trouvé
+                Top produit non trouvé
             </div>
         </x-card>
     @elseif($comparisons->isEmpty())
         <x-card class="mt-4">
             <div class="text-center py-8 text-gray-500">
-                Aucun produit trouvé pour cet import
+                Aucun produit trouvé pour cet top produit
             </div>
         </x-card>
     @else
