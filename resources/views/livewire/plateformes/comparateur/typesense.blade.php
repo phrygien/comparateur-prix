@@ -72,96 +72,114 @@ new class extends Component {
         <div class="space-y-4">
             @foreach($this->products as $product)
                 <div class="overflow-hidden bg-white ring-1 shadow-sm ring-gray-900/5 sm:rounded-xl">
-                    <div class="relative flex justify-between gap-x-6 px-4 py-5 hover:bg-gray-50 sm:px-6">
-                        <div class="flex min-w-0 gap-x-4">
+                    <div class="relative px-4 py-5 hover:bg-gray-50 sm:px-6">
+                        {{-- Header with Image, Name, and Price --}}
+                        <div class="flex items-start gap-x-4 mb-4">
                             {{-- Image --}}
                             @if($product->image_url)
-                                <img class="size-12 flex-none rounded-full bg-gray-50 object-cover" 
+                                <img class="size-16 flex-none rounded-lg bg-gray-50 object-cover" 
                                      src="{{ $product->image_url }}" 
                                      alt="{{ $product->name }}"
-                                     onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2248%22 height=%2248%22%3E%3Crect fill=%22%23e5e7eb%22 width=%2248%22 height=%2248%22/%3E%3C/svg%3E'">
+                                     onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2264%22 height=%2264%22%3E%3Crect fill=%22%23e5e7eb%22 width=%2264%22 height=%2264%22/%3E%3C/svg%3E'">
                             @else
-                                <div class="size-12 flex-none rounded-full bg-gray-200 flex items-center justify-center">
-                                    <svg class="size-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <div class="size-16 flex-none rounded-lg bg-gray-200 flex items-center justify-center">
+                                    <svg class="size-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                                     </svg>
                                 </div>
                             @endif
 
-                            <div class="min-w-0 flex-auto">
+                            <div class="flex-1 min-w-0">
                                 {{-- Product Name --}}
-                                <p class="text-sm/6 font-semibold text-gray-900">
+                                <p class="text-base font-semibold text-gray-900 mb-1">
                                     @if($product->url)
-                                        <a href="{{ $product->url }}" target="_blank" rel="noopener noreferrer">
-                                            <span class="absolute inset-x-0 -top-px bottom-0"></span>
+                                        <a href="{{ $product->url }}" target="_blank" rel="noopener noreferrer" class="hover:text-indigo-600">
                                             {{ $product->name ?? 'Sans nom' }}
+                                            <svg class="inline size-4 text-gray-400 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                            </svg>
                                         </a>
                                     @else
                                         {{ $product->name ?? 'Sans nom' }}
                                     @endif
                                 </p>
 
-                                {{-- Product Details --}}
-                                <div class="mt-1 flex flex-col gap-1 text-xs/5 text-gray-500">
-                                    @if($product->type)
-                                        <span>{{ $product->type }}</span>
-                                    @endif
-                                    @if($product->variation)
-                                        <span class="text-gray-400">{{ $product->variation }}</span>
-                                    @endif
-                                    <span class="font-mono">EAN: {{ $product->ean ?? 'N/A' }}</span>
-                                    @if($product->vendor)
-                                        <span>Vendeur: {{ $product->vendor }}</span>
-                                    @endif
-                                    @if($product->website)
-                                        <div class="flex items-center gap-1">
-                                            <svg class="size-3 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
-                                            </svg>
-                                            <span class="text-indigo-600 font-medium">{{ $product->website->name ?? $product->website->url ?? 'Site' }}</span>
-                                        </div>
-                                    @endif
-                                </div>
+                                {{-- Website Badge --}}
+                                @if($product->website)
+                                    <div class="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-indigo-50 text-xs text-indigo-700 font-medium">
+                                        <svg class="size-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
+                                        </svg>
+                                        {{ $product->website->name ?? $product->website->url ?? 'Site' }}
+                                    </div>
+                                @endif
                             </div>
-                        </div>
 
-                        <div class="flex shrink-0 items-center gap-x-4">
-                            <div class="hidden sm:flex sm:flex-col sm:items-end">
-                                {{-- Their Price --}}
-                                <p class="text-sm/6 font-bold text-gray-900">
+                            {{-- Price and Difference (Right Side) --}}
+                            <div class="flex flex-col items-end gap-2">
+                                <p class="text-lg font-bold text-gray-900">
                                     {{ number_format($product->prix_ht ?? 0, 2) }} {{ $product->currency ?? '€' }}
                                 </p>
 
-                                {{-- Price Difference --}}
                                 @if($this->price)
                                     @php
                                         $priceDiff = $this->calculatePriceDifference($product->prix_ht ?? 0);
                                     @endphp
-                                    <div class="mt-1 flex items-center gap-x-1.5">
+                                    <div class="flex items-center gap-x-1.5">
                                         @if($priceDiff['isCheaper'])
                                             <div class="flex-none rounded-full bg-emerald-500/20 p-1">
                                                 <div class="size-1.5 rounded-full bg-emerald-500"></div>
                                             </div>
-                                            <p class="text-xs/5 text-emerald-600 font-medium">{{ $priceDiff['label'] }}</p>
+                                            <p class="text-xs text-emerald-600 font-medium">{{ $priceDiff['label'] }}</p>
                                         @else
                                             <div class="flex-none rounded-full bg-red-500/20 p-1">
                                                 <div class="size-1.5 rounded-full bg-red-500"></div>
                                             </div>
-                                            <p class="text-xs/5 text-red-600 font-medium">{{ $priceDiff['label'] }}</p>
+                                            <p class="text-xs text-red-600 font-medium">{{ $priceDiff['label'] }}</p>
                                         @endif
                                     </div>
-                                    <p class="text-xs/5 {{ $priceDiff['isCheaper'] ? 'text-emerald-600' : 'text-red-600' }} font-bold">
+                                    <p class="text-sm {{ $priceDiff['isCheaper'] ? 'text-emerald-600' : 'text-red-600' }} font-bold">
                                         {{ $priceDiff['percentage'] }}% ({{ number_format($priceDiff['amount'], 2) }} €)
                                     </p>
                                 @endif
                             </div>
+                        </div>
 
-                            {{-- Chevron Icon --}}
-                            @if($product->url)
-                                <svg class="size-5 flex-none text-gray-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                                    <path fill-rule="evenodd" d="M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
-                                </svg>
-                            @endif
+                        {{-- Product Details in Two Columns --}}
+                        <div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                            {{-- Left Column --}}
+                            <div class="space-y-2">
+                                @if($product->type)
+                                    <div>
+                                        <span class="text-gray-500 font-medium">Type:</span>
+                                        <span class="text-gray-900 ml-2">{{ $product->type }}</span>
+                                    </div>
+                                @endif
+
+                                @if($product->ean)
+                                    <div>
+                                        <span class="text-gray-500 font-medium">EAN:</span>
+                                        <span class="text-gray-900 font-mono ml-2">{{ $product->ean }}</span>
+                                    </div>
+                                @endif
+
+                                @if($product->vendor)
+                                    <div>
+                                        <span class="text-gray-500 font-medium">Vendeur:</span>
+                                        <span class="text-gray-900 ml-2">{{ $product->vendor }}</span>
+                                    </div>
+                                @endif
+                            </div>
+
+                            {{-- Right Column --}}
+                            <div class="space-y-2">
+                                @if($product->variation)
+                                    <div>
+                                        <span class="text-gray-500 font-medium">Variation:</span>
+                                        <span class="text-gray-900 ml-2">{{ $product->variation }}</span>
+                                    </div>
+                                @endif
+                            </div>
                         </div>
                     </div>
                 </div>
