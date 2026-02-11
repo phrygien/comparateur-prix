@@ -619,8 +619,8 @@ new class extends Component {
     </x-header>
 
     <div dir="ltr">
-        <div class="ms-8">
-            <h3>Analyse produits affichés</h3>
+        <div class="me-8 ...">
+            <h2>Analyse produits affichés ( {{ $perPage }} produits)</h2>
         </div>
     </div>
 
