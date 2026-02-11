@@ -580,15 +580,24 @@ new class extends Component {
     </x-header>
 
     <div class="grid grid-cols-4 gap-4">
-        <x-stat title="Nous sommes moins chers en moyenne de" value="{{ number_format($somme_gain, 0, ',', ' ') }} € " description="sur certains de nos produits" tooltip="" color="text-primary" />
+        <x-stat
+            title="Moins chers en moyenne de"
+            value="{{ number_format($somme_gain / $perPage, 0, ',', ' ') }} €"
+            tooltip=""
+            color="text-primary"
+        />
 
         <x-stat class="text-green-500" title="Moins chers en moyenne de ( % )" description=""
             value="{{ number_format($percentage_gain_marche, 2, ',', ' ') }} %" icon="o-arrow-trending-up" />
 
-        <x-stat title="Nous sommes plus chers en moyenne de" value="{{ number_format($somme_perte, 0, ',', ' ') }} €" description="sur certains de nos produits"
-            tooltip-left="{{ number_format($somme_perte, 0, ',', ' ') }}" />
+        <x-stat
+            title="Plus chers en moyenne de"
+            value="{{ number_format($perPage > 0 ? $somme_perte / $perPage : 0, 0, ',', ' ') }} €"
+            tooltip-left="{{ number_format($perPage > 0 ? $somme_perte / $perPage : 0, 0, ',', ' ') }}"
+        />
 
-        <x-stat title="Plus chers en moyenne de  (%)" description=""
+
+        <x-stat title="Plus chers en moyenne de (%)" description=""
             value="{{ number_format($percentage_perte_marche, 2, ',', ' ') }} %" icon="o-arrow-trending-down"
             class="text-orange-500" color="text-pink-500" />
 
