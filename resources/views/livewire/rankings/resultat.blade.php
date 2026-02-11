@@ -186,7 +186,7 @@ new class extends Component {
                 }
             }
 
-            if ($somme_prix_marche > 0) {
+            if ($somme_prix_marche > 0 && $topProduct->prix_vente_cosma > 0) {
                 $comparison['prix_moyen_marche'] = $somme_prix_marche / $nombre_site;
                 //calcule du porcentage
                 $priceDiff_marche = $comparison['prix_moyen_marche'] - $topProduct->prix_vente_cosma;
