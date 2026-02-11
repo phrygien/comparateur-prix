@@ -42,17 +42,18 @@ new class extends Component {
             ];
         }
 
-        $basePrice = floatval($this->price);
-        $otherPrice = floatval($comparePrice);
+        $ourPrice = floatval($this->price); // Notre prix
+        $theirPrice = floatval($comparePrice); // Leur prix
 
-        $difference = (($basePrice - $otherPrice) / $otherPrice) * 100;
-        $amountDiff = $basePrice - $otherPrice;
+        // Calculer la différence : (notre prix - leur prix) / leur prix * 100
+        $difference = (($ourPrice - $theirPrice) / $theirPrice) * 100;
+        $amountDiff = $ourPrice - $theirPrice;
 
         return [
             'percentage' => round(abs($difference), 2),
             'amount' => round(abs($amountDiff), 2),
-            'isCheaper' => $basePrice < $otherPrice,
-            'label' => $basePrice < $otherPrice ? 'Moins cher' : 'Plus cher'
+            'isCheaper' => $ourPrice < $theirPrice, // Nous sommes moins cher qu'eux
+            'label' => $ourPrice < $theirPrice ? 'Nous sommes moins chers' : 'Nous sommes plus chers'
         ];
     }
 
@@ -127,7 +128,7 @@ new class extends Component {
 
                         <div class="flex shrink-0 items-center gap-x-4">
                             <div class="hidden sm:flex sm:flex-col sm:items-end">
-                                {{-- Price --}}
+                                {{-- Their Price --}}
                                 <p class="text-sm/6 font-bold text-gray-900">
                                     {{ number_format($product->prix_ht ?? 0, 2) }} {{ $product->currency ?? '€' }}
                                 </p>
