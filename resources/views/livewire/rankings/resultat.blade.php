@@ -364,10 +364,16 @@ new class extends Component {
                 $colIndex++;
             }
 
-            // Ajouter les en-têtes des sites (1 seule colonne par site)
+            // Ajouter les en-têtes des sites (2 colonnes par site : prix + lien)
             foreach ($sites as $site) {
+                // Colonne prix du site
                 $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . '1';
                 $sheet->setCellValue($cellCoord, $site->name);
+                $colIndex++;
+
+                // Colonne lien "Voir produit" du site
+                $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . '1';
+                $sheet->setCellValue($cellCoord, 'Voir ' . $site->name);
                 $colIndex++;
             }
 
@@ -394,14 +400,6 @@ new class extends Component {
 
             $lastColLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($lastColIndex + 1);
             $sheet->getStyle('A1:' . $lastColLetter . '1')->applyFromArray($headerStyle);
-
-            // Réduire la largeur de la première colonne (Rang Qty)
-            $sheet->getColumnDimension('A')->setAutoSize(false);
-            $sheet->getColumnDimension('A')->setWidth(10);
-
-            // Réduire aussi la colonne B (Rang CA)
-            $sheet->getColumnDimension('B')->setAutoSize(false);
-            $sheet->getColumnDimension('B')->setWidth(10);
 
             // === DONNÉES ===
             $row = 2;
@@ -443,15 +441,16 @@ new class extends Component {
                 $somme_prix_marche = 0;
                 $nombre_site = 0;
 
-                // Pour chaque site (1 colonne par site, lien intégré dans la cellule)
+                // Pour chaque site (2 colonnes par site : prix + lien)
                 $colIndex = 9; // Commence après "Marge" (colonne I = index 9)
                 foreach ($sites as $site) {
+                    // --- Colonne PRIX ---
                     $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . $row;
 
                     if (isset($scrapedProducts[$site->id])) {
                         $scrapedProduct = $scrapedProducts[$site->id];
 
-                        // Calcul de la différence de prix
+                        // Prix du site avec pourcentage
                         $priceDiff = null;
                         $pricePercentage = null;
 
@@ -460,39 +459,20 @@ new class extends Component {
                             $pricePercentage = round(($priceDiff / $topProduct->prix_vente_cosma) * 100, 2);
                         }
 
-                        // Ligne 1 : Prix € (+X%) ou Prix € (-X%)
+                        // Format: "Prix € (+X%)" ou "Prix € (-X%)" avec EAN
                         $cellValue = number_format($scrapedProduct->prix_ht, 2, ',', ' ') . ' €';
                         if ($pricePercentage !== null) {
                             $cellValue .= ' (' . ($pricePercentage > 0 ? '+' : '') . $pricePercentage . '%)';
                         }
-
-                        // Ligne 2 : EAN
                         if ($scrapedProduct->ean) {
                             $cellValue .= "\n" . $scrapedProduct->ean;
                         }
 
-                        // Ligne 3 : texte du lien (sera transformé en hyperlien sur toute la cellule)
-                        if (!empty($scrapedProduct->url)) {
-                            $cellValue .= "\nVoir le produit";
-                        }
-
                         $sheet->setCellValue($cellCoord, $cellValue);
                         $sheet->getStyle($cellCoord)->getAlignment()->setWrapText(true);
-                        $sheet->getStyle($cellCoord)->getAlignment()
-                            ->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP);
-
-                        // Hyperlien sur la cellule entière
-                        if (!empty($scrapedProduct->url)) {
-                            $sheet->getCell($cellCoord)->getHyperlink()->setUrl($scrapedProduct->url);
-                            // Style de lien bleu souligné sur toute la cellule
-                            $sheet->getStyle($cellCoord)->getFont()
-                                ->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color(
-                                    $topProduct->prix_vente_cosma > $scrapedProduct->prix_ht ? 'FFCC0000' : 'FF006400'
-                                ));
-                        }
 
                         // Colorier selon compétitivité (rouge si Cosma plus cher, vert si moins cher)
-                        if ($pricePercentage !== null && empty($scrapedProduct->url)) {
+                        if ($pricePercentage !== null) {
                             $color = $topProduct->prix_vente_cosma > $scrapedProduct->prix_ht ? 'FF0000' : '00B050';
                             $sheet->getStyle($cellCoord)->getFont()->getColor()->setRGB($color);
                         }
@@ -500,12 +480,36 @@ new class extends Component {
                         $somme_prix_marche += $scrapedProduct->prix_ht;
                         $nombre_site++;
 
+                        // --- Colonne LIEN "Voir produit" ---
+                        $colIndex++;
+                        $linkCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . $row;
+
+                        if (!empty($scrapedProduct->url)) {
+                            $sheet->setCellValue($linkCoord, 'Voir le produit');
+                            $sheet->getCell($linkCoord)->getHyperlink()->setUrl($scrapedProduct->url);
+                            $sheet->getStyle($linkCoord)->getFont()
+                                ->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF0563C1'))
+                                ->setUnderline(\PhpOffice\PhpSpreadsheet\Style\Font::UNDERLINE_SINGLE);
+                            $sheet->getStyle($linkCoord)->getAlignment()
+                                ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+                        } else {
+                            $sheet->setCellValue($linkCoord, 'N/A');
+                            $sheet->getStyle($linkCoord)->getFont()->getColor()->setRGB('999999');
+                        }
+
                     } else {
+                        // Pas de produit scrapé : N/A pour prix
                         $sheet->setCellValue($cellCoord, 'N/A');
                         $sheet->getStyle($cellCoord)->getFont()->getColor()->setRGB('999999');
+
+                        // N/A pour le lien aussi
+                        $colIndex++;
+                        $linkCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . $row;
+                        $sheet->setCellValue($linkCoord, 'N/A');
+                        $sheet->getStyle($linkCoord)->getFont()->getColor()->setRGB('999999');
                     }
 
-                    $colIndex++;
+                    $colIndex++; // Passer au site suivant
                 }
 
                 // Prix moyen marché
@@ -600,8 +604,8 @@ new class extends Component {
             $sheet->getStyle('B' . $row)->getFont()->setBold(true);
 
             // === FORMATAGE ===
-            // Auto-size pour toutes les colonnes sauf A et B (déjà fixées)
-            foreach (range('C', $lastColLetter) as $col) {
+            // Auto-size des colonnes
+            foreach (range('A', $lastColLetter) as $col) {
                 $sheet->getColumnDimension($col)->setAutoSize(true);
             }
 
@@ -644,7 +648,6 @@ new class extends Component {
             \Log::error('Export error: ' . $e->getMessage() . ' | Line: ' . $e->getLine());
         }
     }
-
 }; ?>
 
 <div class="w-full">
