@@ -313,309 +313,341 @@ new class extends Component {
         return $buttons;
     }
 
-public function exportResults()
-{
-    try {
-        $import = HistoImportTopFile::find($this->histoId);
+    public function exportResults()
+    {
+        try {
+            $import = HistoImportTopFile::find($this->histoId);
 
-        if (!$import) {
-            session()->flash('error', 'Import non trouvé');
-            return;
-        }
+            if (!$import) {
+                session()->flash('error', 'Import non trouvé');
+                return;
+            }
 
-        // Récupérer les sites
-        $sites = Site::whereIn('id', [1, 2, 8, 16])
-            ->orderBy('name')
-            ->get();
+            // Récupérer les sites
+            $sites = Site::whereIn('id', [1, 2, 8, 16])
+                ->orderBy('name')
+                ->get();
 
-        // Récupérer les produits selon le tri et la pagination actuels
-        $topProducts = TopProduct::where('histo_import_top_file_id', $this->histoId)
-            ->whereNotNull('ean')
-            ->where('ean', '!=', '')
-            ->orderBy($this->sortField, $this->sortDirection)
-            ->limit($this->perPage)
-            ->get();
+            // Récupérer les produits selon le tri et la pagination actuels
+            $topProducts = TopProduct::where('histo_import_top_file_id', $this->histoId)
+                ->whereNotNull('ean')
+                ->where('ean', '!=', '')
+                ->orderBy($this->sortField, $this->sortDirection)
+                ->limit($this->perPage)
+                ->get();
 
-        // Créer le spreadsheet
-        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet();
+            // Créer le spreadsheet
+            $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+            $sheet = $spreadsheet->getActiveSheet();
 
-        // Définir le titre de la feuille
-        $sheet->setTitle('Comparaison Prix');
+            // Définir le titre de la feuille
+            $sheet->setTitle('Comparaison Prix');
 
-        // === EN-TÊTES ===
-        $headers = [
-            'Rang Qty',
-            'Rang CA',
-            'EAN',
-            'Désignation',
-            'Marque',
-            'Prix Cosma',
-            'PGHT',
-            'PAMP',
-            'Marge'
-        ];
+            // === EN-TÊTES ===
+            $headers = [
+                'Rang Qty',
+                'Rang CA',
+                'EAN',
+                'Désignation',
+                'Marque',
+                'Prix Cosma',
+                'PGHT',
+                'PAMP',
+                'Marge'
+            ];
 
-        // Ajouter les en-têtes de base
-        $colIndex = 0;
-        foreach ($headers as $header) {
-            $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . '1';
-            $sheet->setCellValue($cellCoord, $header);
-            $colIndex++;
-        }
-
-        // Ajouter les en-têtes des sites
-        foreach ($sites as $site) {
-            $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . '1';
-            $sheet->setCellValue($cellCoord, $site->name);
-            $colIndex++;
-        }
-
-        // Ajouter l'en-tête "Prix marche"
-        $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . '1';
-        $sheet->setCellValue($cellCoord, 'Prix marche');
-        $lastColIndex = $colIndex;
-
-        // Style des en-têtes
-        $headerStyle = [
-            'font' => [
-                'bold' => true,
-                'color' => ['rgb' => 'FFFFFF'],
-            ],
-            'fill' => [
-                'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
-                'startColor' => ['rgb' => '4A5568'],
-            ],
-            'alignment' => [
-                'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
-                'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
-            ],
-        ];
-
-        $lastColLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($lastColIndex + 1);
-        $sheet->getStyle('A1:' . $lastColLetter . '1')->applyFromArray($headerStyle);
-
-        // === DONNÉES ===
-        $row = 2;
-        $somme_prix_marche_total = 0;
-        $somme_gain = 0;
-        $somme_perte = 0;
-
-        foreach ($topProducts as $topProduct) {
-            // Rechercher les produits scrapés
-            $scrapedProducts = Product::where('ean', $topProduct->ean)
-                ->whereIn('web_site_id', [1, 2, 8, 16])
-                ->with('website')
-                ->get()
-                ->keyBy('web_site_id');
-
-            // Calculer la marge
-            $marge = $topProduct->prix_vente_cosma > 0
-                ? (1 - ($topProduct->pamp * 1.2) / $topProduct->prix_vente_cosma) * 100
-                : 0;
-
-            // Colonnes de base
-            $sheet->setCellValue('A' . $row, $topProduct->rank_qty);
-            $sheet->setCellValue('B' . $row, $topProduct->rank_chriffre_affaire);
-            $sheet->setCellValue('C' . $row, $topProduct->ean);
-            $sheet->setCellValue('D' . $row, $topProduct->designation);
-            $sheet->setCellValue('E' . $row, $topProduct->marque);
-            $sheet->setCellValue('F' . $row, $topProduct->prix_vente_cosma);
-            $sheet->setCellValue('G' . $row, $topProduct->pght);
-            $sheet->setCellValue('H' . $row, $topProduct->pamp);
-            $sheet->setCellValue('I' . $row, $marge);
-
-            // Formatage des nombres
-            $sheet->getStyle('F' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
-            $sheet->getStyle('G' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
-            $sheet->getStyle('H' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
-            $sheet->getStyle('I' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "%"');
-
-            // Calculer le prix moyen du marché
-            $somme_prix_marche = 0;
-            $nombre_site = 0;
-
-            // Pour chaque site
-            $colIndex = 9; // Commence après "Marge"
-            foreach ($sites as $site) {
-                $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . $row;
-
-                if (isset($scrapedProducts[$site->id])) {
-                    $scrapedProduct = $scrapedProducts[$site->id];
-
-                    // Prix du site avec pourcentage
-                    $priceDiff = null;
-                    $pricePercentage = null;
-
-                    if ($topProduct->prix_vente_cosma > 0 && $scrapedProduct->prix_ht > 0) {
-                        $priceDiff = $scrapedProduct->prix_ht - $topProduct->prix_vente_cosma;
-                        $pricePercentage = round(($priceDiff / $topProduct->prix_vente_cosma) * 100, 2);
-                    }
-
-                    // Format: "Prix € (+X%)" ou "Prix € (-X%)" avec EAN
-                    $cellValue = number_format($scrapedProduct->prix_ht, 2, ',', ' ') . ' €';
-                    if ($pricePercentage !== null) {
-                        $cellValue .= ' (' . ($pricePercentage > 0 ? '+' : '') . $pricePercentage . '%)';
-                    }
-                    // Afficher l'EAN au lieu du vendor
-                    if ($scrapedProduct->ean) {
-                        $cellValue .= "\n" . $scrapedProduct->ean;
-                    }
-
-                    $sheet->setCellValue($cellCoord, $cellValue);
-                    $sheet->getStyle($cellCoord)->getAlignment()->setWrapText(true);
-
-                    // Colorier selon compétitivité (rouge si Cosma plus cher, vert si moins cher)
-                    if ($pricePercentage !== null) {
-                        $color = $topProduct->prix_vente_cosma > $scrapedProduct->prix_ht ? 'FF0000' : '00B050';
-                        $sheet->getStyle($cellCoord)->getFont()->getColor()->setRGB($color);
-                    }
-
-                    $somme_prix_marche += $scrapedProduct->prix_ht;
-                    $nombre_site++;
-                } else {
-                    $sheet->setCellValue($cellCoord, 'N/A');
-                    $sheet->getStyle($cellCoord)->getFont()->getColor()->setRGB('999999');
-                }
+            // Ajouter les en-têtes de base
+            $colIndex = 0;
+            foreach ($headers as $header) {
+                $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . '1';
+                $sheet->setCellValue($cellCoord, $header);
                 $colIndex++;
             }
 
-            // Prix moyen marché
-            $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . $row;
+            // Ajouter les en-têtes des sites (2 colonnes par site : prix + lien)
+            foreach ($sites as $site) {
+                // Colonne prix du site
+                $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . '1';
+                $sheet->setCellValue($cellCoord, $site->name);
+                $colIndex++;
 
-            if ($somme_prix_marche > 0) {
-                $prix_moyen_marche = $somme_prix_marche / $nombre_site;
-                $priceDiff_marche = $prix_moyen_marche - $topProduct->prix_vente_cosma;
-                $percentage_marche = $topProduct->prix_vente_cosma > 0
-                    ? round(($priceDiff_marche / $topProduct->prix_vente_cosma) * 100, 2)
-                    : 0;
-
-                $cellValue = number_format($prix_moyen_marche, 2, ',', ' ') . ' € (' . ($percentage_marche > 0 ? '+' : '') . $percentage_marche . '%)';
-                $sheet->setCellValue($cellCoord, $cellValue);
-
-                // Colorier selon compétitivité
-                $color = $topProduct->prix_vente_cosma > $prix_moyen_marche ? 'FF0000' : '00B050';
-                $sheet->getStyle($cellCoord)->getFont()->getColor()->setRGB($color);
-
-                // Pour les statistiques globales
-                $somme_prix_marche_total += $prix_moyen_marche;
-                if ($priceDiff_marche > 0) {
-                    $somme_gain += $priceDiff_marche;
-                } else {
-                    $somme_perte += $priceDiff_marche;
-                }
-            } else {
-                $sheet->setCellValue($cellCoord, 'N/A');
+                // Colonne lien "Voir produit" du site
+                $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . '1';
+                $sheet->setCellValue($cellCoord, 'Voir ' . $site->name);
+                $colIndex++;
             }
 
-            $row++;
-        }
+            // Ajouter l'en-tête "Prix marche"
+            $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . '1';
+            $sheet->setCellValue($cellCoord, 'Prix marche');
+            $lastColIndex = $colIndex;
 
-        $lastDataRow = $row - 1;
-
-        // === STATISTIQUES EN BAS ===
-        $row += 2; // Espace vide
-
-        // Calculer le nombre de produits traités
-        $productCount = $lastDataRow - 1; // Soustraire la ligne d'en-tête
-
-        // Calculer les pourcentages
-        $percentage_gain_marche = $somme_prix_marche_total > 0
-            ? ((($somme_prix_marche_total + $somme_gain) * 100) / $somme_prix_marche_total) - 100
-            : 0;
-        $percentage_perte_marche = $somme_prix_marche_total > 0
-            ? ((($somme_prix_marche_total + $somme_perte) * 100) / $somme_prix_marche_total) - 100
-            : 0;
-
-        // Ajouter les statistiques
-        $sheet->setCellValue('A' . $row, 'STATISTIQUES');
-        $sheet->getStyle('A' . $row)->getFont()->setBold(true)->setSize(14);
-        $row++;
-
-        // Informations sur le tri et la pagination
-        $sortFieldLabel = $this->sortField === 'rank_qty' ? 'Rang Qty' : 'Rang CA';
-        $sortDirectionLabel = $this->sortDirection === 'asc' ? 'Ascendant' : 'Descendant';
-        
-        $sheet->setCellValue('A' . $row, 'Tri appliqué:');
-        $sheet->setCellValue('B' . $row, $sortFieldLabel . ' (' . $sortDirectionLabel . ')');
-        $sheet->getStyle('A' . $row)->getFont()->setBold(true);
-        $row++;
-
-        $sheet->setCellValue('A' . $row, 'Nombre de produits exportés:');
-        $sheet->setCellValue('B' . $row, $productCount);
-        $sheet->getStyle('A' . $row)->getFont()->setBold(true);
-        $row++;
-        
-        $row++; // Ligne vide
-
-        $sheet->setCellValue('A' . $row, 'Moins chers en moyenne de X sur certains produits');
-        $sheet->setCellValue('B' . $row, $productCount > 0 ? number_format(abs($somme_gain / $productCount), 2, ',', ' ') . ' €' : 'N/A');
-        $sheet->getStyle('B' . $row)->getFont()->getColor()->setRGB('00B050');
-        $sheet->getStyle('B' . $row)->getFont()->setBold(true);
-        $row++;
-
-        $sheet->setCellValue('A' . $row, 'Moins chers en moyenne de (%):');
-        $sheet->setCellValue('B' . $row, number_format(abs($percentage_gain_marche), 2, ',', ' ') . ' %');
-        $sheet->getStyle('B' . $row)->getFont()->getColor()->setRGB('00B050');
-        $sheet->getStyle('B' . $row)->getFont()->setBold(true);
-        $row++;
-
-        $sheet->setCellValue('A' . $row, 'Plus chers en moyenne de X sur certains produits');
-        $sheet->setCellValue('B' . $row, $productCount > 0 ? number_format(abs($somme_perte / $productCount), 2, ',', ' ') . ' €' : 'N/A');
-        $sheet->getStyle('B' . $row)->getFont()->getColor()->setRGB('FF6B00');
-        $sheet->getStyle('B' . $row)->getFont()->setBold(true);
-        $row++;
-
-        $sheet->setCellValue('A' . $row, 'Plus chers en moyenne de (%):');
-        $sheet->setCellValue('B' . $row, number_format(abs($percentage_perte_marche), 2, ',', ' ') . ' %');
-        $sheet->getStyle('B' . $row)->getFont()->getColor()->setRGB('FF6B00');
-        $sheet->getStyle('B' . $row)->getFont()->setBold(true);
-
-        // === FORMATAGE ===
-        // Auto-size des colonnes
-        foreach (range('A', $lastColLetter) as $col) {
-            $sheet->getColumnDimension($col)->setAutoSize(true);
-        }
-
-        // Figer la première ligne
-        $sheet->freezePane('A2');
-
-        // Bordures pour toutes les données
-        $sheet->getStyle('A1:' . $lastColLetter . $lastDataRow)->applyFromArray([
-            'borders' => [
-                'allBorders' => [
-                    'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
-                    'color' => ['rgb' => 'CCCCCC'],
+            // Style des en-têtes
+            $headerStyle = [
+                'font' => [
+                    'bold' => true,
+                    'color' => ['rgb' => 'FFFFFF'],
                 ],
-            ],
-        ]);
+                'fill' => [
+                    'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                    'startColor' => ['rgb' => '4A5568'],
+                ],
+                'alignment' => [
+                    'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
+                    'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
+                ],
+            ];
 
-        // Alignement des colonnes numériques à droite (à partir de Prix Cosma)
-        $sheet->getStyle('F2:' . $lastColLetter . $lastDataRow)
-            ->getAlignment()
-            ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_RIGHT);
+            $lastColLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($lastColIndex + 1);
+            $sheet->getStyle('A1:' . $lastColLetter . '1')->applyFromArray($headerStyle);
 
-        // === SAUVEGARDE FICHIER TEMPORAIRE ===
-        $sortInfo = $sortFieldLabel . '_' . $sortDirectionLabel;
-        $fileName = 'comparaison_prix_' . str_replace([' ', '.'], '_', $import->nom_fichier) . '_' . $sortInfo . '_' . $this->perPage . 'produits_' . date('Y-m-d_His') . '.xlsx';
-        $filePath = storage_path('app/public/exports/' . $fileName);
+            // === DONNÉES ===
+            $row = 2;
+            $somme_prix_marche_total = 0;
+            $somme_gain = 0;
+            $somme_perte = 0;
 
-        // Créer le répertoire si nécessaire
-        if (!file_exists(storage_path('app/public/exports'))) {
-            mkdir(storage_path('app/public/exports'), 0755, true);
+            foreach ($topProducts as $topProduct) {
+                // Rechercher les produits scrapés
+                $scrapedProducts = Product::where('ean', $topProduct->ean)
+                    ->whereIn('web_site_id', [1, 2, 8, 16])
+                    ->with('website')
+                    ->get()
+                    ->keyBy('web_site_id');
+
+                // Calculer la marge
+                $marge = $topProduct->prix_vente_cosma > 0
+                    ? (1 - ($topProduct->pamp * 1.2) / $topProduct->prix_vente_cosma) * 100
+                    : 0;
+
+                // Colonnes de base
+                $sheet->setCellValue('A' . $row, $topProduct->rank_qty);
+                $sheet->setCellValue('B' . $row, $topProduct->rank_chriffre_affaire);
+                $sheet->setCellValue('C' . $row, $topProduct->ean);
+                $sheet->setCellValue('D' . $row, $topProduct->designation);
+                $sheet->setCellValue('E' . $row, $topProduct->marque);
+                $sheet->setCellValue('F' . $row, $topProduct->prix_vente_cosma);
+                $sheet->setCellValue('G' . $row, $topProduct->pght);
+                $sheet->setCellValue('H' . $row, $topProduct->pamp);
+                $sheet->setCellValue('I' . $row, $marge);
+
+                // Formatage des nombres
+                $sheet->getStyle('F' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
+                $sheet->getStyle('G' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
+                $sheet->getStyle('H' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
+                $sheet->getStyle('I' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "%"');
+
+                // Calculer le prix moyen du marché
+                $somme_prix_marche = 0;
+                $nombre_site = 0;
+
+                // Pour chaque site (2 colonnes par site : prix + lien)
+                $colIndex = 9; // Commence après "Marge" (colonne I = index 9)
+                foreach ($sites as $site) {
+                    // --- Colonne PRIX ---
+                    $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . $row;
+
+                    if (isset($scrapedProducts[$site->id])) {
+                        $scrapedProduct = $scrapedProducts[$site->id];
+
+                        // Prix du site avec pourcentage
+                        $priceDiff = null;
+                        $pricePercentage = null;
+
+                        if ($topProduct->prix_vente_cosma > 0 && $scrapedProduct->prix_ht > 0) {
+                            $priceDiff = $scrapedProduct->prix_ht - $topProduct->prix_vente_cosma;
+                            $pricePercentage = round(($priceDiff / $topProduct->prix_vente_cosma) * 100, 2);
+                        }
+
+                        // Format: "Prix € (+X%)" ou "Prix € (-X%)" avec EAN
+                        $cellValue = number_format($scrapedProduct->prix_ht, 2, ',', ' ') . ' €';
+                        if ($pricePercentage !== null) {
+                            $cellValue .= ' (' . ($pricePercentage > 0 ? '+' : '') . $pricePercentage . '%)';
+                        }
+                        if ($scrapedProduct->ean) {
+                            $cellValue .= "\n" . $scrapedProduct->ean;
+                        }
+
+                        $sheet->setCellValue($cellCoord, $cellValue);
+                        $sheet->getStyle($cellCoord)->getAlignment()->setWrapText(true);
+
+                        // Colorier selon compétitivité (rouge si Cosma plus cher, vert si moins cher)
+                        if ($pricePercentage !== null) {
+                            $color = $topProduct->prix_vente_cosma > $scrapedProduct->prix_ht ? 'FF0000' : '00B050';
+                            $sheet->getStyle($cellCoord)->getFont()->getColor()->setRGB($color);
+                        }
+
+                        $somme_prix_marche += $scrapedProduct->prix_ht;
+                        $nombre_site++;
+
+                        // --- Colonne LIEN "Voir produit" ---
+                        $colIndex++;
+                        $linkCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . $row;
+
+                        if (!empty($scrapedProduct->url)) {
+                            $sheet->setCellValue($linkCoord, 'Voir le produit');
+                            $sheet->getCell($linkCoord)->getHyperlink()->setUrl($scrapedProduct->url);
+                            $sheet->getStyle($linkCoord)->getFont()
+                                ->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF0563C1'))
+                                ->setUnderline(\PhpOffice\PhpSpreadsheet\Style\Font::UNDERLINE_SINGLE);
+                            $sheet->getStyle($linkCoord)->getAlignment()
+                                ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+                        } else {
+                            $sheet->setCellValue($linkCoord, 'N/A');
+                            $sheet->getStyle($linkCoord)->getFont()->getColor()->setRGB('999999');
+                        }
+
+                    } else {
+                        // Pas de produit scrapé : N/A pour prix
+                        $sheet->setCellValue($cellCoord, 'N/A');
+                        $sheet->getStyle($cellCoord)->getFont()->getColor()->setRGB('999999');
+
+                        // N/A pour le lien aussi
+                        $colIndex++;
+                        $linkCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . $row;
+                        $sheet->setCellValue($linkCoord, 'N/A');
+                        $sheet->getStyle($linkCoord)->getFont()->getColor()->setRGB('999999');
+                    }
+
+                    $colIndex++; // Passer au site suivant
+                }
+
+                // Prix moyen marché
+                $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . $row;
+
+                if ($somme_prix_marche > 0) {
+                    $prix_moyen_marche = $somme_prix_marche / $nombre_site;
+                    $priceDiff_marche = $prix_moyen_marche - $topProduct->prix_vente_cosma;
+                    $percentage_marche = $topProduct->prix_vente_cosma > 0
+                        ? round(($priceDiff_marche / $topProduct->prix_vente_cosma) * 100, 2)
+                        : 0;
+
+                    $cellValue = number_format($prix_moyen_marche, 2, ',', ' ') . ' € (' . ($percentage_marche > 0 ? '+' : '') . $percentage_marche . '%)';
+                    $sheet->setCellValue($cellCoord, $cellValue);
+
+                    // Colorier selon compétitivité
+                    $color = $topProduct->prix_vente_cosma > $prix_moyen_marche ? 'FF0000' : '00B050';
+                    $sheet->getStyle($cellCoord)->getFont()->getColor()->setRGB($color);
+
+                    // Pour les statistiques globales
+                    $somme_prix_marche_total += $prix_moyen_marche;
+                    if ($priceDiff_marche > 0) {
+                        $somme_gain += $priceDiff_marche;
+                    } else {
+                        $somme_perte += $priceDiff_marche;
+                    }
+                } else {
+                    $sheet->setCellValue($cellCoord, 'N/A');
+                }
+
+                $row++;
+            }
+
+            $lastDataRow = $row - 1;
+
+            // === STATISTIQUES EN BAS ===
+            $row += 2; // Espace vide
+
+            // Calculer le nombre de produits traités
+            $productCount = $lastDataRow - 1; // Soustraire la ligne d'en-tête
+
+            // Calculer les pourcentages
+            $percentage_gain_marche = $somme_prix_marche_total > 0
+                ? ((($somme_prix_marche_total + $somme_gain) * 100) / $somme_prix_marche_total) - 100
+                : 0;
+            $percentage_perte_marche = $somme_prix_marche_total > 0
+                ? ((($somme_prix_marche_total + $somme_perte) * 100) / $somme_prix_marche_total) - 100
+                : 0;
+
+            // Ajouter les statistiques
+            $sheet->setCellValue('A' . $row, 'STATISTIQUES');
+            $sheet->getStyle('A' . $row)->getFont()->setBold(true)->setSize(14);
+            $row++;
+
+            // Informations sur le tri et la pagination
+            $sortFieldLabel = $this->sortField === 'rank_qty' ? 'Rang Qty' : 'Rang CA';
+            $sortDirectionLabel = $this->sortDirection === 'asc' ? 'Ascendant' : 'Descendant';
+
+            $sheet->setCellValue('A' . $row, 'Tri appliqué:');
+            $sheet->setCellValue('B' . $row, $sortFieldLabel . ' (' . $sortDirectionLabel . ')');
+            $sheet->getStyle('A' . $row)->getFont()->setBold(true);
+            $row++;
+
+            $sheet->setCellValue('A' . $row, 'Nombre de produits exportés:');
+            $sheet->setCellValue('B' . $row, $productCount);
+            $sheet->getStyle('A' . $row)->getFont()->setBold(true);
+            $row++;
+
+            $row++; // Ligne vide
+
+            $sheet->setCellValue('A' . $row, 'Moins chers en moyenne de X sur certains produits');
+            $sheet->setCellValue('B' . $row, $productCount > 0 ? number_format(abs($somme_gain / $productCount), 2, ',', ' ') . ' €' : 'N/A');
+            $sheet->getStyle('B' . $row)->getFont()->getColor()->setRGB('00B050');
+            $sheet->getStyle('B' . $row)->getFont()->setBold(true);
+            $row++;
+
+            $sheet->setCellValue('A' . $row, 'Moins chers en moyenne de (%):');
+            $sheet->setCellValue('B' . $row, number_format(abs($percentage_gain_marche), 2, ',', ' ') . ' %');
+            $sheet->getStyle('B' . $row)->getFont()->getColor()->setRGB('00B050');
+            $sheet->getStyle('B' . $row)->getFont()->setBold(true);
+            $row++;
+
+            $sheet->setCellValue('A' . $row, 'Plus chers en moyenne de X sur certains produits');
+            $sheet->setCellValue('B' . $row, $productCount > 0 ? number_format(abs($somme_perte / $productCount), 2, ',', ' ') . ' €' : 'N/A');
+            $sheet->getStyle('B' . $row)->getFont()->getColor()->setRGB('FF6B00');
+            $sheet->getStyle('B' . $row)->getFont()->setBold(true);
+            $row++;
+
+            $sheet->setCellValue('A' . $row, 'Plus chers en moyenne de (%):');
+            $sheet->setCellValue('B' . $row, number_format(abs($percentage_perte_marche), 2, ',', ' ') . ' %');
+            $sheet->getStyle('B' . $row)->getFont()->getColor()->setRGB('FF6B00');
+            $sheet->getStyle('B' . $row)->getFont()->setBold(true);
+
+            // === FORMATAGE ===
+            // Auto-size des colonnes
+            foreach (range('A', $lastColLetter) as $col) {
+                $sheet->getColumnDimension($col)->setAutoSize(true);
+            }
+
+            // Figer la première ligne
+            $sheet->freezePane('A2');
+
+            // Bordures pour toutes les données
+            $sheet->getStyle('A1:' . $lastColLetter . $lastDataRow)->applyFromArray([
+                'borders' => [
+                    'allBorders' => [
+                        'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                        'color' => ['rgb' => 'CCCCCC'],
+                    ],
+                ],
+            ]);
+
+            // Alignement des colonnes numériques à droite (à partir de Prix Cosma)
+            $sheet->getStyle('F2:' . $lastColLetter . $lastDataRow)
+                ->getAlignment()
+                ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_RIGHT);
+
+            // === SAUVEGARDE FICHIER TEMPORAIRE ===
+            $sortInfo = $sortFieldLabel . '_' . $sortDirectionLabel;
+            $fileName = 'comparaison_prix_' . str_replace([' ', '.'], '_', $import->nom_fichier) . '_' . $sortInfo . '_' . $this->perPage . 'produits_' . date('Y-m-d_His') . '.xlsx';
+            $filePath = storage_path('app/public/exports/' . $fileName);
+
+            // Créer le répertoire si nécessaire
+            if (!file_exists(storage_path('app/public/exports'))) {
+                mkdir(storage_path('app/public/exports'), 0755, true);
+            }
+
+            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+            $writer->save($filePath);
+
+            // Retourner le téléchargement via Livewire
+            return response()->download($filePath, $fileName)->deleteFileAfterSend(true);
+
+        } catch (\Exception $e) {
+            session()->flash('error', 'Erreur lors de l\'export: ' . $e->getMessage());
+            \Log::error('Export error: ' . $e->getMessage() . ' | Line: ' . $e->getLine());
         }
-
-        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
-        $writer->save($filePath);
-
-        // Retourner le téléchargement via Livewire
-        return response()->download($filePath, $fileName)->deleteFileAfterSend(true);
-
-    } catch (\Exception $e) {
-        session()->flash('error', 'Erreur lors de l\'export: ' . $e->getMessage());
-        \Log::error('Export error: ' . $e->getMessage() . ' | Line: ' . $e->getLine());
     }
-}
 }; ?>
 
 <div class="w-full">

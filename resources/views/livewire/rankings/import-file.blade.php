@@ -284,7 +284,7 @@ new class extends Component {
             $histo = HistoImportTopFile::findOrFail($id);
             
             $histo->topProducts()->chunkById(500, function ($products) {
-                TopProduct::whereIn('id', $products->pluck('id'))->delete();
+                TopProduct::whereIn(column: 'id', $products->pluck('id'))->delete();
             });
             
             if (Storage::disk('public')->exists($histo->chemin_fichier)) {
