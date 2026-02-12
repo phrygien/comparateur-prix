@@ -481,18 +481,20 @@ new class extends Component {
                         $sheet->getStyle($cellCoord)->getAlignment()
                             ->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP);
 
+                        // Hyperlien sur la cellule entière
                         if (!empty($scrapedProduct->url)) {
-                            // Toute la cellule en bleu souligné (prix + EAN + "Voir le produit")
                             $sheet->getCell($cellCoord)->getHyperlink()->setUrl($scrapedProduct->url);
+                            // Style de lien bleu souligné sur toute la cellule
                             $sheet->getStyle($cellCoord)->getFont()
-                                ->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF0563C1'))
-                                ->setUnderline(\PhpOffice\PhpSpreadsheet\Style\Font::UNDERLINE_SINGLE);
-                        } else {
-                            // Pas d'URL : couleur rouge/vert selon compétitivité uniquement
-                            if ($pricePercentage !== null) {
-                                $color = $topProduct->prix_vente_cosma > $scrapedProduct->prix_ht ? 'FF0000' : '00B050';
-                                $sheet->getStyle($cellCoord)->getFont()->getColor()->setRGB($color);
-                            }
+                                ->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color(
+                                    $topProduct->prix_vente_cosma > $scrapedProduct->prix_ht ? 'FFCC0000' : 'FF006400'
+                                ));
+                        }
+
+                        // Colorier selon compétitivité (rouge si Cosma plus cher, vert si moins cher)
+                        if ($pricePercentage !== null && empty($scrapedProduct->url)) {
+                            $color = $topProduct->prix_vente_cosma > $scrapedProduct->prix_ht ? 'FF0000' : '00B050';
+                            $sheet->getStyle($cellCoord)->getFont()->getColor()->setRGB($color);
                         }
 
                         $somme_prix_marche += $scrapedProduct->prix_ht;
@@ -642,7 +644,6 @@ new class extends Component {
             \Log::error('Export error: ' . $e->getMessage() . ' | Line: ' . $e->getLine());
         }
     }
-
 
 }; ?>
 
