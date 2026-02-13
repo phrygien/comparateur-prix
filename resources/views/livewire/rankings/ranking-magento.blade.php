@@ -18,16 +18,6 @@ new class extends Component {
         'DE' => 'Allemagne',
     ];
 
-    public function setCountry(string $country): void
-    {
-        $this->activeCountry = $country;
-    }
-
-    public function sortBy(string $column): void
-    {
-        $this->sortBy = $column;
-    }
-
     public function with(): array
     {
         $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
@@ -77,44 +67,24 @@ new class extends Component {
 
         return compact('sales');
     }
+
+    public function sortBy(string $column): void
+    {
+        $this->sortBy = $column;
+    }
 }; ?>
 
 <div>
 
     {{-- ─── Header : tabs pays ───────────────────────────── --}}
     <div class="px-4 sm:px-6 lg:px-8 pt-6 pb-2">
-
-        {{-- Tabs pays --}}
-        <div>
-            {{-- Mobile select --}}
-            <div class="sm:hidden">
-                <select
-                    aria-label="Sélectionner un pays"
-                    @change="$wire.setCountry($event.target.value)"
-                    class="select select-bordered w-full"
-                >
-                    @foreach($countries as $code => $label)
-                        <option value="{{ $code }}" {{ $activeCountry === $code ? 'selected' : '' }}>{{ $label }}</option>
-                    @endforeach
-                </select>
-            </div>
-
-            {{-- Desktop tabs --}}
-            <div class="hidden sm:block">
-                <div class="tabs tabs-boxed">
-                    @foreach($countries as $code => $label)
-                        @php $isActive = $activeCountry === $code; @endphp
-                        <button
-                            type="button"
-                            @click="$wire.setCountry('{{ $code }}')"
-                            class="tab {{ $isActive ? 'tab-active' : '' }}"
-                        >
-                            {{ $label }}
-                        </button>
-                    @endforeach
-                </div>
-            </div>
-        </div>
+        <x-tabs wire:model="activeCountry">
+            @foreach($countries as $code => $label)
+                <x-tab name="{{ $code }}" label="{{ $label }}">
+                    {{-- Le contenu sera affiché ci-dessous --}}
+                </x-tab>
+            @endforeach
+        </x-tabs>
     </div>
 
     {{-- ─── Tableau ──────────────────────────────────────────────── --}}
@@ -185,7 +155,7 @@ new class extends Component {
             {{-- Spinner overlay --}}
             <div
                 wire:loading
-                wire:target="setCountry, dateFrom, dateTo, sortBy"
+                wire:target="activeCountry, dateFrom, dateTo, sortBy"
                 class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg bg-white/70 backdrop-blur-sm"
             >
                 <span class="loading loading-spinner loading-lg text-primary"></span>
@@ -201,7 +171,7 @@ new class extends Component {
                 <div 
                     class="overflow-x-auto"
                     wire:loading.class="opacity-40 pointer-events-none"
-                    wire:target="setCountry, dateFrom, dateTo, sortBy"
+                    wire:target="activeCountry, dateFrom, dateTo, sortBy"
                 >
                     <table class="table table-xs table-pin-rows table-pin-cols">
                         <thead>
