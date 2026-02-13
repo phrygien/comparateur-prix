@@ -6,11 +6,9 @@ use Illuminate\Support\Facades\DB;
 new class extends Component {
 
     public string $activeCountry = 'FR';
-    public string $dateFrom = '';
-    public string $dateTo = '';
-    public array $sales = [];
+    public string $dateFrom      = '';
+    public string $dateTo        = '';
 
-    // Top 5 countries by order volume (from the provided list)
     public array $countries = [
         'FR' => 'France',
         'BE' => 'Belgique',
@@ -19,29 +17,15 @@ new class extends Component {
         'DE' => 'Allemagne',
     ];
 
-    public function mount(): void
-    {
-        $this->dateFrom = date('Y-01-01');
-        $this->dateTo   = date('Y-12-31');
-        $this->loadSales();
-    }
-
     public function setCountry(string $country): void
     {
         $this->activeCountry = $country;
-        $this->loadSales();
     }
 
-    public function applyFilters(): void
+    public function with(): array
     {
-        $this->loadSales();
-    }
-
-    public function loadSales(): void
-    {
-        $dateFrom = $this->dateFrom ? $this->dateFrom . ' 00:00:00' : '2025-01-01 00:00:00';
-        $dateTo   = $this->dateTo   ? $this->dateTo   . ' 23:59:59' : '2025-12-31 23:59:59';
-        $country  = $this->activeCountry;
+        $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
+        $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
 
         $sql = "
             WITH sales AS (
@@ -80,8 +64,10 @@ new class extends Component {
             LIMIT 100
         ";
 
-        $this->sales = DB::connection('mysqlMagento')
-            ->select($sql, [$dateFrom, $dateTo, $country]);
+        $sales = DB::connection('mysqlMagento')
+            ->select($sql, [$dateFrom, $dateTo, $this->activeCountry]);
+
+        return compact('sales');
     }
 }; ?>
 
@@ -94,7 +80,7 @@ new class extends Component {
                 <label class="block text-xs font-medium text-gray-500 mb-1">Date de début</label>
                 <input
                     type="date"
-                    wire:model="dateFrom"
+                    wire:model.live="dateFrom"
                     class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900
                            shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                 />
@@ -103,27 +89,11 @@ new class extends Component {
                 <label class="block text-xs font-medium text-gray-500 mb-1">Date de fin</label>
                 <input
                     type="date"
-                    wire:model="dateTo"
+                    wire:model.live="dateTo"
                     class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900
                            shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                 />
             </div>
-            <button
-                wire:click="applyFilters"
-                wire:loading.attr="disabled"
-                class="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold
-                       text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2
-                       focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-60"
-            >
-                <span wire:loading.remove wire:target="applyFilters">Appliquer</span>
-                <span wire:loading wire:target="applyFilters" class="flex items-center gap-1">
-                    <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
-                    </svg>
-                    Chargement…
-                </span>
-            </button>
         </div>
     </div>
 
@@ -134,14 +104,13 @@ new class extends Component {
         <div class="grid grid-cols-1 sm:hidden py-3">
             <select
                 aria-label="Sélectionner un pays"
-                wire:model="activeCountry"
-                wire:change="loadSales"
+                @change="$wire.setCountry($event.target.value)"
                 class="col-start-1 row-start-1 w-full appearance-none rounded-md bg-white py-2 pr-8 pl-3
                        text-base text-gray-900 outline outline-1 -outline-offset-1 outline-gray-300
                        focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-600"
             >
                 @foreach($countries as $code => $label)
-                    <option value="{{ $code }}">{{ $label }}</option>
+                    <option value="{{ $code }}" {{ $activeCountry === $code ? 'selected' : '' }}>{{ $label }}</option>
                 @endforeach
             </select>
             <svg class="pointer-events-none col-start-1 row-start-1 mr-2 size-5 self-center justify-self-end fill-gray-500"
@@ -157,8 +126,8 @@ new class extends Component {
             @foreach($countries as $code => $label)
                 @php $isActive = $activeCountry === $code; @endphp
                 <button
-                    wire:click="setCountry('{{ $code }}')"
                     type="button"
+                    @click="$wire.setCountry('{{ $code }}')"
                     class="rounded-t-md px-4 py-2.5 text-sm font-medium transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500 {{ $isActive ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100' }}"
                     @if($isActive) aria-current="page" @endif
                 >
@@ -186,7 +155,7 @@ new class extends Component {
             </div>
         </div>
 
-        <div wire:loading wire:target="setCountry, applyFilters"
+        <div wire:loading wire:target="setCountry, dateFrom, dateTo"
              class="flex justify-center items-center py-16">
             <svg class="animate-spin h-8 w-8 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
@@ -194,7 +163,7 @@ new class extends Component {
             </svg>
         </div>
 
-        <div wire:loading.remove wire:target="setCountry, applyFilters"
+        <div wire:loading.remove wire:target="setCountry, dateFrom, dateTo"
              class="flow-root">
             <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
                 <div class="inline-block min-w-full py-2 align-middle">
