@@ -10,7 +10,7 @@ new class extends Component {
     public string $activeCountry = 'FR';
     public string $dateFrom      = '';
     public string $dateTo        = '';
-    public string $sortBy        = 'rownum_qty'; // 'rownum_qty' | 'rownum_revenue'
+    public string $sortBy        = 'rank_qty'; // 'rank_qty' | 'rank_ca'
 
     public array $countries = [
         'FR' => 'France',
@@ -32,21 +32,22 @@ new class extends Component {
         $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
         $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
 
-        $orderCol = $this->sortBy === 'rownum_revenue' ? 'total_revenue' : 'total_qty_sold';
+        $orderCol = $this->sortBy === 'rank_ca' ? 'total_revenue' : 'total_qty_sold';
 
         $sql = "
             WITH sales AS (
                 SELECT
                     addr.country_id AS country,
-                    oi.sku,
-                    oi.name AS title,
-                    produit.ean,
-                    ROUND(product_decimal.price, 2) AS price,
-                    ROUND(product_decimal.special_price, 2) AS special_price,
+                    oi.sku as ean,
+                    SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) AS groupe,
+                    SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 2), ' - ', -1) AS marque,
+                    SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 3), ' - ', -1) AS designation_produit,
+                    (CASE
+                        WHEN ROUND(product_decimal.special_price, 2) IS NOT NULL THEN ROUND(product_decimal.special_price, 2)
+                        ELSE ROUND(product_decimal.price, 2)
+                    END) as prix_vente_cosma,
                     ROUND(product_decimal.cost, 2) AS cost,
-                    ROUND(product_decimal.pvc, 2) AS pvc,
-                    ROUND(product_decimal.prix_achat_ht, 2) AS prix_achat_ht,
-                    ROUND(product_decimal.prix_us, 2) AS prix_us,
+                    ROUND(product_decimal.prix_achat_ht, 2) AS pght,
                     CAST(SUM(oi.qty_ordered) AS UNSIGNED) AS total_qty_sold,
                     ROUND(SUM(oi.base_row_total), 2) AS total_revenue
                 FROM sales_order_item oi
@@ -61,12 +62,12 @@ new class extends Component {
                   AND o.created_at <= ?
                   AND addr.country_id = ?
                   AND oi.row_total > 0
-                GROUP BY oi.sku, oi.name, addr.country_id, produit.ean
+                GROUP BY oi.sku, oi.name, addr.country_id
             )
             SELECT
                 *,
-                ROW_NUMBER() OVER (ORDER BY total_qty_sold DESC) AS rownum_qty,
-                ROW_NUMBER() OVER (ORDER BY total_revenue DESC) AS rownum_revenue
+                ROW_NUMBER() OVER (ORDER BY total_qty_sold DESC) AS rank_qty,
+                ROW_NUMBER() OVER (ORDER BY total_revenue DESC) AS rank_ca
             FROM sales
             ORDER BY {$orderCol} DESC
             LIMIT 100
@@ -80,13 +81,19 @@ new class extends Component {
         
         // Nettoyer l'encodage pour chaque résultat
         foreach ($results as $result) {
-            if (isset($result->title)) {
+            if (isset($result->designation_produit)) {
                 // Convertir en UTF-8 si nécessaire
-                if (!mb_check_encoding($result->title, 'UTF-8')) {
-                    $result->title = mb_convert_encoding($result->title, 'UTF-8', 'ISO-8859-1');
+                if (!mb_check_encoding($result->designation_produit, 'UTF-8')) {
+                    $result->designation_produit = mb_convert_encoding($result->designation_produit, 'UTF-8', 'ISO-8859-1');
                 }
                 // Nettoyer les caractères invalides
-                $result->title = mb_convert_encoding($result->title, 'UTF-8', 'UTF-8');
+                $result->designation_produit = mb_convert_encoding($result->designation_produit, 'UTF-8', 'UTF-8');
+            }
+            if (isset($result->marque)) {
+                if (!mb_check_encoding($result->marque, 'UTF-8')) {
+                    $result->marque = mb_convert_encoding($result->marque, 'UTF-8', 'ISO-8859-1');
+                }
+                $result->marque = mb_convert_encoding($result->marque, 'UTF-8', 'UTF-8');
             }
         }
         
@@ -109,7 +116,7 @@ new class extends Component {
         $comparisons = [];
 
         foreach ($sales as $row) {
-            // Rechercher les produits scrapés correspondants par EAN
+            // Rechercher les produits scrapés correspondants par EAN (qui est maintenant le SKU)
             $scrapedProducts = collect([]);
             
             if (!empty($row->ean)) {
@@ -142,8 +149,8 @@ new class extends Component {
                     $priceDiff = null;
                     $pricePercentage = null;
 
-                    // Utiliser le prix spécial s'il existe, sinon le prix normal
-                    $prixCosma = $row->special_price ?: $row->price;
+                    // Utiliser prix_vente_cosma qui contient déjà le prix spécial ou normal
+                    $prixCosma = $row->prix_vente_cosma;
 
                     if ($prixCosma > 0 && $scrapedProduct->prix_ht > 0) {
                         $priceDiff = $scrapedProduct->prix_ht - $prixCosma;
@@ -169,7 +176,7 @@ new class extends Component {
             }
 
             // Calculer le prix moyen du marché
-            $prixCosma = $row->special_price ?: $row->price;
+            $prixCosma = $row->prix_vente_cosma;
             
             if ($somme_prix_marche > 0 && $prixCosma > 0) {
                 $comparison['prix_moyen_marche'] = $somme_prix_marche / $nombre_site;
@@ -304,20 +311,20 @@ new class extends Component {
                                     <span class="text-xs text-gray-400">Trier par</span>
                                     <button
                                         type="button"
-                                        @click="$wire.sortBy('rownum_qty')"
-                                        class="btn btn-xs {{ $sortBy === 'rownum_qty' ? 'btn-primary' : 'btn-ghost' }}"
+                                        @click="$wire.sortBy('rank_qty')"
+                                        class="btn btn-xs {{ $sortBy === 'rank_qty' ? 'btn-primary' : 'btn-ghost' }}"
                                     >
-                                        @if($sortBy === 'rownum_qty')
+                                        @if($sortBy === 'rank_qty')
                                             <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>
                                         @endif
                                         Qté vendue
                                     </button>
                                     <button
                                         type="button"
-                                        @click="$wire.sortBy('rownum_revenue')"
-                                        class="btn btn-xs {{ $sortBy === 'rownum_revenue' ? 'btn-success' : 'btn-ghost' }}"
+                                        @click="$wire.sortBy('rank_ca')"
+                                        class="btn btn-xs {{ $sortBy === 'rank_ca' ? 'btn-success' : 'btn-ghost' }}"
                                     >
-                                        @if($sortBy === 'rownum_revenue')
+                                        @if($sortBy === 'rank_ca')
                                             <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>
                                         @endif
                                         CA total
@@ -354,12 +361,13 @@ new class extends Component {
                                         <thead>
                                             <tr>
                                                 <th>Rang</th>
-                                                <th>SKU</th>
                                                 <th>EAN</th>
-                                                <th>Produit</th>
-                                                <th>Prix</th>
+                                                <th>Groupe</th>
+                                                <th>Marque</th>
+                                                <th>Désignation</th>
+                                                <th>Prix Cosma</th>
                                                 <th>
-                                                    <button @click="$wire.sortBy('rownum_qty')" class="flex items-center gap-1 hover:underline cursor-pointer">
+                                                    <button @click="$wire.sortBy('rank_qty')" class="flex items-center gap-1 hover:underline cursor-pointer">
                                                         Qté vendue
                                                         <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor">
                                                             <path d="M8 4l3 4H5l3-4zm0 8l-3-4h6l-3 4z"/>
@@ -367,91 +375,90 @@ new class extends Component {
                                                     </button>
                                                 </th>
                                                 <th>
-                                                    <button @click="$wire.sortBy('rownum_revenue')" class="flex items-center gap-1 hover:underline cursor-pointer">
+                                                    <button @click="$wire.sortBy('rank_ca')" class="flex items-center gap-1 hover:underline cursor-pointer">
                                                         CA total
                                                         <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor">
                                                             <path d="M8 4l3 4H5l3-4zm0 8l-3-4h6l-3 4z"/>
                                                         </svg>
                                                     </button>
                                                 </th>
+                                                <th>PGHT</th>
                                                 <th>Coût</th>
                                                 @foreach($this->sites as $site)
                                                     <th class="text-right">{{ $site->name }}</th>
                                                 @endforeach
                                                 <th class="text-right">Prix marché</th>
-                                                <th>Rang Qté</th>
-                                                <th>Rang CA</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             @foreach($this->comparisons as $comparison)
                                                 @php
                                                     $row = $comparison['row'];
-                                                    $prixCosma = $row->special_price ?: $row->price;
+                                                    $prixCosma = $row->prix_vente_cosma;
                                                 @endphp
                                                 <tr class="hover">
                                                     
                                                     {{-- Rang --}}
                                                     <th>
-                                                        <span class="font-semibold {{ $sortBy === 'rownum_qty' ? 'text-primary' : 'text-success' }}">
-                                                            #{{ $sortBy === 'rownum_qty' ? $row->rownum_qty : $row->rownum_revenue }}
+                                                        <span class="font-semibold {{ $sortBy === 'rank_qty' ? 'text-primary' : 'text-success' }}">
+                                                            #{{ $sortBy === 'rank_qty' ? $row->rank_qty : $row->rank_ca }}
                                                         </span>
                                                     </th>
 
-                                                    {{-- SKU --}}
+                                                    {{-- EAN (SKU) --}}
                                                     <td>
-                                                        <span class="font-mono text-xs">{{ $row->sku }}</span>
+                                                        <span class="font-mono text-xs">{{ $row->ean }}</span>
                                                     </td>
 
-                                                    {{-- EAN --}}
+                                                    {{-- Groupe --}}
                                                     <td>
-                                                        <span class="font-mono text-xs">{{ $row->ean ?? '—' }}</span>
+                                                        <div class="text-xs">{{ $row->groupe ?? '—' }}</div>
                                                     </td>
 
-                                                    {{-- Produit --}}
+                                                    {{-- Marque --}}
                                                     <td>
-                                                        <div class="font-bold">{{ $row->title ?? '—' }}</div>
+                                                        <div class="text-xs font-semibold">{{ $row->marque ?? '—' }}</div>
                                                     </td>
 
-                                                    {{-- Prix --}}
+                                                    {{-- Désignation --}}
                                                     <td>
-                                                        @if($row->special_price)
-                                                            <div>
-                                                                <span class="text-success font-semibold">
-                                                                    {{ number_format($row->special_price, 2, ',', ' ') }} €
-                                                                </span>
-                                                                <br>
-                                                                <span class="text-xs text-gray-400 line-through">
-                                                                    {{ number_format($row->price, 2, ',', ' ') }} €
-                                                                </span>
-                                                            </div>
-                                                        @elseif($row->price)
-                                                            {{ number_format($row->price, 2, ',', ' ') }} €
-                                                        @else
-                                                            <span class="text-gray-400">—</span>
-                                                        @endif
+                                                        <div class="font-bold max-w-xs truncate" title="{{ $row->designation_produit }}">
+                                                            {{ $row->designation_produit ?? '—' }}
+                                                        </div>
+                                                    </td>
+
+                                                    {{-- Prix Cosma --}}
+                                                    <td class="text-right font-semibold text-primary">
+                                                        {{ number_format($prixCosma, 2, ',', ' ') }} €
                                                     </td>
 
                                                     {{-- Quantité vendue --}}
                                                     <td>
-                                                        <span class="font-semibold {{ $sortBy === 'rownum_qty' ? 'text-primary' : '' }}">
+                                                        <span class="font-semibold {{ $sortBy === 'rank_qty' ? 'text-primary' : '' }}">
                                                             {{ number_format($row->total_qty_sold, 0, ',', ' ') }}
                                                         </span>
                                                     </td>
 
                                                     {{-- CA total --}}
                                                     <td>
-                                                        <span class="font-semibold {{ $sortBy === 'rownum_revenue' ? 'text-success' : '' }}">
+                                                        <span class="font-semibold {{ $sortBy === 'rank_ca' ? 'text-success' : '' }}">
                                                             {{ number_format($row->total_revenue, 2, ',', ' ') }} €
                                                         </span>
                                                     </td>
 
+                                                    {{-- PGHT --}}
+                                                    <td class="text-right text-xs">
+                                                        @if($row->pght)
+                                                            {{ number_format($row->pght, 2, ',', ' ') }} €
+                                                        @else
+                                                            <span class="text-gray-400">—</span>
+                                                        @endif
+                                                    </td>
+
                                                     {{-- Coût --}}
-                                                    <td>
+                                                    <td class="text-right text-xs">
                                                         @if($row->cost)
-                                                            <span class="text-xs text-gray-600">
-                                                                {{ number_format($row->cost, 2, ',', ' ') }} €
-                                                            </span>
+                                                            {{ number_format($row->cost, 2, ',', ' ') }} €
                                                         @else
                                                             <span class="text-gray-400">—</span>
                                                         @endif
@@ -527,39 +534,25 @@ new class extends Component {
                                                         @endif
                                                     </td>
 
-                                                    {{-- Rang Qté --}}
-                                                    <td>
-                                                        <span class="text-xs font-medium text-primary">
-                                                            #{{ $row->rownum_qty }}
-                                                        </span>
-                                                    </td>
-
-                                                    {{-- Rang CA --}}
-                                                    <td>
-                                                        <span class="text-xs font-medium text-success">
-                                                            #{{ $row->rownum_revenue }}
-                                                        </span>
-                                                    </td>
-
                                                 </tr>
                                             @endforeach
                                         </tbody>
                                         <tfoot>
                                             <tr>
                                                 <th>Rang</th>
-                                                <th>SKU</th>
                                                 <th>EAN</th>
-                                                <th>Produit</th>
-                                                <th>Prix</th>
+                                                <th>Groupe</th>
+                                                <th>Marque</th>
+                                                <th>Désignation</th>
+                                                <th>Prix Cosma</th>
                                                 <th>Qté vendue</th>
                                                 <th>CA total</th>
+                                                <th>PGHT</th>
                                                 <th>Coût</th>
                                                 @foreach($this->sites as $site)
                                                     <th class="text-right">{{ $site->name }}</th>
                                                 @endforeach
                                                 <th class="text-right">Prix marché</th>
-                                                <th>Rang Qté</th>
-                                                <th>Rang CA</th>
                                             </tr>
                                         </tfoot>
                                     </table>
