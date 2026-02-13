@@ -2,6 +2,8 @@
 
 use Livewire\Volt\Component;
 use Illuminate\Support\Facades\DB;
+use App\Models\Product;
+use App\Models\Site;
 
 new class extends Component {
 
@@ -18,6 +20,13 @@ new class extends Component {
         'DE' => 'Allemagne',
     ];
 
+    // Statistiques de marché
+    public $somme_prix_marche_total = 0;
+    public $somme_gain = 0;
+    public $somme_perte = 0;
+    public $percentage_gain_marche = 0;
+    public $percentage_perte_marche = 0;
+
     public function getSalesProperty()
     {
         $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
@@ -31,6 +40,7 @@ new class extends Component {
                     addr.country_id AS country,
                     oi.sku,
                     oi.name AS title,
+                    produit.ean,
                     ROUND(product_decimal.price, 2) AS price,
                     ROUND(product_decimal.special_price, 2) AS special_price,
                     ROUND(product_decimal.cost, 2) AS cost,
@@ -51,7 +61,7 @@ new class extends Component {
                   AND o.created_at <= ?
                   AND addr.country_id = ?
                   AND oi.row_total > 0
-                GROUP BY oi.sku, oi.name, addr.country_id
+                GROUP BY oi.sku, oi.name, addr.country_id, produit.ean
             )
             SELECT
                 *,
@@ -83,6 +93,118 @@ new class extends Component {
         return $results;
     }
 
+    public function getComparisonsProperty()
+    {
+        // Récupérer les sites à comparer
+        $sites = Site::whereIn('id', [1, 2, 8, 16])
+            ->orderBy('name')
+            ->get();
+
+        // Réinitialiser les statistiques
+        $this->somme_prix_marche_total = 0;
+        $this->somme_gain = 0;
+        $this->somme_perte = 0;
+
+        $sales = $this->sales;
+        $comparisons = [];
+
+        foreach ($sales as $row) {
+            // Rechercher les produits scrapés correspondants par EAN
+            $scrapedProducts = collect([]);
+            
+            if (!empty($row->ean)) {
+                $scrapedProducts = Product::where('ean', $row->ean)
+                    ->whereIn('web_site_id', [1, 2, 8, 16])
+                    ->with('website')
+                    ->get()
+                    ->keyBy('web_site_id');
+            }
+
+            // Créer la comparaison
+            $comparison = [
+                'row' => $row,
+                'sites' => [],
+                'prix_moyen_marche' => null,
+                'percentage_marche' => null,
+                'difference_marche' => null
+            ];
+
+            // Calcul du prix moyen du marché
+            $somme_prix_marche = 0;
+            $nombre_site = 0;
+
+            // Pour chaque site, ajouter le prix ou null
+            foreach ($sites as $site) {
+                if (isset($scrapedProducts[$site->id])) {
+                    $scrapedProduct = $scrapedProducts[$site->id];
+
+                    // Calculer la différence de prix et le pourcentage
+                    $priceDiff = null;
+                    $pricePercentage = null;
+
+                    // Utiliser le prix spécial s'il existe, sinon le prix normal
+                    $prixCosma = $row->special_price ?: $row->price;
+
+                    if ($prixCosma > 0 && $scrapedProduct->prix_ht > 0) {
+                        $priceDiff = $scrapedProduct->prix_ht - $prixCosma;
+                        $pricePercentage = round(($priceDiff / $prixCosma) * 100, 2);
+                    }
+
+                    $comparison['sites'][$site->id] = [
+                        'prix_ht' => $scrapedProduct->prix_ht,
+                        'url' => $scrapedProduct->url,
+                        'name' => $scrapedProduct->name,
+                        'vendor' => $scrapedProduct->vendor,
+                        'price_diff' => $priceDiff,
+                        'price_percentage' => $pricePercentage,
+                        'site_name' => $site->name,
+                    ];
+
+                    $somme_prix_marche += $scrapedProduct->prix_ht;
+                    $nombre_site++;
+
+                } else {
+                    $comparison['sites'][$site->id] = null;
+                }
+            }
+
+            // Calculer le prix moyen du marché
+            $prixCosma = $row->special_price ?: $row->price;
+            
+            if ($somme_prix_marche > 0 && $prixCosma > 0) {
+                $comparison['prix_moyen_marche'] = $somme_prix_marche / $nombre_site;
+                $priceDiff_marche = $comparison['prix_moyen_marche'] - $prixCosma;
+                $comparison['percentage_marche'] = round(($priceDiff_marche / $prixCosma) * 100, 2);
+                $comparison['difference_marche'] = $priceDiff_marche;
+
+                // Statistiques globales
+                $this->somme_prix_marche_total += $comparison['prix_moyen_marche'];
+                if ($priceDiff_marche > 0) {
+                    $this->somme_gain += $priceDiff_marche;
+                } else {
+                    $this->somme_perte += $priceDiff_marche;
+                }
+            }
+
+            $comparisons[] = $comparison;
+        }
+
+        // Calculer les pourcentages globaux
+        if ($this->somme_prix_marche_total > 0) {
+            $this->percentage_gain_marche = ((($this->somme_prix_marche_total + $this->somme_gain) * 100) / $this->somme_prix_marche_total) - 100;
+            $this->percentage_perte_marche = ((($this->somme_prix_marche_total + $this->somme_perte) * 100) / $this->somme_prix_marche_total) - 100;
+        }
+
+        return collect($comparisons);
+    }
+
+    public function getSitesProperty()
+    {
+        return Site::whereIn('id', [1, 2, 8, 16])
+            ->orderBy('name')
+            ->get();
+    }
+
     public function sortBy(string $column): void
     {
         $this->sortBy = $column;
@@ -110,6 +232,41 @@ new class extends Component {
                     {{-- Contenu du tab --}}
                     <div wire:loading.remove wire:target="activeCountry">
                         
+                        {{-- Statistiques de marché --}}
+                        @if(count($this->comparisons) > 0 && $somme_prix_marche_total > 0)
+                            <div class="grid grid-cols-4 gap-4 mb-6 mt-6">
+                                <x-stat
+                                    title="Moins chers en moyenne de"
+                                    value="{{ number_format(abs($somme_gain / count($this->comparisons)), 2, ',', ' ') }} €"
+                                    description="sur certains produits"
+                                    color="text-primary"
+                                />
+
+                                <x-stat
+                                    class="text-green-500"
+                                    title="Moins chers en moyenne de (%)"
+                                    description="sur certains produits"
+                                    value="{{ number_format(abs($percentage_gain_marche), 2, ',', ' ') }} %"
+                                    icon="o-arrow-trending-down"
+                                />
+
+                                <x-stat
+                                    title="Plus chers en moyenne de"
+                                    value="{{ number_format(abs($somme_perte / count($this->comparisons)), 2, ',', ' ') }} €"
+                                    description="sur certains produits"
+                                />
+
+                                <x-stat
+                                    title="Plus chers en moyenne de (%)"
+                                    value="{{ number_format(abs($percentage_perte_marche), 2, ',', ' ') }} %"
+                                    description="sur certains produits"
+                                    icon="o-arrow-trending-up"
+                                    class="text-pink-500"
+                                    color="text-pink-500"
+                                />
+                            </div>
+                        @endif
+
                         {{-- Toolbar : titre + compteur + filtres --}}
                         <div class="flex flex-wrap items-center justify-between gap-4 mb-4 mt-6">
                             <div>
@@ -198,6 +355,7 @@ new class extends Component {
                                             <tr>
                                                 <th>Rang</th>
                                                 <th>SKU</th>
+                                                <th>EAN</th>
                                                 <th>Produit</th>
                                                 <th>Prix</th>
                                                 <th>
@@ -217,12 +375,20 @@ new class extends Component {
                                                     </button>
                                                 </th>
                                                 <th>Coût</th>
+                                                @foreach($this->sites as $site)
+                                                    <th class="text-right">{{ $site->name }}</th>
+                                                @endforeach
+                                                <th class="text-right">Prix marché</th>
                                                 <th>Rang Qté</th>
                                                 <th>Rang CA</th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            @foreach($this->sales as $row)
+                                            @foreach($this->comparisons as $comparison)
+                                                @php
+                                                    $row = $comparison['row'];
+                                                    $prixCosma = $row->special_price ?: $row->price;
+                                                @endphp
                                                 <tr class="hover">
                                                     
                                                     {{-- Rang --}}
@@ -235,6 +401,11 @@ new class extends Component {
                                                     {{-- SKU --}}
                                                     <td>
                                                         <span class="font-mono text-xs">{{ $row->sku }}</span>
+                                                    </td>
+
+                                                    {{-- EAN --}}
+                                                    <td>
+                                                        <span class="font-mono text-xs">{{ $row->ean ?? '—' }}</span>
                                                     </td>
 
                                                     {{-- Produit --}}
@@ -286,6 +457,76 @@ new class extends Component {
                                                         @endif
                                                     </td>
 
+                                                    {{-- Prix des sites concurrents --}}
+                                                    @foreach($this->sites as $site)
+                                                        <td class="text-right">
+                                                            @if($comparison['sites'][$site->id])
+                                                                @php
+                                                                    $siteData = $comparison['sites'][$site->id];
+                                                                    $textClass = '';
+                                                                    if ($siteData['price_percentage'] !== null) {
+                                                                        if ($prixCosma > $siteData['prix_ht']) {
+                                                                            $textClass = 'text-error';
+                                                                        } else {
+                                                                            $textClass = 'text-success';
+                                                                        }
+                                                                    }
+                                                                @endphp
+                                                                <div class="flex flex-col gap-1 items-end">
+                                                                    <a
+                                                                        href="{{ $siteData['url'] }}"
+                                                                        target="_blank"
+                                                                        class="link link-primary text-xs font-semibold"
+                                                                        title="{{ $siteData['name'] }}"
+                                                                    >
+                                                                        {{ number_format($siteData['prix_ht'], 2) }} €
+                                                                    </a>
+
+                                                                    @if($siteData['price_percentage'] !== null)
+                                                                        <span class="text-xs {{ $textClass }} font-bold">
+                                                                            {{ $siteData['price_percentage'] > 0 ? '+' : '' }}{{ $siteData['price_percentage'] }}%
+                                                                        </span>
+                                                                    @endif
+
+                                                                    @if($siteData['vendor'])
+                                                                        <span class="text-xs text-gray-500 truncate max-w-[120px]" title="{{ $siteData['vendor'] }}">
+                                                                            {{ Str::limit($siteData['vendor'], 15) }}
+                                                                        </span>
+                                                                    @endif
+                                                                </div>
+                                                            @else
+                                                                <span class="text-gray-400 text-xs">N/A</span>
+                                                            @endif
+                                                        </td>
+                                                    @endforeach
+
+                                                    {{-- Prix moyen marché --}}
+                                                    <td class="text-right text-xs">
+                                                        @if($comparison['prix_moyen_marche'])
+                                                            @php
+                                                                $textClassMoyen = '';
+                                                                if ($prixCosma > $comparison['prix_moyen_marche']) {
+                                                                    $textClassMoyen = 'text-error';
+                                                                } else {
+                                                                    $textClassMoyen = 'text-success';
+                                                                }
+                                                            @endphp
+                                                            <div class="flex flex-col gap-1 items-end">
+                                                                <span class="font-semibold">
+                                                                    {{ number_format($comparison['prix_moyen_marche'], 2, ',', ' ') }} €
+                                                                </span>
+
+                                                                @if($comparison['percentage_marche'] !== null)
+                                                                    <span class="text-xs {{ $textClassMoyen }} font-bold">
+                                                                        {{ $comparison['percentage_marche'] > 0 ? '+' : '' }}{{ $comparison['percentage_marche'] }}%
+                                                                    </span>
+                                                                @endif
+                                                            </div>
+                                                        @else
+                                                            <span class="text-gray-400">N/A</span>
+                                                        @endif
+                                                    </td>
+
                                                     {{-- Rang Qté --}}
                                                     <td>
                                                         <span class="text-xs font-medium text-primary">
@@ -307,11 +548,16 @@ new class extends Component {
                                             <tr>
                                                 <th>Rang</th>
                                                 <th>SKU</th>
+                                                <th>EAN</th>
                                                 <th>Produit</th>
                                                 <th>Prix</th>
                                                 <th>Qté vendue</th>
                                                 <th>CA total</th>
                                                 <th>Coût</th>
+                                                @foreach($this->sites as $site)
+                                                    <th class="text-right">{{ $site->name }}</th>
+                                                @endforeach
+                                                <th class="text-right">Prix marché</th>
                                                 <th>Rang Qté</th>
                                                 <th>Rang CA</th>
                                             </tr>
