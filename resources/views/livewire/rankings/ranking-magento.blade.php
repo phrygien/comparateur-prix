@@ -68,7 +68,7 @@ new class extends Component {
                 ROW_NUMBER() OVER (ORDER BY total_qty_sold DESC) AS rownum_qty,
                 ROW_NUMBER() OVER (ORDER BY total_revenue DESC) AS rownum_revenue
             FROM sales
-            ORDER BY total_qty_sold DESC
+            ORDER BY {$orderCol} DESC
             LIMIT 100
         ";
 
