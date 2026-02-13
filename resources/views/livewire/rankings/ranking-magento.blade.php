@@ -73,6 +73,19 @@ new class extends Component {
 
 <div class="min-h-screen bg-gray-50">
 
+    {{-- ─── Loading Overlay ──────────────────────────────────── --}}
+    <div
+        wire:loading
+        wire:target="setCountry, dateFrom, dateTo"
+        class="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-white/60 backdrop-blur-sm"
+    >
+        <svg class="animate-spin h-10 w-10 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+        </svg>
+        <span class="text-sm font-medium text-indigo-600 tracking-wide">Chargement en cours…</span>
+    </div>
+
     {{-- ─── Date Filters ─────────────────────────────────────── --}}
     <div class="bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-4">
         <div class="flex flex-wrap items-end gap-4">
@@ -139,7 +152,7 @@ new class extends Component {
     </div>
 
     {{-- ─── Table ─────────────────────────────────────────────── --}}
-    <div class="px-4 sm:px-6 lg:px-8 py-8">
+    <div class="px-4 sm:px-6 lg:px-8 py-8" wire:loading.remove wire:target="setCountry, dateFrom, dateTo">
 
         <div class="sm:flex sm:items-center mb-6">
             <div class="sm:flex-auto">
@@ -147,7 +160,7 @@ new class extends Component {
                     Ventes — {{ $countries[$activeCountry] ?? $activeCountry }}
                 </h1>
                 <p class="mt-1 text-sm text-gray-500">
-                    Top 100 produits du {{ $dateFrom }} au {{ $dateTo }}
+                    Top 100 produits du {{ $dateFrom ?: date('Y-01-01') }} au {{ $dateTo ?: date('Y-12-31') }}
                 </p>
             </div>
             <div class="mt-3 sm:mt-0 sm:ml-4 text-sm text-gray-500">
@@ -155,88 +168,116 @@ new class extends Component {
             </div>
         </div>
 
-        <div wire:loading wire:target="setCountry, dateFrom, dateTo"
-             class="flex justify-center items-center py-16">
-            <svg class="animate-spin h-8 w-8 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
-            </svg>
-        </div>
+        @if(count($sales) === 0)
+            <div class="text-center py-16 text-gray-400 text-sm">
+                Aucune vente trouvée pour cette période et ce pays.
+            </div>
+        @else
 
-        <div wire:loading.remove wire:target="setCountry, dateFrom, dateTo"
-             class="flow-root">
-            <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
-                <div class="inline-block min-w-full py-2 align-middle">
+            {{-- ─── Deux colonnes côte à côte ────────────────────── --}}
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
 
-                    @if(count($sales) === 0)
-                        <div class="text-center py-16 text-gray-400 text-sm">
-                            Aucune vente trouvée pour cette période et ce pays.
-                        </div>
-                    @else
-                        <table class="min-w-full divide-y divide-gray-200">
-                            <thead class="bg-gray-50">
+                {{-- ── Ranking par Quantité vendue ─────────────────── --}}
+                <div>
+                    <h2 class="text-sm font-semibold text-indigo-700 mb-3 flex items-center gap-2">
+                        <span class="inline-block w-2 h-2 rounded-full bg-indigo-500"></span>
+                        Top par quantité vendue
+                    </h2>
+                    <div class="overflow-x-auto rounded-lg border border-gray-200">
+                        <table class="table table-xs w-full">
+                            <thead>
                                 <tr>
-                                    <th class="py-3 pl-4 pr-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 sm:pl-6 lg:pl-8">#</th>
-                                    <th class="py-3 px-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">SKU</th>
-                                    <th class="py-3 px-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Produit</th>
-                                    <th class="py-3 px-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Prix</th>
-                                    <th class="py-3 px-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Prix spécial</th>
-                                    <th class="py-3 px-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Coût</th>
-                                    <th class="py-3 px-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">PVC</th>
-                                    <th class="py-3 px-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Qté vendue</th>
-                                    <th class="py-3 px-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">CA total</th>
-                                    <th class="py-3 pl-3 pr-4 text-right text-xs font-semibold uppercase tracking-wide text-gray-500 sm:pr-6 lg:pr-8">Rang qté / CA</th>
+                                    <th>#</th>
+                                    <th>SKU</th>
+                                    <th>Produit</th>
+                                    <th class="text-right">Prix</th>
+                                    <th class="text-right">Coût</th>
+                                    <th class="text-right">PVC</th>
+                                    <th class="text-right">Qté vendue</th>
+                                    <th class="text-right">CA total</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y divide-gray-100 bg-white">
-                                @foreach($sales as $row)
-                                    <tr class="hover:bg-gray-50 transition-colors duration-100">
-                                        <td class="py-3 pl-4 pr-3 text-sm text-gray-400 sm:pl-6 lg:pl-8">
-                                            {{ $loop->iteration }}
-                                        </td>
-                                        <td class="px-3 py-3 text-sm font-mono text-gray-600 whitespace-nowrap">
-                                            {{ $row->sku }}
-                                        </td>
-                                        <td class="px-3 py-3 text-sm text-gray-900 max-w-xs truncate" title="{{ $row->title }}">
-                                            {{ $row->title ?? '—' }}
-                                        </td>
-                                        <td class="px-3 py-3 text-sm text-gray-600 text-right whitespace-nowrap">
-                                            {{ $row->price ? number_format($row->price, 2, ',', ' ') . ' €' : '—' }}
-                                        </td>
-                                        <td class="px-3 py-3 text-sm text-right whitespace-nowrap
-                                                   {{ $row->special_price ? 'text-green-600 font-medium' : 'text-gray-400' }}">
-                                            {{ $row->special_price ? number_format($row->special_price, 2, ',', ' ') . ' €' : '—' }}
-                                        </td>
-                                        <td class="px-3 py-3 text-sm text-gray-600 text-right whitespace-nowrap">
-                                            {{ $row->cost ? number_format($row->cost, 2, ',', ' ') . ' €' : '—' }}
-                                        </td>
-                                        <td class="px-3 py-3 text-sm text-gray-600 text-right whitespace-nowrap">
-                                            {{ $row->pvc ? number_format($row->pvc, 2, ',', ' ') . ' €' : '—' }}
-                                        </td>
-                                        <td class="px-3 py-3 text-sm font-semibold text-indigo-700 text-right whitespace-nowrap">
-                                            {{ number_format($row->total_qty_sold, 0, ',', ' ') }}
-                                        </td>
-                                        <td class="px-3 py-3 text-sm font-semibold text-gray-900 text-right whitespace-nowrap">
-                                            {{ number_format($row->total_revenue, 2, ',', ' ') }} €
-                                        </td>
-                                        <td class="pl-3 pr-4 py-3 text-right text-xs text-gray-400 whitespace-nowrap sm:pr-6 lg:pr-8">
-                                            <span class="inline-flex items-center gap-1">
-                                                <span title="Rang par quantité" class="bg-indigo-50 text-indigo-600 rounded px-1.5 py-0.5 font-medium">
-                                                    #{{ $row->rownum_qty }}
-                                                </span>
-                                                <span class="text-gray-300">/</span>
-                                                <span title="Rang par CA" class="bg-emerald-50 text-emerald-600 rounded px-1.5 py-0.5 font-medium">
-                                                    #{{ $row->rownum_revenue }}
-                                                </span>
-                                            </span>
-                                        </td>
+                            <tbody>
+                                @foreach(collect($sales)->sortBy('rownum_qty') as $row)
+                                    <tr class="hover">
+                                        <th>{{ $row->rownum_qty }}</th>
+                                        <td class="font-mono">{{ $row->sku }}</td>
+                                        <td class="max-w-[180px] truncate" title="{{ $row->title }}">{{ $row->title ?? '—' }}</td>
+                                        <td class="text-right">{{ $row->price ? number_format($row->price, 2, ',', ' ') . ' €' : '—' }}</td>
+                                        <td class="text-right">{{ $row->cost ? number_format($row->cost, 2, ',', ' ') . ' €' : '—' }}</td>
+                                        <td class="text-right">{{ $row->pvc ? number_format($row->pvc, 2, ',', ' ') . ' €' : '—' }}</td>
+                                        <td class="text-right font-semibold text-indigo-700">{{ number_format($row->total_qty_sold, 0, ',', ' ') }}</td>
+                                        <td class="text-right">{{ number_format($row->total_revenue, 2, ',', ' ') }} €</td>
                                     </tr>
                                 @endforeach
                             </tbody>
+                            <tfoot>
+                                <tr>
+                                    <th>#</th>
+                                    <th>SKU</th>
+                                    <th>Produit</th>
+                                    <th class="text-right">Prix</th>
+                                    <th class="text-right">Coût</th>
+                                    <th class="text-right">PVC</th>
+                                    <th class="text-right">Qté vendue</th>
+                                    <th class="text-right">CA total</th>
+                                </tr>
+                            </tfoot>
                         </table>
-                    @endif
+                    </div>
                 </div>
-            </div>
-        </div>
+
+                {{-- ── Ranking par CA (Chiffre d'affaires) ─────────── --}}
+                <div>
+                    <h2 class="text-sm font-semibold text-emerald-700 mb-3 flex items-center gap-2">
+                        <span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+                        Top par chiffre d'affaires
+                    </h2>
+                    <div class="overflow-x-auto rounded-lg border border-gray-200">
+                        <table class="table table-xs w-full">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>SKU</th>
+                                    <th>Produit</th>
+                                    <th class="text-right">Prix</th>
+                                    <th class="text-right">Coût</th>
+                                    <th class="text-right">PVC</th>
+                                    <th class="text-right">Qté vendue</th>
+                                    <th class="text-right">CA total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach(collect($sales)->sortBy('rownum_revenue') as $row)
+                                    <tr class="hover">
+                                        <th>{{ $row->rownum_revenue }}</th>
+                                        <td class="font-mono">{{ $row->sku }}</td>
+                                        <td class="max-w-[180px] truncate" title="{{ $row->title }}">{{ $row->title ?? '—' }}</td>
+                                        <td class="text-right">{{ $row->price ? number_format($row->price, 2, ',', ' ') . ' €' : '—' }}</td>
+                                        <td class="text-right">{{ $row->cost ? number_format($row->cost, 2, ',', ' ') . ' €' : '—' }}</td>
+                                        <td class="text-right">{{ $row->pvc ? number_format($row->pvc, 2, ',', ' ') . ' €' : '—' }}</td>
+                                        <td class="text-right">{{ number_format($row->total_qty_sold, 0, ',', ' ') }}</td>
+                                        <td class="text-right font-semibold text-emerald-700">{{ number_format($row->total_revenue, 2, ',', ' ') }} €</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <th>#</th>
+                                    <th>SKU</th>
+                                    <th>Produit</th>
+                                    <th class="text-right">Prix</th>
+                                    <th class="text-right">Coût</th>
+                                    <th class="text-right">PVC</th>
+                                    <th class="text-right">Qté vendue</th>
+                                    <th class="text-right">CA total</th>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+
+            </div>{{-- /grid --}}
+        @endif
     </div>
 </div>
