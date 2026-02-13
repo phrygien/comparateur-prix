@@ -206,8 +206,22 @@ new class extends Component {
 
 <div>
     <div class="px-4 sm:px-6 lg:px-8 pt-6 pb-2">
+        <x-tabs wire:model.live="activeCountry">
+            @foreach($countries as $code => $label)
+                <x-tab name="{{ $code }}" label="{{ $label }}">
+                    
+                    <div
+                        wire:loading
+                        wire:target="activeCountry"
+                        class="flex flex-col items-center justify-center gap-3 py-16"
+                    >
+                        <span class="loading loading-spinner loading-lg text-primary"></span>
+                        <span class="text-sm font-medium">Chargement des données pour {{ $label }}…</span>
+                    </div>
 
-                                @if(count($this->comparisons) > 0 && $somme_prix_marche_total > 0)
+                    <div wire:loading.remove wire:target="activeCountry">
+                        
+                        @if(count($this->comparisons) > 0 && $somme_prix_marche_total > 0)
                             <div class="grid grid-cols-4 gap-4 mb-6 mt-6">
                                 <x-stat
                                     title="Moins chers en moyenne de"
@@ -240,21 +254,6 @@ new class extends Component {
                                 />
                             </div>
                         @endif
-                        
-        <x-tabs wire:model.live="activeCountry">
-            @foreach($countries as $code => $label)
-                <x-tab name="{{ $code }}" label="{{ $label }}">
-                    
-                    <div
-                        wire:loading
-                        wire:target="activeCountry"
-                        class="flex flex-col items-center justify-center gap-3 py-16"
-                    >
-                        <span class="loading loading-spinner loading-lg text-primary"></span>
-                        <span class="text-sm font-medium">Chargement des données pour {{ $label }}…</span>
-                    </div>
-
-                    <div wire:loading.remove wire:target="activeCountry">
 
                         <div class="flex flex-wrap items-center justify-between gap-4 mb-4 mt-6">
                             <div>
