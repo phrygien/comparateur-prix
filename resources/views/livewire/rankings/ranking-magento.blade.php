@@ -6,9 +6,9 @@ use Illuminate\Support\Facades\DB;
 new class extends Component {
 
     public string $activeCountry = 'FR';
-    public string $dateFrom      = '';
-    public string $dateTo        = '';
-    public string $sortBy        = 'rownum_qty'; // 'rownum_qty' | 'rownum_revenue'
+    public string $dateFrom = '';
+    public string $dateTo = '';
+    public string $sortBy = 'rownum_qty'; // 'rownum_qty' | 'rownum_revenue'
 
     public array $countries = [
         'FR' => 'France',
@@ -31,7 +31,7 @@ new class extends Component {
     public function with(): array
     {
         $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
-        $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
+        $dateTo = ($this->dateTo ?: date('Y-12-31')) . ' 23:59:59';
 
         $orderCol = $this->sortBy === 'rownum_revenue' ? 'total_revenue' : 'total_qty_sold';
 
@@ -84,28 +84,6 @@ new class extends Component {
     {{-- ─── Header : dates + tabs ───────────────────────────── --}}
     <div class="px-4 sm:px-6 lg:px-8 pt-6 pb-2">
 
-        {{-- Filtres de date --}}
-        <div class="flex flex-wrap items-end gap-4 mb-6">
-            <div>
-                <label class="block text-xs font-medium text-gray-500 mb-1">Date de début</label>
-                <input
-                    type="date"
-                    wire:model.live="dateFrom"
-                    class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900
-                           shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                />
-            </div>
-            <div>
-                <label class="block text-xs font-medium text-gray-500 mb-1">Date de fin</label>
-                <input
-                    type="date"
-                    wire:model.live="dateTo"
-                    class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900
-                           shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                />
-            </div>
-        </div>
-
         {{-- Tabs pays --}}
         <div>
             {{-- Mobile select --}}
@@ -143,6 +121,22 @@ new class extends Component {
             </div>
         </div>
     </div>
+
+
+    {{-- Filtres de date --}}
+    <div class="flex flex-wrap items-end gap-4 mb-6">
+        <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">Date de début</label>
+            <input type="date" wire:model.live="dateFrom" class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900
+                                shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">Date de fin</label>
+            <input type="date" wire:model.live="dateTo" class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900
+                                shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+        </div>
+    </div>
+
 
     {{-- ─── Table ─────────────────────────────────────────────── --}}
     <div class="px-4 sm:px-6 lg:px-8 py-8">
