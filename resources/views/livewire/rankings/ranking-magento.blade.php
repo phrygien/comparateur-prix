@@ -228,10 +228,10 @@ new class extends Component {
                     {{-- Colonne Rang personnalisée --}}
                     @scope('cell_rank', $row)
                         <div class="flex items-center justify-center w-10 h-10 rounded-full
-                                    {{ $sortBy === 'rownum_qty' ? 'bg-indigo-50' : 'bg-emerald-50' }}">
+                                    {{ $this->sortBy === 'rownum_qty' ? 'bg-indigo-50' : 'bg-emerald-50' }}">
                             <span class="text-xs font-bold
-                                         {{ $sortBy === 'rownum_qty' ? 'text-indigo-600' : 'text-emerald-600' }}">
-                                #{{ $sortBy === 'rownum_qty' ? $row->rownum_qty : $row->rownum_revenue }}
+                                         {{ $this->sortBy === 'rownum_qty' ? 'text-indigo-600' : 'text-emerald-600' }}">
+                                #{{ $this->sortBy === 'rownum_qty' ? $row->rownum_qty : $row->rownum_revenue }}
                             </span>
                         </div>
                     @endscope
@@ -271,7 +271,7 @@ new class extends Component {
 
                     {{-- Colonne Quantité vendue --}}
                     @scope('cell_total_qty_sold', $row)
-                        <span class="font-semibold {{ $sortBy === 'rownum_qty' ? 'text-indigo-600' : 'text-gray-900' }}">
+                        <span class="font-semibold {{ $this->sortBy === 'rownum_qty' ? 'text-indigo-600' : 'text-gray-900' }}">
                             {{ number_format($row->total_qty_sold, 0, ',', ' ') }}
                         </span>
                     @endscope
@@ -279,7 +279,7 @@ new class extends Component {
                     {{-- Colonne CA total --}}
                     @scope('cell_total_revenue', $row)
                         <div class="text-right">
-                            <span class="font-semibold {{ $sortBy === 'rownum_revenue' ? 'text-emerald-600' : 'text-gray-900' }}">
+                            <span class="font-semibold {{ $this->sortBy === 'rownum_revenue' ? 'text-emerald-600' : 'text-gray-900' }}">
                                 {{ number_format($row->total_revenue, 2, ',', ' ') }} €
                             </span>
                             @if($row->cost)
