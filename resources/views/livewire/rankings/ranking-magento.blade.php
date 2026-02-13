@@ -254,7 +254,7 @@ new class extends Component {
                                 />
                             </div>
                         @endif
-                        
+
                         <div class="flex flex-wrap items-center justify-between gap-4 mb-4 mt-6">
                             <div>
                                 <h1 class="text-base font-semibold text-gray-900">
