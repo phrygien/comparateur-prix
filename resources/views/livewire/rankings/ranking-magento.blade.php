@@ -18,7 +18,7 @@ new class extends Component {
         'DE' => 'Allemagne',
     ];
 
-    public function getSalesForCountry(string $country)
+    public function getSalesProperty()
     {
         $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
         $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
@@ -63,13 +63,7 @@ new class extends Component {
         ";
 
         return DB::connection('mysqlMagento')
-            ->select($sql, [$dateFrom, $dateTo, $country]);
-    }
-
-    public function with(): array
-    {
-        $sales = $this->getSalesForCountry($this->activeCountry);
-        return compact('sales');
+            ->select($sql, [$dateFrom, $dateTo, $this->activeCountry]);
     }
 
     public function sortBy(string $column): void
@@ -82,7 +76,7 @@ new class extends Component {
 
     {{-- ─── Header : tabs pays ───────────────────────────── --}}
     <div class="px-4 sm:px-6 lg:px-8 pt-6 pb-2">
-        <x-tabs wire:model="activeCountry">
+        <x-tabs wire:model.live="activeCountry">
             @foreach($countries as $code => $label)
                 <x-tab name="{{ $code }}" label="{{ $label }}">
                     
@@ -93,7 +87,7 @@ new class extends Component {
                                 Ventes — {{ $label }}
                             </h1>
                             <p class="mt-0.5 text-sm text-gray-500">
-                                Top 100 produits · {{ count($sales) }} résultat(s)
+                                Top 100 produits · {{ count($this->sales) }} résultat(s)
                             </p>
                         </div>
 
@@ -158,7 +152,7 @@ new class extends Component {
                             <span class="text-sm font-medium">Chargement en cours…</span>
                         </div>
 
-                        @if(count($sales) === 0)
+                        @if(count($this->sales) === 0)
                             <div class="alert alert-info">
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                                 <span>Aucune vente trouvée pour cette période et ce pays.</span>
@@ -196,7 +190,7 @@ new class extends Component {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        @foreach($sales as $row)
+                                        @foreach($this->sales as $row)
                                             <tr class="hover">
                                                 
                                                 {{-- Rang --}}
