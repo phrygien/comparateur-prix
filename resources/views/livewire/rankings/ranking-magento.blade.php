@@ -174,110 +174,61 @@ new class extends Component {
             </div>
         @else
 
-            {{-- ─── Deux colonnes côte à côte ────────────────────── --}}
-            <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
+            <div class="overflow-x-auto rounded-lg border border-gray-200">
+                <table class="table table-xs w-full">
+                    <thead>
+                        <tr>
+                            <th>SKU</th>
+                            <th>Produit</th>
+                            <th class="text-right">Prix</th>
+                            <th class="text-right">Prix spécial</th>
+                            <th class="text-right">Coût</th>
+                            <th class="text-right">PVC</th>
+                            <th class="text-right">Qté vendue</th>
+                            <th class="text-right">CA total</th>
+                            <th class="text-center text-indigo-600">Rang Qté</th>
+                            <th class="text-center text-emerald-600">Rang CA</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($sales as $row)
+                            <tr class="hover">
+                                <td class="font-mono">{{ $row->sku }}</td>
+                                <td class="max-w-[200px] truncate" title="{{ $row->title }}">{{ $row->title ?? '—' }}</td>
+                                <td class="text-right">{{ $row->price ? number_format($row->price, 2, ',', ' ') . ' €' : '—' }}</td>
+                                <td class="text-right {{ $row->special_price ? 'text-green-600 font-medium' : 'text-gray-400' }}">
+                                    {{ $row->special_price ? number_format($row->special_price, 2, ',', ' ') . ' €' : '—' }}
+                                </td>
+                                <td class="text-right">{{ $row->cost ? number_format($row->cost, 2, ',', ' ') . ' €' : '—' }}</td>
+                                <td class="text-right">{{ $row->pvc ? number_format($row->pvc, 2, ',', ' ') . ' €' : '—' }}</td>
+                                <td class="text-right font-semibold">{{ number_format($row->total_qty_sold, 0, ',', ' ') }}</td>
+                                <td class="text-right font-semibold">{{ number_format($row->total_revenue, 2, ',', ' ') }} €</td>
+                                <td class="text-center">
+                                    <span class="badge badge-soft badge-primary badge-sm"># {{ $row->rownum_qty }}</span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge badge-soft badge-success badge-sm"># {{ $row->rownum_revenue }}</span>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <th>SKU</th>
+                            <th>Produit</th>
+                            <th class="text-right">Prix</th>
+                            <th class="text-right">Prix spécial</th>
+                            <th class="text-right">Coût</th>
+                            <th class="text-right">PVC</th>
+                            <th class="text-right">Qté vendue</th>
+                            <th class="text-right">CA total</th>
+                            <th class="text-center text-indigo-600">Rang Qté</th>
+                            <th class="text-center text-emerald-600">Rang CA</th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
 
-                {{-- ── Ranking par Quantité vendue ─────────────────── --}}
-                <div>
-                    <h2 class="text-sm font-semibold text-indigo-700 mb-3 flex items-center gap-2">
-                        <span class="inline-block w-2 h-2 rounded-full bg-indigo-500"></span>
-                        Top par quantité vendue
-                    </h2>
-                    <div class="overflow-x-auto rounded-lg border border-gray-200">
-                        <table class="table table-xs w-full">
-                            <thead>
-                                <tr>
-                                    <th>#</th>
-                                    <th>SKU</th>
-                                    <th>Produit</th>
-                                    <th class="text-right">Prix</th>
-                                    <th class="text-right">Coût</th>
-                                    <th class="text-right">PVC</th>
-                                    <th class="text-right">Qté vendue</th>
-                                    <th class="text-right">CA total</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach(collect($sales)->sortBy('rownum_qty') as $row)
-                                    <tr class="hover">
-                                        <th>{{ $row->rownum_qty }}</th>
-                                        <td class="font-mono">{{ $row->sku }}</td>
-                                        <td class="max-w-[180px] truncate" title="{{ $row->title }}">{{ $row->title ?? '—' }}</td>
-                                        <td class="text-right">{{ $row->price ? number_format($row->price, 2, ',', ' ') . ' €' : '—' }}</td>
-                                        <td class="text-right">{{ $row->cost ? number_format($row->cost, 2, ',', ' ') . ' €' : '—' }}</td>
-                                        <td class="text-right">{{ $row->pvc ? number_format($row->pvc, 2, ',', ' ') . ' €' : '—' }}</td>
-                                        <td class="text-right font-semibold text-indigo-700">{{ number_format($row->total_qty_sold, 0, ',', ' ') }}</td>
-                                        <td class="text-right">{{ number_format($row->total_revenue, 2, ',', ' ') }} €</td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                            <tfoot>
-                                <tr>
-                                    <th>#</th>
-                                    <th>SKU</th>
-                                    <th>Produit</th>
-                                    <th class="text-right">Prix</th>
-                                    <th class="text-right">Coût</th>
-                                    <th class="text-right">PVC</th>
-                                    <th class="text-right">Qté vendue</th>
-                                    <th class="text-right">CA total</th>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                </div>
-
-                {{-- ── Ranking par CA (Chiffre d'affaires) ─────────── --}}
-                <div>
-                    <h2 class="text-sm font-semibold text-emerald-700 mb-3 flex items-center gap-2">
-                        <span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
-                        Top par chiffre d'affaires
-                    </h2>
-                    <div class="overflow-x-auto rounded-lg border border-gray-200">
-                        <table class="table table-xs w-full">
-                            <thead>
-                                <tr>
-                                    <th>#</th>
-                                    <th>SKU</th>
-                                    <th>Produit</th>
-                                    <th class="text-right">Prix</th>
-                                    <th class="text-right">Coût</th>
-                                    <th class="text-right">PVC</th>
-                                    <th class="text-right">Qté vendue</th>
-                                    <th class="text-right">CA total</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach(collect($sales)->sortBy('rownum_revenue') as $row)
-                                    <tr class="hover">
-                                        <th>{{ $row->rownum_revenue }}</th>
-                                        <td class="font-mono">{{ $row->sku }}</td>
-                                        <td class="max-w-[180px] truncate" title="{{ $row->title }}">{{ $row->title ?? '—' }}</td>
-                                        <td class="text-right">{{ $row->price ? number_format($row->price, 2, ',', ' ') . ' €' : '—' }}</td>
-                                        <td class="text-right">{{ $row->cost ? number_format($row->cost, 2, ',', ' ') . ' €' : '—' }}</td>
-                                        <td class="text-right">{{ $row->pvc ? number_format($row->pvc, 2, ',', ' ') . ' €' : '—' }}</td>
-                                        <td class="text-right">{{ number_format($row->total_qty_sold, 0, ',', ' ') }}</td>
-                                        <td class="text-right font-semibold text-emerald-700">{{ number_format($row->total_revenue, 2, ',', ' ') }} €</td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                            <tfoot>
-                                <tr>
-                                    <th>#</th>
-                                    <th>SKU</th>
-                                    <th>Produit</th>
-                                    <th class="text-right">Prix</th>
-                                    <th class="text-right">Coût</th>
-                                    <th class="text-right">PVC</th>
-                                    <th class="text-right">Qté vendue</th>
-                                    <th class="text-right">CA total</th>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                </div>
-
-            </div>{{-- /grid --}}
         @endif
     </div>
 </div>
