@@ -335,7 +335,7 @@ new class extends Component {
                                     <table class="table table-xs table-pin-rows table-pin-cols">
                                         <thead>
                                             <tr>
-                                                <th>RangQty</th>
+                                                <th>Rang Qty</th>
                                                 <th>Rang CA</th>
                                                 <th>EAN</th>
                                                 <th>Groupe</th>
@@ -505,7 +505,8 @@ new class extends Component {
                                         </tbody>
                                         <tfoot>
                                             <tr>
-                                                <th>Rang</th>
+                                                <th>Rang Qty</th>
+                                                <th>Rang CA</th>
                                                 <th>EAN</th>
                                                 <th>Groupe</th>
                                                 <th>Marque</th>
