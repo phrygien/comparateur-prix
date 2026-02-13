@@ -31,4 +31,7 @@ Route::middleware(['check.auth', 'boutique.cache'])->group(function () {
 
     Volt::route('/import-file', 'rankings.import-file')->name('import-file');
     Volt::route('/ranking-result/{id}', 'rankings.resultat')->name('ranking-resultat');
+
+    // Ranking Magento
+    Volt::route('/ranking-magento', 'rankings.ranking-magento')->name('ranking-magento');
 });
