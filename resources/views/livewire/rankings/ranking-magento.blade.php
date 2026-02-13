@@ -75,18 +75,7 @@ new class extends Component {
         $sales = DB::connection('mysqlMagento')
             ->select($sql, [$dateFrom, $dateTo, $this->activeCountry]);
 
-        // Définition des headers pour le tableau
-        $headers = [
-            ['key' => 'rank', 'label' => 'Rang', 'class' => 'w-20'],
-            ['key' => 'sku', 'label' => 'SKU', 'class' => 'font-mono'],
-            ['key' => 'title', 'label' => 'Produit'],
-            ['key' => 'price', 'label' => 'Prix', 'class' => 'text-right'],
-            ['key' => 'total_qty_sold', 'label' => 'Qté vendue', 'class' => 'text-right'],
-            ['key' => 'total_revenue', 'label' => 'CA total', 'class' => 'text-right'],
-            ['key' => 'ranks', 'label' => 'Rangs', 'class' => 'text-right'],
-        ];
-
-        return compact('sales', 'headers');
+        return compact('sales');
     }
 }; ?>
 
@@ -203,13 +192,14 @@ new class extends Component {
             </div>
         </div>
 
-        {{-- Tableau avec x-table --}}
+        {{-- Table wrapper --}}
         <div class="relative">
+
             {{-- Spinner overlay --}}
             <div
                 wire:loading
                 wire:target="setCountry, dateFrom, dateTo, sortBy"
-                class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-xl bg-white/70 backdrop-blur-sm"
+                class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg bg-white/70 backdrop-blur-sm"
             >
                 <svg class="animate-spin h-8 w-8 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
@@ -223,87 +213,136 @@ new class extends Component {
                     Aucune vente trouvée pour cette période et ce pays.
                 </div>
             @else
-                <x-table :headers="$headers" :rows="$sales" striped>
-                    
-                    {{-- Colonne Rang personnalisée --}}
-                    @scope('cell_rank', $row)
-                        <div class="flex items-center justify-center w-10 h-10 rounded-full
-                                    {{ $this->sortBy === 'rownum_qty' ? 'bg-indigo-50' : 'bg-emerald-50' }}">
-                            <span class="text-xs font-bold
-                                         {{ $this->sortBy === 'rownum_qty' ? 'text-indigo-600' : 'text-emerald-600' }}">
-                                #{{ $this->sortBy === 'rownum_qty' ? $row->rownum_qty : $row->rownum_revenue }}
-                            </span>
-                        </div>
-                    @endscope
+                <div class="relative overflow-x-auto shadow-md sm:rounded-lg">
+                    <table 
+                        class="w-full text-sm text-left rtl:text-right text-gray-500 dark:text-gray-400"
+                        wire:loading.class="opacity-40 pointer-events-none"
+                        wire:target="setCountry, dateFrom, dateTo, sortBy"
+                    >
+                        <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
+                            <tr>
+                                <th scope="col" class="px-6 py-3">
+                                    Rang
+                                </th>
+                                <th scope="col" class="px-6 py-3">
+                                    <div class="flex items-center">
+                                        SKU
+                                    </div>
+                                </th>
+                                <th scope="col" class="px-6 py-3">
+                                    <div class="flex items-center">
+                                        Produit
+                                    </div>
+                                </th>
+                                <th scope="col" class="px-6 py-3">
+                                    <div class="flex items-center">
+                                        Prix
+                                    </div>
+                                </th>
+                                <th scope="col" class="px-6 py-3">
+                                    <div class="flex items-center cursor-pointer" @click="$wire.sortBy('rownum_qty')">
+                                        Qté vendue
+                                        <svg class="w-3 h-3 ms-1.5" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M8.574 11.024h6.852a2.075 2.075 0 0 0 1.847-1.086 1.9 1.9 0 0 0-.11-1.986L13.736 2.9a2.122 2.122 0 0 0-3.472 0L6.837 7.952a1.9 1.9 0 0 0-.11 1.986 2.074 2.074 0 0 0 1.847 1.086Zm6.852 1.952H8.574a2.072 2.072 0 0 0-1.847 1.087 1.9 1.9 0 0 0 .11 1.985l3.426 5.05a2.123 2.123 0 0 0 3.472 0l3.427-5.05a1.9 1.9 0 0 0 .11-1.985 2.074 2.074 0 0 0-1.846-1.087Z"/>
+                                        </svg>
+                                    </div>
+                                </th>
+                                <th scope="col" class="px-6 py-3">
+                                    <div class="flex items-center cursor-pointer" @click="$wire.sortBy('rownum_revenue')">
+                                        CA total
+                                        <svg class="w-3 h-3 ms-1.5" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M8.574 11.024h6.852a2.075 2.075 0 0 0 1.847-1.086 1.9 1.9 0 0 0-.11-1.986L13.736 2.9a2.122 2.122 0 0 0-3.472 0L6.837 7.952a1.9 1.9 0 0 0-.11 1.986 2.074 2.074 0 0 0 1.847 1.086Zm6.852 1.952H8.574a2.072 2.072 0 0 0-1.847 1.087 1.9 1.9 0 0 0 .11 1.985l3.426 5.05a2.123 2.123 0 0 0 3.472 0l3.427-5.05a1.9 1.9 0 0 0 .11-1.985 2.074 2.074 0 0 0-1.846-1.087Z"/>
+                                        </svg>
+                                    </div>
+                                </th>
+                                <th scope="col" class="px-6 py-3">
+                                    Rangs
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($sales as $row)
+                                <tr class="bg-white border-b dark:bg-gray-800 dark:border-gray-700 border-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600">
+                                    
+                                    {{-- Rang --}}
+                                    <td class="px-6 py-4">
+                                        <div class="flex items-center justify-center w-10 h-10 rounded-full
+                                                    {{ $sortBy === 'rownum_qty' ? 'bg-indigo-50' : 'bg-emerald-50' }}">
+                                            <span class="text-xs font-bold
+                                                         {{ $sortBy === 'rownum_qty' ? 'text-indigo-600' : 'text-emerald-600' }}">
+                                                #{{ $sortBy === 'rownum_qty' ? $row->rownum_qty : $row->rownum_revenue }}
+                                            </span>
+                                        </div>
+                                    </td>
 
-                    {{-- Colonne SKU --}}
-                    @scope('cell_sku', $row)
-                        <span class="font-mono text-xs">{{ $row->sku }}</span>
-                    @endscope
+                                    {{-- SKU --}}
+                                    <td class="px-6 py-4 font-mono text-xs">
+                                        {{ $row->sku }}
+                                    </td>
 
-                    {{-- Colonne Produit --}}
-                    @scope('cell_title', $row)
-                        <div>
-                            <p class="font-semibold text-gray-900 truncate" title="{{ $row->title }}">
-                                {{ $row->title ?? '—' }}
-                            </p>
-                        </div>
-                    @endscope
+                                    {{-- Produit --}}
+                                    <th scope="row" class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap dark:text-white">
+                                        {{ $row->title ?? '—' }}
+                                    </th>
 
-                    {{-- Colonne Prix --}}
-                    @scope('cell_price', $row)
-                        @if($row->special_price)
-                            <div class="text-right">
-                                <span class="text-green-600 font-medium">
-                                    {{ number_format($row->special_price, 2, ',', ' ') }} €
-                                </span>
-                                <br>
-                                <span class="text-xs text-gray-400 line-through">
-                                    {{ number_format($row->price, 2, ',', ' ') }} €
-                                </span>
-                            </div>
-                        @elseif($row->price)
-                            <span class="text-right">{{ number_format($row->price, 2, ',', ' ') }} €</span>
-                        @else
-                            <span class="text-gray-400">—</span>
-                        @endif
-                    @endscope
+                                    {{-- Prix --}}
+                                    <td class="px-6 py-4">
+                                        @if($row->special_price)
+                                            <div>
+                                                <span class="text-green-600 font-medium">
+                                                    {{ number_format($row->special_price, 2, ',', ' ') }} €
+                                                </span>
+                                                <br>
+                                                <span class="text-xs text-gray-400 line-through">
+                                                    {{ number_format($row->price, 2, ',', ' ') }} €
+                                                </span>
+                                            </div>
+                                        @elseif($row->price)
+                                            {{ number_format($row->price, 2, ',', ' ') }} €
+                                        @else
+                                            <span class="text-gray-400">—</span>
+                                        @endif
+                                    </td>
 
-                    {{-- Colonne Quantité vendue --}}
-                    @scope('cell_total_qty_sold', $row)
-                        <span class="font-semibold {{ $this->sortBy === 'rownum_qty' ? 'text-indigo-600' : 'text-gray-900' }}">
-                            {{ number_format($row->total_qty_sold, 0, ',', ' ') }}
-                        </span>
-                    @endscope
+                                    {{-- Quantité vendue --}}
+                                    <td class="px-6 py-4">
+                                        <span class="font-semibold {{ $sortBy === 'rownum_qty' ? 'text-indigo-600' : 'text-gray-900' }}">
+                                            {{ number_format($row->total_qty_sold, 0, ',', ' ') }}
+                                        </span>
+                                    </td>
 
-                    {{-- Colonne CA total --}}
-                    @scope('cell_total_revenue', $row)
-                        <div class="text-right">
-                            <span class="font-semibold {{ $this->sortBy === 'rownum_revenue' ? 'text-emerald-600' : 'text-gray-900' }}">
-                                {{ number_format($row->total_revenue, 2, ',', ' ') }} €
-                            </span>
-                            @if($row->cost)
-                                <br>
-                                <span class="text-xs text-gray-500">
-                                    coût: {{ number_format($row->cost, 2, ',', ' ') }} €
-                                </span>
-                            @endif
-                        </div>
-                    @endscope
+                                    {{-- CA total --}}
+                                    <td class="px-6 py-4">
+                                        <div>
+                                            <span class="font-semibold {{ $sortBy === 'rownum_revenue' ? 'text-emerald-600' : 'text-gray-900' }}">
+                                                {{ number_format($row->total_revenue, 2, ',', ' ') }} €
+                                            </span>
+                                            @if($row->cost)
+                                                <br>
+                                                <span class="text-xs text-gray-500">
+                                                    coût: {{ number_format($row->cost, 2, ',', ' ') }} €
+                                                </span>
+                                            @endif
+                                        </div>
+                                    </td>
 
-                    {{-- Colonne Rangs --}}
-                    @scope('cell_ranks', $row)
-                        <div class="text-xs text-gray-500 text-right space-y-1">
-                            <div>
-                                Qté: <span class="font-medium text-indigo-500">#{{ $row->rownum_qty }}</span>
-                            </div>
-                            <div>
-                                CA: <span class="font-medium text-emerald-500">#{{ $row->rownum_revenue }}</span>
-                            </div>
-                        </div>
-                    @endscope
+                                    {{-- Rangs --}}
+                                    <td class="px-6 py-4">
+                                        <div class="text-xs text-gray-500 space-y-1">
+                                            <div>
+                                                Qté: <span class="font-medium text-indigo-500">#{{ $row->rownum_qty }}</span>
+                                            </div>
+                                            <div>
+                                                CA: <span class="font-medium text-emerald-500">#{{ $row->rownum_revenue }}</span>
+                                            </div>
+                                        </div>
+                                    </td>
 
-                </x-table>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
             @endif
         </div>
     </div>
