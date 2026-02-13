@@ -81,28 +81,8 @@ new class extends Component {
 
 <div>
 
-    {{-- ─── Header : dates + tabs ───────────────────────────── --}}
+    {{-- ─── Header : tabs pays ───────────────────────────── --}}
     <div class="px-4 sm:px-6 lg:px-8 pt-6 pb-2">
-
-        {{-- Filtres de date --}}
-        <div class="flex flex-wrap items-end gap-4 mb-6">
-            <div>
-                <label class="block text-xs font-medium text-gray-500 mb-1">Date de début</label>
-                <input
-                    type="date"
-                    wire:model.live="dateFrom"
-                    class="input input-bordered input-sm w-full max-w-xs"
-                />
-            </div>
-            <div>
-                <label class="block text-xs font-medium text-gray-500 mb-1">Date de fin</label>
-                <input
-                    type="date"
-                    wire:model.live="dateTo"
-                    class="input input-bordered input-sm w-full max-w-xs"
-                />
-            </div>
-        </div>
 
         {{-- Tabs pays --}}
         <div>
@@ -140,42 +120,62 @@ new class extends Component {
     {{-- ─── Tableau ──────────────────────────────────────────────── --}}
     <div class="px-4 sm:px-6 lg:px-8 py-6">
 
-        {{-- Toolbar : titre + compteur + tri --}}
+        {{-- Toolbar : titre + compteur + filtres --}}
         <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
             <div>
                 <h1 class="text-base font-semibold text-gray-900">
                     Ventes — {{ $countries[$activeCountry] ?? $activeCountry }}
                 </h1>
                 <p class="mt-0.5 text-sm text-gray-500">
-                    Top 100 produits · {{ $dateFrom ?: date('Y-01-01') }} → {{ $dateTo ?: date('Y-12-31') }}
+                    Top 100 produits · {{ count($sales) }} résultat(s)
                 </p>
             </div>
 
-            {{-- Boutons de tri --}}
-            <div class="flex items-center gap-2">
-                <span class="text-xs text-gray-400 mr-1">Trier par</span>
-                <button
-                    type="button"
-                    @click="$wire.sortBy('rownum_qty')"
-                    class="btn btn-xs {{ $sortBy === 'rownum_qty' ? 'btn-primary' : 'btn-ghost' }}"
-                >
-                    @if($sortBy === 'rownum_qty')
-                        <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>
-                    @endif
-                    Qté vendue
-                </button>
-                <button
-                    type="button"
-                    @click="$wire.sortBy('rownum_revenue')"
-                    class="btn btn-xs {{ $sortBy === 'rownum_revenue' ? 'btn-success' : 'btn-ghost' }}"
-                >
-                    @if($sortBy === 'rownum_revenue')
-                        <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>
-                    @endif
-                    CA total
-                </button>
+            {{-- Filtres : dates + tri --}}
+            <div class="flex flex-wrap items-center gap-3">
+                {{-- Filtres de date --}}
+                <div class="flex items-center gap-2">
+                    <input
+                        type="date"
+                        wire:model.live="dateFrom"
+                        placeholder="Date début"
+                        class="input input-bordered input-sm w-36"
+                    />
+                    <span class="text-xs text-gray-400">→</span>
+                    <input
+                        type="date"
+                        wire:model.live="dateTo"
+                        placeholder="Date fin"
+                        class="input input-bordered input-sm w-36"
+                    />
+                </div>
 
-                <span class="text-xs text-gray-400 ml-2">{{ count($sales) }} résultat(s)</span>
+                <div class="divider divider-horizontal mx-0"></div>
+
+                {{-- Boutons de tri --}}
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-gray-400">Trier par</span>
+                    <button
+                        type="button"
+                        @click="$wire.sortBy('rownum_qty')"
+                        class="btn btn-xs {{ $sortBy === 'rownum_qty' ? 'btn-primary' : 'btn-ghost' }}"
+                    >
+                        @if($sortBy === 'rownum_qty')
+                            <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>
+                        @endif
+                        Qté vendue
+                    </button>
+                    <button
+                        type="button"
+                        @click="$wire.sortBy('rownum_revenue')"
+                        class="btn btn-xs {{ $sortBy === 'rownum_revenue' ? 'btn-success' : 'btn-ghost' }}"
+                    >
+                        @if($sortBy === 'rownum_revenue')
+                            <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>
+                        @endif
+                        CA total
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -235,9 +235,9 @@ new class extends Component {
                                     
                                     {{-- Rang --}}
                                     <th>
-                                        <div class="badge {{ $sortBy === 'rownum_qty' ? 'badge-primary' : 'badge-success' }} gap-2">
+                                        <span class="font-semibold {{ $sortBy === 'rownum_qty' ? 'text-primary' : 'text-success' }}">
                                             #{{ $sortBy === 'rownum_qty' ? $row->rownum_qty : $row->rownum_revenue }}
-                                        </div>
+                                        </span>
                                     </th>
 
                                     {{-- SKU --}}
