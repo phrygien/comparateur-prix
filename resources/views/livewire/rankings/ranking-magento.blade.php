@@ -335,7 +335,8 @@ new class extends Component {
                                     <table class="table table-xs table-pin-rows table-pin-cols">
                                         <thead>
                                             <tr>
-                                                <th>Rang</th>
+                                                <th>RangQty</th>
+                                                <th>Rang CA</th>
                                                 <th>EAN</th>
                                                 <th>Groupe</th>
                                                 <th>Marque</th>
@@ -358,7 +359,6 @@ new class extends Component {
                                                     </button>
                                                 </th>
                                                 <th>PGHT</th>
-                                                <th>Coût</th>
                                                 @foreach($this->sites as $site)
                                                     <th class="text-right">{{ $site->name }}</th>
                                                 @endforeach
@@ -379,6 +379,9 @@ new class extends Component {
                                                         </span>
                                                     </th>
 
+                                                    <th>
+                                                        <span class="font-mono text-xs">{{ $row->rank_ca }}</span>
+                                                    </th>
                                                     <td>
                                                         <span class="font-mono text-xs">{{ $row->ean }}</span>
                                                     </td>
@@ -420,14 +423,14 @@ new class extends Component {
                                                             <span class="text-gray-400">—</span>
                                                         @endif
                                                     </td>
-
+{{-- 
                                                     <td class="text-right text-xs">
                                                         @if($row->cost)
                                                             {{ number_format($row->cost, 2, ',', ' ') }} €
                                                         @else
                                                             <span class="text-gray-400">—</span>
                                                         @endif
-                                                    </td>
+                                                    </td> --}}
 
                                                     @foreach($this->sites as $site)
                                                         <td class="text-right">
