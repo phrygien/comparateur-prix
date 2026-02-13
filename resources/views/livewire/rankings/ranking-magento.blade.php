@@ -30,7 +30,7 @@ new class extends Component {
                 SELECT
                     addr.country_id AS country,
                     oi.sku,
-                    CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) AS title,
+                    CONVERT(CAST(CONVERT(product_char.name USING latin1) AS BINARY) USING utf8mb4) AS title,
                     ROUND(product_decimal.price, 2) AS price,
                     ROUND(product_decimal.special_price, 2) AS special_price,
                     ROUND(product_decimal.cost, 2) AS cost,
@@ -62,6 +62,10 @@ new class extends Component {
             LIMIT 100
         ";
 
+        // Forcer l'encodage UTF-8 pour la connexion
+        DB::connection('mysqlMagento')->statement("SET NAMES 'utf8mb4'");
+        DB::connection('mysqlMagento')->statement("SET CHARACTER SET utf8mb4");
+        
         return DB::connection('mysqlMagento')
             ->select($sql, [$dateFrom, $dateTo, $this->activeCountry]);
     }
