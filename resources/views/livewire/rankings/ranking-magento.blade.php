@@ -192,14 +192,14 @@ new class extends Component {
             </div>
         </div>
 
-        {{-- Stacked list wrapper --}}
+        {{-- Table wrapper --}}
         <div class="relative">
 
             {{-- Spinner overlay --}}
             <div
                 wire:loading
                 wire:target="setCountry, dateFrom, dateTo, sortBy"
-                class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-xl bg-white/70 backdrop-blur-sm"
+                class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-box bg-white/70 backdrop-blur-sm"
             >
                 <svg class="animate-spin h-8 w-8 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
@@ -213,84 +213,68 @@ new class extends Component {
                     Aucune vente trouvée pour cette période et ce pays.
                 </div>
             @else
-                <ul
-                    role="list"
-                    class="divide-y divide-gray-100 overflow-hidden bg-white ring-1 shadow-xs ring-gray-900/5 sm:rounded-xl"
+                <div
+                    class="overflow-x-auto rounded-box border border-base-content/5 bg-base-100"
                     wire:loading.class="opacity-40 pointer-events-none"
                     wire:target="setCountry, dateFrom, dateTo, sortBy"
                 >
-                    @foreach($sales as $row)
-                        <li class="relative flex justify-between gap-x-6 px-4 py-4 hover:bg-gray-50 sm:px-6">
-
-                            {{-- Gauche : rang + SKU + titre --}}
-                            <div class="flex min-w-0 gap-x-4 items-center">
-
-                                {{-- Badge de rang actif --}}
-                                <div class="flex-none flex flex-col items-center justify-center w-10 h-10 rounded-full
-                                            {{ $sortBy === 'rownum_qty' ? 'bg-indigo-50' : 'bg-emerald-50' }}">
-                                    <span class="text-xs font-bold leading-none
-                                                 {{ $sortBy === 'rownum_qty' ? 'text-indigo-600' : 'text-emerald-600' }}">
-                                        #{{ $sortBy === 'rownum_qty' ? $row->rownum_qty : $row->rownum_revenue }}
-                                    </span>
-                                </div>
-
-                                <div class="min-w-0 flex-auto">
-                                    <p class="text-sm font-semibold text-gray-900 truncate" title="{{ $row->title }}">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Produit</th>
+                                <th>SKU</th>
+                                <th class="text-right">Prix</th>
+                                <th class="text-right">Prix spécial</th>
+                                <th class="text-right">Coût</th>
+                                <th class="text-right">PVC</th>
+                                <th class="text-right">Qté vendue</th>
+                                <th class="text-right">CA total</th>
+                                <th class="text-center text-indigo-600">Rang Qté</th>
+                                <th class="text-center text-emerald-600">Rang CA</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($sales as $row)
+                                <tr class="hover">
+                                    <th>{{ $loop->iteration }}</th>
+                                    <td class="max-w-[220px] truncate font-medium" title="{{ $row->title }}">
                                         {{ $row->title ?? '—' }}
-                                    </p>
-                                    <p class="mt-0.5 flex items-center gap-x-2 text-xs text-gray-500">
-                                        <span class="font-mono">{{ $row->sku }}</span>
-                                        @if($row->special_price)
-                                            <span class="text-green-600 font-medium">
-                                                {{ number_format($row->special_price, 2, ',', ' ') }} €
-                                                <span class="text-gray-400 line-through ml-1">{{ number_format($row->price, 2, ',', ' ') }} €</span>
-                                            </span>
-                                        @elseif($row->price)
-                                            <span>{{ number_format($row->price, 2, ',', ' ') }} €</span>
-                                        @endif
-                                    </p>
-                                </div>
-                            </div>
-
-                            {{-- Droite : stats --}}
-                            <div class="flex shrink-0 items-center gap-x-6">
-                                <div class="hidden sm:flex sm:flex-col sm:items-end">
-
-                                    {{-- Qté vendue --}}
-                                    <p class="text-sm text-gray-900 flex items-center gap-1.5">
-                                        <span class="font-semibold {{ $sortBy === 'rownum_qty' ? 'text-indigo-600' : '' }}">
-                                            {{ number_format($row->total_qty_sold, 0, ',', ' ') }} unités
+                                    </td>
+                                    <td class="font-mono text-xs">{{ $row->sku }}</td>
+                                    <td class="text-right">
+                                        {{ $row->price ? number_format($row->price, 2, ',', ' ') . ' €' : '—' }}
+                                    </td>
+                                    <td class="text-right {{ $row->special_price ? 'text-green-600 font-medium' : 'text-gray-400' }}">
+                                        {{ $row->special_price ? number_format($row->special_price, 2, ',', ' ') . ' €' : '—' }}
+                                    </td>
+                                    <td class="text-right">
+                                        {{ $row->cost ? number_format($row->cost, 2, ',', ' ') . ' €' : '—' }}
+                                    </td>
+                                    <td class="text-right">
+                                        {{ $row->pvc ? number_format($row->pvc, 2, ',', ' ') . ' €' : '—' }}
+                                    </td>
+                                    <td class="text-right font-semibold {{ $sortBy === 'rownum_qty' ? 'text-indigo-600' : '' }}">
+                                        {{ number_format($row->total_qty_sold, 0, ',', ' ') }}
+                                    </td>
+                                    <td class="text-right font-semibold {{ $sortBy === 'rownum_revenue' ? 'text-emerald-600' : '' }}">
+                                        {{ number_format($row->total_revenue, 2, ',', ' ') }} €
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge badge-sm {{ $sortBy === 'rownum_qty' ? 'badge-primary' : 'badge-ghost' }}">
+                                            #{{ $row->rownum_qty }}
                                         </span>
-                                        <span class="text-xs text-gray-400">
-                                            · rang qté
-                                            <span class="font-medium text-indigo-500">#{{ $row->rownum_qty }}</span>
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge badge-sm {{ $sortBy === 'rownum_revenue' ? 'badge-success' : 'badge-ghost' }}">
+                                            #{{ $row->rownum_revenue }}
                                         </span>
-                                    </p>
-
-                                    {{-- CA total --}}
-                                    <p class="mt-0.5 text-xs text-gray-500 flex items-center gap-1.5">
-                                        <span class="font-semibold {{ $sortBy === 'rownum_revenue' ? 'text-emerald-600' : '' }}">
-                                            {{ number_format($row->total_revenue, 2, ',', ' ') }} €
-                                        </span>
-                                        <span>
-                                            · rang CA
-                                            <span class="font-medium text-emerald-500">#{{ $row->rownum_revenue }}</span>
-                                        </span>
-                                        @if($row->cost)
-                                            · coût {{ number_format($row->cost, 2, ',', ' ') }} €
-                                        @endif
-                                    </p>
-                                </div>
-
-                                {{-- Chevron --}}
-                                <svg class="size-5 flex-none text-gray-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                                    <path fill-rule="evenodd" d="M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
-                                </svg>
-                            </div>
-
-                        </li>
-                    @endforeach
-                </ul>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
             @endif
         </div>
     </div>
