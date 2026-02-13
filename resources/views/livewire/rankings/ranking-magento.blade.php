@@ -85,7 +85,7 @@ new class extends Component {
     }
 }; ?>
 
-<div class="min-h-screen bg-gray-50 max-w-7xl mx-auto">
+<div class="min-h-screen bg-gray-50">
 
     {{-- ─── Date Filters ─────────────────────────────────────── --}}
     <div class="bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-4">
@@ -134,13 +134,14 @@ new class extends Component {
         <div class="grid grid-cols-1 sm:hidden py-3">
             <select
                 aria-label="Sélectionner un pays"
-                wire:change="setCountry($event.target.value)"
+                wire:model="activeCountry"
+                wire:change="loadSales"
                 class="col-start-1 row-start-1 w-full appearance-none rounded-md bg-white py-2 pr-8 pl-3
                        text-base text-gray-900 outline outline-1 -outline-offset-1 outline-gray-300
                        focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-600"
             >
                 @foreach($countries as $code => $label)
-                    <option value="{{ $code }}" @selected($activeCountry === $code)>{{ $label }}</option>
+                    <option value="{{ $code }}">{{ $label }}</option>
                 @endforeach
             </select>
             <svg class="pointer-events-none col-start-1 row-start-1 mr-2 size-5 self-center justify-self-end fill-gray-500"
@@ -154,14 +155,12 @@ new class extends Component {
         {{-- Desktop tabs --}}
         <nav class="hidden sm:flex space-x-1 pt-3" aria-label="Pays">
             @foreach($countries as $code => $label)
+                @php $isActive = $activeCountry === $code; @endphp
                 <button
                     wire:click="setCountry('{{ $code }}')"
-                    class="rounded-t-md px-4 py-2.5 text-sm font-medium transition-colors duration-150
-                           focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500
-                           {{ $activeCountry === $code
-                               ? 'bg-indigo-600 text-white shadow-sm'
-                               : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100' }}"
-                    @if($activeCountry === $code) aria-current="page" @endif
+                    type="button"
+                    class="rounded-t-md px-4 py-2.5 text-sm font-medium transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500 {{ $isActive ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100' }}"
+                    @if($isActive) aria-current="page" @endif
                 >
                     {{ $label }}
                     <span class="ml-1 text-xs opacity-70">({{ $code }})</span>
