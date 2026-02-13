@@ -8,7 +8,6 @@ new class extends Component {
     public string $activeCountry = 'FR';
     public string $dateFrom      = '';
     public string $dateTo        = '';
-    public string $sortBy        = 'rownum_qty'; // 'rownum_qty' | 'rownum_revenue'
 
     public array $countries = [
         'FR' => 'France',
@@ -23,17 +22,10 @@ new class extends Component {
         $this->activeCountry = $country;
     }
 
-    public function sortBy(string $column): void
-    {
-        $this->sortBy = $column;
-    }
-
     public function with(): array
     {
         $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
         $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
-
-        $orderCol = $this->sortBy === 'rownum_revenue' ? 'total_revenue' : 'total_qty_sold';
 
         $sql = "
             WITH sales AS (
@@ -68,7 +60,7 @@ new class extends Component {
                 ROW_NUMBER() OVER (ORDER BY total_qty_sold DESC) AS rownum_qty,
                 ROW_NUMBER() OVER (ORDER BY total_revenue DESC) AS rownum_revenue
             FROM sales
-            ORDER BY {$orderCol} DESC
+            ORDER BY total_qty_sold DESC
             LIMIT 100
         ";
 
@@ -80,6 +72,19 @@ new class extends Component {
 }; ?>
 
 <div class="min-h-screen bg-gray-50">
+
+    {{-- ─── Loading Overlay ──────────────────────────────────── --}}
+    <div
+        wire:loading
+        wire:target="setCountry, dateFrom, dateTo"
+        class="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-white/60 backdrop-blur-sm"
+    >
+        <svg class="animate-spin h-10 w-10 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+        </svg>
+        <span class="text-sm font-medium text-indigo-600 tracking-wide">Chargement en cours…</span>
+    </div>
 
     {{-- ─── Date Filters ─────────────────────────────────────── --}}
     <div class="bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-4">
@@ -147,7 +152,7 @@ new class extends Component {
     </div>
 
     {{-- ─── Table ─────────────────────────────────────────────── --}}
-    <div class="px-4 sm:px-6 lg:px-8 py-8">
+    <div class="px-4 sm:px-6 lg:px-8 py-8" wire:loading.remove wire:target="setCountry, dateFrom, dateTo">
 
         <div class="sm:flex sm:items-center mb-6">
             <div class="sm:flex-auto">
@@ -163,120 +168,67 @@ new class extends Component {
             </div>
         </div>
 
-        {{-- Table wrapper — loading skeleton sur le tableau uniquement --}}
-        <div class="relative">
+        @if(count($sales) === 0)
+            <div class="text-center py-16 text-gray-400 text-sm">
+                Aucune vente trouvée pour cette période et ce pays.
+            </div>
+        @else
 
-            {{-- Spinner overlay sur la table --}}
-            <div
-                wire:loading
-                wire:target="setCountry, dateFrom, dateTo, sortBy"
-                class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg bg-white/70 backdrop-blur-sm"
-            >
-                <svg class="animate-spin h-8 w-8 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
-                </svg>
-                <span class="text-sm font-medium text-indigo-600">Chargement en cours…</span>
+            <div class="overflow-x-auto rounded-lg border border-gray-200">
+                <table class="table table-xs w-full">
+                    <thead>
+                        <tr>
+                            <th>SKU</th>
+                            <th>Produit</th>
+                            <th class="text-right">Prix</th>
+                            <th class="text-right">Prix spécial</th>
+                            <th class="text-right">Coût</th>
+                            <th class="text-right">PVC</th>
+                            <th class="text-right">Qté vendue</th>
+                            <th class="text-right">CA total</th>
+                            <th class="text-center text-indigo-600">Rang Qté</th>
+                            <th class="text-center text-emerald-600">Rang CA</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($sales as $row)
+                            <tr class="hover">
+                                <td class="font-mono">{{ $row->sku }}</td>
+                                <td class="max-w-[200px] truncate" title="{{ $row->title }}">{{ $row->title ?? '—' }}</td>
+                                <td class="text-right">{{ $row->price ? number_format($row->price, 2, ',', ' ') . ' €' : '—' }}</td>
+                                <td class="text-right {{ $row->special_price ? 'text-green-600 font-medium' : 'text-gray-400' }}">
+                                    {{ $row->special_price ? number_format($row->special_price, 2, ',', ' ') . ' €' : '—' }}
+                                </td>
+                                <td class="text-right">{{ $row->cost ? number_format($row->cost, 2, ',', ' ') . ' €' : '—' }}</td>
+                                <td class="text-right">{{ $row->pvc ? number_format($row->pvc, 2, ',', ' ') . ' €' : '—' }}</td>
+                                <td class="text-right font-semibold">{{ number_format($row->total_qty_sold, 0, ',', ' ') }}</td>
+                                <td class="text-right font-semibold">{{ number_format($row->total_revenue, 2, ',', ' ') }} €</td>
+                                <td class="text-center">
+                                    <span class="badge badge-soft badge-primary badge-sm"># {{ $row->rownum_qty }}</span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge badge-soft badge-success badge-sm"># {{ $row->rownum_revenue }}</span>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <th>SKU</th>
+                            <th>Produit</th>
+                            <th class="text-right">Prix</th>
+                            <th class="text-right">Prix spécial</th>
+                            <th class="text-right">Coût</th>
+                            <th class="text-right">PVC</th>
+                            <th class="text-right">Qté vendue</th>
+                            <th class="text-right">CA total</th>
+                            <th class="text-center text-indigo-600">Rang Qté</th>
+                            <th class="text-center text-emerald-600">Rang CA</th>
+                        </tr>
+                    </tfoot>
+                </table>
             </div>
 
-            @if(count($sales) === 0)
-                <div class="text-center py-16 text-gray-400 text-sm">
-                    Aucune vente trouvée pour cette période et ce pays.
-                </div>
-            @else
-                <div class="overflow-x-auto rounded-lg border border-gray-200"
-                     wire:loading.class="opacity-40 pointer-events-none"
-                     wire:target="setCountry, dateFrom, dateTo, sortBy">
-                    <table class="table table-xs w-full">
-                        <thead>
-                            <tr>
-                                <th>SKU</th>
-                                <th>Produit</th>
-                                <th class="text-right">Prix</th>
-                                <th class="text-right">Prix spécial</th>
-                                <th class="text-right">Coût</th>
-                                <th class="text-right">PVC</th>
-                                <th class="text-right">Qté vendue</th>
-                                <th class="text-right">CA total</th>
-
-                                {{-- ── Rang Qté (sortable) --}}
-                                <th class="text-center">
-                                    <button
-                                        type="button"
-                                        @click="$wire.sortBy('rownum_qty')"
-                                        class="inline-flex items-center gap-1 font-semibold transition-colors
-                                               {{ $sortBy === 'rownum_qty' ? 'text-indigo-600' : 'text-gray-400 hover:text-indigo-500' }}"
-                                    >
-                                        Rang Qté
-                                        @if($sortBy === 'rownum_qty')
-                                            <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4l4 8H4z" transform="rotate(180 8 8)"/></svg>
-                                        @else
-                                            <svg class="w-3 h-3 opacity-40" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4l4 8H4z" transform="rotate(180 8 8)"/></svg>
-                                        @endif
-                                    </button>
-                                </th>
-
-                                {{-- ── Rang CA (sortable) --}}
-                                <th class="text-center">
-                                    <button
-                                        type="button"
-                                        @click="$wire.sortBy('rownum_revenue')"
-                                        class="inline-flex items-center gap-1 font-semibold transition-colors
-                                               {{ $sortBy === 'rownum_revenue' ? 'text-emerald-600' : 'text-gray-400 hover:text-emerald-500' }}"
-                                    >
-                                        Rang CA
-                                        @if($sortBy === 'rownum_revenue')
-                                            <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4l4 8H4z" transform="rotate(180 8 8)"/></svg>
-                                        @else
-                                            <svg class="w-3 h-3 opacity-40" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4l4 8H4z" transform="rotate(180 8 8)"/></svg>
-                                        @endif
-                                    </button>
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach($sales as $row)
-                                <tr class="hover">
-                                    <td class="font-mono">{{ $row->sku }}</td>
-                                    <td class="max-w-[200px] truncate" title="{{ $row->title }}">{{ $row->title ?? '—' }}</td>
-                                    <td class="text-right">{{ $row->price ? number_format($row->price, 2, ',', ' ') . ' €' : '—' }}</td>
-                                    <td class="text-right {{ $row->special_price ? 'text-green-600 font-medium' : 'text-gray-400' }}">
-                                        {{ $row->special_price ? number_format($row->special_price, 2, ',', ' ') . ' €' : '—' }}
-                                    </td>
-                                    <td class="text-right">{{ $row->cost ? number_format($row->cost, 2, ',', ' ') . ' €' : '—' }}</td>
-                                    <td class="text-right">{{ $row->pvc ? number_format($row->pvc, 2, ',', ' ') . ' €' : '—' }}</td>
-                                    <td class="text-right font-semibold">{{ number_format($row->total_qty_sold, 0, ',', ' ') }}</td>
-                                    <td class="text-right font-semibold">{{ number_format($row->total_revenue, 2, ',', ' ') }} €</td>
-                                    <td class="text-center">
-                                        <span class="badge badge-soft badge-sm {{ $sortBy === 'rownum_qty' ? 'badge-primary' : 'badge-ghost' }}">
-                                            # {{ $row->rownum_qty }}
-                                        </span>
-                                    </td>
-                                    <td class="text-center">
-                                        <span class="badge badge-soft badge-sm {{ $sortBy === 'rownum_revenue' ? 'badge-success' : 'badge-ghost' }}">
-                                            # {{ $row->rownum_revenue }}
-                                        </span>
-                                    </td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                        <tfoot>
-                            <tr>
-                                <th>SKU</th>
-                                <th>Produit</th>
-                                <th class="text-right">Prix</th>
-                                <th class="text-right">Prix spécial</th>
-                                <th class="text-right">Coût</th>
-                                <th class="text-right">PVC</th>
-                                <th class="text-right">Qté vendue</th>
-                                <th class="text-right">CA total</th>
-                                <th class="text-center {{ $sortBy === 'rownum_qty' ? 'text-indigo-600' : 'text-gray-400' }}">Rang Qté</th>
-                                <th class="text-center {{ $sortBy === 'rownum_revenue' ? 'text-emerald-600' : 'text-gray-400' }}">Rang CA</th>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
-            @endif
-        </div>
+        @endif
     </div>
 </div>
