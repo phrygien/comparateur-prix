@@ -18,7 +18,7 @@ new class extends Component {
         'DE' => 'Allemagne',
     ];
 
-    public function with(): array
+    public function getSalesForCountry(string $country)
     {
         $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
         $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
@@ -62,9 +62,13 @@ new class extends Component {
             LIMIT 100
         ";
 
-        $sales = DB::connection('mysqlMagento')
-            ->select($sql, [$dateFrom, $dateTo, $this->activeCountry]);
+        return DB::connection('mysqlMagento')
+            ->select($sql, [$dateFrom, $dateTo, $country]);
+    }
 
+    public function with(): array
+    {
+        $sales = $this->getSalesForCountry($this->activeCountry);
         return compact('sales');
     }
 
@@ -81,216 +85,212 @@ new class extends Component {
         <x-tabs wire:model="activeCountry">
             @foreach($countries as $code => $label)
                 <x-tab name="{{ $code }}" label="{{ $label }}">
-                    {{-- Le contenu sera affiché ci-dessous --}}
+                    
+                    {{-- Toolbar : titre + compteur + filtres --}}
+                    <div class="flex flex-wrap items-center justify-between gap-4 mb-4 mt-6">
+                        <div>
+                            <h1 class="text-base font-semibold text-gray-900">
+                                Ventes — {{ $label }}
+                            </h1>
+                            <p class="mt-0.5 text-sm text-gray-500">
+                                Top 100 produits · {{ count($sales) }} résultat(s)
+                            </p>
+                        </div>
+
+                        {{-- Filtres : dates + tri --}}
+                        <div class="flex flex-wrap items-center gap-3">
+                            {{-- Filtres de date --}}
+                            <div class="flex items-center gap-2">
+                                <input
+                                    type="date"
+                                    wire:model.live="dateFrom"
+                                    placeholder="Date début"
+                                    class="input input-bordered input-sm w-36"
+                                />
+                                <span class="text-xs text-gray-400">→</span>
+                                <input
+                                    type="date"
+                                    wire:model.live="dateTo"
+                                    placeholder="Date fin"
+                                    class="input input-bordered input-sm w-36"
+                                />
+                            </div>
+
+                            <div class="divider divider-horizontal mx-0"></div>
+
+                            {{-- Boutons de tri --}}
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs text-gray-400">Trier par</span>
+                                <button
+                                    type="button"
+                                    @click="$wire.sortBy('rownum_qty')"
+                                    class="btn btn-xs {{ $sortBy === 'rownum_qty' ? 'btn-primary' : 'btn-ghost' }}"
+                                >
+                                    @if($sortBy === 'rownum_qty')
+                                        <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>
+                                    @endif
+                                    Qté vendue
+                                </button>
+                                <button
+                                    type="button"
+                                    @click="$wire.sortBy('rownum_revenue')"
+                                    class="btn btn-xs {{ $sortBy === 'rownum_revenue' ? 'btn-success' : 'btn-ghost' }}"
+                                >
+                                    @if($sortBy === 'rownum_revenue')
+                                        <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>
+                                    @endif
+                                    CA total
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- Table wrapper --}}
+                    <div class="relative">
+
+                        {{-- Spinner overlay --}}
+                        <div
+                            wire:loading
+                            wire:target="activeCountry, dateFrom, dateTo, sortBy"
+                            class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg bg-white/70 backdrop-blur-sm"
+                        >
+                            <span class="loading loading-spinner loading-lg text-primary"></span>
+                            <span class="text-sm font-medium">Chargement en cours…</span>
+                        </div>
+
+                        @if(count($sales) === 0)
+                            <div class="alert alert-info">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                <span>Aucune vente trouvée pour cette période et ce pays.</span>
+                            </div>
+                        @else
+                            <div 
+                                class="overflow-x-auto"
+                                wire:loading.class="opacity-40 pointer-events-none"
+                                wire:target="activeCountry, dateFrom, dateTo, sortBy"
+                            >
+                                <table class="table table-xs table-pin-rows table-pin-cols">
+                                    <thead>
+                                        <tr>
+                                            <th>Rang</th>
+                                            <th>SKU</th>
+                                            <th>Produit</th>
+                                            <th>Prix</th>
+                                            <th>
+                                                <button @click="$wire.sortBy('rownum_qty')" class="flex items-center gap-1 hover:underline cursor-pointer">
+                                                    Qté vendue
+                                                    <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor">
+                                                        <path d="M8 4l3 4H5l3-4zm0 8l-3-4h6l-3 4z"/>
+                                                    </svg>
+                                                </button>
+                                            </th>
+                                            <th>
+                                                <button @click="$wire.sortBy('rownum_revenue')" class="flex items-center gap-1 hover:underline cursor-pointer">
+                                                    CA total
+                                                    <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor">
+                                                        <path d="M8 4l3 4H5l3-4zm0 8l-3-4h6l-3 4z"/>
+                                                    </svg>
+                                                </button>
+                                            </th>
+                                            <th>Rangs</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach($sales as $row)
+                                            <tr class="hover">
+                                                
+                                                {{-- Rang --}}
+                                                <th>
+                                                    <span class="font-semibold {{ $sortBy === 'rownum_qty' ? 'text-primary' : 'text-success' }}">
+                                                        #{{ $sortBy === 'rownum_qty' ? $row->rownum_qty : $row->rownum_revenue }}
+                                                    </span>
+                                                </th>
+
+                                                {{-- SKU --}}
+                                                <td>
+                                                    <span class="font-mono text-xs">{{ $row->sku }}</span>
+                                                </td>
+
+                                                {{-- Produit --}}
+                                                <td>
+                                                    <div class="font-bold">{{ $row->title ?? '—' }}</div>
+                                                </td>
+
+                                                {{-- Prix --}}
+                                                <td>
+                                                    @if($row->special_price)
+                                                        <div>
+                                                            <span class="text-success font-semibold">
+                                                                {{ number_format($row->special_price, 2, ',', ' ') }} €
+                                                            </span>
+                                                            <br>
+                                                            <span class="text-xs text-gray-400 line-through">
+                                                                {{ number_format($row->price, 2, ',', ' ') }} €
+                                                            </span>
+                                                        </div>
+                                                    @elseif($row->price)
+                                                        {{ number_format($row->price, 2, ',', ' ') }} €
+                                                    @else
+                                                        <span class="text-gray-400">—</span>
+                                                    @endif
+                                                </td>
+
+                                                {{-- Quantité vendue --}}
+                                                <td>
+                                                    <span class="font-semibold {{ $sortBy === 'rownum_qty' ? 'text-primary' : '' }}">
+                                                        {{ number_format($row->total_qty_sold, 0, ',', ' ') }}
+                                                    </span>
+                                                </td>
+
+                                                {{-- CA total --}}
+                                                <td>
+                                                    <div>
+                                                        <span class="font-semibold {{ $sortBy === 'rownum_revenue' ? 'text-success' : '' }}">
+                                                            {{ number_format($row->total_revenue, 2, ',', ' ') }} €
+                                                        </span>
+                                                        @if($row->cost)
+                                                            <br>
+                                                            <span class="text-xs text-gray-500">
+                                                                coût: {{ number_format($row->cost, 2, ',', ' ') }} €
+                                                            </span>
+                                                        @endif
+                                                    </div>
+                                                </td>
+
+                                                {{-- Rangs --}}
+                                                <td>
+                                                    <div class="text-xs space-y-1">
+                                                        <div class="badge badge-primary badge-xs">
+                                                            Qté #{{ $row->rownum_qty }}
+                                                        </div>
+                                                        <br>
+                                                        <div class="badge badge-success badge-xs">
+                                                            CA #{{ $row->rownum_revenue }}
+                                                        </div>
+                                                    </div>
+                                                </td>
+
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                    <tfoot>
+                                        <tr>
+                                            <th>Rang</th>
+                                            <th>SKU</th>
+                                            <th>Produit</th>
+                                            <th>Prix</th>
+                                            <th>Qté vendue</th>
+                                            <th>CA total</th>
+                                            <th>Rangs</th>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        @endif
+                    </div>
+
                 </x-tab>
             @endforeach
         </x-tabs>
-    </div>
-
-    {{-- ─── Tableau ──────────────────────────────────────────────── --}}
-    <div class="px-4 sm:px-6 lg:px-8 py-6">
-
-        {{-- Toolbar : titre + compteur + filtres --}}
-        <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
-            <div>
-                <h1 class="text-base font-semibold text-gray-900">
-                    Ventes — {{ $countries[$activeCountry] ?? $activeCountry }}
-                </h1>
-                <p class="mt-0.5 text-sm text-gray-500">
-                    Top 100 produits · {{ count($sales) }} résultat(s)
-                </p>
-            </div>
-
-            {{-- Filtres : dates + tri --}}
-            <div class="flex flex-wrap items-center gap-3">
-                {{-- Filtres de date --}}
-                <div class="flex items-center gap-2">
-                    <input
-                        type="date"
-                        wire:model.live="dateFrom"
-                        placeholder="Date début"
-                        class="input input-bordered input-sm w-36"
-                    />
-                    <span class="text-xs text-gray-400">→</span>
-                    <input
-                        type="date"
-                        wire:model.live="dateTo"
-                        placeholder="Date fin"
-                        class="input input-bordered input-sm w-36"
-                    />
-                </div>
-
-                <div class="divider divider-horizontal mx-0"></div>
-
-                {{-- Boutons de tri --}}
-                <div class="flex items-center gap-2">
-                    <span class="text-xs text-gray-400">Trier par</span>
-                    <button
-                        type="button"
-                        @click="$wire.sortBy('rownum_qty')"
-                        class="btn btn-xs {{ $sortBy === 'rownum_qty' ? 'btn-primary' : 'btn-ghost' }}"
-                    >
-                        @if($sortBy === 'rownum_qty')
-                            <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>
-                        @endif
-                        Qté vendue
-                    </button>
-                    <button
-                        type="button"
-                        @click="$wire.sortBy('rownum_revenue')"
-                        class="btn btn-xs {{ $sortBy === 'rownum_revenue' ? 'btn-success' : 'btn-ghost' }}"
-                    >
-                        @if($sortBy === 'rownum_revenue')
-                            <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>
-                        @endif
-                        CA total
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        {{-- Table wrapper --}}
-        <div class="relative">
-
-            {{-- Spinner overlay --}}
-            <div
-                wire:loading
-                wire:target="activeCountry, dateFrom, dateTo, sortBy"
-                class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg bg-white/70 backdrop-blur-sm"
-            >
-                <span class="loading loading-spinner loading-lg text-primary"></span>
-                <span class="text-sm font-medium">Chargement en cours…</span>
-            </div>
-
-            @if(count($sales) === 0)
-                <div class="alert alert-info">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    <span>Aucune vente trouvée pour cette période et ce pays.</span>
-                </div>
-            @else
-                <div 
-                    class="overflow-x-auto"
-                    wire:loading.class="opacity-40 pointer-events-none"
-                    wire:target="activeCountry, dateFrom, dateTo, sortBy"
-                >
-                    <table class="table table-xs table-pin-rows table-pin-cols">
-                        <thead>
-                            <tr>
-                                <th>Rang</th>
-                                <th>SKU</th>
-                                <th>Produit</th>
-                                <th>Prix</th>
-                                <th>
-                                    <button @click="$wire.sortBy('rownum_qty')" class="flex items-center gap-1 hover:underline cursor-pointer">
-                                        Qté vendue
-                                        <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor">
-                                            <path d="M8 4l3 4H5l3-4zm0 8l-3-4h6l-3 4z"/>
-                                        </svg>
-                                    </button>
-                                </th>
-                                <th>
-                                    <button @click="$wire.sortBy('rownum_revenue')" class="flex items-center gap-1 hover:underline cursor-pointer">
-                                        CA total
-                                        <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor">
-                                            <path d="M8 4l3 4H5l3-4zm0 8l-3-4h6l-3 4z"/>
-                                        </svg>
-                                    </button>
-                                </th>
-                                <th>Rangs</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach($sales as $row)
-                                <tr class="hover">
-                                    
-                                    {{-- Rang --}}
-                                    <th>
-                                        <span class="font-semibold {{ $sortBy === 'rownum_qty' ? 'text-primary' : 'text-success' }}">
-                                            #{{ $sortBy === 'rownum_qty' ? $row->rownum_qty : $row->rownum_revenue }}
-                                        </span>
-                                    </th>
-
-                                    {{-- SKU --}}
-                                    <td>
-                                        <span class="font-mono text-xs">{{ $row->sku }}</span>
-                                    </td>
-
-                                    {{-- Produit --}}
-                                    <td>
-                                        <div class="font-bold">{{ $row->title ?? '—' }}</div>
-                                    </td>
-
-                                    {{-- Prix --}}
-                                    <td>
-                                        @if($row->special_price)
-                                            <div>
-                                                <span class="text-success font-semibold">
-                                                    {{ number_format($row->special_price, 2, ',', ' ') }} €
-                                                </span>
-                                                <br>
-                                                <span class="text-xs text-gray-400 line-through">
-                                                    {{ number_format($row->price, 2, ',', ' ') }} €
-                                                </span>
-                                            </div>
-                                        @elseif($row->price)
-                                            {{ number_format($row->price, 2, ',', ' ') }} €
-                                        @else
-                                            <span class="text-gray-400">—</span>
-                                        @endif
-                                    </td>
-
-                                    {{-- Quantité vendue --}}
-                                    <td>
-                                        <span class="font-semibold {{ $sortBy === 'rownum_qty' ? 'text-primary' : '' }}">
-                                            {{ number_format($row->total_qty_sold, 0, ',', ' ') }}
-                                        </span>
-                                    </td>
-
-                                    {{-- CA total --}}
-                                    <td>
-                                        <div>
-                                            <span class="font-semibold {{ $sortBy === 'rownum_revenue' ? 'text-success' : '' }}">
-                                                {{ number_format($row->total_revenue, 2, ',', ' ') }} €
-                                            </span>
-                                            @if($row->cost)
-                                                <br>
-                                                <span class="text-xs text-gray-500">
-                                                    coût: {{ number_format($row->cost, 2, ',', ' ') }} €
-                                                </span>
-                                            @endif
-                                        </div>
-                                    </td>
-
-                                    {{-- Rangs --}}
-                                    <td>
-                                        <div class="text-xs space-y-1">
-                                            <div class="badge badge-primary badge-xs">
-                                                Qté #{{ $row->rownum_qty }}
-                                            </div>
-                                            <br>
-                                            <div class="badge badge-success badge-xs">
-                                                CA #{{ $row->rownum_revenue }}
-                                            </div>
-                                        </div>
-                                    </td>
-
-                                </tr>
-                            @endforeach
-                        </tbody>
-                        <tfoot>
-                            <tr>
-                                <th>Rang</th>
-                                <th>SKU</th>
-                                <th>Produit</th>
-                                <th>Prix</th>
-                                <th>Qté vendue</th>
-                                <th>CA total</th>
-                                <th>Rangs</th>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
-            @endif
-        </div>
     </div>
 </div>
