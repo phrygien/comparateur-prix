@@ -10,7 +10,7 @@ new class extends Component {
     public string $activeCountry = 'FR';
     public string $dateFrom      = '';
     public string $dateTo        = '';
-    public string $sortBy        = 'rank_qty'; // 'rank_qty' | 'rank_ca'
+    public string $sortBy        = 'rank_qty';
 
     public array $countries = [
         'FR' => 'France',
@@ -20,7 +20,6 @@ new class extends Component {
         'DE' => 'Allemagne',
     ];
 
-    // Statistiques de marché
     public $somme_prix_marche_total = 0;
     public $somme_gain = 0;
     public $somme_perte = 0;
@@ -73,20 +72,16 @@ new class extends Component {
             LIMIT 100
         ";
 
-        // Forcer l'encodage UTF-8 pour la connexion
         DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
         
         $results = DB::connection('mysqlMagento')
             ->select($sql, [$dateFrom, $dateTo, $this->activeCountry]);
         
-        // Nettoyer l'encodage pour chaque résultat
         foreach ($results as $result) {
             if (isset($result->designation_produit)) {
-                // Convertir en UTF-8 si nécessaire
                 if (!mb_check_encoding($result->designation_produit, 'UTF-8')) {
                     $result->designation_produit = mb_convert_encoding($result->designation_produit, 'UTF-8', 'ISO-8859-1');
                 }
-                // Nettoyer les caractères invalides
                 $result->designation_produit = mb_convert_encoding($result->designation_produit, 'UTF-8', 'UTF-8');
             }
             if (isset($result->marque)) {
@@ -102,12 +97,10 @@ new class extends Component {
 
     public function getComparisonsProperty()
     {
-        // Récupérer les sites à comparer
-        $sites = Site::whereIn('id', [1, 2, 8, 16])
+        $sites = Site::where('country_code', $this->activeCountry)
             ->orderBy('name')
             ->get();
 
-        // Réinitialiser les statistiques
         $this->somme_prix_marche_total = 0;
         $this->somme_gain = 0;
         $this->somme_perte = 0;
@@ -115,19 +108,19 @@ new class extends Component {
         $sales = $this->sales;
         $comparisons = [];
 
+        $siteIds = $sites->pluck('id')->toArray();
+
         foreach ($sales as $row) {
-            // Rechercher les produits scrapés correspondants par EAN (qui est maintenant le SKU)
             $scrapedProducts = collect([]);
             
-            if (!empty($row->ean)) {
+            if (!empty($row->ean) && !empty($siteIds)) {
                 $scrapedProducts = Product::where('ean', $row->ean)
-                    ->whereIn('web_site_id', [1, 2, 8, 16])
+                    ->whereIn('web_site_id', $siteIds)
                     ->with('website')
                     ->get()
                     ->keyBy('web_site_id');
             }
 
-            // Créer la comparaison
             $comparison = [
                 'row' => $row,
                 'sites' => [],
@@ -136,20 +129,16 @@ new class extends Component {
                 'difference_marche' => null
             ];
 
-            // Calcul du prix moyen du marché
             $somme_prix_marche = 0;
             $nombre_site = 0;
 
-            // Pour chaque site, ajouter le prix ou null
             foreach ($sites as $site) {
                 if (isset($scrapedProducts[$site->id])) {
                     $scrapedProduct = $scrapedProducts[$site->id];
 
-                    // Calculer la différence de prix et le pourcentage
                     $priceDiff = null;
                     $pricePercentage = null;
 
-                    // Utiliser prix_vente_cosma qui contient déjà le prix spécial ou normal
                     $prixCosma = $row->prix_vente_cosma;
 
                     if ($prixCosma > 0 && $scrapedProduct->prix_ht > 0) {
@@ -175,7 +164,6 @@ new class extends Component {
                 }
             }
 
-            // Calculer le prix moyen du marché
             $prixCosma = $row->prix_vente_cosma;
             
             if ($somme_prix_marche > 0 && $prixCosma > 0) {
@@ -184,7 +172,6 @@ new class extends Component {
                 $comparison['percentage_marche'] = round(($priceDiff_marche / $prixCosma) * 100, 2);
                 $comparison['difference_marche'] = $priceDiff_marche;
 
-                // Statistiques globales
                 $this->somme_prix_marche_total += $comparison['prix_moyen_marche'];
                 if ($priceDiff_marche > 0) {
                     $this->somme_gain += $priceDiff_marche;
@@ -196,7 +183,6 @@ new class extends Component {
             $comparisons[] = $comparison;
         }
 
-        // Calculer les pourcentages globaux
         if ($this->somme_prix_marche_total > 0) {
             $this->percentage_gain_marche = ((($this->somme_prix_marche_total + $this->somme_gain) * 100) / $this->somme_prix_marche_total) - 100;
             $this->percentage_perte_marche = ((($this->somme_prix_marche_total + $this->somme_perte) * 100) / $this->somme_prix_marche_total) - 100;
@@ -207,7 +193,7 @@ new class extends Component {
 
     public function getSitesProperty()
     {
-        return Site::whereIn('id', [1, 2, 8, 16])
+        return Site::where('country_code', $this->activeCountry)
             ->orderBy('name')
             ->get();
     }
@@ -219,14 +205,11 @@ new class extends Component {
 }; ?>
 
 <div>
-
-    {{-- ─── Header : tabs pays ───────────────────────────── --}}
     <div class="px-4 sm:px-6 lg:px-8 pt-6 pb-2">
         <x-tabs wire:model.live="activeCountry">
             @foreach($countries as $code => $label)
                 <x-tab name="{{ $code }}" label="{{ $label }}">
                     
-                    {{-- Spinner sur le tab --}}
                     <div
                         wire:loading
                         wire:target="activeCountry"
@@ -236,10 +219,8 @@ new class extends Component {
                         <span class="text-sm font-medium">Chargement des données pour {{ $label }}…</span>
                     </div>
 
-                    {{-- Contenu du tab --}}
                     <div wire:loading.remove wire:target="activeCountry">
                         
-                        {{-- Statistiques de marché --}}
                         @if(count($this->comparisons) > 0 && $somme_prix_marche_total > 0)
                             <div class="grid grid-cols-4 gap-4 mb-6 mt-6">
                                 <x-stat
@@ -274,7 +255,6 @@ new class extends Component {
                             </div>
                         @endif
 
-                        {{-- Toolbar : titre + compteur + filtres --}}
                         <div class="flex flex-wrap items-center justify-between gap-4 mb-4 mt-6">
                             <div>
                                 <h1 class="text-base font-semibold text-gray-900">
@@ -285,9 +265,7 @@ new class extends Component {
                                 </p>
                             </div>
 
-                            {{-- Filtres : dates + tri --}}
                             <div class="flex flex-wrap items-center gap-3">
-                                {{-- Filtres de date --}}
                                 <div class="flex items-center gap-2">
                                     <input
                                         type="date"
@@ -306,7 +284,6 @@ new class extends Component {
 
                                 <div class="divider divider-horizontal mx-0"></div>
 
-                                {{-- Boutons de tri --}}
                                 <div class="flex items-center gap-2">
                                     <span class="text-xs text-gray-400">Trier par</span>
                                     <button
@@ -333,10 +310,8 @@ new class extends Component {
                             </div>
                         </div>
 
-                        {{-- Table wrapper --}}
                         <div class="relative">
 
-                            {{-- Spinner pour les filtres et tri --}}
                             <div
                                 wire:loading
                                 wire:target="dateFrom, dateTo, sortBy"
@@ -398,55 +373,46 @@ new class extends Component {
                                                 @endphp
                                                 <tr class="hover">
                                                     
-                                                    {{-- Rang --}}
                                                     <th>
                                                         <span class="font-semibold {{ $sortBy === 'rank_qty' ? 'text-primary' : 'text-success' }}">
                                                             #{{ $sortBy === 'rank_qty' ? $row->rank_qty : $row->rank_ca }}
                                                         </span>
                                                     </th>
 
-                                                    {{-- EAN (SKU) --}}
                                                     <td>
                                                         <span class="font-mono text-xs">{{ $row->ean }}</span>
                                                     </td>
 
-                                                    {{-- Groupe --}}
                                                     <td>
                                                         <div class="text-xs">{{ $row->groupe ?? '—' }}</div>
                                                     </td>
 
-                                                    {{-- Marque --}}
                                                     <td>
                                                         <div class="text-xs font-semibold">{{ $row->marque ?? '—' }}</div>
                                                     </td>
 
-                                                    {{-- Désignation --}}
                                                     <td>
                                                         <div class="font-bold max-w-xs truncate" title="{{ $row->designation_produit }}">
                                                             {{ $row->designation_produit ?? '—' }}
                                                         </div>
                                                     </td>
 
-                                                    {{-- Prix Cosma --}}
                                                     <td class="text-right font-semibold text-primary">
                                                         {{ number_format($prixCosma, 2, ',', ' ') }} €
                                                     </td>
 
-                                                    {{-- Quantité vendue --}}
                                                     <td>
                                                         <span class="font-semibold {{ $sortBy === 'rank_qty' ? 'text-primary' : '' }}">
                                                             {{ number_format($row->total_qty_sold, 0, ',', ' ') }}
                                                         </span>
                                                     </td>
 
-                                                    {{-- CA total --}}
                                                     <td>
                                                         <span class="font-semibold {{ $sortBy === 'rank_ca' ? 'text-success' : '' }}">
                                                             {{ number_format($row->total_revenue, 2, ',', ' ') }} €
                                                         </span>
                                                     </td>
 
-                                                    {{-- PGHT --}}
                                                     <td class="text-right text-xs">
                                                         @if($row->pght)
                                                             {{ number_format($row->pght, 2, ',', ' ') }} €
@@ -455,7 +421,6 @@ new class extends Component {
                                                         @endif
                                                     </td>
 
-                                                    {{-- Coût --}}
                                                     <td class="text-right text-xs">
                                                         @if($row->cost)
                                                             {{ number_format($row->cost, 2, ',', ' ') }} €
@@ -464,7 +429,6 @@ new class extends Component {
                                                         @endif
                                                     </td>
 
-                                                    {{-- Prix des sites concurrents --}}
                                                     @foreach($this->sites as $site)
                                                         <td class="text-right">
                                                             @if($comparison['sites'][$site->id])
@@ -507,7 +471,6 @@ new class extends Component {
                                                         </td>
                                                     @endforeach
 
-                                                    {{-- Prix moyen marché --}}
                                                     <td class="text-right text-xs">
                                                         @if($comparison['prix_moyen_marche'])
                                                             @php
