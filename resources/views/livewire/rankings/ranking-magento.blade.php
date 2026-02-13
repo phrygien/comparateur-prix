@@ -85,7 +85,7 @@ new class extends Component {
     }
 }; ?>
 
-<div class="min-h-screen bg-gray-50">
+<div class="min-h-screen bg-gray-50 max-w-7xl mx-auto">
 
     {{-- ─── Date Filters ─────────────────────────────────────── --}}
     <div class="bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-4">
