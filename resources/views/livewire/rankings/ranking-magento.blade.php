@@ -79,10 +79,6 @@ new class extends Component {
         wire:target="setCountry, dateFrom, dateTo"
         class="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-white/60 backdrop-blur-sm"
     >
-        <svg class="animate-spin h-10 w-10 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
-        </svg>
         <span class="text-sm font-medium text-indigo-600 tracking-wide">Chargement en cours…</span>
     </div>
 
