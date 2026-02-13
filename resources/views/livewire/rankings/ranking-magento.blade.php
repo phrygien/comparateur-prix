@@ -216,7 +216,9 @@ new class extends Component {
                                                         </svg>
                                                     </button>
                                                 </th>
-                                                <th>Rangs</th>
+                                                <th>Coût</th>
+                                                <th>Rang Qté</th>
+                                                <th>Rang CA</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -268,30 +270,34 @@ new class extends Component {
 
                                                     {{-- CA total --}}
                                                     <td>
-                                                        <div>
-                                                            <span class="font-semibold {{ $sortBy === 'rownum_revenue' ? 'text-success' : '' }}">
-                                                                {{ number_format($row->total_revenue, 2, ',', ' ') }} €
-                                                            </span>
-                                                            @if($row->cost)
-                                                                <br>
-                                                                <span class="text-xs text-gray-500">
-                                                                    coût: {{ number_format($row->cost, 2, ',', ' ') }} €
-                                                                </span>
-                                                            @endif
-                                                        </div>
+                                                        <span class="font-semibold {{ $sortBy === 'rownum_revenue' ? 'text-success' : '' }}">
+                                                            {{ number_format($row->total_revenue, 2, ',', ' ') }} €
+                                                        </span>
                                                     </td>
 
-                                                    {{-- Rangs --}}
+                                                    {{-- Coût --}}
                                                     <td>
-                                                        <div class="text-xs space-y-1">
-                                                            <div class="badge badge-primary badge-xs">
-                                                                Qté #{{ $row->rownum_qty }}
-                                                            </div>
-                                                            <br>
-                                                            <div class="badge badge-success badge-xs">
-                                                                CA #{{ $row->rownum_revenue }}
-                                                            </div>
-                                                        </div>
+                                                        @if($row->cost)
+                                                            <span class="text-xs text-gray-600">
+                                                                {{ number_format($row->cost, 2, ',', ' ') }} €
+                                                            </span>
+                                                        @else
+                                                            <span class="text-gray-400">—</span>
+                                                        @endif
+                                                    </td>
+
+                                                    {{-- Rang Qté --}}
+                                                    <td>
+                                                        <span class="text-xs font-medium text-primary">
+                                                            #{{ $row->rownum_qty }}
+                                                        </span>
+                                                    </td>
+
+                                                    {{-- Rang CA --}}
+                                                    <td>
+                                                        <span class="text-xs font-medium text-success">
+                                                            #{{ $row->rownum_revenue }}
+                                                        </span>
                                                     </td>
 
                                                 </tr>
@@ -305,7 +311,9 @@ new class extends Component {
                                                 <th>Prix</th>
                                                 <th>Qté vendue</th>
                                                 <th>CA total</th>
-                                                <th>Rangs</th>
+                                                <th>Coût</th>
+                                                <th>Rang Qté</th>
+                                                <th>Rang CA</th>
                                             </tr>
                                         </tfoot>
                                     </table>
