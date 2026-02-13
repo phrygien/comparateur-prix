@@ -206,41 +206,6 @@ new class extends Component {
 
 <div>
     <div class="px-4 sm:px-6 lg:px-8 pt-6 pb-2">
-        
-        @if(count($this->comparisons) > 0 && $somme_prix_marche_total > 0)
-            <div class="grid grid-cols-4 gap-4 mb-6">
-                <x-stat
-                    title="Moins chers en moyenne de"
-                    value="{{ number_format(abs($somme_gain / count($this->comparisons)), 2, ',', ' ') }} €"
-                    description="sur certains produits"
-                    color="text-primary"
-                />
-
-                <x-stat
-                    class="text-green-500"
-                    title="Moins chers en moyenne de (%)"
-                    description="sur certains produits"
-                    value="{{ number_format(abs($percentage_gain_marche), 2, ',', ' ') }} %"
-                    icon="o-arrow-trending-down"
-                />
-
-                <x-stat
-                    title="Plus chers en moyenne de"
-                    value="{{ number_format(abs($somme_perte / count($this->comparisons)), 2, ',', ' ') }} €"
-                    description="sur certains produits"
-                />
-
-                <x-stat
-                    title="Plus chers en moyenne de (%)"
-                    value="{{ number_format(abs($percentage_perte_marche), 2, ',', ' ') }} %"
-                    description="sur certains produits"
-                    icon="o-arrow-trending-up"
-                    class="text-pink-500"
-                    color="text-pink-500"
-                />
-            </div>
-        @endif
-
         <x-tabs wire:model.live="activeCountry">
             @foreach($countries as $code => $label)
                 <x-tab name="{{ $code }}" label="{{ $label }}">
@@ -256,6 +221,40 @@ new class extends Component {
 
                     <div wire:loading.remove wire:target="activeCountry">
                         
+                        @if(count($this->comparisons) > 0 && $somme_prix_marche_total > 0)
+                            <div class="grid grid-cols-4 gap-4 mb-6 mt-6">
+                                <x-stat
+                                    title="Moins chers en moyenne de"
+                                    value="{{ number_format(abs($somme_gain / count($this->comparisons)), 2, ',', ' ') }} €"
+                                    description="sur certains produits"
+                                    color="text-primary"
+                                />
+
+                                <x-stat
+                                    class="text-green-500"
+                                    title="Moins chers en moyenne de (%)"
+                                    description="sur certains produits"
+                                    value="{{ number_format(abs($percentage_gain_marche), 2, ',', ' ') }} %"
+                                    icon="o-arrow-trending-down"
+                                />
+
+                                <x-stat
+                                    title="Plus chers en moyenne de"
+                                    value="{{ number_format(abs($somme_perte / count($this->comparisons)), 2, ',', ' ') }} €"
+                                    description="sur certains produits"
+                                />
+
+                                <x-stat
+                                    title="Plus chers en moyenne de (%)"
+                                    value="{{ number_format(abs($percentage_perte_marche), 2, ',', ' ') }} %"
+                                    description="sur certains produits"
+                                    icon="o-arrow-trending-up"
+                                    class="text-pink-500"
+                                    color="text-pink-500"
+                                />
+                            </div>
+                        @endif
+
                         <div class="flex flex-wrap items-center justify-between gap-4 mb-4 mt-6">
                             <div>
                                 <h1 class="text-base font-semibold text-gray-900">
