@@ -26,16 +26,30 @@ new class extends Component {
         </div>
         <div class="hidden sm:block">
             <nav class="flex space-x-4" aria-label="Tabs">
-                <!-- Current: "bg-gray-100 text-gray-700", Default: "text-gray-500 hover:text-gray-700" -->
-                <a href="#" class="rounded-md px-3 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">My
-                    Account</a>
-                <a href="#"
-                    class="rounded-md px-3 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">Company</a>
+                <!-- Actif: "bg-gray-100 text-gray-700", Défaut: "text-gray-500 hover:text-gray-700" -->
+
+                <a href="#" class="rounded-md px-3 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">
+                    France
+                </a>
+
+                <a href="#" class="rounded-md px-3 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">
+                    Belgique
+                </a>
+
                 <a href="#" class="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700"
-                    aria-current="page">Team Members</a>
-                <a href="#"
-                    class="rounded-md px-3 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">Billing</a>
+                    aria-current="page">
+                    Espagne
+                </a>
+
+                <a href="#" class="rounded-md px-3 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">
+                    Italie
+                </a>
+
+                <a href="#" class="rounded-md px-3 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">
+                    Allemagne
+                </a>
             </nav>
+
         </div>
     </div>
 
