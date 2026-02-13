@@ -8,6 +8,7 @@ new class extends Component {
     public string $activeCountry = 'FR';
     public string $dateFrom      = '';
     public string $dateTo        = '';
+    public string $sortBy        = 'rownum_qty'; // 'rownum_qty' | 'rownum_revenue'
 
     public array $countries = [
         'FR' => 'France',
@@ -22,10 +23,17 @@ new class extends Component {
         $this->activeCountry = $country;
     }
 
+    public function sortBy(string $column): void
+    {
+        $this->sortBy = $column;
+    }
+
     public function with(): array
     {
         $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
         $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
+
+        $orderCol = $this->sortBy === 'rownum_revenue' ? 'total_revenue' : 'total_qty_sold';
 
         $sql = "
             WITH sales AS (
@@ -60,7 +68,7 @@ new class extends Component {
                 ROW_NUMBER() OVER (ORDER BY total_qty_sold DESC) AS rownum_qty,
                 ROW_NUMBER() OVER (ORDER BY total_revenue DESC) AS rownum_revenue
             FROM sales
-            ORDER BY total_qty_sold DESC
+            ORDER BY {$orderCol} DESC
             LIMIT 100
         ";
 
@@ -71,20 +79,13 @@ new class extends Component {
     }
 }; ?>
 
-<div class="min-h-screen bg-gray-50">
+<div>
 
-    {{-- ─── Loading Overlay ──────────────────────────────────── --}}
-    <div
-        wire:loading
-        wire:target="setCountry, dateFrom, dateTo"
-        class="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-white/60 backdrop-blur-sm"
-    >
-        <span class="text-sm font-medium text-indigo-600 tracking-wide">Chargement en cours…</span>
-    </div>
+    {{-- ─── Header : dates + tabs ───────────────────────────── --}}
+    <div class="px-4 sm:px-6 lg:px-8 pt-6 pb-2">
 
-    {{-- ─── Date Filters ─────────────────────────────────────── --}}
-    <div class="bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-4">
-        <div class="flex flex-wrap items-end gap-4">
+        {{-- Filtres de date --}}
+        <div class="flex flex-wrap items-end gap-4 mb-6">
             <div>
                 <label class="block text-xs font-medium text-gray-500 mb-1">Date de début</label>
                 <input
@@ -104,51 +105,47 @@ new class extends Component {
                 />
             </div>
         </div>
-    </div>
 
-    {{-- ─── Country Tabs ──────────────────────────────────────── --}}
-    <div class="bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8">
-
-        {{-- Mobile select --}}
-        <div class="grid grid-cols-1 sm:hidden py-3">
-            <select
-                aria-label="Sélectionner un pays"
-                @change="$wire.setCountry($event.target.value)"
-                class="col-start-1 row-start-1 w-full appearance-none rounded-md bg-white py-2 pr-8 pl-3
-                       text-base text-gray-900 outline outline-1 -outline-offset-1 outline-gray-300
-                       focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-600"
-            >
-                @foreach($countries as $code => $label)
-                    <option value="{{ $code }}" {{ $activeCountry === $code ? 'selected' : '' }}>{{ $label }}</option>
-                @endforeach
-            </select>
-            <svg class="pointer-events-none col-start-1 row-start-1 mr-2 size-5 self-center justify-self-end fill-gray-500"
-                 viewBox="0 0 16 16" aria-hidden="true">
-                <path fill-rule="evenodd"
-                      d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z"
-                      clip-rule="evenodd" />
-            </svg>
-        </div>
-
-        {{-- Desktop tabs --}}
-        <nav class="hidden sm:flex space-x-1 pt-3" aria-label="Pays">
-            @foreach($countries as $code => $label)
-                @php $isActive = $activeCountry === $code; @endphp
-                <button
-                    type="button"
-                    @click="$wire.setCountry('{{ $code }}')"
-                    class="rounded-t-md px-4 py-2.5 text-sm font-medium transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500 {{ $isActive ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100' }}"
-                    @if($isActive) aria-current="page" @endif
+        {{-- Tabs pays --}}
+        <div>
+            {{-- Mobile select --}}
+            <div class="grid grid-cols-1 sm:hidden">
+                <select
+                    aria-label="Sélectionner un pays"
+                    @change="$wire.setCountry($event.target.value)"
+                    class="col-start-1 row-start-1 w-full appearance-none rounded-md bg-white py-2 pr-8 pl-3 text-base text-gray-900 outline-1 -outline-offset-1 outline-gray-300 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-600"
                 >
-                    {{ $label }}
-                    <span class="ml-1 text-xs opacity-70">({{ $code }})</span>
-                </button>
-            @endforeach
-        </nav>
+                    @foreach($countries as $code => $label)
+                        <option value="{{ $code }}" {{ $activeCountry === $code ? 'selected' : '' }}>{{ $label }}</option>
+                    @endforeach
+                </select>
+                <svg class="pointer-events-none col-start-1 row-start-1 mr-2 size-5 self-center justify-self-end fill-gray-500" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <path fill-rule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
+                </svg>
+            </div>
+
+            {{-- Desktop tabs --}}
+            <div class="hidden sm:block">
+                <nav class="flex space-x-4" aria-label="Pays">
+                    @foreach($countries as $code => $label)
+                        @php $isActive = $activeCountry === $code; @endphp
+                        <button
+                            type="button"
+                            @click="$wire.setCountry('{{ $code }}')"
+                            class="rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150
+                                   {{ $isActive ? 'bg-gray-100 text-gray-700' : 'text-gray-500 hover:text-gray-700' }}"
+                            @if($isActive) aria-current="page" @endif
+                        >
+                            {{ $label }}
+                        </button>
+                    @endforeach
+                </nav>
+            </div>
+        </div>
     </div>
 
     {{-- ─── Table ─────────────────────────────────────────────── --}}
-    <div class="px-4 sm:px-6 lg:px-8 py-8" wire:loading.remove wire:target="setCountry, dateFrom, dateTo">
+    <div class="px-4 sm:px-6 lg:px-8 py-8">
 
         <div class="sm:flex sm:items-center mb-6">
             <div class="sm:flex-auto">
@@ -164,67 +161,120 @@ new class extends Component {
             </div>
         </div>
 
-        @if(count($sales) === 0)
-            <div class="text-center py-16 text-gray-400 text-sm">
-                Aucune vente trouvée pour cette période et ce pays.
-            </div>
-        @else
+        {{-- Table wrapper — loading skeleton sur le tableau uniquement --}}
+        <div class="relative">
 
-            <div class="overflow-x-auto rounded-lg border border-gray-200">
-                <table class="table table-xs w-full">
-                    <thead>
-                        <tr>
-                            <th>SKU</th>
-                            <th>Produit</th>
-                            <th class="text-right">Prix</th>
-                            <th class="text-right">Prix spécial</th>
-                            <th class="text-right">Coût</th>
-                            <th class="text-right">PVC</th>
-                            <th class="text-right">Qté vendue</th>
-                            <th class="text-right">CA total</th>
-                            <th class="text-center text-indigo-600">Rang Qté</th>
-                            <th class="text-center text-emerald-600">Rang CA</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach($sales as $row)
-                            <tr class="hover">
-                                <td class="font-mono">{{ $row->sku }}</td>
-                                <td class="max-w-[200px] truncate" title="{{ $row->title }}">{{ $row->title ?? '—' }}</td>
-                                <td class="text-right">{{ $row->price ? number_format($row->price, 2, ',', ' ') . ' €' : '—' }}</td>
-                                <td class="text-right {{ $row->special_price ? 'text-green-600 font-medium' : 'text-gray-400' }}">
-                                    {{ $row->special_price ? number_format($row->special_price, 2, ',', ' ') . ' €' : '—' }}
-                                </td>
-                                <td class="text-right">{{ $row->cost ? number_format($row->cost, 2, ',', ' ') . ' €' : '—' }}</td>
-                                <td class="text-right">{{ $row->pvc ? number_format($row->pvc, 2, ',', ' ') . ' €' : '—' }}</td>
-                                <td class="text-right font-semibold">{{ number_format($row->total_qty_sold, 0, ',', ' ') }}</td>
-                                <td class="text-right font-semibold">{{ number_format($row->total_revenue, 2, ',', ' ') }} €</td>
-                                <td class="text-center">
-                                    <span class="badge badge-soft badge-primary badge-sm"># {{ $row->rownum_qty }}</span>
-                                </td>
-                                <td class="text-center">
-                                    <span class="badge badge-soft badge-success badge-sm"># {{ $row->rownum_revenue }}</span>
-                                </td>
+            {{-- Spinner overlay sur la table --}}
+            <div
+                wire:loading
+                wire:target="setCountry, dateFrom, dateTo, sortBy"
+                class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg bg-white/70 backdrop-blur-sm"
+            >
+                <svg class="animate-spin h-8 w-8 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                </svg>
+                <span class="text-sm font-medium text-indigo-600">Chargement en cours…</span>
+            </div>
+
+            @if(count($sales) === 0)
+                <div class="text-center py-16 text-gray-400 text-sm">
+                    Aucune vente trouvée pour cette période et ce pays.
+                </div>
+            @else
+                <div class="overflow-x-auto rounded-lg border border-gray-200"
+                     wire:loading.class="opacity-40 pointer-events-none"
+                     wire:target="setCountry, dateFrom, dateTo, sortBy">
+                    <table class="table table-xs w-full">
+                        <thead>
+                            <tr>
+                                <th>SKU</th>
+                                <th>Produit</th>
+                                <th class="text-right">Prix</th>
+                                <th class="text-right">Prix spécial</th>
+                                <th class="text-right">Coût</th>
+                                <th class="text-right">PVC</th>
+                                <th class="text-right">Qté vendue</th>
+                                <th class="text-right">CA total</th>
+
+                                {{-- ── Rang Qté (sortable) --}}
+                                <th class="text-center">
+                                    <button
+                                        type="button"
+                                        @click="$wire.sortBy('rownum_qty')"
+                                        class="inline-flex items-center gap-1 font-semibold transition-colors
+                                               {{ $sortBy === 'rownum_qty' ? 'text-indigo-600' : 'text-gray-400 hover:text-indigo-500' }}"
+                                    >
+                                        Rang Qté
+                                        @if($sortBy === 'rownum_qty')
+                                            <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4l4 8H4z" transform="rotate(180 8 8)"/></svg>
+                                        @else
+                                            <svg class="w-3 h-3 opacity-40" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4l4 8H4z" transform="rotate(180 8 8)"/></svg>
+                                        @endif
+                                    </button>
+                                </th>
+
+                                {{-- ── Rang CA (sortable) --}}
+                                <th class="text-center">
+                                    <button
+                                        type="button"
+                                        @click="$wire.sortBy('rownum_revenue')"
+                                        class="inline-flex items-center gap-1 font-semibold transition-colors
+                                               {{ $sortBy === 'rownum_revenue' ? 'text-emerald-600' : 'text-gray-400 hover:text-emerald-500' }}"
+                                    >
+                                        Rang CA
+                                        @if($sortBy === 'rownum_revenue')
+                                            <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4l4 8H4z" transform="rotate(180 8 8)"/></svg>
+                                        @else
+                                            <svg class="w-3 h-3 opacity-40" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4l4 8H4z" transform="rotate(180 8 8)"/></svg>
+                                        @endif
+                                    </button>
+                                </th>
                             </tr>
-                        @endforeach
-                    </tbody>
-                    <tfoot>
-                        <tr>
-                            <th>SKU</th>
-                            <th>Produit</th>
-                            <th class="text-right">Prix</th>
-                            <th class="text-right">Prix spécial</th>
-                            <th class="text-right">Coût</th>
-                            <th class="text-right">PVC</th>
-                            <th class="text-right">Qté vendue</th>
-                            <th class="text-right">CA total</th>
-                            <th class="text-center text-indigo-600">Rang Qté</th>
-                            <th class="text-center text-emerald-600">Rang CA</th>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
-
-        @endif
+                        </thead>
+                        <tbody>
+                            @foreach($sales as $row)
+                                <tr class="hover">
+                                    <td class="font-mono">{{ $row->sku }}</td>
+                                    <td class="max-w-[200px] truncate" title="{{ $row->title }}">{{ $row->title ?? '—' }}</td>
+                                    <td class="text-right">{{ $row->price ? number_format($row->price, 2, ',', ' ') . ' €' : '—' }}</td>
+                                    <td class="text-right {{ $row->special_price ? 'text-green-600 font-medium' : 'text-gray-400' }}">
+                                        {{ $row->special_price ? number_format($row->special_price, 2, ',', ' ') . ' €' : '—' }}
+                                    </td>
+                                    <td class="text-right">{{ $row->cost ? number_format($row->cost, 2, ',', ' ') . ' €' : '—' }}</td>
+                                    <td class="text-right">{{ $row->pvc ? number_format($row->pvc, 2, ',', ' ') . ' €' : '—' }}</td>
+                                    <td class="text-right font-semibold">{{ number_format($row->total_qty_sold, 0, ',', ' ') }}</td>
+                                    <td class="text-right font-semibold">{{ number_format($row->total_revenue, 2, ',', ' ') }} €</td>
+                                    <td class="text-center">
+                                        <span class="badge badge-soft badge-sm {{ $sortBy === 'rownum_qty' ? 'badge-primary' : 'badge-ghost' }}">
+                                            # {{ $row->rownum_qty }}
+                                        </span>
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge badge-soft badge-sm {{ $sortBy === 'rownum_revenue' ? 'badge-success' : 'badge-ghost' }}">
+                                            # {{ $row->rownum_revenue }}
+                                        </span>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <th>SKU</th>
+                                <th>Produit</th>
+                                <th class="text-right">Prix</th>
+                                <th class="text-right">Prix spécial</th>
+                                <th class="text-right">Coût</th>
+                                <th class="text-right">PVC</th>
+                                <th class="text-right">Qté vendue</th>
+                                <th class="text-right">CA total</th>
+                                <th class="text-center {{ $sortBy === 'rownum_qty' ? 'text-indigo-600' : 'text-gray-400' }}">Rang Qté</th>
+                                <th class="text-center {{ $sortBy === 'rownum_revenue' ? 'text-emerald-600' : 'text-gray-400' }}">Rang CA</th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            @endif
+        </div>
     </div>
 </div>
