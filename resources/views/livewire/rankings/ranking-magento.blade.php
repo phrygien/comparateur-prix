@@ -11,6 +11,7 @@ new class extends Component {
     public string $dateFrom      = '';
     public string $dateTo        = '';
     public string $sortBy        = 'rank_qty';
+    public string $vendorFilter  = ''; // Nouveau filtre vendor
 
     public array $countries = [
         'FR' => 'France',
@@ -39,6 +40,15 @@ new class extends Component {
 
         $orderCol = $this->sortBy === 'rank_ca' ? 'total_revenue' : 'total_qty_sold';
 
+        // Ajout du filtre vendor dans la requête SQL
+        $vendorCondition = '';
+        $params = [$dateFrom, $dateTo, $this->activeCountry];
+        
+        if (!empty($this->vendorFilter)) {
+            $vendorCondition = " AND product_char.vendor = ?";
+            $params[] = $this->vendorFilter;
+        }
+
         $sql = "
             WITH sales AS (
                 SELECT
@@ -47,6 +57,7 @@ new class extends Component {
                     SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) AS groupe,
                     SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 2), ' - ', -1) AS marque,
                     SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 3), ' - ', -1) AS designation_produit,
+                    product_char.vendor AS vendor,
                     (CASE
                         WHEN ROUND(product_decimal.special_price, 2) IS NOT NULL THEN ROUND(product_decimal.special_price, 2)
                         ELSE ROUND(product_decimal.price, 2)
@@ -67,6 +78,7 @@ new class extends Component {
                   AND o.created_at <= ?
                   AND addr.country_id = ?
                   AND oi.row_total > 0
+                  {$vendorCondition}
                 GROUP BY oi.sku, oi.name, addr.country_id
             )
             SELECT
@@ -81,7 +93,7 @@ new class extends Component {
         DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
         
         $results = DB::connection('mysqlMagento')
-            ->select($sql, [$dateFrom, $dateTo, $this->activeCountry]);
+            ->select($sql, $params);
         
         foreach ($results as $result) {
             if (isset($result->designation_produit)) {
@@ -96,9 +108,45 @@ new class extends Component {
                 }
                 $result->marque = mb_convert_encoding($result->marque, 'UTF-8', 'UTF-8');
             }
+            if (isset($result->vendor)) {
+                if (!mb_check_encoding($result->vendor, 'UTF-8')) {
+                    $result->vendor = mb_convert_encoding($result->vendor, 'UTF-8', 'ISO-8859-1');
+                }
+                $result->vendor = mb_convert_encoding($result->vendor, 'UTF-8', 'UTF-8');
+            }
         }
         
         return $results;
+    }
+
+    // Nouvelle méthode pour récupérer la liste des vendors disponibles
+    public function getAvailableVendorsProperty()
+    {
+        $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
+        $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
+
+        $sql = "
+            SELECT DISTINCT product_char.vendor
+            FROM sales_order_item oi
+            JOIN sales_order o ON oi.order_id = o.entity_id
+            JOIN sales_order_address addr ON addr.parent_id = o.entity_id
+                AND addr.address_type = 'shipping'
+            JOIN catalog_product_entity AS produit ON oi.sku = produit.sku
+            LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+            WHERE o.state IN ('processing', 'complete')
+              AND o.created_at >= ?
+              AND o.created_at <= ?
+              AND addr.country_id = ?
+              AND oi.row_total > 0
+              AND product_char.vendor IS NOT NULL
+              AND product_char.vendor != ''
+            ORDER BY product_char.vendor ASC
+        ";
+
+        $vendors = DB::connection('mysqlMagento')
+            ->select($sql, [$dateFrom, $dateTo, $this->activeCountry]);
+
+        return collect($vendors)->pluck('vendor')->toArray();
     }
 
     public function getComparisonsProperty()
@@ -220,6 +268,7 @@ new class extends Component {
             'sales' => $this->sales,
             'comparisons' => $comparisons,
             'sites' => $this->sites,
+            'availableVendors' => $this->availableVendors,
             'comparisonsAvecPrixMarche' => $comparisonsAvecPrixMarche,
             'somme_gain' => $this->somme_gain,
             'somme_perte' => $this->somme_perte,
@@ -289,10 +338,26 @@ new class extends Component {
                                 </h1>
                                 <p class="mt-0.5 text-sm text-gray-500">
                                     Top 100 produits · {{ count($sales) }} résultat(s)
+                                    @if($vendorFilter)
+                                        · Vendor: {{ $vendorFilter }}
+                                    @endif
                                 </p>
                             </div>
 
                             <div class="flex flex-wrap items-center gap-3">
+                                <!-- Filtre Vendor -->
+                                <select
+                                    wire:model.live="vendorFilter"
+                                    class="select select-bordered select-sm w-48"
+                                >
+                                    <option value="">Tous les vendors</option>
+                                    @foreach($availableVendors as $vendor)
+                                        <option value="{{ $vendor }}">{{ $vendor }}</option>
+                                    @endforeach
+                                </select>
+
+                                <div class="divider divider-horizontal mx-0"></div>
+
                                 <div class="flex items-center gap-2">
                                     <input
                                         type="date"
@@ -343,7 +408,7 @@ new class extends Component {
 
                             <div
                                 wire:loading
-                                wire:target="dateFrom, dateTo, sortBy"
+                                wire:target="dateFrom, dateTo, sortBy, vendorFilter"
                                 class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg bg-white/70 backdrop-blur-sm"
                             >
                                 <span class="loading loading-spinner loading-lg text-primary"></span>
@@ -353,13 +418,13 @@ new class extends Component {
                             @if(count($sales) === 0)
                                 <div class="alert alert-info">
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                    <span>Aucune vente trouvée pour cette période et ce pays.</span>
+                                    <span>Aucune vente trouvée pour cette période{{ $vendorFilter ? ' et ce vendor' : '' }}.</span>
                                 </div>
                             @else
                                 <div 
                                     class="overflow-x-auto"
                                     wire:loading.class="opacity-40 pointer-events-none"
-                                    wire:target="dateFrom, dateTo, sortBy"
+                                    wire:target="dateFrom, dateTo, sortBy, vendorFilter"
                                 >
                                     <table class="table table-xs table-pin-rows table-pin-cols">
                                         <thead>
@@ -367,6 +432,7 @@ new class extends Component {
                                                 <th>Rang Qty</th>
                                                 <th>Rang CA</th>
                                                 <th>EAN</th>
+                                                <th>Vendor</th>
                                                 <th>Groupe</th>
                                                 <th>Marque</th>
                                                 <th>Désignation</th>
@@ -416,6 +482,10 @@ new class extends Component {
                                                     </td>
 
                                                     <td>
+                                                        <div class="text-xs font-medium text-blue-600">{{ $row->vendor ?? '—' }}</div>
+                                                    </td>
+
+                                                    <td>
                                                         <div class="text-xs">{{ $row->groupe ?? '—' }}</div>
                                                     </td>
 
@@ -452,14 +522,6 @@ new class extends Component {
                                                             <span class="text-gray-400">—</span>
                                                         @endif
                                                     </td>
-{{-- 
-                                                    <td class="text-right text-xs">
-                                                        @if($row->cost)
-                                                            {{ number_format($row->cost, 2, ',', ' ') }} €
-                                                        @else
-                                                            <span class="text-gray-400">—</span>
-                                                        @endif
-                                                    </td> --}}
 
                                                     @foreach($this->sites as $site)
                                                         <td class="text-right">
@@ -537,6 +599,7 @@ new class extends Component {
                                                 <th>Rang Qty</th>
                                                 <th>Rang CA</th>
                                                 <th>EAN</th>
+                                                <th>Vendor</th>
                                                 <th>Groupe</th>
                                                 <th>Marque</th>
                                                 <th>Désignation</th>
@@ -544,7 +607,6 @@ new class extends Component {
                                                 <th>Qté vendue</th>
                                                 <th>CA total</th>
                                                 <th>PGHT</th>
-                                                <th>Coût</th>
                                                 @foreach($sites as $site)
                                                     <th class="text-right">{{ $site->name }}</th>
                                                 @endforeach
