@@ -11,6 +11,7 @@ new class extends Component {
     public string $dateFrom      = '';
     public string $dateTo        = '';
     public string $sortBy        = 'rank_qty';
+    public string $marqueFilter  = ''; // Nouveau filtre marque
 
     public array $countries = [
         'FR' => 'France',
@@ -38,6 +39,15 @@ new class extends Component {
         $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
 
         $orderCol = $this->sortBy === 'rank_ca' ? 'total_revenue' : 'total_qty_sold';
+
+        // Construire la condition de filtre marque (appliquée après le calcul des rangs)
+        $marqueCondition = '';
+        $params = [$dateFrom, $dateTo, $this->activeCountry];
+        
+        if (!empty($this->marqueFilter)) {
+            $marqueCondition = " WHERE marque = ?";
+            $params[] = $this->marqueFilter;
+        }
 
         $sql = "
             WITH sales AS (
@@ -68,12 +78,17 @@ new class extends Component {
                   AND addr.country_id = ?
                   AND oi.row_total > 0
                 GROUP BY oi.sku, oi.name, addr.country_id
+            ),
+            ranked_sales AS (
+                SELECT
+                    *,
+                    ROW_NUMBER() OVER (ORDER BY total_qty_sold DESC) AS rank_qty,
+                    ROW_NUMBER() OVER (ORDER BY total_revenue DESC) AS rank_ca
+                FROM sales
             )
-            SELECT
-                *,
-                ROW_NUMBER() OVER (ORDER BY total_qty_sold DESC) AS rank_qty,
-                ROW_NUMBER() OVER (ORDER BY total_revenue DESC) AS rank_ca
-            FROM sales
+            SELECT *
+            FROM ranked_sales
+            {$marqueCondition}
             ORDER BY {$orderCol} DESC
             LIMIT 100
         ";
@@ -81,7 +96,7 @@ new class extends Component {
         DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
         
         $results = DB::connection('mysqlMagento')
-            ->select($sql, [$dateFrom, $dateTo, $this->activeCountry]);
+            ->select($sql, $params);
         
         foreach ($results as $result) {
             if (isset($result->designation_produit)) {
@@ -99,6 +114,41 @@ new class extends Component {
         }
         
         return $results;
+    }
+
+    // Nouvelle méthode pour récupérer la liste des marques disponibles
+    public function getAvailableMarquesProperty()
+    {
+        $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
+        $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
+
+        $sql = "
+            WITH sales AS (
+                SELECT DISTINCT
+                    SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 2), ' - ', -1) AS marque
+                FROM sales_order_item oi
+                JOIN sales_order o ON oi.order_id = o.entity_id
+                JOIN sales_order_address addr ON addr.parent_id = o.entity_id
+                    AND addr.address_type = 'shipping'
+                JOIN catalog_product_entity AS produit ON oi.sku = produit.sku
+                LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+                WHERE o.state IN ('processing', 'complete')
+                  AND o.created_at >= ?
+                  AND o.created_at <= ?
+                  AND addr.country_id = ?
+                  AND oi.row_total > 0
+            )
+            SELECT marque
+            FROM sales
+            WHERE marque IS NOT NULL
+              AND marque != ''
+            ORDER BY marque ASC
+        ";
+
+        $marques = DB::connection('mysqlMagento')
+            ->select($sql, [$dateFrom, $dateTo, $this->activeCountry]);
+
+        return collect($marques)->pluck('marque')->toArray();
     }
 
     public function getComparisonsProperty()
@@ -220,6 +270,7 @@ new class extends Component {
             'sales' => $this->sales,
             'comparisons' => $comparisons,
             'sites' => $this->sites,
+            'availableMarques' => $this->availableMarques,
             'comparisonsAvecPrixMarche' => $comparisonsAvecPrixMarche,
             'somme_gain' => $this->somme_gain,
             'somme_perte' => $this->somme_perte,
@@ -289,10 +340,26 @@ new class extends Component {
                                 </h1>
                                 <p class="mt-0.5 text-sm text-gray-500">
                                     Top 100 produits · {{ count($sales) }} résultat(s)
+                                    @if($marqueFilter)
+                                        · Marque: {{ $marqueFilter }}
+                                    @endif
                                 </p>
                             </div>
 
                             <div class="flex flex-wrap items-center gap-3">
+                                <!-- Filtre Marque -->
+                                <select
+                                    wire:model.live="marqueFilter"
+                                    class="select select-bordered select-sm w-48"
+                                >
+                                    <option value="">Toutes les marques</option>
+                                    @foreach($availableMarques as $marque)
+                                        <option value="{{ $marque }}">{{ $marque }}</option>
+                                    @endforeach
+                                </select>
+
+                                <div class="divider divider-horizontal mx-0"></div>
+
                                 <div class="flex items-center gap-2">
                                     <input
                                         type="date"
@@ -343,7 +410,7 @@ new class extends Component {
 
                             <div
                                 wire:loading
-                                wire:target="dateFrom, dateTo, sortBy"
+                                wire:target="dateFrom, dateTo, sortBy, marqueFilter"
                                 class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg bg-white/70 backdrop-blur-sm"
                             >
                                 <span class="loading loading-spinner loading-lg text-primary"></span>
@@ -353,13 +420,13 @@ new class extends Component {
                             @if(count($sales) === 0)
                                 <div class="alert alert-info">
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                    <span>Aucune vente trouvée pour cette période et ce pays.</span>
+                                    <span>Aucune vente trouvée pour cette période{{ $marqueFilter ? ' et cette marque' : '' }}.</span>
                                 </div>
                             @else
                                 <div 
                                     class="overflow-x-auto"
                                     wire:loading.class="opacity-40 pointer-events-none"
-                                    wire:target="dateFrom, dateTo, sortBy"
+                                    wire:target="dateFrom, dateTo, sortBy, marqueFilter"
                                 >
                                     <table class="table table-xs table-pin-rows table-pin-cols">
                                         <thead>
@@ -452,14 +519,6 @@ new class extends Component {
                                                             <span class="text-gray-400">—</span>
                                                         @endif
                                                     </td>
-{{-- 
-                                                    <td class="text-right text-xs">
-                                                        @if($row->cost)
-                                                            {{ number_format($row->cost, 2, ',', ' ') }} €
-                                                        @else
-                                                            <span class="text-gray-400">—</span>
-                                                        @endif
-                                                    </td> --}}
 
                                                     @foreach($this->sites as $site)
                                                         <td class="text-right">
@@ -544,7 +603,6 @@ new class extends Component {
                                                 <th>Qté vendue</th>
                                                 <th>CA total</th>
                                                 <th>PGHT</th>
-                                                <th>Coût</th>
                                                 @foreach($sites as $site)
                                                     <th class="text-right">{{ $site->name }}</th>
                                                 @endforeach
