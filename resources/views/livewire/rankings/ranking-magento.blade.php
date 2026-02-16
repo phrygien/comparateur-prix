@@ -28,8 +28,8 @@ new class extends Component {
 
     public function mount(): void
     {
-        ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
-        ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
+        $this->dateFrom = date('Y-01-01') . ' 00:00:00';
+        $this->dateTo = date('Y-12-31') . ' 23:59:59';
     }
 
     public function getSalesProperty()
@@ -227,33 +227,39 @@ new class extends Component {
 
                     <div wire:loading.remove wire:target="activeCountry">
                         
-                        @if(count($this->comparisons) > 0)
+                        @php
+                            $comparisonsAvecPrixMarche = collect($this->comparisons)->filter(function($comparison) {
+                                return $comparison['prix_moyen_marche'] !== null;
+                            })->count();
+                        @endphp
+
+                        @if($comparisonsAvecPrixMarche > 0)
                             <div class="grid grid-cols-4 gap-4 mb-6 mt-6">
                                 <x-stat
                                     title="Moins chers en moyenne de"
-                                    value="{{ number_format(abs($somme_gain / count($this->comparisons)), 2, ',', ' ') }} €"
-                                    description="sur certains produits"
+                                    value="{{ number_format(abs($somme_gain / $comparisonsAvecPrixMarche), 2, ',', ' ') }} €"
+                                    description="sur {{ $comparisonsAvecPrixMarche }} produit(s) comparé(s)"
                                     color="text-primary"
                                 />
 
                                 <x-stat
                                     class="text-green-500"
                                     title="Moins chers en moyenne de (%)"
-                                    description="sur certains produits"
+                                    description="sur {{ $comparisonsAvecPrixMarche }} produit(s) comparé(s)"
                                     value="{{ number_format(abs($percentage_gain_marche), 2, ',', ' ') }} %"
                                     icon="o-arrow-trending-down"
                                 />
 
                                 <x-stat
                                     title="Plus chers en moyenne de"
-                                    value="{{ number_format(abs($somme_perte / count($this->comparisons)), 2, ',', ' ') }} €"
-                                    description="sur certains produits"
+                                    value="{{ number_format(abs($somme_perte / $comparisonsAvecPrixMarche), 2, ',', ' ') }} €"
+                                    description="sur {{ $comparisonsAvecPrixMarche }} produit(s) comparé(s)"
                                 />
 
                                 <x-stat
                                     title="Plus chers en moyenne de (%)"
                                     value="{{ number_format(abs($percentage_perte_marche), 2, ',', ' ') }} %"
-                                    description="sur certains produits"
+                                    description="sur {{ $comparisonsAvecPrixMarche }} produit(s) comparé(s)"
                                     icon="o-arrow-trending-up"
                                     class="text-pink-500"
                                     color="text-pink-500"
