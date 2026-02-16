@@ -354,22 +354,125 @@ new class extends Component {
                             </div>
 
                             <div class="flex flex-wrap items-center gap-3">
-                                <!-- Filtre Groupe (Multi-sélection) -->
-                                <div class="form-control">
-                                    <select
-                                        wire:model.live="groupeFilter"
-                                        multiple
-                                        class="select select-bordered select-sm w-64 h-24"
-                                    >
-                                        @foreach($availableGroupes as $groupe)
-                                            <option value="{{ $groupe }}">{{ $groupe }}</option>
+                                <!-- Filtre Groupe (Tags avec Alpine.js) -->
+                                <div class="form-control" x-data="{
+                                    open: false,
+                                    search: '',
+                                    get filteredGroupes() {
+                                        if (this.search === '') {
+                                            return @js($availableGroupes);
+                                        }
+                                        return @js($availableGroupes).filter(g => 
+                                            g.toLowerCase().includes(this.search.toLowerCase())
+                                        );
+                                    }
+                                }">
+                                    <!-- Tags sélectionnés -->
+                                    <div class="flex flex-wrap gap-2 mb-2">
+                                        @foreach($groupeFilter as $selectedGroupe)
+                                            <div class="badge badge-primary gap-2 py-3 px-3">
+                                                <span class="text-xs font-medium">{{ $selectedGroupe }}</span>
+                                                <button 
+                                                    type="button"
+                                                    wire:click="$set('groupeFilter', {{ json_encode(array_values(array_diff($groupeFilter, [$selectedGroupe]))) }})"
+                                                    class="btn btn-ghost btn-xs btn-circle"
+                                                >
+                                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                                    </svg>
+                                                </button>
+                                            </div>
                                         @endforeach
-                                    </select>
-                                    <label class="label py-0">
-                                        <span class="label-text-alt text-xs text-gray-500">
-                                            {{ count($groupeFilter) > 0 ? count($groupeFilter) . ' groupe(s) sélectionné(s)' : 'Tous les groupes' }}
-                                        </span>
-                                    </label>
+                                        
+                                        @if(count($groupeFilter) > 0)
+                                            <button 
+                                                type="button"
+                                                wire:click="$set('groupeFilter', [])"
+                                                class="badge badge-ghost gap-2 py-3 px-3 hover:badge-error"
+                                            >
+                                                <span class="text-xs">Tout effacer</span>
+                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                                </svg>
+                                            </button>
+                                        @endif
+                                    </div>
+
+                                    <!-- Dropdown pour ajouter des groupes -->
+                                    <div class="relative">
+                                        <button 
+                                            type="button"
+                                            @click="open = !open"
+                                            class="btn btn-sm btn-outline gap-2"
+                                        >
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                            </svg>
+                                            {{ count($groupeFilter) > 0 ? 'Ajouter un groupe' : 'Sélectionner des groupes' }}
+                                        </button>
+
+                                        <!-- Dropdown menu -->
+                                        <div 
+                                            x-show="open"
+                                            @click.away="open = false"
+                                            x-transition
+                                            class="absolute z-50 mt-2 w-80 bg-base-100 rounded-lg shadow-xl border border-base-300"
+                                        >
+                                            <!-- Barre de recherche -->
+                                            <div class="p-3 border-b border-base-300">
+                                                <input 
+                                                    type="text"
+                                                    x-model="search"
+                                                    placeholder="Rechercher un groupe..."
+                                                    class="input input-sm input-bordered w-full"
+                                                    @click.stop
+                                                />
+                                            </div>
+
+                                            <!-- Liste des groupes -->
+                                            <div class="max-h-64 overflow-y-auto p-2">
+                                                <template x-for="groupe in filteredGroupes" :key="groupe">
+                                                    <button
+                                                        type="button"
+                                                        @click="$wire.set('groupeFilter', [...@js($groupeFilter), groupe].filter((v, i, a) => a.indexOf(v) === i)); search = ''"
+                                                        :class="@js($groupeFilter).includes(groupe) ? 'bg-primary/10 text-primary' : 'hover:bg-base-200'"
+                                                        class="w-full text-left px-3 py-2 rounded-md text-sm flex items-center justify-between group"
+                                                        x-show="!@js($groupeFilter).includes(groupe)"
+                                                    >
+                                                        <span x-text="groupe"></span>
+                                                        <svg class="w-4 h-4 opacity-0 group-hover:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                                        </svg>
+                                                    </button>
+                                                </template>
+
+                                                <!-- Message si aucun résultat -->
+                                                <div x-show="filteredGroupes.length === 0" class="text-center py-8 text-gray-400 text-sm">
+                                                    Aucun groupe trouvé
+                                                </div>
+
+                                                <!-- Message si tous sélectionnés -->
+                                                <div 
+                                                    x-show="filteredGroupes.length > 0 && filteredGroupes.every(g => @js($groupeFilter).includes(g))" 
+                                                    class="text-center py-8 text-gray-400 text-sm"
+                                                >
+                                                    Tous les groupes filtrés sont déjà sélectionnés
+                                                </div>
+                                            </div>
+
+                                            <!-- Footer avec compteur -->
+                                            <div class="p-3 border-t border-base-300 text-xs text-gray-500 flex items-center justify-between">
+                                                <span>{{ count($groupeFilter) }} groupe(s) sélectionné(s)</span>
+                                                <button 
+                                                    type="button"
+                                                    @click="open = false"
+                                                    class="text-primary hover:underline"
+                                                >
+                                                    Fermer
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <div class="divider divider-horizontal mx-0"></div>
