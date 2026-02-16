@@ -11,6 +11,7 @@ new class extends Component {
     public string $dateFrom      = '';
     public string $dateTo        = '';
     public string $sortBy        = 'rank_qty';
+    public string $vendor        = '';
 
     public array $countries = [
         'FR' => 'France',
@@ -120,11 +121,16 @@ new class extends Component {
             $scrapedProducts = collect([]);
             
             if (!empty($row->ean) && !empty($siteIds)) {
-                $scrapedProducts = Product::where('ean', $row->ean)
+                $query = Product::where('ean', $row->ean)
                     ->whereIn('web_site_id', $siteIds)
-                    ->with('website')
-                    ->get()
-                    ->keyBy('web_site_id');
+                    ->with('website');
+                
+                // Filtrer par vendor si sélectionné
+                if (!empty($this->vendor)) {
+                    $query->where('vendor', $this->vendor);
+                }
+                
+                $scrapedProducts = $query->get()->keyBy('web_site_id');
             }
 
             $comparison = [
@@ -204,6 +210,20 @@ new class extends Component {
             ->get();
     }
 
+    public function getVendorsProperty()
+    {
+        $siteIds = Site::where('country_code', $this->activeCountry)
+            ->pluck('id')
+            ->toArray();
+
+        return Product::whereIn('web_site_id', $siteIds)
+            ->whereNotNull('vendor')
+            ->where('vendor', '!=', '')
+            ->distinct()
+            ->orderBy('vendor')
+            ->pluck('vendor');
+    }
+
     public function sortBy(string $column): void
     {
         $this->sortBy = $column;
@@ -220,6 +240,7 @@ new class extends Component {
             'sales' => $this->sales,
             'comparisons' => $comparisons,
             'sites' => $this->sites,
+            'vendors' => $this->vendors,
             'comparisonsAvecPrixMarche' => $comparisonsAvecPrixMarche,
             'somme_gain' => $this->somme_gain,
             'somme_perte' => $this->somme_perte,
@@ -227,6 +248,7 @@ new class extends Component {
             'percentage_perte_marche' => $this->percentage_perte_marche,
             'dateFrom' => $this->dateFrom,
             'dateTo' => $this->dateTo,
+            'vendor' => $this->vendor,
         ];
     }
 }; ?>
@@ -314,6 +336,21 @@ new class extends Component {
                                 <div class="divider divider-horizontal mx-0"></div>
 
                                 <div class="flex items-center gap-2">
+                                    <span class="text-xs text-gray-400">Vendor</span>
+                                    <select
+                                        wire:model.live="vendor"
+                                        class="select select-bordered select-sm w-48"
+                                    >
+                                        <option value="">Tous les vendors</option>
+                                        @foreach($vendors as $vendorOption)
+                                            <option value="{{ $vendorOption }}">{{ $vendorOption }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+
+                                <div class="divider divider-horizontal mx-0"></div>
+
+                                <div class="flex items-center gap-2">
                                     <span class="text-xs text-gray-400">Trier par</span>
                                     <button
                                         type="button"
@@ -343,7 +380,7 @@ new class extends Component {
 
                             <div
                                 wire:loading
-                                wire:target="dateFrom, dateTo, sortBy"
+                                wire:target="dateFrom, dateTo, sortBy, vendor"
                                 class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg bg-white/70 backdrop-blur-sm"
                             >
                                 <span class="loading loading-spinner loading-lg text-primary"></span>
@@ -359,7 +396,7 @@ new class extends Component {
                                 <div 
                                     class="overflow-x-auto"
                                     wire:loading.class="opacity-40 pointer-events-none"
-                                    wire:target="dateFrom, dateTo, sortBy"
+                                    wire:target="dateFrom, dateTo, sortBy, vendor"
                                 >
                                     <table class="table table-xs table-pin-rows table-pin-cols">
                                         <thead>
