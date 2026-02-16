@@ -208,6 +208,25 @@ new class extends Component {
     {
         $this->sortBy = $column;
     }
+
+    public function with(): array
+    {
+        $comparisons = $this->comparisons;
+        $comparisonsAvecPrixMarche = $comparisons->filter(function($comparison) {
+            return $comparison['prix_moyen_marche'] !== null;
+        })->count();
+
+        return [
+            'sales' => $this->sales,
+            'comparisons' => $comparisons,
+            'sites' => $this->sites,
+            'comparisonsAvecPrixMarche' => $comparisonsAvecPrixMarche,
+            'somme_gain' => $this->somme_gain,
+            'somme_perte' => $this->somme_perte,
+            'percentage_gain_marche' => $this->percentage_gain_marche,
+            'percentage_perte_marche' => $this->percentage_perte_marche,
+        ];
+    }
 }; ?>
 
 <div>
@@ -227,12 +246,6 @@ new class extends Component {
 
                     <div wire:loading.remove wire:target="activeCountry">
                         
-                        @php
-                            $comparisonsAvecPrixMarche = collect($this->comparisons)->filter(function($comparison) {
-                                return $comparison['prix_moyen_marche'] !== null;
-                            })->count();
-                        @endphp
-
                         @if($comparisonsAvecPrixMarche > 0)
                             <div class="grid grid-cols-4 gap-4 mb-6 mt-6">
                                 <x-stat
@@ -273,7 +286,7 @@ new class extends Component {
                                     Ventes — {{ $label }}
                                 </h1>
                                 <p class="mt-0.5 text-sm text-gray-500">
-                                    Top 100 produits · {{ count($this->sales) }} résultat(s)
+                                    Top 100 produits · {{ count($sales) }} résultat(s)
                                 </p>
                             </div>
 
@@ -333,7 +346,7 @@ new class extends Component {
                                 <span class="text-sm font-medium">Mise à jour…</span>
                             </div>
 
-                            @if(count($this->sales) === 0)
+                            @if(count($sales) === 0)
                                 <div class="alert alert-info">
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                                     <span>Aucune vente trouvée pour cette période et ce pays.</span>
@@ -371,14 +384,14 @@ new class extends Component {
                                                     </button>
                                                 </th>
                                                 <th>PGHT</th>
-                                                @foreach($this->sites as $site)
+                                                @foreach($sites as $site)
                                                     <th class="text-right">{{ $site->name }}</th>
                                                 @endforeach
                                                 <th class="text-right">Prix marché</th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            @foreach($this->comparisons as $comparison)
+                                            @foreach($comparisons as $comparison)
                                                 @php
                                                     $row = $comparison['row'];
                                                     $prixCosma = $row->prix_vente_cosma;
@@ -528,7 +541,7 @@ new class extends Component {
                                                 <th>CA total</th>
                                                 <th>PGHT</th>
                                                 <th>Coût</th>
-                                                @foreach($this->sites as $site)
+                                                @foreach($sites as $site)
                                                     <th class="text-right">{{ $site->name }}</th>
                                                 @endforeach
                                                 <th class="text-right">Prix marché</th>
