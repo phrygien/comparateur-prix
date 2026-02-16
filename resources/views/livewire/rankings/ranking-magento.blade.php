@@ -403,7 +403,7 @@ new class extends Component {
                                         <button 
                                             type="button"
                                             @click="open = !open"
-                                            class="btn btn-sm btn-outline gap-2"
+                                            class="btn btn-sm btn-outline btn-primary gap-2"
                                         >
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
