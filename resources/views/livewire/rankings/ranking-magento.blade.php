@@ -408,7 +408,7 @@ new class extends Component {
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                                             </svg>
-                                            {{ count($groupeFilter) > 0 ? 'Ajouter un groupe' : 'Sélectionner des groupes' }}
+                                            {{ count($groupeFilter) > 0 ? 'Ajouter un vendor' : 'Sélectionner des vendor' }}
                                         </button>
 
                                         <!-- Dropdown menu -->
@@ -423,7 +423,7 @@ new class extends Component {
                                                 <input 
                                                     type="text"
                                                     x-model="search"
-                                                    placeholder="Rechercher un groupe..."
+                                                    placeholder="Rechercher un vendor..."
                                                     class="input input-sm input-bordered w-full"
                                                     @click.stop
                                                 />
