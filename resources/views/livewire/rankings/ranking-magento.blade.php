@@ -11,7 +11,7 @@ new class extends Component {
     public string $dateFrom      = '';
     public string $dateTo        = '';
     public string $sortBy        = 'rank_qty';
-    public string $groupeFilter  = ''; // Filtre par groupe
+    public array $groupeFilter  = []; // Filtre par groupe (multi-sélection)
 
     public array $countries = [
         'FR' => 'France',
@@ -45,8 +45,9 @@ new class extends Component {
         $params = [$dateFrom, $dateTo, $this->activeCountry];
         
         if (!empty($this->groupeFilter)) {
-            $groupeCondition = " WHERE groupe = ?";
-            $params[] = $this->groupeFilter;
+            $placeholders = implode(',', array_fill(0, count($this->groupeFilter), '?'));
+            $groupeCondition = " WHERE groupe IN ($placeholders)";
+            $params = array_merge($params, $this->groupeFilter);
         }
 
         $sql = "
@@ -346,23 +347,30 @@ new class extends Component {
                                 </h1>
                                 <p class="mt-0.5 text-sm text-gray-500">
                                     Top 100 produits · {{ count($sales) }} résultat(s)
-                                    @if($groupeFilter)
-                                        · Groupe: {{ $groupeFilter }}
+                                    @if(!empty($groupeFilter))
+                                        · Groupe(s): {{ implode(', ', $groupeFilter) }}
                                     @endif
                                 </p>
                             </div>
 
                             <div class="flex flex-wrap items-center gap-3">
-                                <!-- Filtre Groupe -->
-                                <select
-                                    wire:model.live="groupeFilter"
-                                    class="select select-bordered select-sm w-48"
-                                >
-                                    <option value="">Tous les groupes</option>
-                                    @foreach($availableGroupes as $groupe)
-                                        <option value="{{ $groupe }}">{{ $groupe }}</option>
-                                    @endforeach
-                                </select>
+                                <!-- Filtre Groupe (Multi-sélection) -->
+                                <div class="form-control">
+                                    <select
+                                        wire:model.live="groupeFilter"
+                                        multiple
+                                        class="select select-bordered select-sm w-64 h-24"
+                                    >
+                                        @foreach($availableGroupes as $groupe)
+                                            <option value="{{ $groupe }}">{{ $groupe }}</option>
+                                        @endforeach
+                                    </select>
+                                    <label class="label py-0">
+                                        <span class="label-text-alt text-xs text-gray-500">
+                                            {{ count($groupeFilter) > 0 ? count($groupeFilter) . ' groupe(s) sélectionné(s)' : 'Tous les groupes' }}
+                                        </span>
+                                    </label>
+                                </div>
 
                                 <div class="divider divider-horizontal mx-0"></div>
 
@@ -426,7 +434,7 @@ new class extends Component {
                             @if(count($sales) === 0)
                                 <div class="alert alert-info">
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                    <span>Aucune vente trouvée pour cette période{{ $groupeFilter ? ' et ce groupe' : '' }}.</span>
+                                    <span>Aucune vente trouvée pour cette période{{ !empty($groupeFilter) ? ' et ce(s) groupe(s)' : '' }}.</span>
                                 </div>
                             @else
                                 <div 
