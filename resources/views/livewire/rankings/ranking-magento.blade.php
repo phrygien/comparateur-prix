@@ -26,6 +26,12 @@ new class extends Component {
     public $percentage_gain_marche = 0;
     public $percentage_perte_marche = 0;
 
+    public function mount(): void
+    {
+        ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
+        ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
+    }
+
     public function getSalesProperty()
     {
         $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
@@ -221,7 +227,7 @@ new class extends Component {
 
                     <div wire:loading.remove wire:target="activeCountry">
                         
-                        @if(count($this->comparisons) > 0 && $somme_prix_marche_total > 0)
+                        @if(count($this->comparisons) > 0)
                             <div class="grid grid-cols-4 gap-4 mb-6 mt-6">
                                 <x-stat
                                     title="Moins chers en moyenne de"
