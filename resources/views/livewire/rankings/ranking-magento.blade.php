@@ -28,8 +28,8 @@ new class extends Component {
 
     public function mount(): void
     {
-        $this->dateFrom = date('Y-01-01') . ' 00:00:00';
-        $this->dateTo = date('Y-12-31') . ' 23:59:59';
+        $this->dateFrom = date('Y-01-01');
+        $this->dateTo = date('Y-12-31');
     }
 
     public function getSalesProperty()
@@ -225,6 +225,8 @@ new class extends Component {
             'somme_perte' => $this->somme_perte,
             'percentage_gain_marche' => $this->percentage_gain_marche,
             'percentage_perte_marche' => $this->percentage_perte_marche,
+            'dateFrom' => $this->dateFrom,
+            'dateTo' => $this->dateTo,
         ];
     }
 }; ?>
@@ -295,6 +297,7 @@ new class extends Component {
                                     <input
                                         type="date"
                                         wire:model.live="dateFrom"
+                                        value="{{ $dateFrom }}"
                                         placeholder="Date début"
                                         class="input input-bordered input-sm w-36"
                                     />
@@ -302,6 +305,7 @@ new class extends Component {
                                     <input
                                         type="date"
                                         wire:model.live="dateTo"
+                                        value="{{ $dateTo }}"
                                         placeholder="Date fin"
                                         class="input input-bordered input-sm w-36"
                                     />
