@@ -17,9 +17,9 @@ new class extends Component {
         'FR' => 'France',
         'BE' => 'Belgique',
         'NL' => 'Pays-Bas', 
+        'DE' => 'Allemagne',
         'ES' => 'Espagne',
         'IT' => 'Italie',
-        'DE' => 'Allemagne',
     ];
 
     public $somme_prix_marche_total = 0;
