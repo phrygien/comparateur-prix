@@ -16,6 +16,7 @@ new class extends Component {
     public array $countries = [
         'FR' => 'France',
         'BE' => 'Belgique',
+        'NL' => 'Pays-Bas', 
         'ES' => 'Espagne',
         'IT' => 'Italie',
         'DE' => 'Allemagne',
