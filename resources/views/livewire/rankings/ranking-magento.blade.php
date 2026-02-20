@@ -11,12 +11,12 @@ new class extends Component {
     public string $dateFrom      = '';
     public string $dateTo        = '';
     public string $sortBy        = 'rank_qty';
-    public array $groupeFilter  = []; // Filtre par groupe (multi-sélection)
+    public array $groupeFilter  = [];
 
     public array $countries = [
         'FR' => 'France',
         'BE' => 'Belgique',
-        'NL' => 'Pays-Bas', 
+        'NL' => 'Pays-Bas',
         'DE' => 'Allemagne',
         'ES' => 'Espagne',
         'IT' => 'Italie',
@@ -41,10 +41,9 @@ new class extends Component {
 
         $orderCol = $this->sortBy === 'rank_ca' ? 'total_revenue' : 'total_qty_sold';
 
-        // Construire la condition de filtre groupe (appliquée après le calcul des rangs)
         $groupeCondition = '';
         $params = [$dateFrom, $dateTo, $this->activeCountry];
-        
+
         if (!empty($this->groupeFilter)) {
             $placeholders = implode(',', array_fill(0, count($this->groupeFilter), '?'));
             $groupeCondition = " WHERE groupe IN ($placeholders)";
@@ -96,35 +95,23 @@ new class extends Component {
         ";
 
         DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
-        
-        $results = DB::connection('mysqlMagento')
-            ->select($sql, $params);
-        
+
+        $results = DB::connection('mysqlMagento')->select($sql, $params);
+
         foreach ($results as $result) {
-            if (isset($result->designation_produit)) {
-                if (!mb_check_encoding($result->designation_produit, 'UTF-8')) {
-                    $result->designation_produit = mb_convert_encoding($result->designation_produit, 'UTF-8', 'ISO-8859-1');
+            foreach (['designation_produit', 'marque', 'groupe'] as $field) {
+                if (isset($result->$field)) {
+                    if (!mb_check_encoding($result->$field, 'UTF-8')) {
+                        $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'ISO-8859-1');
+                    }
+                    $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'UTF-8');
                 }
-                $result->designation_produit = mb_convert_encoding($result->designation_produit, 'UTF-8', 'UTF-8');
-            }
-            if (isset($result->marque)) {
-                if (!mb_check_encoding($result->marque, 'UTF-8')) {
-                    $result->marque = mb_convert_encoding($result->marque, 'UTF-8', 'ISO-8859-1');
-                }
-                $result->marque = mb_convert_encoding($result->marque, 'UTF-8', 'UTF-8');
-            }
-            if (isset($result->groupe)) {
-                if (!mb_check_encoding($result->groupe, 'UTF-8')) {
-                    $result->groupe = mb_convert_encoding($result->groupe, 'UTF-8', 'ISO-8859-1');
-                }
-                $result->groupe = mb_convert_encoding($result->groupe, 'UTF-8', 'UTF-8');
             }
         }
-        
+
         return $results;
     }
 
-    // Nouvelle méthode pour récupérer la liste des groupes disponibles
     public function getAvailableGroupesProperty()
     {
         $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
@@ -171,12 +158,11 @@ new class extends Component {
 
         $sales = $this->sales;
         $comparisons = [];
-
         $siteIds = $sites->pluck('id')->toArray();
 
         foreach ($sales as $row) {
             $scrapedProducts = collect([]);
-            
+
             if (!empty($row->ean) && !empty($siteIds)) {
                 $scrapedProducts = Product::where('ean', $row->ean)
                     ->whereIn('web_site_id', $siteIds)
@@ -190,7 +176,7 @@ new class extends Component {
                 'sites' => [],
                 'prix_moyen_marche' => null,
                 'percentage_marche' => null,
-                'difference_marche' => null
+                'difference_marche' => null,
             ];
 
             $somme_prix_marche = 0;
@@ -199,11 +185,9 @@ new class extends Component {
             foreach ($sites as $site) {
                 if (isset($scrapedProducts[$site->id])) {
                     $scrapedProduct = $scrapedProducts[$site->id];
-
+                    $prixCosma = $row->prix_vente_cosma;
                     $priceDiff = null;
                     $pricePercentage = null;
-
-                    $prixCosma = $row->prix_vente_cosma;
 
                     if ($prixCosma > 0 && $scrapedProduct->prix_ht > 0) {
                         $priceDiff = $scrapedProduct->prix_ht - $prixCosma;
@@ -211,25 +195,24 @@ new class extends Component {
                     }
 
                     $comparison['sites'][$site->id] = [
-                        'prix_ht' => $scrapedProduct->prix_ht,
-                        'url' => $scrapedProduct->url,
-                        'name' => $scrapedProduct->name,
-                        'vendor' => $scrapedProduct->vendor,
-                        'price_diff' => $priceDiff,
+                        'prix_ht'          => $scrapedProduct->prix_ht,
+                        'url'              => $scrapedProduct->url,
+                        'name'             => $scrapedProduct->name,
+                        'vendor'           => $scrapedProduct->vendor,
+                        'price_diff'       => $priceDiff,
                         'price_percentage' => $pricePercentage,
-                        'site_name' => $site->name,
+                        'site_name'        => $site->name,
                     ];
 
                     $somme_prix_marche += $scrapedProduct->prix_ht;
                     $nombre_site++;
-
                 } else {
                     $comparison['sites'][$site->id] = null;
                 }
             }
 
             $prixCosma = $row->prix_vente_cosma;
-            
+
             if ($somme_prix_marche > 0 && $prixCosma > 0) {
                 $comparison['prix_moyen_marche'] = $somme_prix_marche / $nombre_site;
                 $priceDiff_marche = $comparison['prix_moyen_marche'] - $prixCosma;
@@ -248,7 +231,7 @@ new class extends Component {
         }
 
         if ($this->somme_prix_marche_total > 0) {
-            $this->percentage_gain_marche = ((($this->somme_prix_marche_total + $this->somme_gain) * 100) / $this->somme_prix_marche_total) - 100;
+            $this->percentage_gain_marche  = ((($this->somme_prix_marche_total + $this->somme_gain)  * 100) / $this->somme_prix_marche_total) - 100;
             $this->percentage_perte_marche = ((($this->somme_prix_marche_total + $this->somme_perte) * 100) / $this->somme_prix_marche_total) - 100;
         }
 
@@ -267,25 +250,284 @@ new class extends Component {
         $this->sortBy = $column;
     }
 
+    public function exportXlsx(): \Symfony\Component\HttpFoundation\BinaryFileResponse
+    {
+        $sites       = $this->sites;
+        $comparisons = $this->comparisons;
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $countryLabel = $this->countries[$this->activeCountry] ?? $this->activeCountry;
+        $sheet->setTitle('Ventes ' . $countryLabel);
+
+        // === EN-TÊTES ===
+        $baseHeaders = [
+            'Rang Qty', 'Rang CA', 'EAN', 'Groupe', 'Marque',
+            'Désignation', 'Prix Cosma', 'Qté vendue', 'CA total', 'PGHT',
+        ];
+
+        $colIndex = 0;
+        foreach ($baseHeaders as $header) {
+            $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . '1';
+            $sheet->setCellValue($cell, $header);
+            $colIndex++;
+        }
+
+        foreach ($sites as $site) {
+            $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . '1';
+            $sheet->setCellValue($cell, $site->name);
+            $colIndex++;
+        }
+
+        $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . '1';
+        $sheet->setCellValue($cell, 'Prix marché');
+        $lastColIndex  = $colIndex;
+        $lastColLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($lastColIndex + 1);
+
+        // Style en-têtes
+        $sheet->getStyle('A1:' . $lastColLetter . '1')->applyFromArray([
+            'font' => [
+                'bold'  => true,
+                'color' => ['rgb' => 'FFFFFF'],
+                'name'  => 'Arial',
+                'size'  => 10,
+            ],
+            'fill' => [
+                'fillType'   => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                'startColor' => ['rgb' => '4A5568'],
+            ],
+            'alignment' => [
+                'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
+                'vertical'   => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
+            ],
+        ]);
+
+        $sheet->getRowDimension(1)->setRowHeight(20);
+        $sheet->getColumnDimension('A')->setAutoSize(false)->setWidth(10);
+        $sheet->getColumnDimension('B')->setAutoSize(false)->setWidth(10);
+        $sheet->getColumnDimension('C')->setAutoSize(false)->setWidth(16);
+        $sheet->getColumnDimension('F')->setAutoSize(false)->setWidth(35);
+
+        // === DONNÉES ===
+        $row = 2;
+        $somme_prix_marche_total = 0;
+        $somme_gain  = 0;
+        $somme_perte = 0;
+        $comparisonsAvecPrix = 0;
+
+        foreach ($comparisons as $comparison) {
+            $r = $comparison['row'];
+
+            $sheet->setCellValue('A' . $row, $r->rank_qty);
+            $sheet->setCellValue('B' . $row, $r->rank_ca);
+            $sheet->setCellValue('C' . $row, $r->ean);
+            $sheet->setCellValue('D' . $row, $r->groupe ?? '');
+            $sheet->setCellValue('E' . $row, $r->marque ?? '');
+            $sheet->setCellValue('F' . $row, $r->designation_produit ?? '');
+            $sheet->setCellValue('G' . $row, $r->prix_vente_cosma);
+            $sheet->setCellValue('H' . $row, $r->total_qty_sold);
+            $sheet->setCellValue('I' . $row, $r->total_revenue);
+            $sheet->setCellValue('J' . $row, $r->pght ?: '');
+
+            $sheet->getStyle('G' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
+            $sheet->getStyle('I' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
+            $sheet->getStyle('J' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
+
+            // Alterner couleur de fond des lignes
+            if ($row % 2 === 0) {
+                $sheet->getStyle('A' . $row . ':' . $lastColLetter . $row)->applyFromArray([
+                    'fill' => [
+                        'fillType'   => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                        'startColor' => ['rgb' => 'F7FAFC'],
+                    ],
+                ]);
+            }
+
+            $colIdx = 10; // Après colonne J (index 9 = J)
+            foreach ($sites as $site) {
+                $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIdx + 1) . $row;
+                $siteData  = $comparison['sites'][$site->id] ?? null;
+
+                if ($siteData) {
+                    $pricePercentage = $siteData['price_percentage'];
+                    $priceColor = 'FF000000';
+
+                    if ($pricePercentage !== null) {
+                        $priceColor = $r->prix_vente_cosma > $siteData['prix_ht']
+                            ? 'FFCC0000'  // rouge : Cosma plus cher que le marché
+                            : 'FF1A7A3C'; // vert  : Cosma moins cher que le marché
+                    }
+
+                    $prixText = number_format($siteData['prix_ht'], 2, ',', ' ') . ' €';
+                    if ($pricePercentage !== null) {
+                        $prixText .= ' (' . ($pricePercentage > 0 ? '+' : '') . $pricePercentage . '%)';
+                    }
+
+                    $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
+                    $runPrix  = $richText->createTextRun($prixText);
+                    $runPrix->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($priceColor));
+                    $runPrix->getFont()->setName('Arial');
+
+                    if (!empty($siteData['url'])) {
+                        $runLien = $richText->createTextRun("\nVoir le produit");
+                        $runLien->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF0563C1'));
+                        $runLien->getFont()->setUnderline(\PhpOffice\PhpSpreadsheet\Style\Font::UNDERLINE_SINGLE);
+                        $runLien->getFont()->setName('Arial');
+                    }
+
+                    $sheet->getCell($cellCoord)->setValue($richText);
+                    $sheet->getStyle($cellCoord)->getAlignment()->setWrapText(true);
+                    $sheet->getStyle($cellCoord)->getAlignment()
+                        ->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP);
+
+                    if (!empty($siteData['url'])) {
+                        $sheet->getCell($cellCoord)->getHyperlink()->setUrl($siteData['url']);
+                    }
+                } else {
+                    $sheet->setCellValue($cellCoord, 'N/A');
+                    $sheet->getStyle($cellCoord)->getFont()->getColor()->setRGB('AAAAAA');
+                    $sheet->getStyle($cellCoord)->getAlignment()
+                        ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+                }
+
+                $colIdx++;
+            }
+
+            // Prix moyen marché
+            $marcheCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIdx + 1) . $row;
+
+            if ($comparison['prix_moyen_marche'] !== null) {
+                $prixMoyen = $comparison['prix_moyen_marche'];
+                $pct       = $comparison['percentage_marche'];
+                $color     = $r->prix_vente_cosma > $prixMoyen ? 'CC0000' : '1A7A3C';
+
+                $cellValue = number_format($prixMoyen, 2, ',', ' ') . ' € (' . ($pct > 0 ? '+' : '') . $pct . '%)';
+                $sheet->setCellValue($marcheCoord, $cellValue);
+                $sheet->getStyle($marcheCoord)->getFont()->getColor()->setRGB($color);
+                $sheet->getStyle($marcheCoord)->getFont()->setBold(true);
+
+                $somme_prix_marche_total += $prixMoyen;
+                $diff = $comparison['difference_marche'];
+                if ($diff > 0) $somme_gain  += $diff;
+                else           $somme_perte += $diff;
+                $comparisonsAvecPrix++;
+            } else {
+                $sheet->setCellValue($marcheCoord, 'N/A');
+                $sheet->getStyle($marcheCoord)->getFont()->getColor()->setRGB('AAAAAA');
+                $sheet->getStyle($marcheCoord)->getAlignment()
+                    ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+            }
+
+            $row++;
+        }
+
+        $lastDataRow = $row - 1;
+
+        // === STATISTIQUES ===
+        $row += 2;
+
+        $pct_gain = $somme_prix_marche_total > 0
+            ? ((($somme_prix_marche_total + $somme_gain)  * 100) / $somme_prix_marche_total) - 100 : 0;
+        $pct_perte = $somme_prix_marche_total > 0
+            ? ((($somme_prix_marche_total + $somme_perte) * 100) / $somme_prix_marche_total) - 100 : 0;
+
+        $sheet->setCellValue('A' . $row, 'STATISTIQUES');
+        $sheet->getStyle('A' . $row)->getFont()->setBold(true)->setSize(13)->setName('Arial');
+        $row++;
+
+        $infos = [
+            ['Pays',                $countryLabel],
+            ['Période',             $this->dateFrom . ' → ' . $this->dateTo],
+            ['Tri appliqué',        $this->sortBy === 'rank_qty' ? 'Quantité vendue' : 'CA total'],
+            ['Produits exportés',   count($this->sales)],
+            ['Produits comparés',   $comparisonsAvecPrix],
+        ];
+
+        foreach ($infos as [$label, $value]) {
+            $sheet->setCellValue('A' . $row, $label . ' :');
+            $sheet->setCellValue('B' . $row, $value);
+            $sheet->getStyle('A' . $row)->getFont()->setBold(true)->setName('Arial');
+            $sheet->getStyle('B' . $row)->getFont()->setName('Arial');
+            $row++;
+        }
+
+        $row++; // ligne vide
+
+        $stats = [
+            ['Moins chers en moyenne (€)', $comparisonsAvecPrix > 0 ? number_format(abs($somme_gain  / $comparisonsAvecPrix), 2, ',', ' ') . ' €' : 'N/A', '1A7A3C'],
+            ['Moins chers en moyenne (%)', number_format(abs($pct_gain),  2, ',', ' ') . ' %', '1A7A3C'],
+            ['Plus chers en moyenne (€)',  $comparisonsAvecPrix > 0 ? number_format(abs($somme_perte / $comparisonsAvecPrix), 2, ',', ' ') . ' €' : 'N/A', 'CC0000'],
+            ['Plus chers en moyenne (%)',  number_format(abs($pct_perte), 2, ',', ' ') . ' %', 'CC0000'],
+        ];
+
+        foreach ($stats as [$label, $value, $color]) {
+            $sheet->setCellValue('A' . $row, $label . ' :');
+            $sheet->getStyle('A' . $row)->getFont()->setBold(true)->setName('Arial');
+            $sheet->setCellValue('B' . $row, $value);
+            $sheet->getStyle('B' . $row)->getFont()->getColor()->setRGB($color);
+            $sheet->getStyle('B' . $row)->getFont()->setBold(true)->setName('Arial');
+            $row++;
+        }
+
+        // === FORMATAGE FINAL ===
+        foreach (range('D', $lastColLetter) as $col) {
+            if (!in_array($col, ['A', 'B', 'C', 'F'])) {
+                $sheet->getColumnDimension($col)->setAutoSize(true);
+            }
+        }
+
+        $sheet->freezePane('A2');
+
+        $sheet->getStyle('A1:' . $lastColLetter . $lastDataRow)->applyFromArray([
+            'borders' => [
+                'allBorders' => [
+                    'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                    'color'       => ['rgb' => 'DDDDDD'],
+                ],
+            ],
+            'font' => ['name' => 'Arial', 'size' => 9],
+        ]);
+
+        $sheet->getStyle('G2:' . $lastColLetter . $lastDataRow)
+            ->getAlignment()
+            ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_RIGHT);
+
+        // === SAUVEGARDE ===
+        $exportDir = storage_path('app/public/exports');
+        if (!file_exists($exportDir)) {
+            mkdir($exportDir, 0755, true);
+        }
+
+        $groupeSuffix = !empty($this->groupeFilter) ? '_' . implode('-', array_map('strtolower', $this->groupeFilter)) : '';
+        $fileName = 'ventes_' . strtolower($this->activeCountry)
+            . '_' . $this->dateFrom . '_' . $this->dateTo
+            . $groupeSuffix
+            . '_' . date('His') . '.xlsx';
+        $filePath = $exportDir . '/' . $fileName;
+
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        $writer->save($filePath);
+
+        return response()->download($filePath, $fileName)->deleteFileAfterSend(true);
+    }
+
     public function with(): array
     {
         $comparisons = $this->comparisons;
-        $comparisonsAvecPrixMarche = $comparisons->filter(function($comparison) {
-            return $comparison['prix_moyen_marche'] !== null;
-        })->count();
+        $comparisonsAvecPrixMarche = $comparisons->filter(fn($c) => $c['prix_moyen_marche'] !== null)->count();
 
         return [
-            'sales' => $this->sales,
-            'comparisons' => $comparisons,
-            'sites' => $this->sites,
-            'availableGroupes' => $this->availableGroupes,
+            'sales'                     => $this->sales,
+            'comparisons'               => $comparisons,
+            'sites'                     => $this->sites,
+            'availableGroupes'          => $this->availableGroupes,
             'comparisonsAvecPrixMarche' => $comparisonsAvecPrixMarche,
-            'somme_gain' => $this->somme_gain,
-            'somme_perte' => $this->somme_perte,
-            'percentage_gain_marche' => $this->percentage_gain_marche,
-            'percentage_perte_marche' => $this->percentage_perte_marche,
-            'dateFrom' => $this->dateFrom,
-            'dateTo' => $this->dateTo,
+            'somme_gain'                => $this->somme_gain,
+            'somme_perte'               => $this->somme_perte,
+            'percentage_gain_marche'    => $this->percentage_gain_marche,
+            'percentage_perte_marche'   => $this->percentage_perte_marche,
+            'dateFrom'                  => $this->dateFrom,
+            'dateTo'                    => $this->dateTo,
         ];
     }
 }; ?>
@@ -295,7 +537,8 @@ new class extends Component {
         <x-tabs wire:model.live="activeCountry">
             @foreach($countries as $code => $label)
                 <x-tab name="{{ $code }}" label="{{ $label }}">
-                    
+
+                    {{-- Loader changement de pays --}}
                     <div
                         wire:loading
                         wire:target="activeCountry"
@@ -306,7 +549,8 @@ new class extends Component {
                     </div>
 
                     <div wire:loading.remove wire:target="activeCountry">
-                        
+
+                        {{-- Statistiques globales --}}
                         @if($comparisonsAvecPrixMarche > 0)
                             <div class="grid grid-cols-4 gap-4 mb-6 mt-6">
                                 <x-stat
@@ -315,7 +559,6 @@ new class extends Component {
                                     description="sur {{ $comparisonsAvecPrixMarche }} produit(s) comparé(s)"
                                     color="text-primary"
                                 />
-
                                 <x-stat
                                     class="text-green-500"
                                     title="Moins chers en moyenne de (%)"
@@ -323,13 +566,11 @@ new class extends Component {
                                     value="{{ number_format(abs($percentage_gain_marche), 2, ',', ' ') }} %"
                                     icon="o-arrow-trending-down"
                                 />
-
                                 <x-stat
                                     title="Plus chers en moyenne de"
                                     value="{{ number_format(abs($somme_perte / $comparisonsAvecPrixMarche), 2, ',', ' ') }} €"
                                     description="sur {{ $comparisonsAvecPrixMarche }} produit(s) comparé(s)"
                                 />
-
                                 <x-stat
                                     title="Plus chers en moyenne de (%)"
                                     value="{{ number_format(abs($percentage_perte_marche), 2, ',', ' ') }} %"
@@ -341,6 +582,7 @@ new class extends Component {
                             </div>
                         @endif
 
+                        {{-- Barre d'outils --}}
                         <div class="flex flex-wrap items-center justify-between gap-4 mb-4 mt-6">
                             <div>
                                 <h1 class="text-base font-semibold text-gray-900">
@@ -349,31 +591,30 @@ new class extends Component {
                                 <p class="mt-0.5 text-sm text-gray-500">
                                     Top 100 produits · {{ count($sales) }} résultat(s)
                                     @if(!empty($groupeFilter))
-                                        · Groupe(s): {{ implode(', ', $groupeFilter) }}
+                                        · Groupe(s) : {{ implode(', ', $groupeFilter) }}
                                     @endif
                                 </p>
                             </div>
 
                             <div class="flex flex-wrap items-center gap-3">
-                                <!-- Filtre Groupe (Tags avec Alpine.js) -->
+
+                                {{-- Filtre Groupe --}}
                                 <div class="form-control" x-data="{
                                     open: false,
                                     search: '',
                                     get filteredGroupes() {
-                                        if (this.search === '') {
-                                            return @js($availableGroupes);
-                                        }
-                                        return @js($availableGroupes).filter(g => 
+                                        if (this.search === '') return @js($availableGroupes);
+                                        return @js($availableGroupes).filter(g =>
                                             g.toLowerCase().includes(this.search.toLowerCase())
                                         );
                                     }
                                 }">
-                                    <!-- Tags sélectionnés -->
+                                    {{-- Tags sélectionnés --}}
                                     <div class="flex flex-wrap gap-2 mb-2">
                                         @foreach($groupeFilter as $selectedGroupe)
                                             <div class="badge badge-primary gap-2 py-3 px-3">
                                                 <span class="text-xs font-medium">{{ $selectedGroupe }}</span>
-                                                <button 
+                                                <button
                                                     type="button"
                                                     wire:click="$set('groupeFilter', {{ json_encode(array_values(array_diff($groupeFilter, [$selectedGroupe]))) }})"
                                                     class="btn btn-ghost btn-xs btn-circle"
@@ -384,9 +625,9 @@ new class extends Component {
                                                 </button>
                                             </div>
                                         @endforeach
-                                        
+
                                         @if(count($groupeFilter) > 0)
-                                            <button 
+                                            <button
                                                 type="button"
                                                 wire:click="$set('groupeFilter', [])"
                                                 class="badge badge-ghost gap-2 py-3 px-3 hover:badge-error"
@@ -399,9 +640,9 @@ new class extends Component {
                                         @endif
                                     </div>
 
-                                    <!-- Dropdown pour ajouter des groupes -->
+                                    {{-- Dropdown --}}
                                     <div class="relative">
-                                        <button 
+                                        <button
                                             type="button"
                                             @click="open = !open"
                                             class="btn btn-sm btn-outline btn-primary gap-2"
@@ -412,16 +653,14 @@ new class extends Component {
                                             {{ count($groupeFilter) > 0 ? 'Ajouter un vendor' : 'Sélectionner des vendor' }}
                                         </button>
 
-                                        <!-- Dropdown menu -->
-                                        <div 
+                                        <div
                                             x-show="open"
                                             @click.away="open = false"
                                             x-transition
                                             class="absolute z-50 mt-2 w-80 bg-base-100 rounded-lg shadow-xl border border-base-300"
                                         >
-                                            <!-- Barre de recherche -->
                                             <div class="p-3 border-b border-base-300">
-                                                <input 
+                                                <input
                                                     type="text"
                                                     x-model="search"
                                                     placeholder="Rechercher un vendor..."
@@ -430,14 +669,12 @@ new class extends Component {
                                                 />
                                             </div>
 
-                                            <!-- Liste des groupes -->
                                             <div class="max-h-64 overflow-y-auto p-2">
                                                 <template x-for="groupe in filteredGroupes" :key="groupe">
                                                     <button
                                                         type="button"
                                                         @click="$wire.set('groupeFilter', [...@js($groupeFilter), groupe].filter((v, i, a) => a.indexOf(v) === i)); search = ''"
-                                                        :class="@js($groupeFilter).includes(groupe) ? 'bg-primary/10 text-primary' : 'hover:bg-base-200'"
-                                                        class="w-full text-left px-3 py-2 rounded-md text-sm flex items-center justify-between group"
+                                                        class="w-full text-left px-3 py-2 rounded-md text-sm flex items-center justify-between group hover:bg-base-200"
                                                         x-show="!@js($groupeFilter).includes(groupe)"
                                                     >
                                                         <span x-text="groupe"></span>
@@ -447,30 +684,20 @@ new class extends Component {
                                                     </button>
                                                 </template>
 
-                                                <!-- Message si aucun résultat -->
                                                 <div x-show="filteredGroupes.length === 0" class="text-center py-8 text-gray-400 text-sm">
                                                     Aucun groupe trouvé
                                                 </div>
-
-                                                <!-- Message si tous sélectionnés -->
-                                                <div 
-                                                    x-show="filteredGroupes.length > 0 && filteredGroupes.every(g => @js($groupeFilter).includes(g))" 
+                                                <div
+                                                    x-show="filteredGroupes.length > 0 && filteredGroupes.every(g => @js($groupeFilter).includes(g))"
                                                     class="text-center py-8 text-gray-400 text-sm"
                                                 >
                                                     Tous les groupes filtrés sont déjà sélectionnés
                                                 </div>
                                             </div>
 
-                                            <!-- Footer avec compteur -->
                                             <div class="p-3 border-t border-base-300 text-xs text-gray-500 flex items-center justify-between">
                                                 <span>{{ count($groupeFilter) }} groupe(s) sélectionné(s)</span>
-                                                <button 
-                                                    type="button"
-                                                    @click="open = false"
-                                                    class="text-primary hover:underline"
-                                                >
-                                                    Fermer
-                                                </button>
+                                                <button type="button" @click="open = false" class="text-primary hover:underline">Fermer</button>
                                             </div>
                                         </div>
                                     </div>
@@ -478,12 +705,12 @@ new class extends Component {
 
                                 <div class="divider divider-horizontal mx-0"></div>
 
+                                {{-- Dates --}}
                                 <div class="flex items-center gap-2">
                                     <input
                                         type="date"
                                         wire:model.live="dateFrom"
                                         value="{{ $dateFrom }}"
-                                        placeholder="Date début"
                                         class="input input-bordered input-sm w-36"
                                     />
                                     <span class="text-xs text-gray-400">→</span>
@@ -491,13 +718,13 @@ new class extends Component {
                                         type="date"
                                         wire:model.live="dateTo"
                                         value="{{ $dateTo }}"
-                                        placeholder="Date fin"
                                         class="input input-bordered input-sm w-36"
                                     />
                                 </div>
 
                                 <div class="divider divider-horizontal mx-0"></div>
 
+                                {{-- Tri --}}
                                 <div class="flex items-center gap-2">
                                     <span class="text-xs text-gray-400">Trier par</span>
                                     <button
@@ -521,9 +748,34 @@ new class extends Component {
                                         CA total
                                     </button>
                                 </div>
+
+                                <div class="divider divider-horizontal mx-0"></div>
+
+                                {{-- Bouton Export XLSX --}}
+                                <button
+                                    type="button"
+                                    wire:click="exportXlsx"
+                                    wire:loading.attr="disabled"
+                                    wire:loading.class="opacity-60 cursor-not-allowed"
+                                    class="btn btn-sm btn-success gap-2"
+                                    title="Exporter les données affichées en Excel"
+                                >
+                                    <span wire:loading.remove wire:target="exportXlsx" class="flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                                        </svg>
+                                        Export XLSX
+                                    </span>
+                                    <span wire:loading wire:target="exportXlsx" class="flex items-center gap-2">
+                                        <span class="loading loading-spinner loading-xs"></span>
+                                        Export en cours…
+                                    </span>
+                                </button>
+
                             </div>
                         </div>
 
+                        {{-- Tableau --}}
                         <div class="relative">
 
                             <div
@@ -537,11 +789,13 @@ new class extends Component {
 
                             @if(count($sales) === 0)
                                 <div class="alert alert-info">
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                    </svg>
                                     <span>Aucune vente trouvée pour cette période{{ !empty($groupeFilter) ? ' et ce(s) groupe(s)' : '' }}.</span>
                                 </div>
                             @else
-                                <div 
+                                <div
                                     class="overflow-x-auto"
                                     wire:loading.class="opacity-40 pointer-events-none"
                                     wire:target="dateFrom, dateTo, sortBy, groupeFilter"
@@ -586,50 +840,41 @@ new class extends Component {
                                                     $prixCosma = $row->prix_vente_cosma;
                                                 @endphp
                                                 <tr class="hover">
-                                                    
                                                     <th>
                                                         <span class="font-semibold {{ $sortBy === 'rank_qty' ? 'text-primary' : 'text-success' }}">
                                                             #{{ $sortBy === 'rank_qty' ? $row->rank_qty : $row->rank_ca }}
                                                         </span>
                                                     </th>
-
                                                     <th>
                                                         <span class="font-mono text-xs">{{ $row->rank_ca }}</span>
                                                     </th>
                                                     <td>
                                                         <span class="font-mono text-xs">{{ $row->ean }}</span>
                                                     </td>
-
                                                     <td>
                                                         <div class="text-xs">{{ $row->groupe ?? '—' }}</div>
                                                     </td>
-
                                                     <td>
                                                         <div class="text-xs font-semibold">{{ $row->marque ?? '—' }}</div>
                                                     </td>
-
                                                     <td>
                                                         <div class="font-bold max-w-xs truncate" title="{{ $row->designation_produit }}">
                                                             {{ $row->designation_produit ?? '—' }}
                                                         </div>
                                                     </td>
-
                                                     <td class="text-right font-semibold text-primary">
                                                         {{ number_format($prixCosma, 2, ',', ' ') }} €
                                                     </td>
-
                                                     <td>
                                                         <span class="font-semibold {{ $sortBy === 'rank_qty' ? 'text-primary' : '' }}">
                                                             {{ number_format($row->total_qty_sold, 0, ',', ' ') }}
                                                         </span>
                                                     </td>
-
                                                     <td>
                                                         <span class="font-semibold {{ $sortBy === 'rank_ca' ? 'text-success' : '' }}">
                                                             {{ number_format($row->total_revenue, 2, ',', ' ') }} €
                                                         </span>
                                                     </td>
-
                                                     <td class="text-right text-xs">
                                                         @if($row->pght)
                                                             {{ number_format($row->pght, 2, ',', ' ') }} €
@@ -645,11 +890,7 @@ new class extends Component {
                                                                     $siteData = $comparison['sites'][$site->id];
                                                                     $textClass = '';
                                                                     if ($siteData['price_percentage'] !== null) {
-                                                                        if ($prixCosma > $siteData['prix_ht']) {
-                                                                            $textClass = 'text-error';
-                                                                        } else {
-                                                                            $textClass = 'text-success';
-                                                                        }
+                                                                        $textClass = $prixCosma > $siteData['prix_ht'] ? 'text-error' : 'text-success';
                                                                     }
                                                                 @endphp
                                                                 <div class="flex flex-col gap-1 items-end">
@@ -661,13 +902,11 @@ new class extends Component {
                                                                     >
                                                                         {{ number_format($siteData['prix_ht'], 2) }} €
                                                                     </a>
-
                                                                     @if($siteData['price_percentage'] !== null)
                                                                         <span class="text-xs {{ $textClass }} font-bold">
                                                                             {{ $siteData['price_percentage'] > 0 ? '+' : '' }}{{ $siteData['price_percentage'] }}%
                                                                         </span>
                                                                     @endif
-
                                                                     @if($siteData['vendor'])
                                                                         <span class="text-xs text-gray-500 truncate max-w-[120px]" title="{{ $siteData['vendor'] }}">
                                                                             {{ Str::limit($siteData['vendor'], 15) }}
@@ -683,18 +922,12 @@ new class extends Component {
                                                     <td class="text-right text-xs">
                                                         @if($comparison['prix_moyen_marche'])
                                                             @php
-                                                                $textClassMoyen = '';
-                                                                if ($prixCosma > $comparison['prix_moyen_marche']) {
-                                                                    $textClassMoyen = 'text-error';
-                                                                } else {
-                                                                    $textClassMoyen = 'text-success';
-                                                                }
+                                                                $textClassMoyen = $prixCosma > $comparison['prix_moyen_marche'] ? 'text-error' : 'text-success';
                                                             @endphp
                                                             <div class="flex flex-col gap-1 items-end">
                                                                 <span class="font-semibold">
                                                                     {{ number_format($comparison['prix_moyen_marche'], 2, ',', ' ') }} €
                                                                 </span>
-
                                                                 @if($comparison['percentage_marche'] !== null)
                                                                     <span class="text-xs {{ $textClassMoyen }} font-bold">
                                                                         {{ $comparison['percentage_marche'] > 0 ? '+' : '' }}{{ $comparison['percentage_marche'] }}%
@@ -705,7 +938,6 @@ new class extends Component {
                                                             <span class="text-gray-400">N/A</span>
                                                         @endif
                                                     </td>
-
                                                 </tr>
                                             @endforeach
                                         </tbody>
@@ -733,7 +965,6 @@ new class extends Component {
                         </div>
 
                     </div>
-
                 </x-tab>
             @endforeach
         </x-tabs>
