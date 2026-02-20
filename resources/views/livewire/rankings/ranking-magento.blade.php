@@ -261,49 +261,15 @@ new class extends Component {
         $countryLabel = $this->countries[$this->activeCountry] ?? $this->activeCountry;
         $sheet->setTitle('Ventes ' . $countryLabel);
 
-        // === EN-TÊTES ===
+        // === Calcul lastColLetter (avant tout écriture) ===
         $baseHeaders = [
             'Rang Qty', 'Rang CA', 'EAN', 'Groupe', 'Marque',
             'Désignation', 'Prix Cosma', 'Qté vendue', 'CA total', 'PGHT',
         ];
 
-        $colIndex = 0;
-        foreach ($baseHeaders as $header) {
-            $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . '1';
-            $sheet->setCellValue($cell, $header);
-            $colIndex++;
-        }
-
-        foreach ($sites as $site) {
-            $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . '1';
-            $sheet->setCellValue($cell, $site->name);
-            $colIndex++;
-        }
-
-        $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIndex + 1) . '1';
-        $sheet->setCellValue($cell, 'Prix marché');
-        $lastColIndex  = $colIndex;
+        $lastColIndex  = count($baseHeaders) + $sites->count(); // 10 bases + N sites + 1 marché = lastColIndex = count+sites
         $lastColLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($lastColIndex + 1);
 
-        // Style en-têtes
-        $sheet->getStyle('A1:' . $lastColLetter . '1')->applyFromArray([
-            'font' => [
-                'bold'  => true,
-                'color' => ['rgb' => 'FFFFFF'],
-                'name'  => 'Arial',
-                'size'  => 10,
-            ],
-            'fill' => [
-                'fillType'   => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
-                'startColor' => ['rgb' => '4A5568'],
-            ],
-            'alignment' => [
-                'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
-                'vertical'   => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
-            ],
-        ]);
-
-        $sheet->getRowDimension(1)->setRowHeight(20);
         $sheet->getColumnDimension('A')->setAutoSize(false)->setWidth(10);
         $sheet->getColumnDimension('B')->setAutoSize(false)->setWidth(10);
         $sheet->getColumnDimension('C')->setAutoSize(false)->setWidth(16);
@@ -395,15 +361,31 @@ new class extends Component {
         // Ligne vide de séparation avant les données
         $r2++;
 
-        // === PASS 2 : DONNÉES (commencent après le bloc stats) ===
+        // === PASS 2 : EN-TÊTES + DONNÉES (après le bloc stats) ===
         $dataStartRow = $r2;
-        $row = $dataStartRow;
+        $headerRow    = $r2 - 1; // la ligne vide de séparation devient la ligne d'en-têtes
+        $row          = $r2;
 
-        // Re-écrire les en-têtes de colonnes juste au-dessus des données
-        $sheet->getStyle('A' . ($row - 1) . ':' . $lastColLetter . ($row - 1))->applyFromArray([
+        // Écrire le contenu des en-têtes
+        $hColIdx = 0;
+        foreach ($baseHeaders as $header) {
+            $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($hColIdx + 1) . $headerRow;
+            $sheet->setCellValue($cell, $header);
+            $hColIdx++;
+        }
+        foreach ($sites as $site) {
+            $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($hColIdx + 1) . $headerRow;
+            $sheet->setCellValue($cell, $site->name);
+            $hColIdx++;
+        }
+        $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($hColIdx + 1) . $headerRow;
+        $sheet->setCellValue($cell, 'Prix marché');
+
+        // Style des en-têtes
+        $sheet->getStyle('A' . $headerRow . ':' . $lastColLetter . $headerRow)->applyFromArray([
             'fill' => [
                 'fillType'   => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
-                'startColor' => ['rgb' => '4A5568'],
+                'startColor' => ['rgb' => '2D3748'],
             ],
             'font' => [
                 'bold'  => true,
@@ -416,6 +398,7 @@ new class extends Component {
                 'vertical'   => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
             ],
         ]);
+        $sheet->getRowDimension($headerRow)->setRowHeight(20);
 
         foreach ($comparisons as $comparison) {
             $r = $comparison['row'];
@@ -538,9 +521,11 @@ new class extends Component {
             }
         }
 
-        $sheet->freezePane('A2');
+        // Figer sur la première ligne de données (en-têtes + stats restent visibles)
+        $sheet->freezePane('A' . $dataStartRow);
 
-        $sheet->getStyle('A1:' . $lastColLetter . $lastDataRow)->applyFromArray([
+        // Bordures sur le tableau de données uniquement
+        $sheet->getStyle('A' . $headerRow . ':' . $lastColLetter . $lastDataRow)->applyFromArray([
             'borders' => [
                 'allBorders' => [
                     'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
@@ -550,7 +535,7 @@ new class extends Component {
             'font' => ['name' => 'Arial', 'size' => 9],
         ]);
 
-        $sheet->getStyle('G2:' . $lastColLetter . $lastDataRow)
+        $sheet->getStyle('G' . $dataStartRow . ':' . $lastColLetter . $lastDataRow)
             ->getAlignment()
             ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_RIGHT);
 
