@@ -413,7 +413,8 @@ class ExportSalesService
                 $pct   = $comparison['percentage_marche'];
                 $color = $r->prix_vente_cosma > $pm ? 'CC0000' : '1A7A3C';
                 $sheet->setCellValue($marcheCoord, number_format($pm, 2, ',', ' ') . ' € (' . ($pct > 0 ? '+' : '') . $pct . '%)');
-                $sheet->getStyle($marcheCoord)->getFont()->getColor()->setRGB($color)->setBold(true);
+                $sheet->getStyle($marcheCoord)->getFont()->getColor()->setRGB($color);
+                $sheet->getStyle($marcheCoord)->getFont()->setBold(true);
             } else {
                 $sheet->setCellValue($marcheCoord, 'N/A');
                 $sheet->getStyle($marcheCoord)->getFont()->getColor()->setRGB('AAAAAA');
