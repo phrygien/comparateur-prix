@@ -4,6 +4,7 @@ use App\Livewire\Boutiques\Boutique;
 use App\Livewire\Boutiques\NosBoutique;
 use Livewire\Volt\Volt;
 use App\Models\Product;
+use App\Http\Controllers\GoogleMerchantController;
 
 // Route publique
 Volt::route('/', 'auth.login')->name('login');
@@ -34,4 +35,9 @@ Route::middleware(['check.auth', 'boutique.cache'])->group(function () {
 
     // Ranking Magento
     Volt::route('/ranking-magento', 'rankings.ranking-magento')->name('ranking-magento');
+});
+
+Route::prefix('api')->group(function () {
+    Route::get('/merchant/popularity-rank', [GoogleMerchantController::class, 'getPopularityRank']);
+    Route::get('/merchant/product-performance', [GoogleMerchantController::class, 'getProductPerformance']);
 });

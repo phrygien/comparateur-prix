@@ -35,4 +35,7 @@ return [
         ],
     ],
 
+    'google' => [
+        'merchant_id' => env('GOOGLE_MERCHANT_ID'),
+    ],
 ];
