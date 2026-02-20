@@ -199,6 +199,7 @@ new class extends Component {
                         'url'              => $scrapedProduct->url,
                         'name'             => $scrapedProduct->name,
                         'vendor'           => $scrapedProduct->vendor,
+                        'ean'              => $scrapedProduct->ean ?? null,
                         'price_diff'       => $priceDiff,
                         'price_percentage' => $pricePercentage,
                         'site_name'        => $site->name,
@@ -308,12 +309,113 @@ new class extends Component {
         $sheet->getColumnDimension('C')->setAutoSize(false)->setWidth(16);
         $sheet->getColumnDimension('F')->setAutoSize(false)->setWidth(35);
 
-        // === DONNÉES ===
-        $row = 2;
+        // === PASS 1 : calcul des statistiques (avant d'écrire quoi que ce soit) ===
         $somme_prix_marche_total = 0;
         $somme_gain  = 0;
         $somme_perte = 0;
         $comparisonsAvecPrix = 0;
+
+        foreach ($comparisons as $comparison) {
+            if ($comparison['prix_moyen_marche'] !== null) {
+                $prixMoyen = $comparison['prix_moyen_marche'];
+                $somme_prix_marche_total += $prixMoyen;
+                $diff = $comparison['difference_marche'];
+                if ($diff > 0) $somme_gain  += $diff;
+                else           $somme_perte += $diff;
+                $comparisonsAvecPrix++;
+            }
+        }
+
+        $pct_gain = $somme_prix_marche_total > 0
+            ? ((($somme_prix_marche_total + $somme_gain)  * 100) / $somme_prix_marche_total) - 100 : 0;
+        $pct_perte = $somme_prix_marche_total > 0
+            ? ((($somme_prix_marche_total + $somme_perte) * 100) / $somme_prix_marche_total) - 100 : 0;
+
+        // === STATISTIQUES EN HAUT (ligne 2 → avant les données) ===
+        $statHeaderRow = 2;
+
+        // Fond de la zone stats
+        $statEndRow = $statHeaderRow + 10;
+        $sheet->getStyle('A' . $statHeaderRow . ':' . $lastColLetter . $statEndRow)->applyFromArray([
+            'fill' => [
+                'fillType'   => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                'startColor' => ['rgb' => 'EDF2F7'],
+            ],
+        ]);
+
+        // Titre section
+        $sheet->setCellValue('A' . $statHeaderRow, 'STATISTIQUES');
+        $sheet->getStyle('A' . $statHeaderRow)->getFont()->setBold(true)->setSize(13)->setName('Arial');
+        $r2 = $statHeaderRow + 1;
+
+        $infos = [
+            ['Pays',              $countryLabel],
+            ['Période',           $this->dateFrom . ' → ' . $this->dateTo],
+            ['Tri appliqué',      $this->sortBy === 'rank_qty' ? 'Quantité vendue' : 'CA total'],
+            ['Produits exportés', count($this->sales)],
+            ['Produits comparés', $comparisonsAvecPrix],
+        ];
+
+        foreach ($infos as [$label, $value]) {
+            $sheet->setCellValue('A' . $r2, $label . ' :');
+            $sheet->setCellValue('B' . $r2, $value);
+            $sheet->getStyle('A' . $r2)->getFont()->setBold(true)->setName('Arial');
+            $sheet->getStyle('B' . $r2)->getFont()->setName('Arial');
+            $r2++;
+        }
+
+        $r2++; // ligne vide
+
+        $statsData = [
+            ['Moins chers en moyenne (€)', $comparisonsAvecPrix > 0 ? number_format(abs($somme_gain  / $comparisonsAvecPrix), 2, ',', ' ') . ' €' : 'N/A', '1A7A3C'],
+            ['Moins chers en moyenne (%)', number_format(abs($pct_gain),  2, ',', ' ') . ' %', '1A7A3C'],
+            ['Plus chers en moyenne (€)',  $comparisonsAvecPrix > 0 ? number_format(abs($somme_perte / $comparisonsAvecPrix), 2, ',', ' ') . ' €' : 'N/A', 'CC0000'],
+            ['Plus chers en moyenne (%)',  number_format(abs($pct_perte), 2, ',', ' ') . ' %', 'CC0000'],
+        ];
+
+        foreach ($statsData as [$label, $value, $color]) {
+            $sheet->setCellValue('A' . $r2, $label . ' :');
+            $sheet->getStyle('A' . $r2)->getFont()->setBold(true)->setName('Arial');
+            $sheet->setCellValue('B' . $r2, $value);
+            $sheet->getStyle('B' . $r2)->getFont()->getColor()->setRGB($color);
+            $sheet->getStyle('B' . $r2)->getFont()->setBold(true)->setName('Arial');
+            $r2++;
+        }
+
+        // Bordure autour de la zone stats
+        $sheet->getStyle('A' . $statHeaderRow . ':' . $lastColLetter . ($r2 - 1))->applyFromArray([
+            'borders' => [
+                'outline' => [
+                    'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_MEDIUM,
+                    'color'       => ['rgb' => 'CBD5E0'],
+                ],
+            ],
+        ]);
+
+        // Ligne vide de séparation avant les données
+        $r2++;
+
+        // === PASS 2 : DONNÉES (commencent après le bloc stats) ===
+        $dataStartRow = $r2;
+        $row = $dataStartRow;
+
+        // Re-écrire les en-têtes de colonnes juste au-dessus des données
+        $sheet->getStyle('A' . ($row - 1) . ':' . $lastColLetter . ($row - 1))->applyFromArray([
+            'fill' => [
+                'fillType'   => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                'startColor' => ['rgb' => '4A5568'],
+            ],
+            'font' => [
+                'bold'  => true,
+                'color' => ['rgb' => 'FFFFFF'],
+                'name'  => 'Arial',
+                'size'  => 10,
+            ],
+            'alignment' => [
+                'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
+                'vertical'   => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
+            ],
+        ]);
 
         foreach ($comparisons as $comparison) {
             $r = $comparison['row'];
@@ -334,7 +436,7 @@ new class extends Component {
             $sheet->getStyle('J' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
 
             // Alterner couleur de fond des lignes
-            if ($row % 2 === 0) {
+            if (($row - $dataStartRow) % 2 === 0) {
                 $sheet->getStyle('A' . $row . ':' . $lastColLetter . $row)->applyFromArray([
                     'fill' => [
                         'fillType'   => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
@@ -343,7 +445,7 @@ new class extends Component {
                 ]);
             }
 
-            $colIdx = 10; // Après colonne J (index 9 = J)
+            $colIdx = 10; // Après colonne J
             foreach ($sites as $site) {
                 $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIdx + 1) . $row;
                 $siteData  = $comparison['sites'][$site->id] ?? null;
@@ -358,16 +460,28 @@ new class extends Component {
                             : 'FF1A7A3C'; // vert  : Cosma moins cher que le marché
                     }
 
+                    // Ligne 1 : Prix + pourcentage
                     $prixText = number_format($siteData['prix_ht'], 2, ',', ' ') . ' €';
                     if ($pricePercentage !== null) {
                         $prixText .= ' (' . ($pricePercentage > 0 ? '+' : '') . $pricePercentage . '%)';
                     }
 
                     $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
-                    $runPrix  = $richText->createTextRun($prixText);
+
+                    // Run prix (coloré)
+                    $runPrix = $richText->createTextRun($prixText);
                     $runPrix->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($priceColor));
                     $runPrix->getFont()->setName('Arial');
 
+                    // Run EAN du site (gris, petite taille)
+                    if (!empty($siteData['ean'])) {
+                        $runEan = $richText->createTextRun("\nEAN : " . $siteData['ean']);
+                        $runEan->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF888888'));
+                        $runEan->getFont()->setName('Arial');
+                        $runEan->getFont()->setSize(8);
+                    }
+
+                    // Run lien (bleu souligné)
                     if (!empty($siteData['url'])) {
                         $runLien = $richText->createTextRun("\nVoir le produit");
                         $runLien->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF0563C1'));
@@ -405,12 +519,6 @@ new class extends Component {
                 $sheet->setCellValue($marcheCoord, $cellValue);
                 $sheet->getStyle($marcheCoord)->getFont()->getColor()->setRGB($color);
                 $sheet->getStyle($marcheCoord)->getFont()->setBold(true);
-
-                $somme_prix_marche_total += $prixMoyen;
-                $diff = $comparison['difference_marche'];
-                if ($diff > 0) $somme_gain  += $diff;
-                else           $somme_perte += $diff;
-                $comparisonsAvecPrix++;
             } else {
                 $sheet->setCellValue($marcheCoord, 'N/A');
                 $sheet->getStyle($marcheCoord)->getFont()->getColor()->setRGB('AAAAAA');
@@ -422,52 +530,6 @@ new class extends Component {
         }
 
         $lastDataRow = $row - 1;
-
-        // === STATISTIQUES ===
-        $row += 2;
-
-        $pct_gain = $somme_prix_marche_total > 0
-            ? ((($somme_prix_marche_total + $somme_gain)  * 100) / $somme_prix_marche_total) - 100 : 0;
-        $pct_perte = $somme_prix_marche_total > 0
-            ? ((($somme_prix_marche_total + $somme_perte) * 100) / $somme_prix_marche_total) - 100 : 0;
-
-        $sheet->setCellValue('A' . $row, 'STATISTIQUES');
-        $sheet->getStyle('A' . $row)->getFont()->setBold(true)->setSize(13)->setName('Arial');
-        $row++;
-
-        $infos = [
-            ['Pays',                $countryLabel],
-            ['Période',             $this->dateFrom . ' → ' . $this->dateTo],
-            ['Tri appliqué',        $this->sortBy === 'rank_qty' ? 'Quantité vendue' : 'CA total'],
-            ['Produits exportés',   count($this->sales)],
-            ['Produits comparés',   $comparisonsAvecPrix],
-        ];
-
-        foreach ($infos as [$label, $value]) {
-            $sheet->setCellValue('A' . $row, $label . ' :');
-            $sheet->setCellValue('B' . $row, $value);
-            $sheet->getStyle('A' . $row)->getFont()->setBold(true)->setName('Arial');
-            $sheet->getStyle('B' . $row)->getFont()->setName('Arial');
-            $row++;
-        }
-
-        $row++; // ligne vide
-
-        $stats = [
-            ['Moins chers en moyenne (€)', $comparisonsAvecPrix > 0 ? number_format(abs($somme_gain  / $comparisonsAvecPrix), 2, ',', ' ') . ' €' : 'N/A', '1A7A3C'],
-            ['Moins chers en moyenne (%)', number_format(abs($pct_gain),  2, ',', ' ') . ' %', '1A7A3C'],
-            ['Plus chers en moyenne (€)',  $comparisonsAvecPrix > 0 ? number_format(abs($somme_perte / $comparisonsAvecPrix), 2, ',', ' ') . ' €' : 'N/A', 'CC0000'],
-            ['Plus chers en moyenne (%)',  number_format(abs($pct_perte), 2, ',', ' ') . ' %', 'CC0000'],
-        ];
-
-        foreach ($stats as [$label, $value, $color]) {
-            $sheet->setCellValue('A' . $row, $label . ' :');
-            $sheet->getStyle('A' . $row)->getFont()->setBold(true)->setName('Arial');
-            $sheet->setCellValue('B' . $row, $value);
-            $sheet->getStyle('B' . $row)->getFont()->getColor()->setRGB($color);
-            $sheet->getStyle('B' . $row)->getFont()->setBold(true)->setName('Arial');
-            $row++;
-        }
 
         // === FORMATAGE FINAL ===
         foreach (range('D', $lastColLetter) as $col) {
