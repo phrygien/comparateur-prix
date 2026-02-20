@@ -2,6 +2,7 @@
 
 use Livewire\Volt\Component;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use App\Models\Product;
 use App\Models\Site;
 
@@ -50,66 +51,78 @@ new class extends Component {
             $params = array_merge($params, $this->groupeFilter);
         }
 
-        $sql = "
-            WITH sales AS (
-                SELECT
-                    addr.country_id AS country,
-                    oi.sku as ean,
-                    SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) AS groupe,
-                    SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 2), ' - ', -1) AS marque,
-                    SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 3), ' - ', -1) AS designation_produit,
-                    (CASE
-                        WHEN ROUND(product_decimal.special_price, 2) IS NOT NULL THEN ROUND(product_decimal.special_price, 2)
-                        ELSE ROUND(product_decimal.price, 2)
-                    END) as prix_vente_cosma,
-                    ROUND(product_decimal.cost, 2) AS cost,
-                    ROUND(product_decimal.prix_achat_ht, 2) AS pght,
-                    CAST(SUM(oi.qty_ordered) AS UNSIGNED) AS total_qty_sold,
-                    ROUND(SUM(oi.base_row_total), 2) AS total_revenue
-                FROM sales_order_item oi
-                JOIN sales_order o ON oi.order_id = o.entity_id
-                JOIN sales_order_address addr ON addr.parent_id = o.entity_id
-                    AND addr.address_type = 'shipping'
-                JOIN catalog_product_entity AS produit ON oi.sku = produit.sku
-                LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
-                LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
-                WHERE o.state IN ('processing', 'complete')
-                  AND o.created_at >= ?
-                  AND o.created_at <= ?
-                  AND addr.country_id = ?
-                  AND oi.row_total > 0
-                GROUP BY oi.sku, oi.name, addr.country_id
-            ),
-            ranked_sales AS (
-                SELECT
-                    *,
-                    ROW_NUMBER() OVER (ORDER BY total_qty_sold DESC) AS rank_qty,
-                    ROW_NUMBER() OVER (ORDER BY total_revenue DESC) AS rank_ca
-                FROM sales
-            )
-            SELECT *
-            FROM ranked_sales
-            {$groupeCondition}
-            ORDER BY {$orderCol} DESC
-            LIMIT 100
-        ";
+        // Clé de cache unique selon tous les paramètres influençant le résultat
+        $cacheKey = 'top_products_' . md5(
+            $this->activeCountry
+            . $dateFrom
+            . $dateTo
+            . $orderCol
+            . implode(',', $this->groupeFilter)
+        );
 
-        DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+        return Cache::remember($cacheKey, now()->addHour(), function () use ($dateFrom, $dateTo, $groupeCondition, $params, $orderCol) {
 
-        $results = DB::connection('mysqlMagento')->select($sql, $params);
+            $sql = "
+                WITH sales AS (
+                    SELECT
+                        addr.country_id AS country,
+                        oi.sku as ean,
+                        SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) AS groupe,
+                        SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 2), ' - ', -1) AS marque,
+                        SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 3), ' - ', -1) AS designation_produit,
+                        (CASE
+                            WHEN ROUND(product_decimal.special_price, 2) IS NOT NULL THEN ROUND(product_decimal.special_price, 2)
+                            ELSE ROUND(product_decimal.price, 2)
+                        END) as prix_vente_cosma,
+                        ROUND(product_decimal.cost, 2) AS cost,
+                        ROUND(product_decimal.prix_achat_ht, 2) AS pght,
+                        CAST(SUM(oi.qty_ordered) AS UNSIGNED) AS total_qty_sold,
+                        ROUND(SUM(oi.base_row_total), 2) AS total_revenue
+                    FROM sales_order_item oi
+                    JOIN sales_order o ON oi.order_id = o.entity_id
+                    JOIN sales_order_address addr ON addr.parent_id = o.entity_id
+                        AND addr.address_type = 'shipping'
+                    JOIN catalog_product_entity AS produit ON oi.sku = produit.sku
+                    LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+                    LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
+                    WHERE o.state IN ('processing', 'complete')
+                      AND o.created_at >= ?
+                      AND o.created_at <= ?
+                      AND addr.country_id = ?
+                      AND oi.row_total > 0
+                    GROUP BY oi.sku, oi.name, addr.country_id
+                ),
+                ranked_sales AS (
+                    SELECT
+                        *,
+                        ROW_NUMBER() OVER (ORDER BY total_qty_sold DESC) AS rank_qty,
+                        ROW_NUMBER() OVER (ORDER BY total_revenue DESC) AS rank_ca
+                    FROM sales
+                )
+                SELECT *
+                FROM ranked_sales
+                {$groupeCondition}
+                ORDER BY {$orderCol} DESC
+                LIMIT 100
+            ";
 
-        foreach ($results as $result) {
-            foreach (['designation_produit', 'marque', 'groupe'] as $field) {
-                if (isset($result->$field)) {
-                    if (!mb_check_encoding($result->$field, 'UTF-8')) {
-                        $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'ISO-8859-1');
+            DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+
+            $results = DB::connection('mysqlMagento')->select($sql, $params);
+
+            foreach ($results as $result) {
+                foreach (['designation_produit', 'marque', 'groupe'] as $field) {
+                    if (isset($result->$field)) {
+                        if (!mb_check_encoding($result->$field, 'UTF-8')) {
+                            $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'ISO-8859-1');
+                        }
+                        $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'UTF-8');
                     }
-                    $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'UTF-8');
                 }
             }
-        }
 
-        return $results;
+            return $results;
+        });
     }
 
     public function getAvailableGroupesProperty()
@@ -117,33 +130,42 @@ new class extends Component {
         $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
         $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
 
-        $sql = "
-            WITH sales AS (
-                SELECT DISTINCT
-                    SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) AS groupe
-                FROM sales_order_item oi
-                JOIN sales_order o ON oi.order_id = o.entity_id
-                JOIN sales_order_address addr ON addr.parent_id = o.entity_id
-                    AND addr.address_type = 'shipping'
-                JOIN catalog_product_entity AS produit ON oi.sku = produit.sku
-                LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
-                WHERE o.state IN ('processing', 'complete')
-                  AND o.created_at >= ?
-                  AND o.created_at <= ?
-                  AND addr.country_id = ?
-                  AND oi.row_total > 0
-            )
-            SELECT groupe
-            FROM sales
-            WHERE groupe IS NOT NULL
-              AND groupe != ''
-            ORDER BY groupe ASC
-        ";
+        $cacheKey = 'available_groupes_' . md5(
+            $this->activeCountry
+            . $dateFrom
+            . $dateTo
+        );
 
-        $groupes = DB::connection('mysqlMagento')
-            ->select($sql, [$dateFrom, $dateTo, $this->activeCountry]);
+        return Cache::remember($cacheKey, now()->addHour(), function () use ($dateFrom, $dateTo) {
 
-        return collect($groupes)->pluck('groupe')->toArray();
+            $sql = "
+                WITH sales AS (
+                    SELECT DISTINCT
+                        SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) AS groupe
+                    FROM sales_order_item oi
+                    JOIN sales_order o ON oi.order_id = o.entity_id
+                    JOIN sales_order_address addr ON addr.parent_id = o.entity_id
+                        AND addr.address_type = 'shipping'
+                    JOIN catalog_product_entity AS produit ON oi.sku = produit.sku
+                    LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+                    WHERE o.state IN ('processing', 'complete')
+                      AND o.created_at >= ?
+                      AND o.created_at <= ?
+                      AND addr.country_id = ?
+                      AND oi.row_total > 0
+                )
+                SELECT groupe
+                FROM sales
+                WHERE groupe IS NOT NULL
+                  AND groupe != ''
+                ORDER BY groupe ASC
+            ";
+
+            $groupes = DB::connection('mysqlMagento')
+                ->select($sql, [$dateFrom, $dateTo, $this->activeCountry]);
+
+            return collect($groupes)->pluck('groupe')->toArray();
+        });
     }
 
     public function getComparisonsProperty()
@@ -251,6 +273,32 @@ new class extends Component {
         $this->sortBy = $column;
     }
 
+    /**
+     * Vide le cache pour les paramètres actuels (pays + dates + groupes).
+     * Appelé automatiquement si besoin, ou manuellement via un bouton.
+     */
+    public function clearCache(): void
+    {
+        $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
+        $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
+
+        $orderCol = $this->sortBy === 'rank_ca' ? 'total_revenue' : 'total_qty_sold';
+
+        Cache::forget('top_products_' . md5(
+            $this->activeCountry
+            . $dateFrom
+            . $dateTo
+            . $orderCol
+            . implode(',', $this->groupeFilter)
+        ));
+
+        Cache::forget('available_groupes_' . md5(
+            $this->activeCountry
+            . $dateFrom
+            . $dateTo
+        ));
+    }
+
     public function exportXlsx(): \Symfony\Component\HttpFoundation\BinaryFileResponse
     {
         $sites       = $this->sites;
@@ -267,7 +315,7 @@ new class extends Component {
             'Désignation', 'Prix Cosma', 'Qté vendue', 'CA total', 'PGHT',
         ];
 
-        $lastColIndex  = count($baseHeaders) + $sites->count(); // 10 bases + N sites + 1 marché = lastColIndex = count+sites
+        $lastColIndex  = count($baseHeaders) + $sites->count();
         $lastColLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($lastColIndex + 1);
 
         $sheet->getColumnDimension('A')->setAutoSize(false)->setWidth(10);
@@ -275,7 +323,7 @@ new class extends Component {
         $sheet->getColumnDimension('C')->setAutoSize(false)->setWidth(16);
         $sheet->getColumnDimension('F')->setAutoSize(false)->setWidth(35);
 
-        // === PASS 1 : calcul des statistiques (avant d'écrire quoi que ce soit) ===
+        // === PASS 1 : calcul des statistiques ===
         $somme_prix_marche_total = 0;
         $somme_gain  = 0;
         $somme_perte = 0;
@@ -298,10 +346,8 @@ new class extends Component {
             ? ((($somme_prix_marche_total + $somme_perte) * 100) / $somme_prix_marche_total) - 100 : 0;
 
         // === STATISTIQUES EN HAUT — 2 lignes compactes ===
-        // Ligne 1 : infos contextuelles (A→L sur une seule ligne)
         $row1 = 1;
 
-        // Paires label|valeur disposées horizontalement colonne par colonne
         $groupeLabel = !empty($this->groupeFilter) ? implode(', ', $this->groupeFilter) : 'Tous';
         $infoLine = [
             'Pays'               => $countryLabel,
@@ -323,7 +369,7 @@ new class extends Component {
             $col += 2;
         }
 
-        // Ligne 2 : KPIs côte à côte
+        // Ligne 2 : KPIs
         $row2 = 2;
         $kpis = [
             ['↓ Moins chers (€)',  $comparisonsAvecPrix > 0 ? number_format(abs($somme_gain  / $comparisonsAvecPrix), 2, ',', ' ') . ' €' : 'N/A', '1A7A3C'],
@@ -344,7 +390,6 @@ new class extends Component {
             $col += 2;
         }
 
-        // Style fond pour les 2 lignes de stats
         $sheet->getStyle('A1:' . $lastColLetter . '2')->applyFromArray([
             'fill' => [
                 'fillType'   => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
@@ -360,14 +405,12 @@ new class extends Component {
         $sheet->getRowDimension(1)->setRowHeight(16);
         $sheet->getRowDimension(2)->setRowHeight(16);
 
-        $r2 = 3; // Les en-têtes iront en ligne 3, données en ligne 4
-
-        // === PASS 2 : EN-TÊTES ligne 3, DONNÉES à partir de ligne 4 ===
-        $dataStartRow = $r2 + 1; // ligne 4
-        $headerRow    = $r2;     // ligne 3
+        $r2 = 3;
+        $dataStartRow = $r2 + 1;
+        $headerRow    = $r2;
         $row          = $dataStartRow;
 
-        // Écrire le contenu des en-têtes
+        // En-têtes
         $hColIdx = 0;
         foreach ($baseHeaders as $header) {
             $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($hColIdx + 1) . $headerRow;
@@ -382,7 +425,6 @@ new class extends Component {
         $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($hColIdx + 1) . $headerRow;
         $sheet->setCellValue($cell, 'Prix marché');
 
-        // Style des en-têtes
         $sheet->getStyle('A' . $headerRow . ':' . $lastColLetter . $headerRow)->applyFromArray([
             'fill' => [
                 'fillType'   => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
@@ -419,7 +461,6 @@ new class extends Component {
             $sheet->getStyle('I' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
             $sheet->getStyle('J' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
 
-            // Alterner couleur de fond des lignes
             if (($row - $dataStartRow) % 2 === 0) {
                 $sheet->getStyle('A' . $row . ':' . $lastColLetter . $row)->applyFromArray([
                     'fill' => [
@@ -429,7 +470,7 @@ new class extends Component {
                 ]);
             }
 
-            $colIdx = 10; // Après colonne J
+            $colIdx = 10;
             foreach ($sites as $site) {
                 $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIdx + 1) . $row;
                 $siteData  = $comparison['sites'][$site->id] ?? null;
@@ -440,11 +481,10 @@ new class extends Component {
 
                     if ($pricePercentage !== null) {
                         $priceColor = $r->prix_vente_cosma > $siteData['prix_ht']
-                            ? 'FFCC0000'  // rouge : Cosma plus cher que le marché
-                            : 'FF1A7A3C'; // vert  : Cosma moins cher que le marché
+                            ? 'FFCC0000'
+                            : 'FF1A7A3C';
                     }
 
-                    // Ligne 1 : Prix + pourcentage
                     $prixText = number_format($siteData['prix_ht'], 2, ',', ' ') . ' €';
                     if ($pricePercentage !== null) {
                         $prixText .= ' (' . ($pricePercentage > 0 ? '+' : '') . $pricePercentage . '%)';
@@ -452,12 +492,10 @@ new class extends Component {
 
                     $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
 
-                    // Run prix (coloré)
                     $runPrix = $richText->createTextRun($prixText);
                     $runPrix->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($priceColor));
                     $runPrix->getFont()->setName('Arial');
 
-                    // Run EAN du site (gris, petite taille)
                     if (!empty($siteData['ean'])) {
                         $runEan = $richText->createTextRun("\nEAN : " . $siteData['ean']);
                         $runEan->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF888888'));
@@ -465,7 +503,6 @@ new class extends Component {
                         $runEan->getFont()->setSize(8);
                     }
 
-                    // Run lien (bleu souligné)
                     if (!empty($siteData['url'])) {
                         $runLien = $richText->createTextRun("\nVoir le produit");
                         $runLien->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF0563C1'));
@@ -491,7 +528,6 @@ new class extends Component {
                 $colIdx++;
             }
 
-            // Prix moyen marché
             $marcheCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIdx + 1) . $row;
 
             if ($comparison['prix_moyen_marche'] !== null) {
@@ -515,17 +551,14 @@ new class extends Component {
 
         $lastDataRow = $row - 1;
 
-        // === FORMATAGE FINAL ===
         foreach (range('D', $lastColLetter) as $col) {
             if (!in_array($col, ['A', 'B', 'C', 'F'])) {
                 $sheet->getColumnDimension($col)->setAutoSize(true);
             }
         }
 
-        // Figer sur la première ligne de données (en-têtes + stats restent visibles)
         $sheet->freezePane('A' . $dataStartRow);
 
-        // Bordures sur le tableau de données uniquement
         $sheet->getStyle('A' . $headerRow . ':' . $lastColLetter . $lastDataRow)->applyFromArray([
             'borders' => [
                 'allBorders' => [
@@ -540,7 +573,6 @@ new class extends Component {
             ->getAlignment()
             ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_RIGHT);
 
-        // === SAUVEGARDE ===
         $exportDir = storage_path('app/public/exports');
         if (!file_exists($exportDir)) {
             mkdir($exportDir, 0755, true);
@@ -796,6 +828,29 @@ new class extends Component {
                                         CA total
                                     </button>
                                 </div>
+
+                                <div class="divider divider-horizontal mx-0"></div>
+
+                                {{-- Bouton vider le cache --}}
+                                <button
+                                    type="button"
+                                    wire:click="clearCache"
+                                    wire:loading.attr="disabled"
+                                    wire:loading.class="opacity-60 cursor-not-allowed"
+                                    class="btn btn-sm btn-ghost gap-2"
+                                    title="Vider le cache et recharger les données"
+                                >
+                                    <span wire:loading.remove wire:target="clearCache" class="flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                        </svg>
+                                        Rafraîchir
+                                    </span>
+                                    <span wire:loading wire:target="clearCache" class="flex items-center gap-2">
+                                        <span class="loading loading-spinner loading-xs"></span>
+                                        Rafraîchissement…
+                                    </span>
+                                </button>
 
                                 <div class="divider divider-horizontal mx-0"></div>
 
