@@ -34,7 +34,7 @@ class SalesExportMail extends Mailable
     public function content(): Content
     {
         return new Content(
-            view: 'emails.sales-export',
+            view: 'mail.sales-export-mail',
             with: [
                 'dateFrom'           => $this->dateFrom,
                 'dateTo'             => $this->dateTo,
