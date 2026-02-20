@@ -297,59 +297,59 @@ new class extends Component {
         $pct_perte = $somme_prix_marche_total > 0
             ? ((($somme_prix_marche_total + $somme_perte) * 100) / $somme_prix_marche_total) - 100 : 0;
 
-        // === STATISTIQUES EN HAUT (ligne 2 → avant les données) ===
-        $statHeaderRow = 2;
+        // === STATISTIQUES EN HAUT — 2 lignes compactes ===
+        // Ligne 1 : infos contextuelles (A→L sur une seule ligne)
+        $row1 = 1;
 
-        // Fond de la zone stats
-        $statEndRow = $statHeaderRow + 10;
-        $sheet->getStyle('A' . $statHeaderRow . ':' . $lastColLetter . $statEndRow)->applyFromArray([
+        // Paires label|valeur disposées horizontalement colonne par colonne
+        $groupeLabel = !empty($this->groupeFilter) ? implode(', ', $this->groupeFilter) : 'Tous';
+        $infoLine = [
+            'Pays'               => $countryLabel,
+            'Période'            => $this->dateFrom . ' → ' . $this->dateTo,
+            'Groupe(s)'          => $groupeLabel,
+            'Tri'                => $this->sortBy === 'rank_qty' ? 'Qté vendue' : 'CA total',
+            'Produits exportés'  => count($this->sales),
+            'Produits comparés'  => $comparisonsAvecPrix,
+        ];
+
+        $col = 1;
+        foreach ($infoLine as $label => $value) {
+            $labelCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row1;
+            $valueCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col + 1) . $row1;
+            $sheet->setCellValue($labelCell, $label . ' :');
+            $sheet->setCellValue($valueCell, $value);
+            $sheet->getStyle($labelCell)->getFont()->setBold(true)->setName('Arial')->setSize(9);
+            $sheet->getStyle($valueCell)->getFont()->setName('Arial')->setSize(9);
+            $col += 2;
+        }
+
+        // Ligne 2 : KPIs côte à côte
+        $row2 = 2;
+        $kpis = [
+            ['↓ Moins chers (€)',  $comparisonsAvecPrix > 0 ? number_format(abs($somme_gain  / $comparisonsAvecPrix), 2, ',', ' ') . ' €' : 'N/A', '1A7A3C'],
+            ['↓ Moins chers (%)',  number_format(abs($pct_gain),  2, ',', ' ') . ' %',                                                              '1A7A3C'],
+            ['↑ Plus chers (€)',   $comparisonsAvecPrix > 0 ? number_format(abs($somme_perte / $comparisonsAvecPrix), 2, ',', ' ') . ' €' : 'N/A', 'CC0000'],
+            ['↑ Plus chers (%)',   number_format(abs($pct_perte), 2, ',', ' ') . ' %',                                                              'CC0000'],
+        ];
+
+        $col = 1;
+        foreach ($kpis as [$label, $value, $color]) {
+            $labelCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row2;
+            $valueCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col + 1) . $row2;
+            $sheet->setCellValue($labelCell, $label . ' :');
+            $sheet->getStyle($labelCell)->getFont()->setBold(true)->setName('Arial')->setSize(9);
+            $sheet->setCellValue($valueCell, $value);
+            $sheet->getStyle($valueCell)->getFont()->getColor()->setRGB($color);
+            $sheet->getStyle($valueCell)->getFont()->setBold(true)->setName('Arial')->setSize(9);
+            $col += 2;
+        }
+
+        // Style fond pour les 2 lignes de stats
+        $sheet->getStyle('A1:' . $lastColLetter . '2')->applyFromArray([
             'fill' => [
                 'fillType'   => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
                 'startColor' => ['rgb' => 'EDF2F7'],
             ],
-        ]);
-
-        // Titre section
-        $sheet->setCellValue('A' . $statHeaderRow, 'STATISTIQUES');
-        $sheet->getStyle('A' . $statHeaderRow)->getFont()->setBold(true)->setSize(13)->setName('Arial');
-        $r2 = $statHeaderRow + 1;
-
-        $infos = [
-            ['Pays',              $countryLabel],
-            ['Période',           $this->dateFrom . ' → ' . $this->dateTo],
-            ['Tri appliqué',      $this->sortBy === 'rank_qty' ? 'Quantité vendue' : 'CA total'],
-            ['Produits exportés', count($this->sales)],
-            ['Produits comparés', $comparisonsAvecPrix],
-        ];
-
-        foreach ($infos as [$label, $value]) {
-            $sheet->setCellValue('A' . $r2, $label . ' :');
-            $sheet->setCellValue('B' . $r2, $value);
-            $sheet->getStyle('A' . $r2)->getFont()->setBold(true)->setName('Arial');
-            $sheet->getStyle('B' . $r2)->getFont()->setName('Arial');
-            $r2++;
-        }
-
-        $r2++; // ligne vide
-
-        $statsData = [
-            ['Moins chers en moyenne (€)', $comparisonsAvecPrix > 0 ? number_format(abs($somme_gain  / $comparisonsAvecPrix), 2, ',', ' ') . ' €' : 'N/A', '1A7A3C'],
-            ['Moins chers en moyenne (%)', number_format(abs($pct_gain),  2, ',', ' ') . ' %', '1A7A3C'],
-            ['Plus chers en moyenne (€)',  $comparisonsAvecPrix > 0 ? number_format(abs($somme_perte / $comparisonsAvecPrix), 2, ',', ' ') . ' €' : 'N/A', 'CC0000'],
-            ['Plus chers en moyenne (%)',  number_format(abs($pct_perte), 2, ',', ' ') . ' %', 'CC0000'],
-        ];
-
-        foreach ($statsData as [$label, $value, $color]) {
-            $sheet->setCellValue('A' . $r2, $label . ' :');
-            $sheet->getStyle('A' . $r2)->getFont()->setBold(true)->setName('Arial');
-            $sheet->setCellValue('B' . $r2, $value);
-            $sheet->getStyle('B' . $r2)->getFont()->getColor()->setRGB($color);
-            $sheet->getStyle('B' . $r2)->getFont()->setBold(true)->setName('Arial');
-            $r2++;
-        }
-
-        // Bordure autour de la zone stats
-        $sheet->getStyle('A' . $statHeaderRow . ':' . $lastColLetter . ($r2 - 1))->applyFromArray([
             'borders' => [
                 'outline' => [
                     'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_MEDIUM,
@@ -357,14 +357,15 @@ new class extends Component {
                 ],
             ],
         ]);
+        $sheet->getRowDimension(1)->setRowHeight(16);
+        $sheet->getRowDimension(2)->setRowHeight(16);
 
-        // Ligne vide de séparation avant les données
-        $r2++;
+        $r2 = 3; // Les en-têtes iront en ligne 3, données en ligne 4
 
-        // === PASS 2 : EN-TÊTES + DONNÉES (après le bloc stats) ===
-        $dataStartRow = $r2;
-        $headerRow    = $r2 - 1; // la ligne vide de séparation devient la ligne d'en-têtes
-        $row          = $r2;
+        // === PASS 2 : EN-TÊTES ligne 3, DONNÉES à partir de ligne 4 ===
+        $dataStartRow = $r2 + 1; // ligne 4
+        $headerRow    = $r2;     // ligne 3
+        $row          = $dataStartRow;
 
         // Écrire le contenu des en-têtes
         $hColIdx = 0;
