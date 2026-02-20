@@ -34,6 +34,7 @@ pipeline {
                     composer install --no-interaction --prefer-dist --optimize-autoloader
                     composer require phpoffice/phpspreadsheet --no-interaction
                     composer require openai-php/client
+                    composer require laravel/socialite
                 '''
             }
         }
