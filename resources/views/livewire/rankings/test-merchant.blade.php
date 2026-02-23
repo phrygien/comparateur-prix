@@ -184,18 +184,27 @@ new class extends Component {
 
             $query = "
                 SELECT
+                    report_granularity,
+                    report_date,
                     report_category_id,
+                    category_l1,
+                    category_l2,
+                    category_l3,
+                    brand,
+                    title,
+                    variant_gtins,
                     rank,
                     previous_rank,
+                    report_country_code,
                     relative_demand,
+                    previous_relative_demand,
                     relative_demand_change,
-                    variant_gtins,
-                    title,
-                    brand,
-                    report_date
+                    inventory_status,
+                    brand_inventory_status
                 FROM best_sellers_product_cluster_view
                 WHERE report_country_code = '{$countryCode}'
                   AND report_granularity = 'WEEKLY'
+                  AND category_l1 LIKE '%Health & Beauty%'
                   AND variant_gtins CONTAINS ANY ('{$gtinList}')
                 LIMIT 1000
             ";
@@ -271,16 +280,27 @@ new class extends Component {
 
         $query = "
             SELECT
+                report_granularity,
+                report_date,
                 report_category_id,
+                category_l1,
+                category_l2,
+                category_l3,
+                brand,
+                title,
+                variant_gtins,
                 rank,
                 previous_rank,
+                report_country_code,
                 relative_demand,
-                variant_gtins,
-                title,
-                brand
+                previous_relative_demand,
+                relative_demand_change,
+                inventory_status,
+                brand_inventory_status
             FROM best_sellers_product_cluster_view
             WHERE report_country_code = '{$countryCode}'
               AND report_granularity = 'WEEKLY'
+              AND category_l1 LIKE '%Health & Beauty%'
               AND variant_gtins CONTAINS ANY ('{$gtinList}')
             LIMIT 10
         ";
