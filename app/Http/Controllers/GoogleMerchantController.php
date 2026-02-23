@@ -41,7 +41,7 @@ class GoogleMerchantController extends Controller
             WHERE report_country_code = 'FR'
                 AND report_granularity = 'WEEKLY'
                 AND category_l1 LIKE '%Health & Beauty%'
-                AND variant_gtins CONTAINS ANY ('03614274752106')
+                AND variant_gtins CONTAINS ANY ('3331845995006')
             LIMIT 20
         ";
 
