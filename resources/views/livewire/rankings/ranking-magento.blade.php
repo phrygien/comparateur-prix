@@ -1054,7 +1054,7 @@ new class extends Component {
                                                         <svg class="w-3 h-3 text-blue-500" viewBox="0 0 24 24" fill="currentColor">
                                                             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/>
                                                         </svg>
-                                                        Rang Google
+                                                        Popularite Google
                                                     </div>
                                                 </th>
                                                 <th>EAN</th>
@@ -1109,7 +1109,7 @@ new class extends Component {
                                                         @if($googleRank)
                                                             <div class="flex flex-col items-center gap-0.5">
                                                                 <span class="font-bold font-mono text-sm">
-                                                                    #{{ number_format($googleRank, 0, ',', ' ') }}
+                                                                    #{{ number_format($googleRank, 0, ',', '') }}
                                                                 </span>
                                                                 @if($delta !== null)
                                                                     <span class="text-xs font-bold {{ $deltaSign === '+' ? 'text-success' : ($deltaSign === '-' ? 'text-error' : 'text-gray-400') }}">
@@ -1220,7 +1220,7 @@ new class extends Component {
                                                 <th>Qté vendue</th>
                                                 <th>CA total</th>
                                                 <th>PGHT</th>
-                                                <th class="text-center">Rang Google</th>
+                                                <th class="text-center">popularite Google</th>
                                                 @foreach($sites as $site)
                                                     <th class="text-right">{{ $site->name }}</th>
                                                 @endforeach
