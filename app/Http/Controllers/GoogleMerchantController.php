@@ -40,7 +40,6 @@ class GoogleMerchantController extends Controller
             FROM best_sellers_product_cluster_view
             WHERE report_country_code = 'FR'
                 AND report_granularity = 'WEEKLY'
-                AND category_l1 LIKE '%Health & Beauty%'
                 AND variant_gtins CONTAINS ANY ('03331845995006')
             LIMIT 20
         ";
