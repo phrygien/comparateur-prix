@@ -3,8 +3,10 @@
 use Livewire\Volt\Component;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use App\Models\Product;
 use App\Models\Site;
+use App\Services\GoogleMerchantService;
 
 new class extends Component {
 
@@ -23,11 +25,28 @@ new class extends Component {
         'IT' => 'Italie',
     ];
 
+    // Mapping pays → code Google Merchant
+    protected array $countryCodeMap = [
+        'FR' => 'FR',
+        'BE' => 'BE',
+        'NL' => 'NL',
+        'DE' => 'DE',
+        'ES' => 'ES',
+        'IT' => 'IT',
+    ];
+
     public $somme_prix_marche_total = 0;
     public $somme_gain = 0;
     public $somme_perte = 0;
     public $percentage_gain_marche = 0;
     public $percentage_perte_marche = 0;
+
+    protected GoogleMerchantService $googleMerchantService;
+
+    public function boot(GoogleMerchantService $googleMerchantService): void
+    {
+        $this->googleMerchantService = $googleMerchantService;
+    }
 
     public function mount(): void
     {
@@ -51,7 +70,6 @@ new class extends Component {
             $params = array_merge($params, $this->groupeFilter);
         }
 
-        // Clé de cache unique selon tous les paramètres influençant le résultat
         $cacheKey = 'top_products_' . md5(
             $this->activeCountry
             . $dateFrom
@@ -122,6 +140,104 @@ new class extends Component {
             }
 
             return $results;
+        });
+    }
+
+    /**
+     * Récupère les rangs de popularité Google Merchant pour tous les EANs du top produits.
+     * Retourne un tableau indexé par EAN : ['rank' => int, 'previous_rank' => int, 'relative_demand' => string, ...]
+     */
+    public function getPopularityRanksProperty(): array
+    {
+        $sales = $this->sales;
+
+        if (empty($sales)) {
+            return [];
+        }
+
+        // Collecter les EANs non vides
+        $eans = collect($sales)
+            ->pluck('ean')
+            ->filter()
+            ->unique()
+            ->values()
+            ->toArray();
+
+        if (empty($eans)) {
+            return [];
+        }
+
+        $countryCode = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
+
+        $cacheKey = 'google_popularity_' . md5(
+            $countryCode
+            . implode(',', $eans)
+        );
+
+        return Cache::remember($cacheKey, now()->addHours(6), function () use ($eans, $countryCode) {
+
+            // Formater les EANs pour la requête : ('ean1', 'ean2', ...)
+            $eanList = implode("', '", array_map('addslashes', $eans));
+
+            $query = "
+                SELECT
+                    rank,
+                    previous_rank,
+                    relative_demand,
+                    previous_relative_demand,
+                    relative_demand_change,
+                    variant_gtins,
+                    title,
+                    brand,
+                    category_l1,
+                    category_l2,
+                    category_l3,
+                    report_date
+                FROM best_sellers_product_cluster_view
+                WHERE report_country_code = '{$countryCode}'
+                  AND report_granularity = 'WEEKLY'
+                  AND variant_gtins CONTAINS ANY ('{$eanList}')
+                LIMIT 1000
+            ";
+
+            try {
+                $response = $this->googleMerchantService->searchReports($query);
+
+                $ranksByEan = [];
+                $rows = $response['results'] ?? [];
+
+                foreach ($rows as $row) {
+                    $productCluster = $row['productCluster'] ?? [];
+                    $variantGtins = $productCluster['variantGtins'] ?? [];
+                    $rankData = $row['bestSellersProductClusterView'] ?? $row;
+
+                    $rankInfo = [
+                        'rank'                    => $rankData['rank'] ?? null,
+                        'previous_rank'           => $rankData['previousRank'] ?? null,
+                        'relative_demand'         => $rankData['relativeDemand'] ?? null,
+                        'previous_relative_demand'=> $rankData['previousRelativeDemand'] ?? null,
+                        'relative_demand_change'  => $rankData['relativeDemandChange'] ?? null,
+                        'title'                   => $rankData['title'] ?? null,
+                        'brand'                   => $rankData['brand'] ?? null,
+                        'category_l1'             => $rankData['categoryL1'] ?? null,
+                        'report_date'             => $rankData['reportDate'] ?? null,
+                    ];
+
+                    // Associer le rang à chaque EAN du cluster
+                    foreach ($variantGtins as $gtin) {
+                        // On prend le meilleur rang si plusieurs clusters correspondent
+                        if (!isset($ranksByEan[$gtin]) || ($rankInfo['rank'] < ($ranksByEan[$gtin]['rank'] ?? PHP_INT_MAX))) {
+                            $ranksByEan[$gtin] = $rankInfo;
+                        }
+                    }
+                }
+
+                return $ranksByEan;
+
+            } catch (\Exception $e) {
+                Log::error('Google Merchant popularity rank error: ' . $e->getMessage());
+                return [];
+            }
         });
     }
 
@@ -273,10 +389,6 @@ new class extends Component {
         $this->sortBy = $column;
     }
 
-    /**
-     * Vide le cache pour les paramètres actuels (pays + dates + groupes).
-     * Appelé automatiquement si besoin, ou manuellement via un bouton.
-     */
     public function clearCache(): void
     {
         $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
@@ -297,22 +409,28 @@ new class extends Component {
             . $dateFrom
             . $dateTo
         ));
+
+        // Vider aussi le cache de popularité
+        $eans = collect($this->sales)->pluck('ean')->filter()->unique()->values()->toArray();
+        $countryCode = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
+        Cache::forget('google_popularity_' . md5($countryCode . implode(',', $eans)));
     }
 
     public function exportXlsx(): \Symfony\Component\HttpFoundation\BinaryFileResponse
     {
-        $sites       = $this->sites;
-        $comparisons = $this->comparisons;
+        $sites          = $this->sites;
+        $comparisons    = $this->comparisons;
+        $popularityRanks = $this->popularityRanks;
 
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
         $countryLabel = $this->countries[$this->activeCountry] ?? $this->activeCountry;
         $sheet->setTitle('Ventes ' . $countryLabel);
 
-        // === Calcul lastColLetter (avant tout écriture) ===
         $baseHeaders = [
             'Rang Qty', 'Rang CA', 'EAN', 'Groupe', 'Marque',
             'Désignation', 'Prix Cosma', 'Qté vendue', 'CA total', 'PGHT',
+            'Rang Google', 'Δ Rang', 'Demande relative', // ← nouvelles colonnes popularité
         ];
 
         $lastColIndex  = count($baseHeaders) + $sites->count();
@@ -323,7 +441,7 @@ new class extends Component {
         $sheet->getColumnDimension('C')->setAutoSize(false)->setWidth(16);
         $sheet->getColumnDimension('F')->setAutoSize(false)->setWidth(35);
 
-        // === PASS 1 : calcul des statistiques ===
+        // PASS 1 : statistiques
         $somme_prix_marche_total = 0;
         $somme_gain  = 0;
         $somme_perte = 0;
@@ -345,9 +463,7 @@ new class extends Component {
         $pct_perte = $somme_prix_marche_total > 0
             ? ((($somme_prix_marche_total + $somme_perte) * 100) / $somme_prix_marche_total) - 100 : 0;
 
-        // === STATISTIQUES EN HAUT — 2 lignes compactes ===
         $row1 = 1;
-
         $groupeLabel = !empty($this->groupeFilter) ? implode(', ', $this->groupeFilter) : 'Tous';
         $infoLine = [
             'Pays'               => $countryLabel,
@@ -369,13 +485,12 @@ new class extends Component {
             $col += 2;
         }
 
-        // Ligne 2 : KPIs
         $row2 = 2;
         $kpis = [
             ['↓ Moins chers (€)',  $comparisonsAvecPrix > 0 ? number_format(abs($somme_gain  / $comparisonsAvecPrix), 2, ',', ' ') . ' €' : 'N/A', '1A7A3C'],
-            ['↓ Moins chers (%)',  number_format(abs($pct_gain),  2, ',', ' ') . ' %',                                                              '1A7A3C'],
+            ['↓ Moins chers (%)',  number_format(abs($pct_gain),  2, ',', ' ') . ' %', '1A7A3C'],
             ['↑ Plus chers (€)',   $comparisonsAvecPrix > 0 ? number_format(abs($somme_perte / $comparisonsAvecPrix), 2, ',', ' ') . ' €' : 'N/A', 'CC0000'],
-            ['↑ Plus chers (%)',   number_format(abs($pct_perte), 2, ',', ' ') . ' %',                                                              'CC0000'],
+            ['↑ Plus chers (%)',   number_format(abs($pct_perte), 2, ',', ' ') . ' %', 'CC0000'],
         ];
 
         $col = 1;
@@ -391,26 +506,17 @@ new class extends Component {
         }
 
         $sheet->getStyle('A1:' . $lastColLetter . '2')->applyFromArray([
-            'fill' => [
-                'fillType'   => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
-                'startColor' => ['rgb' => 'EDF2F7'],
-            ],
-            'borders' => [
-                'outline' => [
-                    'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_MEDIUM,
-                    'color'       => ['rgb' => 'CBD5E0'],
-                ],
-            ],
+            'fill' => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EDF2F7']],
+            'borders' => ['outline' => ['borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_MEDIUM, 'color' => ['rgb' => 'CBD5E0']]],
         ]);
         $sheet->getRowDimension(1)->setRowHeight(16);
         $sheet->getRowDimension(2)->setRowHeight(16);
 
-        $r2 = 3;
+        $r2          = 3;
         $dataStartRow = $r2 + 1;
         $headerRow    = $r2;
         $row          = $dataStartRow;
 
-        // En-têtes
         $hColIdx = 0;
         foreach ($baseHeaders as $header) {
             $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($hColIdx + 1) . $headerRow;
@@ -426,25 +532,16 @@ new class extends Component {
         $sheet->setCellValue($cell, 'Prix marché');
 
         $sheet->getStyle('A' . $headerRow . ':' . $lastColLetter . $headerRow)->applyFromArray([
-            'fill' => [
-                'fillType'   => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
-                'startColor' => ['rgb' => '2D3748'],
-            ],
-            'font' => [
-                'bold'  => true,
-                'color' => ['rgb' => 'FFFFFF'],
-                'name'  => 'Arial',
-                'size'  => 10,
-            ],
-            'alignment' => [
-                'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
-                'vertical'   => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
-            ],
+            'fill' => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => '2D3748']],
+            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF'], 'name' => 'Arial', 'size' => 10],
+            'alignment' => ['horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER, 'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER],
         ]);
         $sheet->getRowDimension($headerRow)->setRowHeight(20);
 
         foreach ($comparisons as $comparison) {
-            $r = $comparison['row'];
+            $r   = $comparison['row'];
+            $ean = $r->ean ?? null;
+            $pop = $ean ? ($popularityRanks[$ean] ?? null) : null;
 
             $sheet->setCellValue('A' . $row, $r->rank_qty);
             $sheet->setCellValue('B' . $row, $r->rank_ca);
@@ -457,20 +554,41 @@ new class extends Component {
             $sheet->setCellValue('I' . $row, $r->total_revenue);
             $sheet->setCellValue('J' . $row, $r->pght ?: '');
 
+            // Colonnes popularité Google Merchant (K, L, M)
+            if ($pop) {
+                $googleRank = $pop['rank'] ?? null;
+                $prevRank   = $pop['previous_rank'] ?? null;
+                $deltaRank  = ($googleRank && $prevRank) ? ($prevRank - $googleRank) : null; // positif = progression
+                $demand     = $pop['relative_demand'] ?? null;
+
+                $sheet->setCellValue('K' . $row, $googleRank ?? 'N/A');
+                $sheet->setCellValue('L' . $row, $deltaRank !== null ? ($deltaRank > 0 ? '+' . $deltaRank : $deltaRank) : 'N/A');
+                $sheet->setCellValue('M' . $row, $demand ?? 'N/A');
+
+                // Colorer le delta
+                if ($deltaRank !== null) {
+                    $deltaColor = $deltaRank > 0 ? '1A7A3C' : ($deltaRank < 0 ? 'CC0000' : '888888');
+                    $sheet->getStyle('L' . $row)->getFont()->getColor()->setRGB($deltaColor);
+                    $sheet->getStyle('L' . $row)->getFont()->setBold(true);
+                }
+            } else {
+                $sheet->setCellValue('K' . $row, '—');
+                $sheet->setCellValue('L' . $row, '—');
+                $sheet->setCellValue('M' . $row, '—');
+                $sheet->getStyle('K' . $row . ':M' . $row)->getFont()->getColor()->setRGB('AAAAAA');
+            }
+
             $sheet->getStyle('G' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
             $sheet->getStyle('I' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
             $sheet->getStyle('J' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
 
             if (($row - $dataStartRow) % 2 === 0) {
                 $sheet->getStyle('A' . $row . ':' . $lastColLetter . $row)->applyFromArray([
-                    'fill' => [
-                        'fillType'   => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
-                        'startColor' => ['rgb' => 'F7FAFC'],
-                    ],
+                    'fill' => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F7FAFC']],
                 ]);
             }
 
-            $colIdx = 10;
+            $colIdx = count($baseHeaders); // commence après les colonnes de base
             foreach ($sites as $site) {
                 $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIdx + 1) . $row;
                 $siteData  = $comparison['sites'][$site->id] ?? null;
@@ -480,9 +598,7 @@ new class extends Component {
                     $priceColor = 'FF000000';
 
                     if ($pricePercentage !== null) {
-                        $priceColor = $r->prix_vente_cosma > $siteData['prix_ht']
-                            ? 'FFCC0000'
-                            : 'FF1A7A3C';
+                        $priceColor = $r->prix_vente_cosma > $siteData['prix_ht'] ? 'FFCC0000' : 'FF1A7A3C';
                     }
 
                     $prixText = number_format($siteData['prix_ht'], 2, ',', ' ') . ' €';
@@ -491,16 +607,14 @@ new class extends Component {
                     }
 
                     $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
-
-                    $runPrix = $richText->createTextRun($prixText);
+                    $runPrix  = $richText->createTextRun($prixText);
                     $runPrix->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($priceColor));
                     $runPrix->getFont()->setName('Arial');
 
                     if (!empty($siteData['ean'])) {
                         $runEan = $richText->createTextRun("\nEAN : " . $siteData['ean']);
                         $runEan->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF888888'));
-                        $runEan->getFont()->setName('Arial');
-                        $runEan->getFont()->setSize(8);
+                        $runEan->getFont()->setName('Arial')->setSize(8);
                     }
 
                     if (!empty($siteData['url'])) {
@@ -512,8 +626,7 @@ new class extends Component {
 
                     $sheet->getCell($cellCoord)->setValue($richText);
                     $sheet->getStyle($cellCoord)->getAlignment()->setWrapText(true);
-                    $sheet->getStyle($cellCoord)->getAlignment()
-                        ->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP);
+                    $sheet->getStyle($cellCoord)->getAlignment()->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP);
 
                     if (!empty($siteData['url'])) {
                         $sheet->getCell($cellCoord)->getHyperlink()->setUrl($siteData['url']);
@@ -521,8 +634,7 @@ new class extends Component {
                 } else {
                     $sheet->setCellValue($cellCoord, 'N/A');
                     $sheet->getStyle($cellCoord)->getFont()->getColor()->setRGB('AAAAAA');
-                    $sheet->getStyle($cellCoord)->getAlignment()
-                        ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+                    $sheet->getStyle($cellCoord)->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
                 }
 
                 $colIdx++;
@@ -534,16 +646,13 @@ new class extends Component {
                 $prixMoyen = $comparison['prix_moyen_marche'];
                 $pct       = $comparison['percentage_marche'];
                 $color     = $r->prix_vente_cosma > $prixMoyen ? 'CC0000' : '1A7A3C';
-
-                $cellValue = number_format($prixMoyen, 2, ',', ' ') . ' € (' . ($pct > 0 ? '+' : '') . $pct . '%)';
-                $sheet->setCellValue($marcheCoord, $cellValue);
+                $sheet->setCellValue($marcheCoord, number_format($prixMoyen, 2, ',', ' ') . ' € (' . ($pct > 0 ? '+' : '') . $pct . '%)');
                 $sheet->getStyle($marcheCoord)->getFont()->getColor()->setRGB($color);
                 $sheet->getStyle($marcheCoord)->getFont()->setBold(true);
             } else {
                 $sheet->setCellValue($marcheCoord, 'N/A');
                 $sheet->getStyle($marcheCoord)->getFont()->getColor()->setRGB('AAAAAA');
-                $sheet->getStyle($marcheCoord)->getAlignment()
-                    ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+                $sheet->getStyle($marcheCoord)->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
             }
 
             $row++;
@@ -560,18 +669,12 @@ new class extends Component {
         $sheet->freezePane('A' . $dataStartRow);
 
         $sheet->getStyle('A' . $headerRow . ':' . $lastColLetter . $lastDataRow)->applyFromArray([
-            'borders' => [
-                'allBorders' => [
-                    'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
-                    'color'       => ['rgb' => 'DDDDDD'],
-                ],
-            ],
+            'borders' => ['allBorders' => ['borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN, 'color' => ['rgb' => 'DDDDDD']]],
             'font' => ['name' => 'Arial', 'size' => 9],
         ]);
 
         $sheet->getStyle('G' . $dataStartRow . ':' . $lastColLetter . $lastDataRow)
-            ->getAlignment()
-            ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_RIGHT);
+            ->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_RIGHT);
 
         $exportDir = storage_path('app/public/exports');
         if (!file_exists($exportDir)) {
@@ -601,6 +704,7 @@ new class extends Component {
             'comparisons'               => $comparisons,
             'sites'                     => $this->sites,
             'availableGroupes'          => $this->availableGroupes,
+            'popularityRanks'           => $this->popularityRanks, // ← nouveau
             'comparisonsAvecPrixMarche' => $comparisonsAvecPrixMarche,
             'somme_gain'                => $this->somme_gain,
             'somme_perte'               => $this->somme_perte,
@@ -612,25 +716,20 @@ new class extends Component {
     }
 }; ?>
 
+{{-- ============================= TEMPLATE ============================= --}}
 <div>
     <div class="px-4 sm:px-6 lg:px-8 pt-6 pb-2">
         <x-tabs wire:model.live="activeCountry">
             @foreach($countries as $code => $label)
                 <x-tab name="{{ $code }}" label="{{ $label }}">
 
-                    {{-- Loader changement de pays --}}
-                    <div
-                        wire:loading
-                        wire:target="activeCountry"
-                        class="flex flex-col items-center justify-center gap-3 py-16"
-                    >
+                    <div wire:loading wire:target="activeCountry" class="flex flex-col items-center justify-center gap-3 py-16">
                         <span class="loading loading-spinner loading-lg text-primary"></span>
                         <span class="text-sm font-medium">Chargement des données pour {{ $label }}…</span>
                     </div>
 
                     <div wire:loading.remove wire:target="activeCountry">
 
-                        {{-- Statistiques globales --}}
                         @if($comparisonsAvecPrixMarche > 0)
                             <div class="grid grid-cols-4 gap-4 mb-6 mt-6">
                                 <x-stat
@@ -665,9 +764,7 @@ new class extends Component {
                         {{-- Barre d'outils --}}
                         <div class="flex flex-wrap items-center justify-between gap-4 mb-4 mt-6">
                             <div>
-                                <h1 class="text-base font-semibold text-gray-900">
-                                    Ventes — {{ $label }}
-                                </h1>
+                                <h1 class="text-base font-semibold text-gray-900">Ventes — {{ $label }}</h1>
                                 <p class="mt-0.5 text-sm text-gray-500">
                                     Top 100 produits · {{ count($sales) }} résultat(s)
                                     @if(!empty($groupeFilter))
@@ -689,29 +786,21 @@ new class extends Component {
                                         );
                                     }
                                 }">
-                                    {{-- Tags sélectionnés --}}
                                     <div class="flex flex-wrap gap-2 mb-2">
                                         @foreach($groupeFilter as $selectedGroupe)
                                             <div class="badge badge-primary gap-2 py-3 px-3">
                                                 <span class="text-xs font-medium">{{ $selectedGroupe }}</span>
-                                                <button
-                                                    type="button"
+                                                <button type="button"
                                                     wire:click="$set('groupeFilter', {{ json_encode(array_values(array_diff($groupeFilter, [$selectedGroupe]))) }})"
-                                                    class="btn btn-ghost btn-xs btn-circle"
-                                                >
+                                                    class="btn btn-ghost btn-xs btn-circle">
                                                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                                                     </svg>
                                                 </button>
                                             </div>
                                         @endforeach
-
                                         @if(count($groupeFilter) > 0)
-                                            <button
-                                                type="button"
-                                                wire:click="$set('groupeFilter', [])"
-                                                class="badge badge-ghost gap-2 py-3 px-3 hover:badge-error"
-                                            >
+                                            <button type="button" wire:click="$set('groupeFilter', [])" class="badge badge-ghost gap-2 py-3 px-3 hover:badge-error">
                                                 <span class="text-xs">Tout effacer</span>
                                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -719,62 +808,36 @@ new class extends Component {
                                             </button>
                                         @endif
                                     </div>
-
-                                    {{-- Dropdown --}}
                                     <div class="relative">
-                                        <button
-                                            type="button"
-                                            @click="open = !open"
-                                            class="btn btn-sm btn-outline btn-primary gap-2"
-                                        >
+                                        <button type="button" @click="open = !open" class="btn btn-sm btn-outline btn-primary gap-2">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                                             </svg>
                                             {{ count($groupeFilter) > 0 ? 'Ajouter un vendor' : 'Sélectionner des vendor' }}
                                         </button>
-
-                                        <div
-                                            x-show="open"
-                                            @click.away="open = false"
-                                            x-transition
-                                            class="absolute z-50 mt-2 w-80 bg-base-100 rounded-lg shadow-xl border border-base-300"
-                                        >
+                                        <div x-show="open" @click.away="open = false" x-transition
+                                            class="absolute z-50 mt-2 w-80 bg-base-100 rounded-lg shadow-xl border border-base-300">
                                             <div class="p-3 border-b border-base-300">
-                                                <input
-                                                    type="text"
-                                                    x-model="search"
-                                                    placeholder="Rechercher un vendor..."
-                                                    class="input input-sm input-bordered w-full"
-                                                    @click.stop
-                                                />
+                                                <input type="text" x-model="search" placeholder="Rechercher un vendor..."
+                                                    class="input input-sm input-bordered w-full" @click.stop/>
                                             </div>
-
                                             <div class="max-h-64 overflow-y-auto p-2">
                                                 <template x-for="groupe in filteredGroupes" :key="groupe">
-                                                    <button
-                                                        type="button"
+                                                    <button type="button"
                                                         @click="$wire.set('groupeFilter', [...@js($groupeFilter), groupe].filter((v, i, a) => a.indexOf(v) === i)); search = ''"
                                                         class="w-full text-left px-3 py-2 rounded-md text-sm flex items-center justify-between group hover:bg-base-200"
-                                                        x-show="!@js($groupeFilter).includes(groupe)"
-                                                    >
+                                                        x-show="!@js($groupeFilter).includes(groupe)">
                                                         <span x-text="groupe"></span>
                                                         <svg class="w-4 h-4 opacity-0 group-hover:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                                                         </svg>
                                                     </button>
                                                 </template>
-
-                                                <div x-show="filteredGroupes.length === 0" class="text-center py-8 text-gray-400 text-sm">
-                                                    Aucun groupe trouvé
-                                                </div>
-                                                <div
-                                                    x-show="filteredGroupes.length > 0 && filteredGroupes.every(g => @js($groupeFilter).includes(g))"
-                                                    class="text-center py-8 text-gray-400 text-sm"
-                                                >
+                                                <div x-show="filteredGroupes.length === 0" class="text-center py-8 text-gray-400 text-sm">Aucun groupe trouvé</div>
+                                                <div x-show="filteredGroupes.length > 0 && filteredGroupes.every(g => @js($groupeFilter).includes(g))" class="text-center py-8 text-gray-400 text-sm">
                                                     Tous les groupes filtrés sont déjà sélectionnés
                                                 </div>
                                             </div>
-
                                             <div class="p-3 border-t border-base-300 text-xs text-gray-500 flex items-center justify-between">
                                                 <span>{{ count($groupeFilter) }} groupe(s) sélectionné(s)</span>
                                                 <button type="button" @click="open = false" class="text-primary hover:underline">Fermer</button>
@@ -787,19 +850,9 @@ new class extends Component {
 
                                 {{-- Dates --}}
                                 <div class="flex items-center gap-2">
-                                    <input
-                                        type="date"
-                                        wire:model.live="dateFrom"
-                                        value="{{ $dateFrom }}"
-                                        class="input input-bordered input-sm w-36"
-                                    />
+                                    <input type="date" wire:model.live="dateFrom" value="{{ $dateFrom }}" class="input input-bordered input-sm w-36"/>
                                     <span class="text-xs text-gray-400">→</span>
-                                    <input
-                                        type="date"
-                                        wire:model.live="dateTo"
-                                        value="{{ $dateTo }}"
-                                        class="input input-bordered input-sm w-36"
-                                    />
+                                    <input type="date" wire:model.live="dateTo" value="{{ $dateTo }}" class="input input-bordered input-sm w-36"/>
                                 </div>
 
                                 <div class="divider divider-horizontal mx-0"></div>
@@ -807,39 +860,23 @@ new class extends Component {
                                 {{-- Tri --}}
                                 <div class="flex items-center gap-2">
                                     <span class="text-xs text-gray-400">Trier par</span>
-                                    <button
-                                        type="button"
-                                        @click="$wire.sortBy('rank_qty')"
-                                        class="btn btn-xs {{ $sortBy === 'rank_qty' ? 'btn-primary' : 'btn-ghost' }}"
-                                    >
-                                        @if($sortBy === 'rank_qty')
-                                            <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>
-                                        @endif
+                                    <button type="button" @click="$wire.sortBy('rank_qty')"
+                                        class="btn btn-xs {{ $sortBy === 'rank_qty' ? 'btn-primary' : 'btn-ghost' }}">
+                                        @if($sortBy === 'rank_qty')<svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>@endif
                                         Qté vendue
                                     </button>
-                                    <button
-                                        type="button"
-                                        @click="$wire.sortBy('rank_ca')"
-                                        class="btn btn-xs {{ $sortBy === 'rank_ca' ? 'btn-success' : 'btn-ghost' }}"
-                                    >
-                                        @if($sortBy === 'rank_ca')
-                                            <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>
-                                        @endif
+                                    <button type="button" @click="$wire.sortBy('rank_ca')"
+                                        class="btn btn-xs {{ $sortBy === 'rank_ca' ? 'btn-success' : 'btn-ghost' }}">
+                                        @if($sortBy === 'rank_ca')<svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>@endif
                                         CA total
                                     </button>
                                 </div>
 
                                 <div class="divider divider-horizontal mx-0"></div>
 
-                                {{-- Bouton vider le cache --}}
-                                <button
-                                    type="button"
-                                    wire:click="clearCache"
-                                    wire:loading.attr="disabled"
-                                    wire:loading.class="opacity-60 cursor-not-allowed"
-                                    class="btn btn-sm btn-ghost gap-2"
-                                    title="Vider le cache et recharger les données"
-                                >
+                                <button type="button" wire:click="clearCache"
+                                    wire:loading.attr="disabled" wire:loading.class="opacity-60 cursor-not-allowed"
+                                    class="btn btn-sm btn-ghost gap-2" title="Vider le cache et recharger les données">
                                     <span wire:loading.remove wire:target="clearCache" class="flex items-center gap-2">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
@@ -854,15 +891,9 @@ new class extends Component {
 
                                 <div class="divider divider-horizontal mx-0"></div>
 
-                                {{-- Bouton Export XLSX --}}
-                                <button
-                                    type="button"
-                                    wire:click="exportXlsx"
-                                    wire:loading.attr="disabled"
-                                    wire:loading.class="opacity-60 cursor-not-allowed"
-                                    class="btn btn-sm btn-success gap-2"
-                                    title="Exporter les données affichées en Excel"
-                                >
+                                <button type="button" wire:click="exportXlsx"
+                                    wire:loading.attr="disabled" wire:loading.class="opacity-60 cursor-not-allowed"
+                                    class="btn btn-sm btn-success gap-2" title="Exporter les données affichées en Excel">
                                     <span wire:loading.remove wire:target="exportXlsx" class="flex items-center gap-2">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
@@ -881,11 +912,8 @@ new class extends Component {
                         {{-- Tableau --}}
                         <div class="relative">
 
-                            <div
-                                wire:loading
-                                wire:target="dateFrom, dateTo, sortBy, groupeFilter"
-                                class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg bg-white/70 backdrop-blur-sm"
-                            >
+                            <div wire:loading wire:target="dateFrom, dateTo, sortBy, groupeFilter"
+                                class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg bg-white/70 backdrop-blur-sm">
                                 <span class="loading loading-spinner loading-lg text-primary"></span>
                                 <span class="text-sm font-medium">Mise à jour…</span>
                             </div>
@@ -898,11 +926,9 @@ new class extends Component {
                                     <span>Aucune vente trouvée pour cette période{{ !empty($groupeFilter) ? ' et ce(s) groupe(s)' : '' }}.</span>
                                 </div>
                             @else
-                                <div
-                                    class="overflow-x-auto"
+                                <div class="overflow-x-auto"
                                     wire:loading.class="opacity-40 pointer-events-none"
-                                    wire:target="dateFrom, dateTo, sortBy, groupeFilter"
-                                >
+                                    wire:target="dateFrom, dateTo, sortBy, groupeFilter">
                                     <table class="table table-xs table-pin-rows table-pin-cols">
                                         <thead>
                                             <tr>
@@ -916,20 +942,28 @@ new class extends Component {
                                                 <th>
                                                     <button @click="$wire.sortBy('rank_qty')" class="flex items-center gap-1 hover:underline cursor-pointer">
                                                         Qté vendue
-                                                        <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor">
-                                                            <path d="M8 4l3 4H5l3-4zm0 8l-3-4h6l-3 4z"/>
-                                                        </svg>
+                                                        <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4l3 4H5l3-4zm0 8l-3-4h6l-3 4z"/></svg>
                                                     </button>
                                                 </th>
                                                 <th>
                                                     <button @click="$wire.sortBy('rank_ca')" class="flex items-center gap-1 hover:underline cursor-pointer">
                                                         CA total
-                                                        <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor">
-                                                            <path d="M8 4l3 4H5l3-4zm0 8l-3-4h6l-3 4z"/>
-                                                        </svg>
+                                                        <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4l3 4H5l3-4zm0 8l-3-4h6l-3 4z"/></svg>
                                                     </button>
                                                 </th>
                                                 <th>PGHT</th>
+                                                {{-- ▼ Nouvelles colonnes Google Merchant --}}
+                                                <th class="text-center" title="Rang de popularité Google Merchant (Best Sellers)">
+                                                    <div class="flex items-center justify-center gap-1">
+                                                        <svg class="w-3 h-3 text-blue-500" viewBox="0 0 24 24" fill="currentColor">
+                                                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/>
+                                                        </svg>
+                                                        Rang Google
+                                                    </div>
+                                                </th>
+                                                <th class="text-center" title="Évolution du rang (positif = amélioration)">Δ Rang</th>
+                                                <th class="text-center" title="Demande relative Google Merchant">Demande</th>
+                                                {{-- ▲ Fin colonnes Google --}}
                                                 @foreach($sites as $site)
                                                     <th class="text-right">{{ $site->name }}</th>
                                                 @endforeach
@@ -939,8 +973,25 @@ new class extends Component {
                                         <tbody>
                                             @foreach($comparisons as $comparison)
                                                 @php
-                                                    $row = $comparison['row'];
+                                                    $row      = $comparison['row'];
                                                     $prixCosma = $row->prix_vente_cosma;
+                                                    $ean      = $row->ean ?? null;
+                                                    $pop      = $ean ? ($popularityRanks[$ean] ?? null) : null;
+
+                                                    $googleRank = $pop['rank'] ?? null;
+                                                    $prevRank   = $pop['previous_rank'] ?? null;
+                                                    $deltaRank  = ($googleRank && $prevRank) ? ($prevRank - $googleRank) : null;
+                                                    $demand     = $pop['relative_demand'] ?? null;
+
+                                                    // Couleur demande relative
+                                                    $demandColors = [
+                                                        'VERY_HIGH' => 'text-success font-bold',
+                                                        'HIGH'      => 'text-success',
+                                                        'MEDIUM'    => 'text-warning',
+                                                        'LOW'       => 'text-error',
+                                                        'VERY_LOW'  => 'text-error font-bold',
+                                                    ];
+                                                    $demandClass = $demandColors[$demand] ?? 'text-gray-400';
                                                 @endphp
                                                 <tr class="hover">
                                                     <th>
@@ -954,12 +1005,8 @@ new class extends Component {
                                                     <td>
                                                         <span class="font-mono text-xs">{{ $row->ean }}</span>
                                                     </td>
-                                                    <td>
-                                                        <div class="text-xs">{{ $row->groupe ?? '—' }}</div>
-                                                    </td>
-                                                    <td>
-                                                        <div class="text-xs font-semibold">{{ $row->marque ?? '—' }}</div>
-                                                    </td>
+                                                    <td><div class="text-xs">{{ $row->groupe ?? '—' }}</div></td>
+                                                    <td><div class="text-xs font-semibold">{{ $row->marque ?? '—' }}</div></td>
                                                     <td>
                                                         <div class="font-bold max-w-xs truncate" title="{{ $row->designation_produit }}">
                                                             {{ $row->designation_produit ?? '—' }}
@@ -986,23 +1033,71 @@ new class extends Component {
                                                         @endif
                                                     </td>
 
+                                                    {{-- ▼ Popularité Google Merchant --}}
+                                                    <td class="text-center">
+                                                        @if($googleRank)
+                                                            <span class="badge badge-outline badge-sm font-mono font-bold">
+                                                                #{{ number_format($googleRank, 0, ',', ' ') }}
+                                                            </span>
+                                                        @else
+                                                            <span class="text-gray-300 text-xs">—</span>
+                                                        @endif
+                                                    </td>
+                                                    <td class="text-center">
+                                                        @if($deltaRank !== null)
+                                                            @if($deltaRank > 0)
+                                                                <span class="text-success font-bold text-xs flex items-center justify-center gap-0.5">
+                                                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                                                                    </svg>
+                                                                    +{{ $deltaRank }}
+                                                                </span>
+                                                            @elseif($deltaRank < 0)
+                                                                <span class="text-error font-bold text-xs flex items-center justify-center gap-0.5">
+                                                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                                                    </svg>
+                                                                    {{ $deltaRank }}
+                                                                </span>
+                                                            @else
+                                                                <span class="text-gray-400 text-xs">=</span>
+                                                            @endif
+                                                        @else
+                                                            <span class="text-gray-300 text-xs">—</span>
+                                                        @endif
+                                                    </td>
+                                                    <td class="text-center">
+                                                        @if($demand)
+                                                            <span class="text-xs {{ $demandClass }}">
+                                                                {{ match($demand) {
+                                                                    'VERY_HIGH' => '🔥 Très haute',
+                                                                    'HIGH'      => '↑ Haute',
+                                                                    'MEDIUM'    => '→ Moyenne',
+                                                                    'LOW'       => '↓ Faible',
+                                                                    'VERY_LOW'  => '❄ Très faible',
+                                                                    default     => $demand
+                                                                } }}
+                                                            </span>
+                                                        @else
+                                                            <span class="text-gray-300 text-xs">—</span>
+                                                        @endif
+                                                    </td>
+                                                    {{-- ▲ Fin popularité --}}
+
                                                     @foreach($this->sites as $site)
                                                         <td class="text-right">
                                                             @if($comparison['sites'][$site->id])
                                                                 @php
-                                                                    $siteData = $comparison['sites'][$site->id];
+                                                                    $siteData  = $comparison['sites'][$site->id];
                                                                     $textClass = '';
                                                                     if ($siteData['price_percentage'] !== null) {
                                                                         $textClass = $prixCosma > $siteData['prix_ht'] ? 'text-error' : 'text-success';
                                                                     }
                                                                 @endphp
                                                                 <div class="flex flex-col gap-1 items-end">
-                                                                    <a
-                                                                        href="{{ $siteData['url'] }}"
-                                                                        target="_blank"
+                                                                    <a href="{{ $siteData['url'] }}" target="_blank"
                                                                         class="link link-primary text-xs font-semibold"
-                                                                        title="{{ $siteData['name'] }}"
-                                                                    >
+                                                                        title="{{ $siteData['name'] }}">
                                                                         {{ number_format($siteData['prix_ht'], 2) }} €
                                                                     </a>
                                                                     @if($siteData['price_percentage'] !== null)
@@ -1056,6 +1151,9 @@ new class extends Component {
                                                 <th>Qté vendue</th>
                                                 <th>CA total</th>
                                                 <th>PGHT</th>
+                                                <th class="text-center">Rang Google</th>
+                                                <th class="text-center">Δ Rang</th>
+                                                <th class="text-center">Demande</th>
                                                 @foreach($sites as $site)
                                                     <th class="text-right">{{ $site->name }}</th>
                                                 @endforeach
@@ -1066,7 +1164,6 @@ new class extends Component {
                                 </div>
                             @endif
                         </div>
-
                     </div>
                 </x-tab>
             @endforeach
