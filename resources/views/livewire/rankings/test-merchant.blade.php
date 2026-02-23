@@ -249,13 +249,6 @@ new class extends Component {
         });
     }
 
-            } catch (\Exception $e) {
-                Log::error('Google Merchant popularity rank error: ' . $e->getMessage());
-                return [];
-            }
-        });
-    }
-
     public function getAvailableGroupesProperty()
     {
         $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
