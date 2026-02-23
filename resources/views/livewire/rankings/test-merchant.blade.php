@@ -152,6 +152,8 @@ new class extends Component {
     {
         $sales = $this->sales;
 
+        dd($sales);
+
         if (empty($sales)) {
             return [];
         }
