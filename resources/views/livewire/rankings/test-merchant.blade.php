@@ -176,7 +176,7 @@ new class extends Component {
         // EANs normalisés à envoyer à Google
         $gtins14 = array_unique(array_map($toGtin14, $eans));
 
-        $cacheKey = 'google_popularity_' . md5($countryCode . implode(',', $gtins14));
+        $cacheKey = 'google_popularity_v2_' . md5($countryCode . implode(',', $gtins14));
 
         return Cache::remember($cacheKey, now()->addHours(6), function () use ($gtins14, $countryCode, $toGtin14) {
 
@@ -227,6 +227,8 @@ new class extends Component {
 
                     $rankInfo = [
                         'rank'            => $rank,
+                        'previous_rank'   => $prevRank,
+                        'delta'           => $delta,
                         'delta_sign'      => match(true) {
                             $delta === null => null,
                             $delta > 0      => '+',
@@ -520,7 +522,7 @@ new class extends Component {
         $countryCode = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
         $gtins14     = array_unique(array_map($toGtin14, collect($this->sales)->pluck('ean')->filter()->toArray()));
 
-        Cache::forget('google_popularity_' . md5($countryCode . implode(',', $gtins14)));
+        Cache::forget('google_popularity_v2_' . md5($countryCode . implode(',', $gtins14)));
     }
 
     public function exportXlsx(): \Symfony\Component\HttpFoundation\BinaryFileResponse
@@ -666,23 +668,33 @@ new class extends Component {
             // Colonne popularité Google Merchant (K uniquement)
             if ($pop) {
                 $googleRank = $pop['rank'] ?? null;
+                $delta      = $pop['delta'] ?? null;
                 $deltaSign  = $pop['delta_sign'] ?? null;
-                $demand     = $pop['relative_demand'] ?? null;
 
-                $cellValue = $googleRank !== null
-                    ? '#' . $googleRank . ($deltaSign ? ' ' . $deltaSign : '')
-                    : '—';
+                if ($googleRank !== null) {
+                    $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
 
-                $sheet->setCellValue('K' . $row, $cellValue);
+                    $runRank = $richText->createTextRun('#' . $googleRank);
+                    $runRank->getFont()->setBold(true)->setName('Arial');
+                    $runRank->getFont()->getColor()->setRGB('000000');
 
-                $color = match($deltaSign) {
-                    '+'     => '1A7A3C',
-                    '-'     => 'CC0000',
-                    '='     => '888888',
-                    default => '000000',
-                };
-                $sheet->getStyle('K' . $row)->getFont()->getColor()->setRGB($color);
-                $sheet->getStyle('K' . $row)->getFont()->setBold(true);
+                    if ($delta !== null) {
+                        $deltaColor = match($deltaSign) {
+                            '+'     => 'FF1A7A3C',
+                            '-'     => 'FFCC0000',
+                            default => 'FF888888',
+                        };
+                        $deltaStr = ' (' . ($deltaSign === '+' ? '+' : '') . $delta . ')';
+                        $runDelta = $richText->createTextRun($deltaStr);
+                        $runDelta->getFont()->setBold(true)->setName('Arial');
+                        $runDelta->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($deltaColor));
+                    }
+
+                    $sheet->getCell('K' . $row)->setValue($richText);
+                } else {
+                    $sheet->setCellValue('K' . $row, '—');
+                    $sheet->getStyle('K' . $row)->getFont()->getColor()->setRGB('AAAAAA');
+                }
             } else {
                 $sheet->setCellValue('K' . $row, '—');
                 $sheet->getStyle('K' . $row)->getFont()->getColor()->setRGB('AAAAAA');
@@ -1094,12 +1106,12 @@ new class extends Component {
                                                     $row       = $comparison['row'];
                                                     $prixCosma = $row->prix_vente_cosma;
                                                     $ean       = $row->ean ?? null;
-                                                    // Normaliser l'EAN Magento en GTIN-14 pour matcher la clé de $popularityRanks
                                                     $eanKey    = $ean ? str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT) : null;
                                                     $pop       = $eanKey ? ($popularityRanks[$eanKey] ?? null) : null;
 
-                                                    $googleRank  = $pop['rank'] ?? null;
-                                                    $deltaSign   = $pop['delta_sign'] ?? null; // '+', '-', '=' ou null
+                                                    $googleRank = $pop['rank'] ?? null;
+                                                    $delta      = $pop['delta'] ?? null;
+                                                    $deltaSign  = $pop['delta_sign'] ?? null;
                                                 @endphp
                                                 <tr class="hover">
                                                     <th>
@@ -1141,12 +1153,19 @@ new class extends Component {
                                                         @endif
                                                     </td>
 
-                                                    {{-- ▼ Popularité Google Merchant — colonne unique --}}
+                                                    {{-- ▼ Popularité Google Merchant --}}
                                                     <td class="text-center">
                                                         @if($googleRank)
-                                                            <span class="font-bold font-mono text-sm {{ $deltaSign === '+' ? 'text-success' : ($deltaSign === '-' ? 'text-error' : 'text-gray-500') }}">
-                                                                #{{ number_format($googleRank, 0, ',', ' ') }}{{ $deltaSign ? ' ' . $deltaSign : '' }}
-                                                            </span>
+                                                            <div class="flex flex-col items-center gap-0.5">
+                                                                <span class="font-bold font-mono text-sm">
+                                                                    #{{ number_format($googleRank, 0, ',', ' ') }}
+                                                                </span>
+                                                                @if($delta !== null)
+                                                                    <span class="text-xs font-bold {{ $deltaSign === '+' ? 'text-success' : ($deltaSign === '-' ? 'text-error' : 'text-gray-400') }}">
+                                                                        {{ $deltaSign === '+' ? '+' : '' }}{{ $delta }}
+                                                                    </span>
+                                                                @endif
+                                                            </div>
                                                         @else
                                                             <span class="text-gray-300 text-xs">—</span>
                                                         @endif
