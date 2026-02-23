@@ -437,7 +437,7 @@ new class extends Component {
         $baseHeaders = [
             'Rang Qty', 'Rang CA', 'EAN', 'Groupe', 'Marque',
             'Désignation', 'Prix Cosma', 'Qté vendue', 'CA total', 'PGHT',
-            'Rang Google', 'Δ Rang', 'Demande relative', // ← nouvelles colonnes popularité
+            'Rang Google', // ← popularité Google Merchant
         ];
 
         $lastColIndex  = count($baseHeaders) + $sites->count();
@@ -561,30 +561,29 @@ new class extends Component {
             $sheet->setCellValue('I' . $row, $r->total_revenue);
             $sheet->setCellValue('J' . $row, $r->pght ?: '');
 
-            // Colonnes popularité Google Merchant (K, L, M)
+            // Colonne popularité Google Merchant (K uniquement)
             if ($pop) {
                 $googleRank = $pop['rank'] ?? null;
-                $deltaSign  = $pop['delta_sign'] ?? null; // '+', '-', '=' ou null
+                $deltaSign  = $pop['delta_sign'] ?? null;
                 $demand     = $pop['relative_demand'] ?? null;
 
-                $sheet->setCellValue('K' . $row, $googleRank ?? '—');
-                $sheet->setCellValue('L' . $row, $deltaSign ?? '—');
-                $sheet->setCellValue('M' . $row, $demand ?? '—');
+                $cellValue = $googleRank !== null
+                    ? '#' . $googleRank . ($deltaSign ? ' ' . $deltaSign : '')
+                    : '—';
 
-                if ($deltaSign !== null) {
-                    $deltaColor = match($deltaSign) {
-                        '+'     => '1A7A3C',
-                        '-'     => 'CC0000',
-                        default => '888888',
-                    };
-                    $sheet->getStyle('L' . $row)->getFont()->getColor()->setRGB($deltaColor);
-                    $sheet->getStyle('L' . $row)->getFont()->setBold(true);
-                }
+                $sheet->setCellValue('K' . $row, $cellValue);
+
+                $color = match($deltaSign) {
+                    '+'     => '1A7A3C',
+                    '-'     => 'CC0000',
+                    '='     => '888888',
+                    default => '000000',
+                };
+                $sheet->getStyle('K' . $row)->getFont()->getColor()->setRGB($color);
+                $sheet->getStyle('K' . $row)->getFont()->setBold(true);
             } else {
                 $sheet->setCellValue('K' . $row, '—');
-                $sheet->setCellValue('L' . $row, '—');
-                $sheet->setCellValue('M' . $row, '—');
-                $sheet->getStyle('K' . $row . ':M' . $row)->getFont()->getColor()->setRGB('AAAAAA');
+                $sheet->getStyle('K' . $row)->getFont()->getColor()->setRGB('AAAAAA');
             }
 
             $sheet->getStyle('G' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
@@ -970,8 +969,6 @@ new class extends Component {
                                                         Rang Google
                                                     </div>
                                                 </th>
-                                                <th class="text-center" title="Évolution du rang (positif = amélioration)">Δ Rang</th>
-                                                <th class="text-center" title="Demande relative Google Merchant">Demande</th>
                                                 {{-- ▲ Fin colonnes Google --}}
                                                 @foreach($sites as $site)
                                                     <th class="text-right">{{ $site->name }}</th>
@@ -989,17 +986,6 @@ new class extends Component {
 
                                                     $googleRank  = $pop['rank'] ?? null;
                                                     $deltaSign   = $pop['delta_sign'] ?? null; // '+', '-', '=' ou null
-                                                    $demand      = $pop['relative_demand'] ?? null;
-
-                                                    // Couleur demande relative
-                                                    $demandColors = [
-                                                        'VERY_HIGH' => 'text-success font-bold',
-                                                        'HIGH'      => 'text-success',
-                                                        'MEDIUM'    => 'text-warning',
-                                                        'LOW'       => 'text-error',
-                                                        'VERY_LOW'  => 'text-error font-bold',
-                                                    ];
-                                                    $demandClass = $demandColors[$demand] ?? 'text-gray-400';
                                                 @endphp
                                                 <tr class="hover">
                                                     <th>
@@ -1041,40 +1027,11 @@ new class extends Component {
                                                         @endif
                                                     </td>
 
-                                                    {{-- ▼ Popularité Google Merchant --}}
+                                                    {{-- ▼ Popularité Google Merchant — colonne unique --}}
                                                     <td class="text-center">
                                                         @if($googleRank)
-                                                            <span class="badge badge-outline badge-sm font-mono font-bold">
-                                                                #{{ number_format($googleRank, 0, ',', ' ') }}
-                                                            </span>
-                                                        @else
-                                                            <span class="text-gray-300 text-xs">—</span>
-                                                        @endif
-                                                    </td>
-                                                    <td class="text-center">
-                                                        @if($deltaSign !== null)
-                                                            @if($deltaSign === '+')
-                                                                <span class="text-success font-bold text-sm">+</span>
-                                                            @elseif($deltaSign === '-')
-                                                                <span class="text-error font-bold text-sm">−</span>
-                                                            @else
-                                                                <span class="text-gray-400 text-sm">=</span>
-                                                            @endif
-                                                        @else
-                                                            <span class="text-gray-300 text-xs">—</span>
-                                                        @endif
-                                                    </td>
-                                                    <td class="text-center">
-                                                        @if($demand)
-                                                            <span class="text-xs {{ $demandClass }}">
-                                                                {{ match($demand) {
-                                                                    'VERY_HIGH' => '🔥 Très haute',
-                                                                    'HIGH'      => '↑ Haute',
-                                                                    'MEDIUM'    => '→ Moyenne',
-                                                                    'LOW'       => '↓ Faible',
-                                                                    'VERY_LOW'  => '❄ Très faible',
-                                                                    default     => $demand
-                                                                } }}
+                                                            <span class="font-bold font-mono text-sm {{ $deltaSign === '+' ? 'text-success' : ($deltaSign === '-' ? 'text-error' : 'text-gray-500') }}">
+                                                                #{{ number_format($googleRank, 0, ',', ' ') }}{{ $deltaSign ? ' ' . $deltaSign : '' }}
                                                             </span>
                                                         @else
                                                             <span class="text-gray-300 text-xs">—</span>
@@ -1150,8 +1107,6 @@ new class extends Component {
                                                 <th>CA total</th>
                                                 <th>PGHT</th>
                                                 <th class="text-center">Rang Google</th>
-                                                <th class="text-center">Δ Rang</th>
-                                                <th class="text-center">Demande</th>
                                                 @foreach($sites as $site)
                                                     <th class="text-right">{{ $site->name }}</th>
                                                 @endforeach
