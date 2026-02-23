@@ -339,9 +339,17 @@ class ExportSalesService
         $sheet->setTitle('Ventes ' . $countryLabel);
 
         $baseHeaders = [
-            'Rang Qty', 'Rang CA', 'EAN', 'Groupe', 'Marque',
-            'Désignation', 'Prix Cosma', 'Qté vendue', 'CA total', 'PGHT',
-            'Rang Google', // ← colonne K
+            'Rang Qty',    // A
+            'Rang CA',     // B
+            'Rang Google', // C  ← déplacé ici
+            'EAN',         // D
+            'Groupe',      // E
+            'Marque',      // F
+            'Désignation', // G
+            'Prix Cosma',  // H
+            'Qté vendue',  // I
+            'CA total',    // J
+            'PGHT',        // K
         ];
 
         $lastColIndex  = count($baseHeaders) + $sites->count();
@@ -349,8 +357,9 @@ class ExportSalesService
 
         $sheet->getColumnDimension('A')->setAutoSize(false)->setWidth(10);
         $sheet->getColumnDimension('B')->setAutoSize(false)->setWidth(10);
-        $sheet->getColumnDimension('C')->setAutoSize(false)->setWidth(16);
-        $sheet->getColumnDimension('F')->setAutoSize(false)->setWidth(35);
+        $sheet->getColumnDimension('C')->setAutoSize(false)->setWidth(14); // Rang Google
+        $sheet->getColumnDimension('D')->setAutoSize(false)->setWidth(16); // EAN
+        $sheet->getColumnDimension('G')->setAutoSize(false)->setWidth(35); // Désignation
 
         // --- PASS 1 : calcul stats ---
         $somme_total = 0;
@@ -457,16 +466,8 @@ class ExportSalesService
 
             $sheet->setCellValue('A' . $row, $r->rank_qty);
             $sheet->setCellValue('B' . $row, $r->rank_ca);
-            $sheet->setCellValue('C' . $row, $r->ean);
-            $sheet->setCellValue('D' . $row, $r->groupe ?? '');
-            $sheet->setCellValue('E' . $row, $r->marque ?? '');
-            $sheet->setCellValue('F' . $row, $r->designation_produit ?? '');
-            $sheet->setCellValue('G' . $row, $r->prix_vente_cosma);
-            $sheet->setCellValue('H' . $row, $r->total_qty_sold);
-            $sheet->setCellValue('I' . $row, $r->total_revenue);
-            $sheet->setCellValue('J' . $row, $r->pght ?: '');
 
-            // --- Colonne K : Rang Google (#rank delta) ---
+            // --- Colonne C : Rang Google (#rank delta) ---
             $googleRank = $pop['rank']       ?? null;
             $delta      = $pop['delta']      ?? null;
             $deltaSign  = $pop['delta_sign'] ?? null;
@@ -481,28 +482,37 @@ class ExportSalesService
                 if ($delta !== null) {
                     $deltaStr   = ' (' . ($deltaSign === '+' ? '+' : '') . $delta . ')';
                     $deltaColor = match($deltaSign) {
-                        '+'     => 'FF1A7A3C', // vert   = progression
-                        '-'     => 'FFCC0000', // rouge  = recul
-                        default => 'FF888888', // gris   = stable
+                        '+'     => 'FF1A7A3C',
+                        '-'     => 'FFCC0000',
+                        default => 'FF888888',
                     };
                     $runDelta = $richText->createTextRun($deltaStr);
                     $runDelta->getFont()->setBold(true)->setName('Arial');
                     $runDelta->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($deltaColor));
                 }
 
-                $sheet->getCell('K' . $row)->setValue($richText);
-                $sheet->getStyle('K' . $row)->getAlignment()
+                $sheet->getCell('C' . $row)->setValue($richText);
+                $sheet->getStyle('C' . $row)->getAlignment()
                     ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
             } else {
-                $sheet->setCellValue('K' . $row, '—');
-                $sheet->getStyle('K' . $row)->getFont()->getColor()->setRGB('AAAAAA');
-                $sheet->getStyle('K' . $row)->getAlignment()
+                $sheet->setCellValue('C' . $row, '—');
+                $sheet->getStyle('C' . $row)->getFont()->getColor()->setRGB('AAAAAA');
+                $sheet->getStyle('C' . $row)->getAlignment()
                     ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
             }
 
-            $sheet->getStyle('G' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
-            $sheet->getStyle('I' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
+            $sheet->setCellValue('D' . $row, $r->ean);
+            $sheet->setCellValue('E' . $row, $r->groupe ?? '');
+            $sheet->setCellValue('F' . $row, $r->marque ?? '');
+            $sheet->setCellValue('G' . $row, $r->designation_produit ?? '');
+            $sheet->setCellValue('H' . $row, $r->prix_vente_cosma);
+            $sheet->setCellValue('I' . $row, $r->total_qty_sold);
+            $sheet->setCellValue('J' . $row, $r->total_revenue);
+            $sheet->setCellValue('K' . $row, $r->pght ?: '');
+
+            $sheet->getStyle('H' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
             $sheet->getStyle('J' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
+            $sheet->getStyle('K' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
 
             if (($row - $dataStartRow) % 2 === 0) {
                 $sheet->getStyle('A' . $row . ':' . $lastColLetter . $row)->applyFromArray([
@@ -587,7 +597,7 @@ class ExportSalesService
 
         // --- Formatage final ---
         foreach (range('D', $lastColLetter) as $col) {
-            if (!in_array($col, ['A', 'B', 'C', 'F'])) {
+            if (!in_array($col, ['A', 'B', 'C', 'D', 'G'])) {
                 $sheet->getColumnDimension($col)->setAutoSize(true);
             }
         }
@@ -599,7 +609,7 @@ class ExportSalesService
             'font'    => ['name' => 'Arial', 'size' => 9],
         ]);
 
-        $sheet->getStyle('G' . $dataStartRow . ':' . $lastColLetter . $lastDataRow)
+        $sheet->getStyle('H' . $dataStartRow . ':' . $lastColLetter . $lastDataRow)
             ->getAlignment()
             ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_RIGHT);
 
