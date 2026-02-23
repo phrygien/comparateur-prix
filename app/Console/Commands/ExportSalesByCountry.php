@@ -27,7 +27,7 @@ class ExportSalesByCountry extends Command
 
     protected $description = 'Exporte le top 100 des ventes par pays en XLSX et envoie le tout par email';
 
-    private const DEFAULT_EMAILS = ['mphrygien@astucom.com', 'hrajaonah@astucom.com'];
+    private const DEFAULT_EMAILS = ['gpa@techmode-group.com', 'adv@cosma-parfumeries.fr', 'mphrygien@astucom.com', 'hrajaonah@astucom.com'];
 
     private const ALL_COUNTRIES = [
         'FR' => 'France',

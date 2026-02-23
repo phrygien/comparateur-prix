@@ -24,7 +24,7 @@ class SalesExportMail extends Mailable
     {
         return new Envelope(
             subject: sprintf(
-                '[Cosma] Export ventes par pays — %s au %s',
+                '[Comparateur Cosma][%s] Export Top Produits %s — %s',
                 $this->dateFrom,
                 $this->dateTo
             ),
