@@ -14,7 +14,7 @@ class ExportSalesByCountry extends Command
      * php artisan sales:export-by-country --countries=FR,BE,NL
      * php artisan sales:export-by-country --date-from=2026-01-01 --date-to=2026-01-31
      * php artisan sales:export-by-country --sort=rank_ca
-     * php artisan sales:export-by-country --email=autre@exemple.com
+     * php artisan sales:export-by-country --email=a@exemple.com,b@exemple.com
      * php artisan sales:export-by-country --countries=FR --dry-run
      */
     protected $signature = 'sales:export-by-country
@@ -22,12 +22,13 @@ class ExportSalesByCountry extends Command
                             {--date-from=        : Date début YYYY-MM-DD (défaut : 1er janvier de l\'année courante)}
                             {--date-to=          : Date fin YYYY-MM-DD (défaut : 31 décembre de l\'année courante)}
                             {--sort=rank_qty     : Tri — rank_qty ou rank_ca}
-                            {--email=            : Destinataire (défaut : mphrygien@astucom.com)}
+                            {--email=            : Destinataire(s) séparés par virgule (défaut : mphrygien@astucom.com)}
                             {--dry-run           : Génère les fichiers sans envoyer l\'email}';
 
     protected $description = 'Exporte le top 100 des ventes par pays en XLSX et envoie le tout par email';
 
-    private const DEFAULT_EMAIL     = 'mphrygien@astucom.com';
+    private const DEFAULT_EMAILS = ['mphrygien@astucom.com', 'hrajaonah@astucom.com'];
+
     private const ALL_COUNTRIES = [
         'FR' => 'France',
         'BE' => 'Belgique',
@@ -45,11 +46,23 @@ class ExportSalesByCountry extends Command
     public function handle(): int
     {
         // --- Options ---
-        $dateFrom  = $this->option('date-from') ?: date('Y-01-01');
-        $dateTo    = $this->option('date-to')   ?: date('Y-12-31');
-        $sortBy    = in_array($this->option('sort'), ['rank_qty', 'rank_ca']) ? $this->option('sort') : 'rank_qty';
-        $email     = $this->option('email') ?: self::DEFAULT_EMAIL;
-        $isDryRun  = $this->option('dry-run');
+        $dateFrom = $this->option('date-from') ?: date('Y-01-01');
+        $dateTo   = $this->option('date-to')   ?: date('Y-12-31');
+        $sortBy   = in_array($this->option('sort'), ['rank_qty', 'rank_ca']) ? $this->option('sort') : 'rank_qty';
+        $isDryRun = $this->option('dry-run');
+
+        // Résolution des emails — séparés par virgule, nettoyés et dédoublonnés
+        $emails = $this->option('email')
+            ? array_unique(array_filter(array_map('trim', explode(',', $this->option('email')))))
+            : self::DEFAULT_EMAILS;
+
+        // Validation basique des adresses
+        $emails = array_values(array_filter($emails, fn($e) => filter_var($e, FILTER_VALIDATE_EMAIL)));
+
+        if (empty($emails)) {
+            $this->error('Aucune adresse email valide fournie.');
+            return Command::FAILURE;
+        }
 
         // Pays à traiter
         $requestedCodes = $this->option('countries')
@@ -74,7 +87,7 @@ class ExportSalesByCountry extends Command
         $this->line("  Période    : <comment>{$dateFrom}</comment> → <comment>{$dateTo}</comment>");
         $this->line("  Tri        : <comment>{$sortBy}</comment>");
         $this->line("  Pays       : <comment>" . implode(', ', array_keys($countries)) . "</comment>");
-        $this->line("  Email      : <comment>{$email}</comment>");
+        $this->line("  Email(s)   : <comment>" . implode(', ', $emails) . "</comment>");
         $this->line("  Dry run    : <comment>" . ($isDryRun ? 'oui (aucun email envoyé)' : 'non') . "</comment>");
         $this->line('  ─────────────────────────────────────────────');
         $this->info('');
@@ -89,14 +102,14 @@ class ExportSalesByCountry extends Command
 
             try {
                 $filePath = $this->service->generateForCountry(
-                    countryCode:   $code,
-                    dateFrom:      $dateFrom,
-                    dateTo:        $dateTo,
-                    sortBy:        $sortBy,
-                    groupeFilter:  []
+                    countryCode:  $code,
+                    dateFrom:     $dateFrom,
+                    dateTo:       $dateTo,
+                    sortBy:       $sortBy,
+                    groupeFilter: []
                 );
 
-                $filePaths[]              = $filePath;
+                $filePaths[]               = $filePath;
                 $countriesGenerated[$code] = $label;
 
                 $size = round(filesize($filePath) / 1024, 1);
@@ -122,10 +135,11 @@ class ExportSalesByCountry extends Command
             $this->warn("  [Dry run] Email NON envoyé. " . count($filePaths) . " fichier(s) disponible(s) dans storage/app/public/exports/");
         } else {
             $this->info('');
-            $this->line("  Envoi de l'email à <comment>{$email}</comment>...");
+            $this->line("  Envoi de l'email à <comment>" . implode(', ', $emails) . "</comment>...");
 
             try {
-                Mail::to($email)->send(
+                // Envoi à tous les destinataires en une seule fois
+                Mail::to($emails)->send(
                     new SalesExportMail(
                         filePaths:          $filePaths,
                         dateFrom:           $dateFrom,
@@ -134,12 +148,11 @@ class ExportSalesByCountry extends Command
                     )
                 );
 
-                $this->line("  <fg=green>✓</> Email envoyé avec " . count($filePaths) . " pièce(s) jointe(s).");
+                $this->line("  <fg=green>✓</> Email envoyé à " . count($emails) . " destinataire(s) avec " . count($filePaths) . " pièce(s) jointe(s).");
 
             } catch (\Throwable $e) {
                 $this->error("  Erreur envoi email : " . $e->getMessage());
                 \Log::error("ExportSalesByCountry — Email : " . $e->getMessage());
-                // Les fichiers sont conservés même si l'email échoue
                 return Command::FAILURE;
             }
         }
