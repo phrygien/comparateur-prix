@@ -40,7 +40,7 @@ class GoogleMerchantController extends Controller
             FROM best_sellers_product_cluster_view
             WHERE report_country_code = 'FR'
                 AND report_granularity = 'WEEKLY'
-                AND variant_gtins CONTAINS ANY ('03331845995006')
+                AND variant_gtins CONTAINS ANY ('03614274752106')
             LIMIT 20
         ";
 
