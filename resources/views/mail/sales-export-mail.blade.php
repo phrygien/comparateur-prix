@@ -133,7 +133,7 @@
     <div class="container">
 
         <div class="header">
-            <h1>Export ventes par pays</h1>
+            <h1>Comparateur des 100 meilleurs produits par pays</h1>
             <p>Généré le {{ now()->format('d/m/Y à H:i') }}</p>
         </div>
 
@@ -141,12 +141,11 @@
             <p>Bonjour,</p>
             <p>
                 Veuillez trouver en pièce(s) jointe(s) <strong>{{ $fileCount }} fichier(s) Excel</strong>
-                contenant le top 100 des ventes par pays pour la période du
+                contenant l’analyse comparative des 100 meilleurs produits par pays pour la période du
                 <strong>{{ \Carbon\Carbon::parse($dateFrom)->format('d/m/Y') }}</strong>
                 au
                 <strong>{{ \Carbon\Carbon::parse($dateTo)->format('d/m/Y') }}</strong>.
             </p>
-
             <hr class="divider">
 
             <div class="info-box">
@@ -168,7 +167,7 @@
         </div>
 
         <div class="footer">
-            © {{ date('Y') }} Cosma &nbsp;·&nbsp; Export automatique des ventes
+            © {{ date('Y') }} Cosma &nbsp;·&nbsp; Export automatique des top produits
         </div>
 
     </div>
