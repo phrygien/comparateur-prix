@@ -204,7 +204,6 @@ new class extends Component {
                 FROM best_sellers_product_cluster_view
                 WHERE report_country_code = '{$countryCode}'
                   AND report_granularity = 'WEEKLY'
-                  AND category_l1 LIKE '%Health & Beauty%'
                   AND variant_gtins CONTAINS ANY ('{$gtinList}')
                 LIMIT 1000
             ";
