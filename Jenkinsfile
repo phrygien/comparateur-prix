@@ -31,21 +31,19 @@ pipeline {
             steps {
                 sh '''
                     cd /var/www/comparateur
-                    composer install --no-interaction --prefer-dist --optimize-autoloader
-                    composer require phpoffice/phpspreadsheet --no-interaction
-                    composer require openai-php/client
-                    composer require google/apiclient
-                    
-                '''
-            }
-        }
 
-        stage('Install Scout et TypeSense') {
-            steps {
-                sh '''
-                    cd /var/www/comparateur
-                    composer require laravel/scout --no-interaction
-                    composer require typesense/typesense-php --no-interaction
+                    # 1. Ajouter toutes les dépendances dans composer.json sans installer
+                    composer require \
+                        phpoffice/phpspreadsheet \
+                        openai-php/client \
+                        google/apiclient \
+                        laravel/scout \
+                        typesense/typesense-php \
+                        --no-update --no-interaction
+
+                    # 2. Une seule commande install qui résout tout en une passe
+                    #    → package:discover se lance une seule fois, toutes les classes sont là
+                    composer install --no-interaction --prefer-dist --optimize-autoloader
                 '''
             }
         }
@@ -80,7 +78,7 @@ pipeline {
             echo "Build terminé avec succès !"
         }
         failure {
-            echo "Échec du pipeline "
+            echo "Échec du pipeline"
         }
     }
 }
