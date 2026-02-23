@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use App\Models\Product;
 use App\Models\Site;
 
@@ -18,20 +17,6 @@ class ExportSalesService
         'IT' => 'Italie',
     ];
 
-    // Mapping pays → code Google Merchant
-    private array $countryCodeMap = [
-        'FR' => 'FR',
-        'BE' => 'BE',
-        'NL' => 'NL',
-        'DE' => 'DE',
-        'ES' => 'ES',
-        'IT' => 'IT',
-    ];
-
-    public function __construct(
-        private readonly GoogleMerchantService $googleMerchantService
-    ) {}
-
     /**
      * Génère un fichier XLSX pour un pays donné et retourne le chemin du fichier.
      */
@@ -42,11 +27,10 @@ class ExportSalesService
         string $sortBy = 'rank_qty',
         array  $groupeFilter = []
     ): string {
-        $countryLabel    = $this->countries[$countryCode] ?? $countryCode;
-        $sites           = Site::where('country_code', $countryCode)->orderBy('name')->get();
-        $sales           = $this->getSales($countryCode, $dateFrom, $dateTo, $sortBy, $groupeFilter);
-        $comparisons     = $this->getComparisons($sales, $sites);
-        $popularityRanks = $this->getPopularityRanks($sales, $countryCode);
+        $countryLabel = $this->countries[$countryCode] ?? $countryCode;
+        $sites        = Site::where('country_code', $countryCode)->orderBy('name')->get();
+        $sales        = $this->getSales($countryCode, $dateFrom, $dateTo, $sortBy, $groupeFilter);
+        $comparisons  = $this->getComparisons($sales, $sites);
 
         return $this->buildSpreadsheet(
             $countryCode,
@@ -56,8 +40,7 @@ class ExportSalesService
             $sortBy,
             $groupeFilter,
             $sites,
-            collect($comparisons),
-            $popularityRanks
+            collect($comparisons)
         );
     }
 
@@ -147,99 +130,6 @@ class ExportSalesService
     }
 
     // =========================================================================
-    // RANG DE POPULARITÉ GOOGLE MERCHANT
-    // =========================================================================
-
-    /**
-     * Retourne un tableau indexé par GTIN-14 normalisé :
-     * ['rank' => int, 'previous_rank' => int, 'delta' => int, 'delta_sign' => '+'/'-'/'=']
-     */
-    private function getPopularityRanks(array $sales, string $countryCode): array
-    {
-        $toGtin14 = fn(string $ean): string => str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT);
-
-        $gtins14 = array_unique(array_map(
-            $toGtin14,
-            array_filter(array_column($sales, 'ean'))
-        ));
-
-        if (empty($gtins14)) {
-            return [];
-        }
-
-        $googleCountry = $this->countryCodeMap[$countryCode] ?? $countryCode;
-        $gtinList      = implode("', '", $gtins14);
-
-        $query = "
-            SELECT
-                report_granularity,
-                report_date,
-                report_category_id,
-                category_l1,
-                category_l2,
-                category_l3,
-                brand,
-                title,
-                variant_gtins,
-                rank,
-                previous_rank,
-                report_country_code,
-                relative_demand,
-                previous_relative_demand,
-                relative_demand_change,
-                inventory_status,
-                brand_inventory_status
-            FROM best_sellers_product_cluster_view
-            WHERE report_country_code = '{$googleCountry}'
-              AND report_granularity = 'WEEKLY'
-              AND category_l1 LIKE '%Health & Beauty%'
-              AND variant_gtins CONTAINS ANY ('{$gtinList}')
-            LIMIT 1000
-        ";
-
-        try {
-            $response    = $this->googleMerchantService->searchReports($query);
-            $ranksByGtin = [];
-
-            foreach ($response['results'] ?? [] as $row) {
-                $data         = $row['bestSellersProductClusterView'] ?? [];
-                $variantGtins = $data['variantGtins'] ?? [];
-
-                $rank     = isset($data['rank'])         ? (int) $data['rank']         : null;
-                $prevRank = isset($data['previousRank']) ? (int) $data['previousRank'] : null;
-                $delta    = ($rank !== null && $prevRank !== null) ? ($prevRank - $rank) : null;
-
-                $rankInfo = [
-                    'rank'            => $rank,
-                    'previous_rank'   => $prevRank,
-                    'delta'           => $delta,
-                    'delta_sign'      => match(true) {
-                        $delta === null => null,
-                        $delta > 0      => '+',
-                        $delta < 0      => '-',
-                        default         => '=',
-                    },
-                    'relative_demand' => $data['relativeDemand'] ?? null,
-                ];
-
-                foreach ($variantGtins as $gtin) {
-                    $key = $toGtin14((string) $gtin);
-                    // Garder le meilleur rang si plusieurs clusters matchent
-                    if (!isset($ranksByGtin[$key]) || ($rank < ($ranksByGtin[$key]['rank'] ?? PHP_INT_MAX))) {
-                        $ranksByGtin[$key] = $rankInfo;
-                    }
-                }
-            }
-
-            return $ranksByGtin;
-
-        } catch (\Exception $e) {
-            Log::error('ExportSalesService — Google Merchant rank error: ' . $e->getMessage());
-            return [];
-        }
-    }
-
-    // =========================================================================
     // COMPARAISONS
     // =========================================================================
 
@@ -260,8 +150,8 @@ class ExportSalesService
             }
 
             $comparison = [
-                'row'               => $row,
-                'sites'             => [],
+                'row'              => $row,
+                'sites'            => [],
                 'prix_moyen_marche' => null,
                 'percentage_marche' => null,
                 'difference_marche' => null,
@@ -272,10 +162,10 @@ class ExportSalesService
 
             foreach ($sites as $site) {
                 if (isset($scrapedProducts[$site->id])) {
-                    $sp        = $scrapedProducts[$site->id];
-                    $prixCosma = $row->prix_vente_cosma;
-                    $priceDiff = null;
-                    $pricePct  = null;
+                    $sp            = $scrapedProducts[$site->id];
+                    $prixCosma     = $row->prix_vente_cosma;
+                    $priceDiff     = null;
+                    $pricePct      = null;
 
                     if ($prixCosma > 0 && $sp->prix_ht > 0) {
                         $priceDiff = $sp->prix_ht - $prixCosma;
@@ -328,12 +218,8 @@ class ExportSalesService
         string $sortBy,
         array  $groupeFilter,
         $sites,
-        $comparisons,
-        array  $popularityRanks = []  // ← GTIN-14 → rankInfo
+        $comparisons
     ): string {
-        // Helper de normalisation réutilisable dans cette méthode
-        $toGtin14 = fn(string $ean): string => str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT);
-
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
         $sheet       = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Ventes ' . $countryLabel);
@@ -341,7 +227,6 @@ class ExportSalesService
         $baseHeaders = [
             'Rang Qty', 'Rang CA', 'EAN', 'Groupe', 'Marque',
             'Désignation', 'Prix Cosma', 'Qté vendue', 'CA total', 'PGHT',
-            'Rang Google', // ← colonne K
         ];
 
         $lastColIndex  = count($baseHeaders) + $sites->count();
@@ -413,6 +298,7 @@ class ExportSalesService
             $col += 2;
         }
 
+        // Style fond stats
         $sheet->getStyle('A1:' . $lastColLetter . '2')->applyFromArray([
             'fill'    => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EDF2F7']],
             'borders' => ['outline' => ['borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_MEDIUM, 'color' => ['rgb' => 'CBD5E0']]],
@@ -438,10 +324,7 @@ class ExportSalesService
         $sheet->getStyle('A' . $headerRow . ':' . $lastColLetter . $headerRow)->applyFromArray([
             'fill'      => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => '2D3748']],
             'font'      => ['bold' => true, 'color' => ['rgb' => 'FFFFFF'], 'name' => 'Arial', 'size' => 10],
-            'alignment' => [
-                'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
-                'vertical'   => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
-            ],
+            'alignment' => ['horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER, 'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER],
         ]);
         $sheet->getRowDimension($headerRow)->setRowHeight(20);
 
@@ -450,10 +333,6 @@ class ExportSalesService
 
         foreach ($comparisons as $comparison) {
             $r = $comparison['row'];
-
-            // Lookup popularité via GTIN-14
-            $eanKey = !empty($r->ean) ? $toGtin14((string) $r->ean) : null;
-            $pop    = $eanKey ? ($popularityRanks[$eanKey] ?? null) : null;
 
             $sheet->setCellValue('A' . $row, $r->rank_qty);
             $sheet->setCellValue('B' . $row, $r->rank_ca);
@@ -466,40 +345,6 @@ class ExportSalesService
             $sheet->setCellValue('I' . $row, $r->total_revenue);
             $sheet->setCellValue('J' . $row, $r->pght ?: '');
 
-            // --- Colonne K : Rang Google (#rank delta) ---
-            $googleRank = $pop['rank']       ?? null;
-            $delta      = $pop['delta']      ?? null;
-            $deltaSign  = $pop['delta_sign'] ?? null;
-
-            if ($googleRank !== null) {
-                $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
-
-                $runRank = $richText->createTextRun('#' . $googleRank);
-                $runRank->getFont()->setBold(true)->setName('Arial');
-                $runRank->getFont()->getColor()->setRGB('000000');
-
-                if ($delta !== null) {
-                    $deltaStr   = ' (' . ($deltaSign === '+' ? '+' : '') . $delta . ')';
-                    $deltaColor = match($deltaSign) {
-                        '+'     => 'FF1A7A3C', // vert   = progression
-                        '-'     => 'FFCC0000', // rouge  = recul
-                        default => 'FF888888', // gris   = stable
-                    };
-                    $runDelta = $richText->createTextRun($deltaStr);
-                    $runDelta->getFont()->setBold(true)->setName('Arial');
-                    $runDelta->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($deltaColor));
-                }
-
-                $sheet->getCell('K' . $row)->setValue($richText);
-                $sheet->getStyle('K' . $row)->getAlignment()
-                    ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
-            } else {
-                $sheet->setCellValue('K' . $row, '—');
-                $sheet->getStyle('K' . $row)->getFont()->getColor()->setRGB('AAAAAA');
-                $sheet->getStyle('K' . $row)->getAlignment()
-                    ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
-            }
-
             $sheet->getStyle('G' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
             $sheet->getStyle('I' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
             $sheet->getStyle('J' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
@@ -510,9 +355,7 @@ class ExportSalesService
                 ]);
             }
 
-            // --- Colonnes sites (L+) ---
-            $colIdx = count($baseHeaders); // 11 → colonne L
-
+            $colIdx = 10;
             foreach ($sites as $site) {
                 $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIdx + 1) . $row;
                 $siteData  = $comparison['sites'][$site->id] ?? null;
@@ -557,14 +400,13 @@ class ExportSalesService
                 } else {
                     $sheet->setCellValue($cellCoord, 'N/A');
                     $sheet->getStyle($cellCoord)->getFont()->getColor()->setRGB('AAAAAA');
-                    $sheet->getStyle($cellCoord)->getAlignment()
-                        ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+                    $sheet->getStyle($cellCoord)->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
                 }
 
                 $colIdx++;
             }
 
-            // --- Prix marché (dernière colonne) ---
+            // Prix marché
             $marcheCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIdx + 1) . $row;
             if ($comparison['prix_moyen_marche'] !== null) {
                 $pm    = $comparison['prix_moyen_marche'];
@@ -576,8 +418,7 @@ class ExportSalesService
             } else {
                 $sheet->setCellValue($marcheCoord, 'N/A');
                 $sheet->getStyle($marcheCoord)->getFont()->getColor()->setRGB('AAAAAA');
-                $sheet->getStyle($marcheCoord)->getAlignment()
-                    ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+                $sheet->getStyle($marcheCoord)->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
             }
 
             $row++;
