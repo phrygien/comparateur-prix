@@ -176,23 +176,30 @@ new class extends Component {
 
         return Cache::remember($cacheKey, now()->addHours(6), function () use ($eans, $countryCode) {
 
-            // Formater les EANs pour la requête : ('ean1', 'ean2', ...)
-            $eanList = implode("', '", array_map('addslashes', $eans));
+            // Normaliser les EANs à 13 chiffres avec zéros initiaux (format GTIN-13)
+            // Magento peut stocker "3614274752106" alors que Google retourne "03614274752106"
+            $normalizeEan = fn(string $ean): string => str_pad(preg_replace('/\D/', '', $ean), 13, '0', STR_PAD_LEFT);
+
+            // Index de correspondance : ean_normalisé → ean_original (pour retrouver la clé dans $ranksByEan)
+            $eanIndex = [];
+            foreach ($eans as $ean) {
+                $eanIndex[$normalizeEan($ean)] = $ean;
+            }
+
+            // Construire la liste normalisée pour la requête Google
+            $normalizedEans = array_keys($eanIndex);
+            $eanList = implode("', '", array_map('addslashes', $normalizedEans));
 
             $query = "
                 SELECT
                     rank,
-                    previous_rank,
-                    relative_demand,
-                    previous_relative_demand,
-                    relative_demand_change,
-                    variant_gtins,
+                    previousRank,
+                    relativeDemand,
+                    relativeDemandChange,
+                    variantGtins,
                     title,
                     brand,
-                    category_l1,
-                    category_l2,
-                    category_l3,
-                    report_date
+                    reportDate
                 FROM best_sellers_product_cluster_view
                 WHERE report_country_code = '{$countryCode}'
                   AND report_granularity = 'WEEKLY'
@@ -202,6 +209,8 @@ new class extends Component {
 
             try {
                 $response = $this->googleMerchantService->searchReports($query);
+
+                Log::info('Google Merchant raw response', ['response' => $response]);
 
                 $ranksByEan = [];
                 $rows = $response['results'] ?? [];
@@ -213,31 +222,35 @@ new class extends Component {
                     $rank     = isset($data['rank'])         ? (int) $data['rank']         : null;
                     $prevRank = isset($data['previousRank']) ? (int) $data['previousRank'] : null;
 
-                    // + = progression (rang a baissé numeriquement), - = recul
                     $delta = ($rank !== null && $prevRank !== null) ? ($prevRank - $rank) : null;
 
                     $rankInfo = [
-                        'rank'           => $rank,
-                        'delta'          => $delta,          // positif = mieux classé
-                        'delta_sign'     => match(true) {
-                            $delta === null  => null,
-                            $delta > 0       => '+',
-                            $delta < 0       => '-',
-                            default          => '=',
+                        'rank'            => $rank,
+                        'delta_sign'      => match(true) {
+                            $delta === null => null,
+                            $delta > 0     => '+',
+                            $delta < 0     => '-',
+                            default        => '=',
                         },
                         'relative_demand' => $data['relativeDemand'] ?? null,
-                        'demand_change'   => $data['relativeDemandChange'] ?? null,
                         'title'           => $data['title'] ?? null,
                         'brand'           => $data['brand'] ?? null,
                     ];
 
-                    // Associer le rang à chaque EAN du cluster, garder le meilleur rang
+                    // Associer le rang à chaque GTIN du cluster
+                    // en cherchant via l'EAN normalisé → EAN original
                     foreach ($variantGtins as $gtin) {
-                        if (!isset($ranksByEan[$gtin]) || ($rank < ($ranksByEan[$gtin]['rank'] ?? PHP_INT_MAX))) {
-                            $ranksByEan[$gtin] = $rankInfo;
+                        $normalizedGtin = $normalizeEan((string) $gtin);
+                        // Clé de stockage = EAN original de Magento si trouvé, sinon GTIN brut
+                        $key = $eanIndex[$normalizedGtin] ?? $normalizedGtin;
+
+                        if (!isset($ranksByEan[$key]) || ($rank < ($ranksByEan[$key]['rank'] ?? PHP_INT_MAX))) {
+                            $ranksByEan[$key] = $rankInfo;
                         }
                     }
                 }
+
+                Log::info('Google Merchant ranks by EAN', ['ranksByEan' => $ranksByEan]);
 
                 return $ranksByEan;
 
