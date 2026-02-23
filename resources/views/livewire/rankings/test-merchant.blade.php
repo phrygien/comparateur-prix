@@ -323,6 +323,8 @@ new class extends Component {
             Log::error('[DEBUG] Erreur API Google Merchant', ['message' => $e->getMessage()]);
         }
     }
+
+    public function getAvailableGroupesProperty()
     {
         $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
         $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
@@ -331,7 +333,7 @@ new class extends Component {
             $this->activeCountry
             . $dateFrom
             . $dateTo
-        );
+        );;
 
         return Cache::remember($cacheKey, now()->addHour(), function () use ($dateFrom, $dateTo) {
 
