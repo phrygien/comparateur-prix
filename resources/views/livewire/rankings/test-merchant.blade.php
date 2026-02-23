@@ -184,6 +184,7 @@ new class extends Component {
 
             $query = "
                 SELECT
+                    report_category_id,
                     rank,
                     previous_rank,
                     relative_demand,
@@ -270,6 +271,7 @@ new class extends Component {
 
         $query = "
             SELECT
+                report_category_id,
                 rank,
                 previous_rank,
                 relative_demand,
