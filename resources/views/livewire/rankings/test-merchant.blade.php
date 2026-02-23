@@ -145,7 +145,8 @@ new class extends Component {
 
     /**
      * Récupère les rangs de popularité Google Merchant pour tous les EANs du top produits.
-     * Retourne un tableau indexé par EAN : ['rank' => int, 'previous_rank' => int, 'relative_demand' => string, ...]
+     * Retourne un tableau indexé par EAN normalisé à 14 chiffres (GTIN-14).
+     * La lookup dans le template doit aussi normaliser l'EAN Magento.
      */
     public function getPopularityRanksProperty(): array
     {
@@ -155,7 +156,6 @@ new class extends Component {
             return [];
         }
 
-        // Collecter les EANs non vides
         $eans = collect($sales)
             ->pluck('ean')
             ->filter()
@@ -167,28 +167,20 @@ new class extends Component {
             return [];
         }
 
+        // Normalisation GTIN-14 : strip non-chiffres puis pad à 14 avec zéros
+        // EAN Magento "3614274752106" (13) → "03614274752106" (14) = format Google
+        $toGtin14 = fn(string $ean): string => str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT);
+
         $countryCode = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
 
-        $cacheKey = 'google_popularity_' . md5(
-            $countryCode
-            . implode(',', $eans)
-        );
+        // EANs normalisés à envoyer à Google
+        $gtins14 = array_unique(array_map($toGtin14, $eans));
 
-        return Cache::remember($cacheKey, now()->addHours(6), function () use ($eans, $countryCode) {
+        $cacheKey = 'google_popularity_' . md5($countryCode . implode(',', $gtins14));
 
-            // Normaliser les EANs à 13 chiffres avec zéros initiaux (format GTIN-13)
-            // Magento peut stocker "3614274752106" alors que Google retourne "03614274752106"
-            $normalizeEan = fn(string $ean): string => str_pad(preg_replace('/\D/', '', $ean), 13, '0', STR_PAD_LEFT);
+        return Cache::remember($cacheKey, now()->addHours(6), function () use ($gtins14, $countryCode, $toGtin14) {
 
-            // Index de correspondance : ean_normalisé → ean_original (pour retrouver la clé dans $ranksByEan)
-            $eanIndex = [];
-            foreach ($eans as $ean) {
-                $eanIndex[$normalizeEan($ean)] = $ean;
-            }
-
-            // Construire la liste normalisée pour la requête Google
-            $normalizedEans = array_keys($eanIndex);
-            $eanList = implode("', '", array_map('addslashes', $normalizedEans));
+            $gtinList = implode("', '", $gtins14);
 
             $query = "
                 SELECT
@@ -203,7 +195,7 @@ new class extends Component {
                 FROM best_sellers_product_cluster_view
                 WHERE report_country_code = '{$countryCode}'
                   AND report_granularity = 'WEEKLY'
-                  AND variant_gtins CONTAINS ANY ('{$eanList}')
+                  AND variant_gtins CONTAINS ANY ('{$gtinList}')
                 LIMIT 1000
             ";
 
@@ -212,47 +204,50 @@ new class extends Component {
 
                 Log::info('Google Merchant raw response', ['response' => $response]);
 
-                $ranksByEan = [];
-                $rows = $response['results'] ?? [];
+                // Résultats indexés par GTIN-14 normalisé
+                $ranksByGtin = [];
 
-                foreach ($rows as $row) {
+                foreach ($response['results'] ?? [] as $row) {
                     $data         = $row['bestSellersProductClusterView'] ?? [];
                     $variantGtins = $data['variantGtins'] ?? [];
 
                     $rank     = isset($data['rank'])         ? (int) $data['rank']         : null;
                     $prevRank = isset($data['previousRank']) ? (int) $data['previousRank'] : null;
-
-                    $delta = ($rank !== null && $prevRank !== null) ? ($prevRank - $rank) : null;
+                    $delta    = ($rank !== null && $prevRank !== null) ? ($prevRank - $rank) : null;
 
                     $rankInfo = [
                         'rank'            => $rank,
                         'delta_sign'      => match(true) {
                             $delta === null => null,
-                            $delta > 0     => '+',
-                            $delta < 0     => '-',
-                            default        => '=',
+                            $delta > 0      => '+',
+                            $delta < 0      => '-',
+                            default         => '=',
                         },
                         'relative_demand' => $data['relativeDemand'] ?? null,
                         'title'           => $data['title'] ?? null,
                         'brand'           => $data['brand'] ?? null,
                     ];
 
-                    // Associer le rang à chaque GTIN du cluster
-                    // en cherchant via l'EAN normalisé → EAN original
+                    // Stocker sous la clé GTIN-14 normalisée de chaque variante
                     foreach ($variantGtins as $gtin) {
-                        $normalizedGtin = $normalizeEan((string) $gtin);
-                        // Clé de stockage = EAN original de Magento si trouvé, sinon GTIN brut
-                        $key = $eanIndex[$normalizedGtin] ?? $normalizedGtin;
-
-                        if (!isset($ranksByEan[$key]) || ($rank < ($ranksByEan[$key]['rank'] ?? PHP_INT_MAX))) {
-                            $ranksByEan[$key] = $rankInfo;
+                        $key = $toGtin14((string) $gtin);
+                        // Garder le meilleur rang si plusieurs clusters matchent
+                        if (!isset($ranksByGtin[$key]) || ($rank < ($ranksByGtin[$key]['rank'] ?? PHP_INT_MAX))) {
+                            $ranksByGtin[$key] = $rankInfo;
                         }
                     }
                 }
 
-                Log::info('Google Merchant ranks by EAN', ['ranksByEan' => $ranksByEan]);
+                Log::info('Google Merchant ranks by GTIN-14', ['ranksByGtin' => $ranksByGtin]);
 
-                return $ranksByEan;
+                return $ranksByGtin;
+
+            } catch (\Exception $e) {
+                Log::error('Google Merchant popularity rank error: ' . $e->getMessage());
+                return [];
+            }
+        });
+    }
 
             } catch (\Exception $e) {
                 Log::error('Google Merchant popularity rank error: ' . $e->getMessage());
@@ -561,7 +556,9 @@ new class extends Component {
         foreach ($comparisons as $comparison) {
             $r   = $comparison['row'];
             $ean = $r->ean ?? null;
-            $pop = $ean ? ($popularityRanks[$ean] ?? null) : null;
+            // Normaliser l'EAN Magento en GTIN-14 pour matcher la clé de $popularityRanks
+            $eanKey = $ean ? str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT) : null;
+            $pop = $eanKey ? ($popularityRanks[$eanKey] ?? null) : null;
 
             $sheet->setCellValue('A' . $row, $r->rank_qty);
             $sheet->setCellValue('B' . $row, $r->rank_ca);
@@ -992,10 +989,12 @@ new class extends Component {
                                         <tbody>
                                             @foreach($comparisons as $comparison)
                                                 @php
-                                                    $row      = $comparison['row'];
+                                                    $row       = $comparison['row'];
                                                     $prixCosma = $row->prix_vente_cosma;
-                                                    $ean      = $row->ean ?? null;
-                                                    $pop      = $ean ? ($popularityRanks[$ean] ?? null) : null;
+                                                    $ean       = $row->ean ?? null;
+                                                    // Normaliser l'EAN Magento en GTIN-14 pour matcher la clé de $popularityRanks
+                                                    $eanKey    = $ean ? str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT) : null;
+                                                    $pop       = $eanKey ? ($popularityRanks[$eanKey] ?? null) : null;
 
                                                     $googleRank  = $pop['rank'] ?? null;
                                                     $deltaSign   = $pop['delta_sign'] ?? null; // '+', '-', '=' ou null
