@@ -204,6 +204,7 @@ new class extends Component {
                 FROM best_sellers_product_cluster_view
                 WHERE report_country_code = '{$countryCode}'
                   AND report_granularity = 'WEEKLY'
+                  AND category_l1 LIKE '%Health & Beauty%'
                   AND variant_gtins CONTAINS ANY ('{$gtinList}')
                 LIMIT 1000
             ";
@@ -514,10 +515,12 @@ new class extends Component {
             . $dateTo
         ));
 
-        // Vider aussi le cache de popularité
-        $eans = collect($this->sales)->pluck('ean')->filter()->unique()->values()->toArray();
+        // Vider le cache popularité avec la même clé normalisée GTIN-14
+        $toGtin14    = fn(string $ean): string => str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT);
         $countryCode = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
-        Cache::forget('google_popularity_' . md5($countryCode . implode(',', $eans)));
+        $gtins14     = array_unique(array_map($toGtin14, collect($this->sales)->pluck('ean')->filter()->toArray()));
+
+        Cache::forget('google_popularity_' . md5($countryCode . implode(',', $gtins14)));
     }
 
     public function exportXlsx(): \Symfony\Component\HttpFoundation\BinaryFileResponse
