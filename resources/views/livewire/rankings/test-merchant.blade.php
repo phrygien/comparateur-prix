@@ -249,7 +249,80 @@ new class extends Component {
         });
     }
 
-    public function getAvailableGroupesProperty()
+    /**
+     * DEBUG temporaire — appeler via wire:click="debugPopularity"
+     * Affiche dans les logs chaque étape du matching EAN ↔ Google
+     */
+    public function debugPopularity(): void
+    {
+        $toGtin14 = fn(string $ean): string => str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT);
+
+        $sales = $this->sales;
+        $eans  = collect($sales)->pluck('ean')->filter()->unique()->values()->toArray();
+
+        Log::info('[DEBUG] EANs Magento bruts', ['eans' => $eans]);
+
+        $gtins14 = array_unique(array_map($toGtin14, $eans));
+        Log::info('[DEBUG] EANs normalisés GTIN-14 envoyés à Google', ['gtins14' => $gtins14]);
+
+        $countryCode = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
+        $gtinList    = implode("', '", $gtins14);
+
+        $query = "
+            SELECT
+                rank,
+                previousRank,
+                relativeDemand,
+                variantGtins,
+                title,
+                brand
+            FROM best_sellers_product_cluster_view
+            WHERE report_country_code = '{$countryCode}'
+              AND report_granularity = 'WEEKLY'
+              AND variant_gtins CONTAINS ANY ('{$gtinList}')
+            LIMIT 10
+        ";
+
+        Log::info('[DEBUG] Requête Google Merchant', ['query' => $query]);
+
+        try {
+            $response = $this->googleMerchantService->searchReports($query);
+            Log::info('[DEBUG] Réponse brute Google', ['response' => $response]);
+
+            $results = $response['results'] ?? [];
+            Log::info('[DEBUG] Nombre de résultats', ['count' => count($results)]);
+
+            foreach ($results as $i => $row) {
+                $data = $row['bestSellersProductClusterView'] ?? [];
+                Log::info("[DEBUG] Résultat #{$i}", [
+                    'title'        => $data['title'] ?? null,
+                    'rank'         => $data['rank'] ?? null,
+                    'previousRank' => $data['previousRank'] ?? null,
+                    'variantGtins' => $data['variantGtins'] ?? [],
+                    'normalized'   => array_map($toGtin14, array_map('strval', $data['variantGtins'] ?? [])),
+                ]);
+            }
+
+            // Vérifier les intersections
+            foreach ($gtins14 as $gtin) {
+                $found = false;
+                foreach ($results as $row) {
+                    $data    = $row['bestSellersProductClusterView'] ?? [];
+                    $gtins   = array_map(fn($g) => $toGtin14((string) $g), $data['variantGtins'] ?? []);
+                    if (in_array($gtin, $gtins)) {
+                        $found = true;
+                        Log::info("[DEBUG] MATCH trouvé", ['gtin' => $gtin, 'rank' => $data['rank'] ?? null]);
+                    }
+                }
+                if (!$found) {
+                    Log::warning("[DEBUG] Pas de match Google pour ce GTIN", ['gtin' => $gtin]);
+                }
+            }
+
+        } catch (\Exception $e) {
+            Log::error('[DEBUG] Erreur API Google Merchant', ['message' => $e->getMessage()]);
+        }
+    }
     {
         $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
         $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
@@ -897,6 +970,16 @@ new class extends Component {
                                     <span wire:loading wire:target="clearCache" class="flex items-center gap-2">
                                         <span class="loading loading-spinner loading-xs"></span>
                                         Rafraîchissement…
+                                    </span>
+                                </button>
+
+                                {{-- DEBUG temporaire --}}
+                                <button type="button" wire:click="debugPopularity"
+                                    class="btn btn-sm btn-warning gap-2" title="Debug popularité Google dans les logs">
+                                    <span wire:loading.remove wire:target="debugPopularity">🔍 Debug Google</span>
+                                    <span wire:loading wire:target="debugPopularity" class="flex items-center gap-2">
+                                        <span class="loading loading-spinner loading-xs"></span>
+                                        Analyse…
                                     </span>
                                 </button>
 
