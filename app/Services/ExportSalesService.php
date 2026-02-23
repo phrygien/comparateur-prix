@@ -339,10 +339,10 @@ class ExportSalesService
         $sheet->setTitle('Ventes ' . $countryLabel);
 
         $baseHeaders = [
-            'Rang Qty',    // A
-            'Rang CA',     // B
-            'Rang Google', // C  ← déplacé ici
-            'EAN',         // D
+            'Rang Qty',         // A
+            'Rang CA',          // B
+            'Popularité Google', // C  ← déplacé ici
+            'EAN',              // D
             'Groupe',      // E
             'Marque',      // F
             'Désignation', // G

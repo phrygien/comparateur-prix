@@ -810,7 +810,7 @@ new class extends Component {
             'comparisons'               => $comparisons,
             'sites'                     => $this->sites,
             'availableGroupes'          => $this->availableGroupes,
-            'popularityRanks'           => $this->popularityRanks, // ← nouveau
+            'popularityRanks'           => $this->popularityRanks,
             'comparisonsAvecPrixMarche' => $comparisonsAvecPrixMarche,
             'somme_gain'                => $this->somme_gain,
             'somme_perte'               => $this->somme_perte,
