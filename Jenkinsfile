@@ -32,18 +32,15 @@ pipeline {
                 sh '''
                     cd /var/www/comparateur
 
-                    # 1. Ajouter toutes les dépendances dans composer.json sans installer
+                    # Installe les dépendances existantes ET met à jour le lock file
+                    # pour les packages manquants ou en conflit de version
                     composer require \
                         phpoffice/phpspreadsheet \
                         openai-php/client \
                         google/apiclient \
                         laravel/scout \
                         typesense/typesense-php \
-                        --no-update --no-interaction
-
-                    # 2. Une seule commande install qui résout tout en une passe
-                    #    → package:discover se lance une seule fois, toutes les classes sont là
-                    composer install --no-interaction --prefer-dist --optimize-autoloader
+                        --no-interaction --prefer-dist --optimize-autoloader
                 '''
             }
         }
