@@ -1212,6 +1212,7 @@ new class extends Component {
                                             <tr>
                                                 <th>Rang Qty</th>
                                                 <th>Rang CA</th>
+                                                <th class="text-center">Popularite Google</th>
                                                 <th>EAN</th>
                                                 <th>Groupe</th>
                                                 <th>Marque</th>
@@ -1220,7 +1221,6 @@ new class extends Component {
                                                 <th>Qté vendue</th>
                                                 <th>CA total</th>
                                                 <th>PGHT</th>
-                                                <th class="text-center">popularite Google</th>
                                                 @foreach($sites as $site)
                                                     <th class="text-right">{{ $site->name }}</th>
                                                 @endforeach
