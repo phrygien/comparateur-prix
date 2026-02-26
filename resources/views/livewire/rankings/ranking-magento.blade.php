@@ -1041,7 +1041,7 @@ new class extends Component {
                                     <span>Aucune vente trouvée pour cette période{{ !empty($groupeFilter) ? ' et ce(s) groupe(s)' : '' }}.</span>
                                 </div>
                             @else
-                                <div class="overflow-x-auto overflow-y-auto max-h-[65vh]"
+                                <div class="overflow-x-auto overflow-y-auto max-h-[70vh]"
                                     wire:loading.class="opacity-40 pointer-events-none"
                                     wire:target="dateFrom, dateTo, sortBy, groupeFilter">
                                     <table class="table table-xs table-pin-rows table-pin-cols">
@@ -1208,7 +1208,7 @@ new class extends Component {
                                                 </tr>
                                             @endforeach
                                         </tbody>
-                                        <tfoot>
+                                        {{-- <tfoot>
                                             <tr>
                                                 <th>Rang Qty</th>
                                                 <th>Rang CA</th>
@@ -1226,7 +1226,7 @@ new class extends Component {
                                                 @endforeach
                                                 <th class="text-right">Prix marché</th>
                                             </tr>
-                                        </tfoot>
+                                        </tfoot> --}}
                                     </table>
                                 </div>
                             @endif
