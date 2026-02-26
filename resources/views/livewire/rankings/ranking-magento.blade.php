@@ -1041,7 +1041,7 @@ new class extends Component {
                                     <span>Aucune vente trouvée pour cette période{{ !empty($groupeFilter) ? ' et ce(s) groupe(s)' : '' }}.</span>
                                 </div>
                             @else
-                                <div class="overflow-x-auto"
+                                <div class="overflow-x-auto overflow-y-auto max-h-[75vh]"
                                     wire:loading.class="opacity-40 pointer-events-none"
                                     wire:target="dateFrom, dateTo, sortBy, groupeFilter">
                                     <table class="table table-xs table-pin-rows table-pin-cols">
