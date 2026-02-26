@@ -475,7 +475,7 @@ new class extends Component {
             ->get();
     }
 
-    public function sortBy(string $column): void
+    public function setSortBy(string $column): void
     {
         $this->sortBy = $column;
     }
@@ -965,12 +965,12 @@ new class extends Component {
                                 {{-- Tri --}}
                                 <div class="flex items-center gap-2">
                                     <span class="text-xs text-gray-400">Trier par</span>
-                                    <button type="button" @click="$wire.sortBy('rank_qty')"
+                                    <button type="button" @click="$wire.setSortBy ('rank_qty')"
                                         class="btn btn-xs {{ $sortBy === 'rank_qty' ? 'btn-primary' : 'btn-neutral' }}">
                                         @if($sortBy === 'rank_qty')<svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>@endif
                                         Qté vendue
                                     </button>
-                                    <button type="button" @click="$wire.sortBy('rank_ca')"
+                                    <button type="button" @click="$wire.setSortBy ('rank_ca')"
                                         class="btn btn-xs {{ $sortBy === 'rank_ca' ? 'btn-success' : 'btn-neutral' }}">
                                         @if($sortBy === 'rank_ca')<svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>@endif
                                         CA total
@@ -1063,13 +1063,13 @@ new class extends Component {
                                                 <th>Désignation</th>
                                                 <th>Prix Cosma</th>
                                                 <th>
-                                                    <button @click="$wire.sortBy('rank_qty')" class="flex items-center gap-1 hover:underline cursor-pointer">
+                                                    <button @click="$wire.setSortBy ('rank_qty')" class="flex items-center gap-1 hover:underline cursor-pointer">
                                                         Qté vendue
                                                         <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4l3 4H5l3-4zm0 8l-3-4h6l-3 4z"/></svg>
                                                     </button>
                                                 </th>
                                                 <th>
-                                                    <button @click="$wire.sortBy('rank_ca')" class="flex items-center gap-1 hover:underline cursor-pointer">
+                                                    <button @click="$wire.setSortBy ('rank_ca')" class="flex items-center gap-1 hover:underline cursor-pointer">
                                                         CA total
                                                         <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4l3 4H5l3-4zm0 8l-3-4h6l-3 4z"/></svg>
                                                     </button>
