@@ -1079,7 +1079,7 @@ new class extends Component {
                                                 @foreach($sites as $site)
                                                     <th class="text-right">{{ $site->name }}</th>
                                                 @endforeach
-                                                <th class="text-right sticky right-0 bg-base-100 z-10">Prix marché</th>
+                                                <th class="text-right">Prix marché</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -1186,7 +1186,7 @@ new class extends Component {
                                                         </td>
                                                     @endforeach
 
-                                                    <td class="text-right text-xs sticky right-0 bg-base-100 z-10">
+                                                    <td class="text-right text-xs">
                                                         @if($comparison['prix_moyen_marche'])
                                                             @php
                                                                 $textClassMoyen = $prixCosma > $comparison['prix_moyen_marche'] ? 'text-error' : 'text-success';
@@ -1224,7 +1224,7 @@ new class extends Component {
                                                 @foreach($sites as $site)
                                                     <th class="text-right">{{ $site->name }}</th>
                                                 @endforeach
-                                                <th class="text-right sticky right-0 bg-base-100 z-10">Prix marché</th>
+                                                <th class="text-right">Prix marché</th>
                                             </tr>
                                         </tfoot>
                                     </table>
