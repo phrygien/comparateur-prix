@@ -1208,7 +1208,7 @@ new class extends Component {
                                                 </tr>
                                             @endforeach
                                         </tbody>
-                                        {{-- <tfoot>
+                                        <tfoot>
                                             <tr>
                                                 <th>Rang Qty</th>
                                                 <th>Rang CA</th>
@@ -1226,7 +1226,7 @@ new class extends Component {
                                                 @endforeach
                                                 <th class="text-right">Prix marché</th>
                                             </tr>
-                                        </tfoot> --}}
+                                        </tfoot>
                                     </table>
                                 </div>
                             @endif
