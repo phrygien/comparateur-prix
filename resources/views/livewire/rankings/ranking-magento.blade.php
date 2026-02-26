@@ -965,12 +965,14 @@ new class extends Component {
                                 {{-- Tri --}}
                                 <div class="flex items-center gap-2">
                                     <span class="text-xs text-gray-400">Trier par</span>
-                                    <button type="button" @click="$wire.setSortBy ('rank_qty')"
+                                    {{-- <button type="button" @click="$wire.setSortBy ('rank_qty')" --}}
+                                    <button type="button" wire:click="setSortBy('rank_qty')"
                                         class="btn btn-xs {{ $sortBy === 'rank_qty' ? 'bg-orange-900 text-white' : 'btn-outline btn-white' }}">
                                         @if($sortBy === 'rank_qty')<svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>@endif
                                         Qté vendue
                                     </button>
-                                    <button type="button" @click="$wire.setSortBy ('rank_ca')"
+                                    {{-- <button type="button" @click="$wire.setSortBy ('rank_ca')" --}}
+                                    <button type="button" wire:click="setSortBy('rank_ca')"
                                         class="btn btn-xs {{ $sortBy === 'rank_ca' ? 'bg-orange-900 text-white' : 'btn-outline btn-white' }}">
                                         @if($sortBy === 'rank_ca')<svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>@endif
                                         CA total
@@ -1027,7 +1029,7 @@ new class extends Component {
                         {{-- Tableau --}}
                         <div class="relative">
 
-                            <div wire:loading wire:target="dateFrom, dateTo, sortBy, groupeFilter"
+                            <div wire:loading wire:target="dateFrom, dateTo, sortBy, groupeFilter, setSortBy"
                                 class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg bg-white/70 backdrop-blur-sm">
                                 <span class="loading loading-spinner loading-lg text-primary"></span>
                                 <span class="text-sm font-medium">Mise à jour…</span>
