@@ -1186,7 +1186,7 @@ new class extends Component {
                                                         </td>
                                                     @endforeach
 
-                                                    <td class="text-right text-xs sticky right-0 bg-base-100 z-100">
+                                                    <td class="text-right text-xs sticky right-0 bg-base-100 z-1000">
                                                         @if($comparison['prix_moyen_marche'])
                                                             @php
                                                                 $textClassMoyen = $prixCosma > $comparison['prix_moyen_marche'] ? 'text-error' : 'text-success';
