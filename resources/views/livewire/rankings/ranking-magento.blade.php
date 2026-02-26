@@ -335,43 +335,58 @@ new class extends Component {
     public function getAvailableGroupesProperty()
     {
         $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
-        $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
+        $dateTo = ($this->dateTo ?: date('Y-12-31')) . ' 23:59:59';
 
         $cacheKey = 'available_groupes_' . md5(
             $this->activeCountry
             . $dateFrom
             . $dateTo
-        );;
+        );
 
         return Cache::remember($cacheKey, now()->addHour(), function () use ($dateFrom, $dateTo) {
 
             $sql = "
-                WITH sales AS (
-                    SELECT DISTINCT
-                        SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) AS groupe
-                    FROM sales_order_item oi
-                    JOIN sales_order o ON oi.order_id = o.entity_id
-                    JOIN sales_order_address addr ON addr.parent_id = o.entity_id
-                        AND addr.address_type = 'shipping'
-                    JOIN catalog_product_entity AS produit ON oi.sku = produit.sku
-                    LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
-                    WHERE o.state IN ('processing', 'complete')
-                      AND o.created_at >= ?
-                      AND o.created_at <= ?
-                      AND addr.country_id = ?
-                      AND oi.row_total > 0
-                )
-                SELECT groupe
-                FROM sales
-                WHERE groupe IS NOT NULL
-                  AND groupe != ''
-                ORDER BY groupe ASC
-            ";
+            WITH sales AS (
+                SELECT DISTINCT
+                    SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) AS groupe
+                FROM sales_order_item oi
+                JOIN sales_order o ON oi.order_id = o.entity_id
+                JOIN sales_order_address addr ON addr.parent_id = o.entity_id
+                    AND addr.address_type = 'shipping'
+                JOIN catalog_product_entity AS produit ON oi.sku = produit.sku
+                LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+                WHERE o.state IN ('processing', 'complete')
+                  AND o.created_at >= ?
+                  AND o.created_at <= ?
+                  AND addr.country_id = ?
+                  AND oi.row_total > 0
+            )
+            SELECT groupe
+            FROM sales
+            WHERE groupe IS NOT NULL
+              AND groupe != ''
+            ORDER BY groupe ASC
+        ";
+
+            // ← Ajout du SET NAMES pour forcer l'encodage côté connexion
+            DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
 
             $groupes = DB::connection('mysqlMagento')
                 ->select($sql, [$dateFrom, $dateTo, $this->activeCountry]);
 
-            return collect($groupes)->pluck('groupe')->toArray();
+            return collect($groupes)
+                ->pluck('groupe')
+                ->map(function (?string $groupe) {
+                    if ($groupe === null)
+                        return null;
+                    if (!mb_check_encoding($groupe, 'UTF-8')) {
+                        $groupe = mb_convert_encoding($groupe, 'UTF-8', 'ISO-8859-1');
+                    }
+                    return mb_convert_encoding($groupe, 'UTF-8', 'UTF-8');
+                })
+                ->filter()
+                ->values()
+                ->toArray();
         });
     }
 
