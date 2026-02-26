@@ -54,95 +54,6 @@ new class extends Component {
         $this->dateTo = date('Y-12-31');
     }
 
-    // public function getSalesProperty()
-    // {
-    //     $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
-    //     $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
-
-    //     $orderCol = $this->sortBy === 'rank_ca' ? 'total_revenue' : 'total_qty_sold';
-
-    //     $groupeCondition = '';
-    //     $params = [$dateFrom, $dateTo, $this->activeCountry];
-
-    //     if (!empty($this->groupeFilter)) {
-    //         $placeholders = implode(',', array_fill(0, count($this->groupeFilter), '?'));
-    //         $groupeCondition = " WHERE groupe IN ($placeholders)";
-    //         $params = array_merge($params, $this->groupeFilter);
-    //     }
-
-    //     $cacheKey = 'top_products_' . md5(
-    //         $this->activeCountry
-    //         . $dateFrom
-    //         . $dateTo
-    //         . $orderCol
-    //         . implode(',', $this->groupeFilter)
-    //     );
-
-    //     return Cache::remember($cacheKey, now()->addHour(), function () use ($dateFrom, $dateTo, $groupeCondition, $params, $orderCol) {
-
-    //         $sql = "
-    //             WITH sales AS (
-    //                 SELECT
-    //                     addr.country_id AS country,
-    //                     oi.sku as ean,
-    //                     SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) AS groupe,
-    //                     SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 2), ' - ', -1) AS marque,
-    //                     SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 3), ' - ', -1) AS designation_produit,
-    //                     (CASE
-    //                         WHEN ROUND(product_decimal.special_price, 2) IS NOT NULL THEN ROUND(product_decimal.special_price, 2)
-    //                         ELSE ROUND(product_decimal.price, 2)
-    //                     END) as prix_vente_cosma,
-    //                     ROUND(product_decimal.cost, 2) AS cost,
-    //                     ROUND(product_decimal.prix_achat_ht, 2) AS pght,
-    //                     CAST(SUM(oi.qty_ordered) AS UNSIGNED) AS total_qty_sold,
-    //                     ROUND(SUM(oi.base_row_total), 2) AS total_revenue
-    //                 FROM sales_order_item oi
-    //                 JOIN sales_order o ON oi.order_id = o.entity_id
-    //                 JOIN sales_order_address addr ON addr.parent_id = o.entity_id
-    //                     AND addr.address_type = 'shipping'
-    //                 JOIN catalog_product_entity AS produit ON oi.sku = produit.sku
-    //                 LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
-    //                 LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
-    //                 WHERE o.state IN ('processing', 'complete')
-    //                   AND o.created_at >= ?
-    //                   AND o.created_at <= ?
-    //                   AND addr.country_id = ?
-    //                   AND oi.row_total > 0
-    //                 GROUP BY oi.sku, oi.name, addr.country_id
-    //             ),
-    //             ranked_sales AS (
-    //                 SELECT
-    //                     *,
-    //                     ROW_NUMBER() OVER (ORDER BY total_qty_sold DESC) AS rank_qty,
-    //                     ROW_NUMBER() OVER (ORDER BY total_revenue DESC) AS rank_ca
-    //                 FROM sales
-    //             )
-    //             SELECT *
-    //             FROM ranked_sales
-    //             {$groupeCondition}
-    //             ORDER BY {$orderCol} DESC
-    //             LIMIT 100
-    //         ";
-
-    //         DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
-
-    //         $results = DB::connection('mysqlMagento')->select($sql, $params);
-
-    //         foreach ($results as $result) {
-    //             foreach (['designation_produit', 'marque', 'groupe'] as $field) {
-    //                 if (isset($result->$field)) {
-    //                     if (!mb_check_encoding($result->$field, 'UTF-8')) {
-    //                         $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'ISO-8859-1');
-    //                     }
-    //                     $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'UTF-8');
-    //                 }
-    //             }
-    //         }
-
-    //         return $results;
-    //     });
-    // }
-
     public function getSalesProperty()
     {
         $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
@@ -151,12 +62,12 @@ new class extends Component {
         $orderCol = $this->sortBy === 'rank_ca' ? 'total_revenue' : 'total_qty_sold';
 
         $groupeCondition = '';
-        $filterParams = [];
+        $params = [$dateFrom, $dateTo, $this->activeCountry];
 
         if (!empty($this->groupeFilter)) {
             $placeholders = implode(',', array_fill(0, count($this->groupeFilter), '?'));
             $groupeCondition = " WHERE groupe IN ($placeholders)";
-            $filterParams = $this->groupeFilter;
+            $params = array_merge($params, $this->groupeFilter);
         }
 
         $cacheKey = 'top_products_' . md5(
@@ -167,32 +78,20 @@ new class extends Component {
             . implode(',', $this->groupeFilter)
         );
 
-        return Cache::remember($cacheKey, now()->addHour(), function () use ($dateFrom, $dateTo, $groupeCondition, $filterParams, $orderCol) {
+        return Cache::remember($cacheKey, now()->addHour(), function () use ($dateFrom, $dateTo, $groupeCondition, $params, $orderCol) {
 
-            $pdo = DB::connection('mysqlMagento')->getPdo();
-            $pdo->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
-
-            // 1. Supprimer la table temporaire si elle existe déjà
-            $pdo->exec("DROP TEMPORARY TABLE IF EXISTS tmp_sales");
-
-            // 2. Créer la table temporaire avec agrégation + ranks
-            $pdo->exec("
-                CREATE TEMPORARY TABLE tmp_sales AS
-                SELECT
-                    *,
-                    ROW_NUMBER() OVER (ORDER BY total_qty_sold DESC) AS rank_qty,
-                    ROW_NUMBER() OVER (ORDER BY total_revenue DESC) AS rank_ca
-                FROM (
+            $sql = "
+                WITH sales AS (
                     SELECT
                         addr.country_id AS country,
-                        oi.sku AS ean,
+                        oi.sku as ean,
                         SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) AS groupe,
                         SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 2), ' - ', -1) AS marque,
                         SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 3), ' - ', -1) AS designation_produit,
                         (CASE
                             WHEN ROUND(product_decimal.special_price, 2) IS NOT NULL THEN ROUND(product_decimal.special_price, 2)
                             ELSE ROUND(product_decimal.price, 2)
-                        END) AS prix_vente_cosma,
+                        END) as prix_vente_cosma,
                         ROUND(product_decimal.cost, 2) AS cost,
                         ROUND(product_decimal.prix_achat_ht, 2) AS pght,
                         CAST(SUM(oi.qty_ordered) AS UNSIGNED) AS total_qty_sold,
@@ -205,34 +104,30 @@ new class extends Component {
                     LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
                     LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
                     WHERE o.state IN ('processing', 'complete')
-                    AND o.created_at >= '$dateFrom'
-                    AND o.created_at <= '$dateTo'
-                    AND addr.country_id = '{$this->activeCountry}'
-                    AND oi.row_total > 0
+                      AND o.created_at >= ?
+                      AND o.created_at <= ?
+                      AND addr.country_id = ?
+                      AND oi.row_total > 0
                     GROUP BY oi.sku, oi.name, addr.country_id
-                ) AS base
-            ");
-
-            // 3. Ajouter des index sur la table temporaire
-            $pdo->exec("ALTER TABLE tmp_sales ADD INDEX idx_groupe (groupe(100))");
-            $pdo->exec("ALTER TABLE tmp_sales ADD INDEX idx_qty (total_qty_sold)");
-            $pdo->exec("ALTER TABLE tmp_sales ADD INDEX idx_ca (total_revenue)");
-
-            // 4. Requête finale sur la table temporaire
-            $sql = "
+                ),
+                ranked_sales AS (
+                    SELECT
+                        *,
+                        ROW_NUMBER() OVER (ORDER BY total_qty_sold DESC) AS rank_qty,
+                        ROW_NUMBER() OVER (ORDER BY total_revenue DESC) AS rank_ca
+                    FROM sales
+                )
                 SELECT *
-                FROM tmp_sales
+                FROM ranked_sales
                 {$groupeCondition}
                 ORDER BY {$orderCol} DESC
                 LIMIT 100
             ";
 
-            $results = DB::connection('mysqlMagento')->select($sql, $filterParams);
+            DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
 
-            // 5. Nettoyage
-            $pdo->exec("DROP TEMPORARY TABLE IF EXISTS tmp_sales");
+            $results = DB::connection('mysqlMagento')->select($sql, $params);
 
-            // 6. Encodage UTF-8
             foreach ($results as $result) {
                 foreach (['designation_produit', 'marque', 'groupe'] as $field) {
                     if (isset($result->$field)) {
