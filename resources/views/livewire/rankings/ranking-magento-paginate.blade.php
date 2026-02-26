@@ -7,8 +7,13 @@ use Illuminate\Support\Facades\Log;
 use App\Models\Product;
 use App\Models\Site;
 use App\Services\GoogleMerchantService;
+use Livewire\WithPagination;
 
 new class extends Component {
+    use WithPagination;
+
+    public int $perPage = 25;
+    public int $currentPage = 1;
 
     public string $activeCountry = 'FR';
     public string $dateFrom      = '';
@@ -54,6 +59,51 @@ new class extends Component {
         $this->dateTo = date('Y-12-31');
     }
 
+    public function getSalesTotalProperty(): int
+    {
+        $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
+        $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
+
+        $groupeCondition = '';
+        $params = [$dateFrom, $dateTo, $this->activeCountry];
+
+        if (!empty($this->groupeFilter)) {
+            $placeholders    = implode(',', array_fill(0, count($this->groupeFilter), '?'));
+            $groupeCondition = "AND groupe IN ($placeholders)";
+            $params          = array_merge($params, $this->groupeFilter);
+        }
+
+        $cacheKey = 'top_products_total_' . md5(
+            $this->activeCountry . $dateFrom . $dateTo . implode(',', $this->groupeFilter)
+        );
+
+        return Cache::remember($cacheKey, now()->addHour(), function () use ($dateFrom, $dateTo, $groupeCondition, $params) {
+
+            $sql = "
+                SELECT COUNT(*) as total
+                FROM (
+                    SELECT oi.sku
+                    FROM sales_order_item oi
+                    JOIN sales_order o ON oi.order_id = o.entity_id
+                    JOIN sales_order_address addr ON addr.parent_id = o.entity_id
+                        AND addr.address_type = 'shipping'
+                    JOIN catalog_product_entity AS produit ON oi.sku = produit.sku
+                    LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+                    WHERE o.state IN ('processing', 'complete')
+                    AND o.created_at >= ?
+                    AND o.created_at <= ?
+                    AND addr.country_id = ?
+                    AND oi.row_total > 0
+                    {$groupeCondition}
+                    GROUP BY oi.sku, addr.country_id
+                ) AS counted
+            ";
+
+            $result = DB::connection('mysqlMagento')->selectOne($sql, $params);
+            return (int) ($result->total ?? 0);
+        });
+    }
+
     public function getSalesProperty()
     {
         $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
@@ -65,17 +115,21 @@ new class extends Component {
         $params = [$dateFrom, $dateTo, $this->activeCountry];
 
         if (!empty($this->groupeFilter)) {
-            $placeholders = implode(',', array_fill(0, count($this->groupeFilter), '?'));
-            $groupeCondition = " WHERE groupe IN ($placeholders)";
-            $params = array_merge($params, $this->groupeFilter);
+            $placeholders    = implode(',', array_fill(0, count($this->groupeFilter), '?'));
+            $groupeCondition = "WHERE groupe IN ($placeholders)";
+            $params          = array_merge($params, $this->groupeFilter);
         }
 
+        $offset = ($this->currentPage - 1) * $this->perPage;
+
+        // On ajoute LIMIT et OFFSET en fin de params (valeurs entières, bindées proprement)
+        $params[] = $this->perPage;
+        $params[] = $offset;
+
         $cacheKey = 'top_products_' . md5(
-            $this->activeCountry
-            . $dateFrom
-            . $dateTo
-            . $orderCol
+            $this->activeCountry . $dateFrom . $dateTo . $orderCol
             . implode(',', $this->groupeFilter)
+            . $this->currentPage . $this->perPage
         );
 
         return Cache::remember($cacheKey, now()->addHour(), function () use ($dateFrom, $dateTo, $groupeCondition, $params, $orderCol) {
@@ -104,10 +158,10 @@ new class extends Component {
                     LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
                     LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
                     WHERE o.state IN ('processing', 'complete')
-                      AND o.created_at >= ?
-                      AND o.created_at <= ?
-                      AND addr.country_id = ?
-                      AND oi.row_total > 0
+                    AND o.created_at >= ?
+                    AND o.created_at <= ?
+                    AND addr.country_id = ?
+                    AND oi.row_total > 0
                     GROUP BY oi.sku, oi.name, addr.country_id
                 ),
                 ranked_sales AS (
@@ -121,7 +175,7 @@ new class extends Component {
                 FROM ranked_sales
                 {$groupeCondition}
                 ORDER BY {$orderCol} DESC
-                LIMIT 100
+                LIMIT ? OFFSET ?
             ";
 
             DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
@@ -475,9 +529,21 @@ new class extends Component {
             ->get();
     }
 
+    public function updatedActiveCountry(): void  { $this->currentPage = 1; }
+    public function updatedDateFrom(): void        { $this->currentPage = 1; }
+    public function updatedDateTo(): void          { $this->currentPage = 1; }
+    public function updatedGroupeFilter(): void    { $this->currentPage = 1; }
+    public function updatedPerPage(): void         { $this->currentPage = 1; }
+
     public function setSortBy(string $column): void
     {
         $this->sortBy = $column;
+        $this->currentPage = 1;
+    }
+
+    public function setPage(int $page): void
+    {
+        $this->currentPage = $page;
     }
 
     public function clearCache(): void
@@ -499,6 +565,10 @@ new class extends Component {
             $this->activeCountry
             . $dateFrom
             . $dateTo
+        ));
+
+        Cache::forget('top_products_total_' . md5(
+            $this->activeCountry . $dateFrom . $dateTo . implode(',', $this->groupeFilter)
         ));
 
         // Vider le cache popularité avec la même clé normalisée GTIN-14
@@ -804,6 +874,8 @@ new class extends Component {
     {
         $comparisons = $this->comparisons;
         $comparisonsAvecPrixMarche = $comparisons->filter(fn($c) => $c['prix_moyen_marche'] !== null)->count();
+        $total                     = $this->salesTotal;
+        $lastPage                  = (int) ceil($total / $this->perPage);
 
         return [
             'sales'                     => $this->sales,
@@ -818,6 +890,10 @@ new class extends Component {
             'percentage_perte_marche'   => $this->percentage_perte_marche,
             'dateFrom'                  => $this->dateFrom,
             'dateTo'                    => $this->dateTo,
+            'salesTotal'                => $total,
+            'lastPage'                  => $lastPage,
+            'currentPage'               => $this->currentPage,
+            'perPage'                   => $this->perPage,
         ];
     }
 }; ?>
@@ -871,11 +947,60 @@ new class extends Component {
                             <div>
                                 <h1 class="text-base font-semibold text-gray-900">Ventes — {{ $label }}</h1>
                                 <p class="mt-0.5 text-sm text-gray-500">
-                                    Top 100 produits · {{ count($sales) }} résultat(s)
+                                    Top produits · {{ count($sales) }} résultat(s)
                                     @if(!empty($groupeFilter))
                                         · Groupe(s) : {{ implode(', ', $groupeFilter) }}
                                     @endif
                                 </p>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs text-gray-400">Par page</span>
+                                    <select wire:model.live="perPage" class="select select-sm select-bordered w-20">
+                                        <option value="25">25</option>
+                                        <option value="50">50</option>
+                                        <option value="100">100</option>
+                                        <option value="200">200</option>
+                                    </select>
+                                </div>
+                                <p class="mt-0.5 text-sm text-gray-500">
+                                    {{ $salesTotal }} résultat(s) au total
+                                    · Page {{ $currentPage }}/{{ $lastPage }}
+                                    @if(!empty($groupeFilter))
+                                        · Groupe(s) : {{ implode(', ', $groupeFilter) }}
+                                    @endif
+                                </p>
+                                {{-- Pagination --}}
+                                @if($lastPage > 1)
+                                    <div class="flex items-center justify-between mt-4 px-1">
+                                        <span class="text-xs text-gray-500">
+                                            Affichage
+                                            {{ (($currentPage - 1) * $perPage) + 1 }}–{{ min($currentPage * $perPage, $salesTotal) }}
+                                            sur {{ $salesTotal }} produits
+                                        </span>
+
+                                        <div class="join">
+                                            <button class="join-item btn btn-sm"
+                                                wire:click="setPage(1)"
+                                                @disabled($currentPage === 1)>«</button>
+
+                                            <button class="join-item btn btn-sm"
+                                                wire:click="setPage({{ $currentPage - 1 }})"
+                                                @disabled($currentPage === 1)>‹</button>
+
+                                            @foreach(range(max(1, $currentPage - 2), min($lastPage, $currentPage + 2)) as $p)
+                                                <button class="join-item btn btn-sm {{ $p === $currentPage ? 'btn-active btn-primary' : '' }}"
+                                                    wire:click="setPage({{ $p }})">{{ $p }}</button>
+                                            @endforeach
+
+                                            <button class="join-item btn btn-sm"
+                                                wire:click="setPage({{ $currentPage + 1 }})"
+                                                @disabled($currentPage === $lastPage)>›</button>
+
+                                            <button class="join-item btn btn-sm"
+                                                wire:click="setPage({{ $lastPage }})"
+                                                @disabled($currentPage === $lastPage)>»</button>
+                                        </div>
+                                    </div>
+                                @endif
                             </div>
 
                             <div class="flex flex-wrap items-center gap-3">
@@ -1029,7 +1154,7 @@ new class extends Component {
                         {{-- Tableau --}}
                         <div class="relative">
 
-                            <div wire:loading wire:target="dateFrom, dateTo, sortBy, groupeFilter, setSortBy"
+                            <div wire:loading wire:target="dateFrom, dateTo, sortBy, groupeFilter, setSortBy, perPage, setPage"
                                 class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg bg-white/70 backdrop-blur-sm">
                                 <span class="loading loading-spinner loading-lg text-primary"></span>
                                 <span class="text-sm font-medium">Mise à jour…</span>
