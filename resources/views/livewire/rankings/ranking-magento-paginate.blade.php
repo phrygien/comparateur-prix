@@ -952,55 +952,6 @@ new class extends Component {
                                         · Groupe(s) : {{ implode(', ', $groupeFilter) }}
                                     @endif
                                 </p>
-                                <div class="flex items-center gap-2">
-                                    <span class="text-xs text-gray-400">Par page</span>
-                                    <select wire:model.live="perPage" class="select select-sm select-bordered w-20">
-                                        <option value="25">25</option>
-                                        <option value="50">50</option>
-                                        <option value="100">100</option>
-                                        <option value="200">200</option>
-                                    </select>
-                                </div>
-                                <p class="mt-0.5 text-sm text-gray-500">
-                                    {{ $salesTotal }} résultat(s) au total
-                                    · Page {{ $currentPage }}/{{ $lastPage }}
-                                    @if(!empty($groupeFilter))
-                                        · Groupe(s) : {{ implode(', ', $groupeFilter) }}
-                                    @endif
-                                </p>
-                                {{-- Pagination --}}
-                                @if($lastPage > 1)
-                                    <div class="flex items-center justify-between mt-4 px-1">
-                                        <span class="text-xs text-gray-500">
-                                            Affichage
-                                            {{ (($currentPage - 1) * $perPage) + 1 }}–{{ min($currentPage * $perPage, $salesTotal) }}
-                                            sur {{ $salesTotal }} produits
-                                        </span>
-
-                                        <div class="join">
-                                            <button class="join-item btn btn-sm"
-                                                wire:click="setPage(1)"
-                                                @disabled($currentPage === 1)>«</button>
-
-                                            <button class="join-item btn btn-sm"
-                                                wire:click="setPage({{ $currentPage - 1 }})"
-                                                @disabled($currentPage === 1)>‹</button>
-
-                                            @foreach(range(max(1, $currentPage - 2), min($lastPage, $currentPage + 2)) as $p)
-                                                <button class="join-item btn btn-sm {{ $p === $currentPage ? 'btn-active btn-primary' : '' }}"
-                                                    wire:click="setPage({{ $p }})">{{ $p }}</button>
-                                            @endforeach
-
-                                            <button class="join-item btn btn-sm"
-                                                wire:click="setPage({{ $currentPage + 1 }})"
-                                                @disabled($currentPage === $lastPage)>›</button>
-
-                                            <button class="join-item btn btn-sm"
-                                                wire:click="setPage({{ $lastPage }})"
-                                                @disabled($currentPage === $lastPage)>»</button>
-                                        </div>
-                                    </div>
-                                @endif
                             </div>
 
                             <div class="flex flex-wrap items-center gap-3">
@@ -1149,6 +1100,61 @@ new class extends Component {
                                 </button>
 
                             </div>
+                        </div>
+
+                        <div class="flex flex-wrap items-center justify-around gap-4 mb-4 mt-6">
+
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs text-gray-400">Par page</span>
+                                <select wire:model.live="perPage" class="select select-sm select-bordered w-20">
+                                    <option value="100">100</option>
+                                    <option value="200">200</option>
+                                    <option value="300">300</option>
+                                    <option value="500">500</option>
+                                </select>
+                            </div>
+
+                            <p class="text-sm text-gray-500">
+                                {{ $salesTotal }} résultat(s) au total
+                                · Page {{ $currentPage }}/{{ $lastPage }}
+                                @if(!empty($groupeFilter))
+                                    · Groupe(s) : {{ implode(', ', $groupeFilter) }}
+                                @endif
+                            </p>
+
+                            @if($lastPage > 1)
+                                <div class="flex items-center gap-4">
+                                    <span class="text-xs text-gray-500">
+                                        Affichage
+                                        {{ (($currentPage - 1) * $perPage) + 1 }}–{{ min($currentPage * $perPage, $salesTotal) }}
+                                        sur {{ $salesTotal }} produits
+                                    </span>
+
+                                    <div class="join">
+                                        <button class="join-item btn btn-sm"
+                                            wire:click="setPage(1)"
+                                            @disabled($currentPage === 1)>«</button>
+
+                                        <button class="join-item btn btn-sm"
+                                            wire:click="setPage({{ $currentPage - 1 }})"
+                                            @disabled($currentPage === 1)>‹</button>
+
+                                        @foreach(range(max(1, $currentPage - 2), min($lastPage, $currentPage + 2)) as $p)
+                                            <button class="join-item btn btn-sm {{ $p === $currentPage ? 'btn-active btn-primary' : '' }}"
+                                                wire:click="setPage({{ $p }})">{{ $p }}</button>
+                                        @endforeach
+
+                                        <button class="join-item btn btn-sm"
+                                            wire:click="setPage({{ $currentPage + 1 }})"
+                                            @disabled($currentPage === $lastPage)>›</button>
+
+                                        <button class="join-item btn btn-sm"
+                                            wire:click="setPage({{ $lastPage }})"
+                                            @disabled($currentPage === $lastPage)>»</button>
+                                    </div>
+                                </div>
+                            @endif
+
                         </div>
 
                         {{-- Tableau --}}
