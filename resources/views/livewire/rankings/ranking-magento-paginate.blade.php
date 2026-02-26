@@ -1150,7 +1150,7 @@ new class extends Component {
                                 </div>
                             @endif
                         </div>
-
+                        <br>
                         {{-- Tableau --}}
                         <div class="relative">
 
