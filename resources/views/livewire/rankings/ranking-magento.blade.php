@@ -52,6 +52,12 @@ new class extends Component {
     {
         $this->dateFrom = date('Y-01-01');
         $this->dateTo = date('Y-12-31');
+
+        Cache::forget('available_groupes_' . md5(
+            $this->activeCountry
+            . date('Y-01-01') . ' 00:00:00'
+            . date('Y-12-31') . ' 23:59:59'
+        ));
     }
 
     public function getSalesProperty()
@@ -820,19 +826,36 @@ new class extends Component {
         $comparisons = $this->comparisons;
         $comparisonsAvecPrixMarche = $comparisons->filter(fn($c) => $c['prix_moyen_marche'] !== null)->count();
 
+        // Nettoyage UTF-8 défensif sur availableGroupes avant passage à Blade/@js()
+        $availableGroupes = array_values(array_filter(
+            array_map(function ($groupe) {
+                if ($groupe === null)
+                    return null;
+                $cleaned = mb_convert_encoding((string) $groupe, 'UTF-8', 'UTF-8');
+                if (!mb_check_encoding($cleaned, 'UTF-8')) {
+                    $cleaned = mb_convert_encoding((string) $groupe, 'UTF-8', 'ISO-8859-1');
+                }
+                $cleaned = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $cleaned);
+                if (!mb_check_encoding($cleaned, 'UTF-8')) {
+                    $cleaned = iconv('ISO-8859-1', 'UTF-8//TRANSLIT//IGNORE', (string) $groupe) ?: '';
+                }
+                return $cleaned ?: null;
+            }, $this->availableGroupes)
+        ));
+
         return [
-            'sales'                     => $this->sales,
-            'comparisons'               => $comparisons,
-            'sites'                     => $this->sites,
-            'availableGroupes'          => $this->availableGroupes,
-            'popularityRanks'           => $this->popularityRanks,
+            'sales' => $this->sales,
+            'comparisons' => $comparisons,
+            'sites' => $this->sites,
+            'availableGroupes' => $availableGroupes,
+            'popularityRanks' => $this->popularityRanks,
             'comparisonsAvecPrixMarche' => $comparisonsAvecPrixMarche,
-            'somme_gain'                => $this->somme_gain,
-            'somme_perte'               => $this->somme_perte,
-            'percentage_gain_marche'    => $this->percentage_gain_marche,
-            'percentage_perte_marche'   => $this->percentage_perte_marche,
-            'dateFrom'                  => $this->dateFrom,
-            'dateTo'                    => $this->dateTo,
+            'somme_gain' => $this->somme_gain,
+            'somme_perte' => $this->somme_perte,
+            'percentage_gain_marche' => $this->percentage_gain_marche,
+            'percentage_perte_marche' => $this->percentage_perte_marche,
+            'dateFrom' => $this->dateFrom,
+            'dateTo' => $this->dateTo,
         ];
     }
 }; ?>
