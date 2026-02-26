@@ -179,45 +179,17 @@ new class extends Component {
             ";
 
             DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
-            $pdo->exec("SET CHARACTER SET utf8mb4");
-            $pdo->exec("SET character_set_connection = utf8mb4");
-            $pdo->exec("SET character_set_results = utf8mb4");
 
             $results = DB::connection('mysqlMagento')->select($sql, $params);
 
-            // APRÈS
             foreach ($results as $result) {
-                foreach (['designation_produit', 'marque', 'groupe', 'ean'] as $field) {
-                    if (!isset($result->$field) || $result->$field === null) {
-                        continue;
+                foreach (['designation_produit', 'marque', 'groupe'] as $field) {
+                    if (isset($result->$field)) {
+                        if (!mb_check_encoding($result->$field, 'UTF-8')) {
+                            $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'ISO-8859-1');
+                        }
+                        $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'UTF-8');
                     }
-
-                    $value = (string) $result->$field;
-
-                    // Déjà du UTF-8 valide → rien à faire
-                    if (mb_check_encoding($value, 'UTF-8')) {
-                        $result->$field = $value;
-                        continue;
-                    }
-
-                    // Tentative ISO-8859-1 → UTF-8
-                    $converted = mb_convert_encoding($value, 'UTF-8', 'ISO-8859-1');
-
-                    if (mb_check_encoding($converted, 'UTF-8')) {
-                        $result->$field = $converted;
-                        continue;
-                    }
-
-                    // Tentative Windows-1252 → UTF-8 (accents FR souvent encodés ainsi)
-                    $converted = mb_convert_encoding($value, 'UTF-8', 'Windows-1252');
-
-                    if (mb_check_encoding($converted, 'UTF-8')) {
-                        $result->$field = $converted;
-                        continue;
-                    }
-
-                    // En dernier recours : supprime les caractères invalides
-                    $result->$field = mb_convert_encoding($value, 'UTF-8', 'UTF-8');
                 }
             }
 
