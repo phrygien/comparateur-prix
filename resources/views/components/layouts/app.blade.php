@@ -199,7 +199,7 @@
                                 @if($user = auth()->user() &&  $user->name == "Super Admin")
                                 <li>
                                     <a href="/ranking-magento-paginate"
-                                        class="group flex gap-x-3 rounded-md p-2 text-sm/6 font-semibold {{ request()->is('ranking-magento*') ? 'bg-indigo-700 text-white' : 'text-indigo-200 hover:text-white hover:bg-indigo-700' }}"
+                                        class="group flex gap-x-3 rounded-md p-2 text-sm/6 font-semibold {{ request()->is('ranking-magento-paginate*') ? 'bg-indigo-700 text-white' : 'text-indigo-200 hover:text-white hover:bg-indigo-700' }}"
                                         :class="sidebarMinimized && 'justify-center'"
                                         :title="sidebarMinimized ? 'Importer Ranking File' : ''" wire:navigate>
                                         <svg class="size-6 shrink-0 {{ request()->is('ranking-magento*') ? 'text-white' : 'text-indigo-200 group-hover:text-white' }}" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
