@@ -966,12 +966,12 @@ new class extends Component {
                                 <div class="flex items-center gap-2">
                                     <span class="text-xs text-gray-400">Trier par</span>
                                     <button type="button" @click="$wire.setSortBy ('rank_qty')"
-                                        class="btn btn-xs {{ $sortBy === 'rank_qty' ? 'btn-primary' : 'btn-neutral' }}">
+                                        class="btn btn-xs {{ $sortBy === 'rank_qty' ? 'btn-primary' : 'btn-white' }}">
                                         @if($sortBy === 'rank_qty')<svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>@endif
                                         Qté vendue
                                     </button>
                                     <button type="button" @click="$wire.setSortBy ('rank_ca')"
-                                        class="btn btn-xs {{ $sortBy === 'rank_ca' ? 'btn-success' : 'btn-neutral' }}">
+                                        class="btn btn-xs {{ $sortBy === 'rank_ca' ? 'btn-primary' : 'btn-white' }}">
                                         @if($sortBy === 'rank_ca')<svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>@endif
                                         CA total
                                     </button>
