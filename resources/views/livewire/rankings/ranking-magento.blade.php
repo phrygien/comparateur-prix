@@ -966,12 +966,12 @@ new class extends Component {
                                 <div class="flex items-center gap-2">
                                     <span class="text-xs text-gray-400">Trier par</span>
                                     <button type="button" @click="$wire.setSortBy ('rank_qty')"
-                                        class="btn btn-xs {{ $sortBy === 'rank_qty' ? 'btn-warning' : 'btn-outline btn-white' }}">
+                                        class="btn btn-xs {{ $sortBy === 'rank_qty' ? 'btn-orange-900' : 'btn-outline btn-white' }}">
                                         @if($sortBy === 'rank_qty')<svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>@endif
                                         Qté vendue
                                     </button>
                                     <button type="button" @click="$wire.setSortBy ('rank_ca')"
-                                        class="btn btn-xs {{ $sortBy === 'rank_ca' ? 'btn-warning' : 'btn-outline btn-white' }}">
+                                        class="btn btn-xs {{ $sortBy === 'rank_ca' ? 'btn-orange-900' : 'btn-outline btn-white' }}">
                                         @if($sortBy === 'rank_ca')<svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>@endif
                                         CA total
                                     </button>
@@ -1097,12 +1097,12 @@ new class extends Component {
                                                 @endphp
                                                 <tr class="hover">
                                                     <th>
-                                                        <span class="font-semibold {{ $sortBy === 'rank_qty' ? 'text-warning' : '' }}">
+                                                        <span class="font-semibold {{ $sortBy === 'rank_qty' ? 'text-orange-900' : '' }}">
                                                             {{ $sortBy === 'rank_qty' ? "#".$row->rank_qty : $row->rank_qty }}
                                                         </span>
                                                     </th>
                                                     <th>
-                                                        <span class="font-semibold {{ $sortBy === 'rank_ca' ? 'text-warning' : '' }}">
+                                                        <span class="font-semibold {{ $sortBy === 'rank_ca' ? 'text-orange-900' : '' }}">
                                                             {{ $sortBy === 'rank_ca' ? "#".$row->rank_ca : $row->rank_ca }}
                                                         </span>
                                                     </th>
@@ -1138,12 +1138,12 @@ new class extends Component {
                                                         {{ number_format($prixCosma, 2, ',', ' ') }} €
                                                     </td>
                                                     <td>
-                                                        <span class="font-semibold {{ $sortBy === 'rank_qty' ? 'text-warning' : '' }}">
+                                                        <span class="font-semibold {{ $sortBy === 'rank_qty' ? 'text-orange-900' : '' }}">
                                                             {{ number_format($row->total_qty_sold, 0, ',', ' ') }}
                                                         </span>
                                                     </td>
                                                     <td>
-                                                        <span class="font-semibold {{ $sortBy === 'rank_ca' ? 'text-warning' : '' }}">
+                                                        <span class="font-semibold {{ $sortBy === 'rank_ca' ? 'text-orange-900' : '' }}">
                                                             {{ number_format($row->total_revenue, 2, ',', ' ') }} €
                                                         </span>
                                                     </td>
