@@ -947,7 +947,7 @@ new class extends Component {
                             <div>
                                 <h1 class="text-base font-semibold text-gray-900">Ventes — {{ $label }}</h1>
                                 <p class="mt-0.5 text-sm text-gray-500">
-                                    Top produits · {{ count($sales) }} résultat(s)
+                                    Top ventes produits · {{ count($sales) }} résultat(s)
                                     @if(!empty($groupeFilter))
                                         · Groupe(s) : {{ implode(', ', $groupeFilter) }}
                                     @endif
