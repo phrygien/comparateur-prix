@@ -408,6 +408,9 @@ new class extends Component {
                                                     </div>
                                                 </th>
                                                 <th class="text-center">Demande relative</th>
+                                                @foreach($sites as $site)
+                                                    <th class="text-right">{{ $site->name }}</th>
+                                                @endforeach
                                             </tr>
                                         </thead>
                                         <tbody>
