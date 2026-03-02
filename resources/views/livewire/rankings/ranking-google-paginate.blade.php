@@ -54,7 +54,6 @@ new class extends Component {
 
     protected function getMagentoProductsByEans(array $eanList): array
     {
-        dd($eanList);
         if (empty($eanList)) {
             return [];
         }
@@ -458,7 +457,7 @@ new class extends Component {
                                                                             </span>
 
                                                                             <span class="text-xs font-semibold truncate max-w-[180px]" title="{{ $mag['title'] }}">
-                                                                                {{ $mag['title'] }}
+                                                                                {{ utf8_encode($mag['title']) }}
                                                                             </span>
 
                                                                             <span class="text-xs whitespace-nowrap">
@@ -475,30 +474,6 @@ new class extends Component {
                                                                                     </span>
                                                                                 @endif
                                                                             </span>
-
-                                                                            <span class="text-xs whitespace-nowrap">
-                                                                                @if($mag['quantity'] !== null)
-                                                                                    <span class="{{ $mag['quantity'] > 0 ? 'text-success' : 'text-warning' }} font-mono">
-                                                                                        {{ number_format($mag['quantity'], 0, ',', ' ') }} u.
-                                                                                    </span>
-                                                                                @else
-                                                                                    <span class="text-gray-300">— u.</span>
-                                                                                @endif
-                                                                            </span>
-
-                                                                            @if($mag['stock_status'] == 1)
-                                                                                <span class="badge badge-success badge-xs">En stock</span>
-                                                                            @else
-                                                                                <span class="badge badge-error badge-xs">Rupture</span>
-                                                                            @endif
-
-                                                                            @if(isset($mag['status']))
-                                                                                @if($mag['status'] == 1)
-                                                                                    <span class="badge badge-outline badge-xs badge-success">Activé</span>
-                                                                                @else
-                                                                                    <span class="badge badge-outline badge-xs badge-warning">Désactivé</span>
-                                                                                @endif
-                                                                            @endif
 
                                                                         </div>
                                                                     </div>
