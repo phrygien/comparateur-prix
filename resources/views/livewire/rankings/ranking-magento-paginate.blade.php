@@ -138,31 +138,39 @@ new class extends Component {
                 WITH sales AS (
                     SELECT
                         addr.country_id AS country,
-                        oi.sku as ean,
+                        produit.sku AS ean,
                         SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) AS groupe,
                         SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 2), ' - ', -1) AS marque,
                         SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 3), ' - ', -1) AS designation_produit,
                         (CASE
                             WHEN ROUND(product_decimal.special_price, 2) IS NOT NULL THEN ROUND(product_decimal.special_price, 2)
                             ELSE ROUND(product_decimal.price, 2)
-                        END) as prix_vente_cosma,
+                        END) AS prix_vente_cosma,
                         ROUND(product_decimal.cost, 2) AS cost,
                         ROUND(product_decimal.prix_achat_ht, 2) AS pght,
-                        CAST(SUM(oi.qty_ordered) AS UNSIGNED) AS total_qty_sold,
-                        ROUND(SUM(oi.base_row_total), 2) AS total_revenue
-                    FROM sales_order_item oi
-                    JOIN sales_order o ON oi.order_id = o.entity_id
-                    JOIN sales_order_address addr ON addr.parent_id = o.entity_id
-                        AND addr.address_type = 'shipping'
-                    JOIN catalog_product_entity AS produit ON oi.sku = produit.sku
+                        COALESCE(V.total_qty_sold, 0) AS total_qty_sold,
+                        COALESCE(V.total_revenue, 0) AS total_revenue
+                    FROM catalog_product_entity AS produit
                     LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
                     LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
-                    WHERE o.state IN ('processing', 'complete')
-                    AND o.created_at >= ?
-                    AND o.created_at <= ?
-                    AND addr.country_id = ?
-                    AND oi.row_total > 0
-                    GROUP BY oi.sku, oi.name, addr.country_id
+                    LEFT JOIN (
+                        SELECT
+                            oi.sku,
+                            addr.country_id,
+                            SUM(oi.qty_ordered) AS total_qty_sold,
+                            SUM(oi.base_row_total) AS total_revenue
+                        FROM sales_order_item oi
+                        JOIN sales_order o ON oi.order_id = o.entity_id
+                        JOIN sales_order_address addr ON addr.parent_id = o.entity_id AND addr.address_type = 'shipping'
+                        WHERE o.state IN ('processing', 'complete')
+                            AND o.created_at >= ?
+                            AND o.created_at <= ?
+                            AND addr.country_id = ?
+                            AND oi.row_total > 0
+                        GROUP BY oi.sku, addr.country_id
+                    ) AS V ON V.sku = produit.sku
+                    LEFT JOIN sales_order_address addr ON addr.country_id = V.country_id AND addr.address_type = 'shipping'
+                    GROUP BY produit.sku, produit.entity_id, addr.country_id
                 ),
                 ranked_sales AS (
                     SELECT
@@ -171,8 +179,7 @@ new class extends Component {
                         ROW_NUMBER() OVER (ORDER BY total_revenue DESC) AS rank_ca
                     FROM sales
                 )
-                SELECT *
-                FROM ranked_sales
+                SELECT * FROM ranked_sales
                 {$groupeCondition}
                 ORDER BY {$orderCol} DESC
                 LIMIT ? OFFSET ?
