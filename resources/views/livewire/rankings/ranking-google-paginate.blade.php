@@ -543,15 +543,17 @@ new class extends Component {
                                                         {{ $item['title'] ?? '—' }}
                                                     </td>
 
-                                                    <td>
+                                                    <td class="p-1 align-top">
                                                         @if(!empty($item['ean_list']))
                                                             <div class="flex flex-col gap-0.5">
                                                                 @foreach($item['ean_list'] as $ean)
                                                                     <span class="font-mono text-xs
-                                                                        {{ isset($item['magento_products'][$ean]) ? 'text-success font-semibold' : 'text-gray-400' }}">
+                                                                        {{ isset($item['magento_products'][$ean]) ? 'text-success font-semibold' : 'text-error font-medium' }}">
                                                                         {{ $ean }}
                                                                         @if(isset($item['magento_products'][$ean]))
-                                                                            <span title="Trouvé dans Magento">✓</span>
+                                                                            <span class="text-success" title="Trouvé dans Magento">✓</span>
+                                                                        @else
+                                                                            <span class="text-error" title="Non trouvé dans Magento">✗</span>
                                                                         @endif
                                                                     </span>
                                                                 @endforeach
@@ -561,58 +563,53 @@ new class extends Component {
                                                         @endif
                                                     </td>
 
-<td class="align-top p-2">
-    @if(!empty($item['magento_products']))
-        <div class="space-y-1.5">
-            @foreach($item['magento_products'] as $ean => $mag)
-                <div class="bg-white border border-base-200 rounded-md p-2 hover:border-primary/30 transition-colors">
-                    {{-- Ligne 1: SKU et statut --}}
-                    <div class="flex items-center justify-between gap-2 mb-1">
-                        <span class="font-mono text-xs font-bold text-primary truncate max-w-[100px]" title="{{ $mag['sku'] }}">
-                            {{ $mag['sku'] }}
-                        </span>
-                        @if(isset($mag['quantity']))
-                            <span class="text-[9px] {{ $mag['quantity'] > 0 ? 'text-success' : 'text-error' }} bg-base-100 px-1 rounded">
-                                {{ $mag['quantity'] > 0 ? 'Stock: ' . number_format($mag['quantity'], 0, ',', ' ') : 'Rupture' }}
-                            </span>
-                        @endif
-                    </div>
-                    
-                    {{-- Ligne 2: Nom du produit --}}
-                    <div class="text-xs mb-1 line-clamp-1" title="{{ $mag['title'] }}">
-                        {{ utf8_encode($mag['title']) }}
-                    </div>
-                    
-                    {{-- Ligne 3: Prix --}}
-                    <div class="text-right">
-                        @if(!empty($mag['special_price']))
-                            <span class="text-[10px] line-through text-gray-400 mr-1">
-                                {{ number_format($mag['price'] ?? 0, 2, ',', ' ') }}€
-                            </span>
-                            <span class="text-xs font-bold text-success">
-                                {{ number_format($mag['special_price'], 2, ',', ' ') }}€
-                            </span>
-                        @else
-                            <span class="text-xs font-bold {{ $mag['price'] > 0 ? 'text-success' : 'text-gray-400' }}">
-                                {{ number_format($mag['price'] ?? 0, 2, ',', ' ') }}€
-                            </span>
-                        @endif
-                    </div>
-                </div>
-            @endforeach
-        </div>
-    @else
-        <div class="flex items-center justify-center h-full min-h-[80px]">
-            <div class="text-gray-300 text-xs italic flex flex-col items-center gap-1">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
-                </svg>
-                <span>Non référencé</span>
-            </div>
-        </div>
-    @endif
-</td>
+                                                    <td class="align-top p-2">
+                                                        @if(!empty($item['magento_products']))
+                                                            <div class="space-y-1.5">
+                                                                @foreach($item['magento_products'] as $ean => $mag)
+                                                                    <div class="bg-white border border-base-200 rounded-md p-2 hover:border-primary/30 transition-colors">
+                                                                        {{-- Ligne 1: SKU et statut --}}
+                                                                        <div class="flex items-center justify-between gap-2 mb-1">
+                                                                            <span class="font-mono text-xs font-bold text-primary truncate max-w-[100px]" title="{{ $mag['sku'] }}">
+                                                                                {{ $mag['sku'] }}
+                                                                            </span>
+                                                                        </div>
+                                                                        
+                                                                        {{-- Ligne 2: Nom du produit --}}
+                                                                        <div class="text-xs mb-1 line-clamp-1" title="{{ $mag['title'] }}">
+                                                                            {{ utf8_encode($mag['title']) }}
+                                                                        </div>
+                                                                        
+                                                                        {{-- Ligne 3: Prix --}}
+                                                                        <div class="text-right">
+                                                                            @if(!empty($mag['special_price']))
+                                                                                <span class="text-[10px] line-through text-gray-400 mr-1">
+                                                                                    {{ number_format($mag['price'] ?? 0, 2, ',', ' ') }}€
+                                                                                </span>
+                                                                                <span class="text-xs font-bold text-success">
+                                                                                    {{ number_format($mag['special_price'], 2, ',', ' ') }}€
+                                                                                </span>
+                                                                            @else
+                                                                                <span class="text-xs font-bold {{ $mag['price'] > 0 ? 'text-success' : 'text-gray-400' }}">
+                                                                                    {{ number_format($mag['price'] ?? 0, 2, ',', ' ') }}€
+                                                                                </span>
+                                                                            @endif
+                                                                        </div>
+                                                                    </div>
+                                                                @endforeach
+                                                            </div>
+                                                        @else
+                                                            <div class="flex items-center justify-center h-full min-h-[80px]">
+                                                                <div class="text-gray-300 text-xs italic flex flex-col items-center gap-1">
+                                                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                                            d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+                                                                    </svg>
+                                                                    <span>Non référencé</span>
+                                                                </div>
+                                                            </div>
+                                                        @endif
+                                                    </td>
                                                     
                                                     <td class="text-center">
                                                         @if($item['relative_demand'])
