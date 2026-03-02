@@ -343,9 +343,6 @@ new class extends Component {
 
                                                     {{-- EANs --}}
                                                     <td>
-                                                        @if(count($item['ean_list']) == 0)
-                                                            N/A
-                                                        @endif
                                                         @foreach($item['ean_list'] as $ean14)
                                                             <tr>
                                                                 <td>{{ $ean14 }}</td>
