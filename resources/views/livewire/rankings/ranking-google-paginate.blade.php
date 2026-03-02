@@ -121,7 +121,7 @@ new class extends Component {
                     'title'           => $data['title']          ?? null,
                     'brand'           => $data['brand']          ?? null,
                     // ← EANs normalisés à 13 chiffres
-                    'ean_list'            => array_map(
+                    'ean_list'        => array_map(
                         fn($g) => $normalizeGtin((string) $g),
                         $data['variantGtins'] ?? []
                     ),
