@@ -456,7 +456,10 @@ new class extends Component {
                                                                                 {{ $mag['sku'] }}
                                                                             </span>
 
-                                                                            <span class="text-xs font-semibold truncate max-w-[180px]" title="{{ $mag['title'] }}">
+                                                                            <span 
+                                                                                class="text-xs font-semibold break-words max-w-[180px]" 
+                                                                                title="{{ $mag['title'] }}"
+                                                                            >
                                                                                 {{ utf8_encode($mag['title']) }}
                                                                             </span>
 
