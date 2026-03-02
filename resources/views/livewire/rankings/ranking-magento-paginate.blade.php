@@ -151,6 +151,7 @@ new class extends Component {
                         COALESCE(V.total_qty_sold, 0) AS total_qty_sold,
                         COALESCE(V.total_revenue, 0) AS total_revenue
                     FROM catalog_product_entity AS produit
+                    JOIN product_int ON product_int.entity_id = produit.entity_id
                     LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
                     LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
                     LEFT JOIN (
@@ -170,6 +171,7 @@ new class extends Component {
                         GROUP BY oi.sku, addr.country_id
                     ) AS V ON V.sku = produit.sku
                     LEFT JOIN sales_order_address addr ON addr.country_id = V.country_id AND addr.address_type = 'shipping'
+                    WHERE product_int.status IN (0,1)
                     GROUP BY produit.sku, produit.entity_id, addr.country_id
                 ),
                 ranked_sales AS (
