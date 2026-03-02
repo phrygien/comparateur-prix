@@ -84,6 +84,8 @@ new class extends Component {
 
                 Log::info('Google Merchant raw response', ['response' => $response]);
 
+                var_dump($response);die();
+
                 $ranks = [];
 
                 foreach ($response['results'] ?? [] as $row) {
