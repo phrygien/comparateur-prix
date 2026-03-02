@@ -54,6 +54,7 @@ new class extends Component {
 
     protected function getMagentoProductsByEans(array $eanList): array
     {
+        dd($eanList);
         if (empty($eanList)) {
             return [];
         }
@@ -67,7 +68,7 @@ new class extends Component {
                 produit.sku                                              AS sku,
                 product_char.reference                                   AS parkode,
                 CAST(product_char.name AS CHAR CHARACTER SET utf8mb4)    AS title,
-                product_char.sku                                         AS ean,
+                product_char.ean                                         AS ean,
                 ROUND(product_decimal.price, 2)                          AS price,
                 ROUND(product_decimal.special_price, 2)                  AS special_price,
                 ROUND(product_decimal.cost, 2)                           AS cost,
@@ -85,7 +86,7 @@ new class extends Component {
                 ON stock_item.product_id     = produit.entity_id
             LEFT JOIN cataloginventory_stock_status AS stock_status
                 ON stock_status.product_id   = produit.entity_id
-            WHERE product_char.sku IN ({$placeholders})
+            WHERE product_char.ean IN ({$placeholders})
         ";
 
         try {
