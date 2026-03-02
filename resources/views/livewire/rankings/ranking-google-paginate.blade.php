@@ -561,53 +561,67 @@ new class extends Component {
                                                         @endif
                                                     </td>
 
-                                                    <td>
-                                                        @if(!empty($item['magento_products']))
-                                                            <div class="flex flex-col gap-1">
-                                                                @foreach($item['magento_products'] as $ean => $mag)
-                                                                    <div class="rounded border border-base-200 bg-base-50 px-2 py-1">
-                                                                        <div class="flex items-center justify-between gap-2 flex-wrap">
-
-                                                                            <span class="font-mono text-xs text-gray-500">
-                                                                                {{ $mag['sku'] }}
-                                                                            </span>
-
-                                                                            <span 
-                                                                                class="text-xs font-semibold break-words max-w-[180px]" 
-                                                                                title="{{ $mag['title'] }}"
-                                                                            >
-                                                                                {{ utf8_encode($mag['title']) }}
-                                                                            </span>
-
-                                                                            <span class="text-xs whitespace-nowrap">
-                                                                                @if(!empty($mag['special_price']))
-                                                                                    <span class="line-through text-gray-400 mr-1">
-                                                                                        {{ number_format($mag['price'] ?? 0, 2, ',', ' ') }} €
-                                                                                    </span>
-                                                                                    <span class="text-success font-bold">
-                                                                                        {{ number_format($mag['special_price'], 2, ',', ' ') }} €
-                                                                                    </span>
-                                                                                @else
-                                                                                    <span class="font-medium">
-                                                                                        {{ number_format($mag['price'] ?? 0, 2, ',', ' ') }} €
-                                                                                    </span>
-                                                                                @endif
-                                                                            </span>
-
-                                                                        </div>
-                                                                    </div>
-                                                                @endforeach
-                                                            </div>
-                                                        @else
-                                                            <div class="flex items-center gap-1 text-gray-300">
-                                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                                        d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
-                                                                </svg>
-                                                                <span class="text-xs italic">Non référencé</span>
-                                                            </div>
-                                                        @endif
-                                                    </td>
+<td class="align-top p-2">
+    @if(!empty($item['magento_products']))
+        <div class="space-y-2">
+            @foreach($item['magento_products'] as $ean => $mag)
+                <div class="bg-white rounded-lg border border-base-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
+                    {{-- En-tête avec SKU et statut --}}
+                    <div class="bg-base-100 px-2 py-1 border-b border-base-200 flex items-center justify-between">
+                        <span class="font-mono text-xs font-bold text-primary">
+                            {{ $mag['sku'] }}
+                        </span>
+                    </div>
+                    
+                    {{-- Corps --}}
+                    <div class="p-2">
+                        {{-- Nom du produit --}}
+                        <div class="text-xs font-medium mb-2 line-clamp-2" title="{{ $mag['title'] }}">
+                            {{ utf8_encode($mag['title']) }}
+                        </div>
+                        
+                        {{-- Informations prix et stock --}}
+                        <div class="flex items-center justify-between text-xs">
+                            <div class="flex flex-col">
+                                @if(!empty($mag['special_price']))
+                                    <div class="flex items-center gap-1">
+                                        <span class="line-through text-gray-400">
+                                            {{ number_format($mag['price'] ?? 0, 2, ',', ' ') }} €
+                                        </span>
+                                        <span class="text-success font-bold">
+                                            {{ number_format($mag['special_price'], 2, ',', ' ') }} €
+                                        </span>
+                                    </div>
+                                @else
+                                    <span class="font-bold {{ $mag['price'] > 0 ? 'text-success' : 'text-gray-400' }}">
+                                        {{ number_format($mag['price'] ?? 0, 2, ',', ' ') }} €
+                                    </span>
+                                @endif
+                            </div>
+                        </div>
+                        
+                        {{-- EAN (optionnel) --}}
+                        @if(isset($mag['ean']) && $mag['ean'] != $ean)
+                            <div class="mt-1 text-[9px] text-gray-400">
+                                EAN: {{ $mag['ean'] }}
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            @endforeach
+        </div>
+    @else
+        <div class="flex flex-col items-center justify-center h-full min-h-[100px] bg-base-50 rounded-lg border-2 border-dashed border-base-300 p-3">
+            <svg class="w-8 h-8 text-base-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" 
+                      d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+            </svg>
+            <span class="text-gray-400 text-xs text-center">
+                Aucun produit<br>Magento
+            </span>
+        </div>
+    @endif
+</td>
                                                     
                                                     <td class="text-center">
                                                         @if($item['relative_demand'])
@@ -620,63 +634,63 @@ new class extends Component {
                                                     </td>
 
                                                     {{-- Colonnes des sites avec les produits scrapés --}}
-@foreach($sites as $site)
-    <td class="align-top p-2 border-l border-base-200 first:border-l-0">
-        @php
-            $productsForSite = [];
-            foreach($item['ean_list'] as $ean) {
-                if(isset($item['scraped_products'][$ean])) {
-                    foreach($item['scraped_products'][$ean] as $scrapedProduct) {
-                        if($scrapedProduct['site_id'] == $site->id) {
-                            $productsForSite[] = $scrapedProduct;
-                        }
-                    }
-                }
-            }
-        @endphp
-        
-        @if(!empty($productsForSite))
-            <div class="space-y-2">
-                @foreach($productsForSite as $product)
-                    {{-- Conteneur pour chaque produit avec bordure et espacement --}}
-                    <div class="bg-base-50 rounded p-2 border border-base-200 hover:border-primary/30 transition-colors">
-                        {{-- Ligne 1: EAN et statut --}}
-                        <div class="flex items-center justify-between gap-2 mb-1">
-                            <span class="font-mono font-bold text-xs {{ $product['is_available'] ? 'text-success' : 'text-error' }}">
-                                {{ $product['ean'] }}
-                            </span>
-                        </div>
-                        
-                        {{-- Ligne 2: Nom du produit (cliquable) --}}
-                        @if($product['url'])
-                            <a href="{{ $product['url'] }}" 
-                               target="_blank" 
-                               class="link link-primary link-hover text-xs block mb-1 hover:underline"
-                               title="{{ $product['name'] }}">
-                                {{ Str::limit($product['name'], 25) }}
-                            </a>
-                        @else
-                            <div class="text-xs text-gray-700 block mb-1" title="{{ $product['name'] }}">
-                                {{ Str::limit($product['name'], 25) }}
-                            </div>
-                        @endif
-                        
-                        {{-- Ligne 3: Prix et vendeur --}}
-                        <div class="flex items-center justify-between text-xs">
-                            <span class="font-semibold {{ $product['is_available'] ? 'text-success' : 'text-error' }}">
-                                {{ number_format($product['price'], 2, ',', ' ') }} {{ $product['currency'] ?? '€' }}
-                            </span>
-                        </div>
-                    </div>
-                @endforeach
-            </div>
-        @else
-            <div class="flex items-center justify-center h-full min-h-[80px] bg-base-50/50 rounded border border-dashed border-base-300">
-                <span class="text-gray-400 text-xs italic">Aucun produit</span>
-            </div>
-        @endif
-    </td>
-@endforeach
+                                                    @foreach($sites as $site)
+                                                        <td class="align-top p-2 border-l border-base-200 first:border-l-0">
+                                                            @php
+                                                                $productsForSite = [];
+                                                                foreach($item['ean_list'] as $ean) {
+                                                                    if(isset($item['scraped_products'][$ean])) {
+                                                                        foreach($item['scraped_products'][$ean] as $scrapedProduct) {
+                                                                            if($scrapedProduct['site_id'] == $site->id) {
+                                                                                $productsForSite[] = $scrapedProduct;
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            @endphp
+                                                            
+                                                            @if(!empty($productsForSite))
+                                                                <div class="space-y-2">
+                                                                    @foreach($productsForSite as $product)
+                                                                        {{-- Conteneur pour chaque produit avec bordure et espacement --}}
+                                                                        <div class="bg-base-50 rounded p-2 border border-base-200 hover:border-primary/30 transition-colors">
+                                                                            {{-- Ligne 1: EAN et statut --}}
+                                                                            <div class="flex items-center justify-between gap-2 mb-1">
+                                                                                <span class="font-mono font-bold text-xs {{ $product['is_available'] ? 'text-success' : 'text-error' }}">
+                                                                                    {{ $product['ean'] }}
+                                                                                </span>
+                                                                            </div>
+                                                                            
+                                                                            {{-- Ligne 2: Nom du produit (cliquable) --}}
+                                                                            @if($product['url'])
+                                                                                <a href="{{ $product['url'] }}" 
+                                                                                target="_blank" 
+                                                                                class="link link-primary link-hover text-xs block mb-1 hover:underline"
+                                                                                title="{{ $product['name'] }}">
+                                                                                    {{ Str::limit($product['name'], 25) }}
+                                                                                </a>
+                                                                            @else
+                                                                                <div class="text-xs text-gray-700 block mb-1" title="{{ $product['name'] }}">
+                                                                                    {{ Str::limit($product['name'], 25) }}
+                                                                                </div>
+                                                                            @endif
+                                                                            
+                                                                            {{-- Ligne 3: Prix et vendeur --}}
+                                                                            <div class="flex items-center justify-between text-xs">
+                                                                                <span class="font-semibold {{ $product['is_available'] ? 'text-success' : 'text-error' }}">
+                                                                                    {{ number_format($product['price'], 2, ',', ' ') }} {{ $product['currency'] ?? '€' }}
+                                                                                </span>
+                                                                            </div>
+                                                                        </div>
+                                                                    @endforeach
+                                                                </div>
+                                                            @else
+                                                                <div class="flex items-center justify-center h-full min-h-[80px] bg-base-50/50 rounded border border-dashed border-base-300">
+                                                                    <span class="text-gray-400 text-xs italic">Aucun produit</span>
+                                                                </div>
+                                                            @endif
+                                                        </td>
+                                                    @endforeach
 
                                                 </tr>
                                             @endforeach
