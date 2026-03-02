@@ -620,78 +620,46 @@ new class extends Component {
                                                     </td>
 
                                                     {{-- Colonnes des sites avec les produits scrapés --}}
-                                                    @foreach($sites as $site)
-                                                        <td class="align-top">
-                                                            @php
-                                                                $productsForSite = [];
-                                                                foreach($item['ean_list'] as $ean) {
-                                                                    if(isset($item['scraped_products'][$ean])) {
-                                                                        foreach($item['scraped_products'][$ean] as $scrapedProduct) {
-                                                                            if($scrapedProduct['site_id'] == $site->id) {
-                                                                                $productsForSite[] = $scrapedProduct;
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                }
-                                                            @endphp
-                                                            
-                                                            @if(!empty($productsForSite))
-                                                                <div class="flex flex-col gap-2">
-                                                                    @foreach($productsForSite as $product)
-                                                                        <div class="p-2 rounded border {{ $product['is_available'] ? 'border-success/30 bg-success/5' : 'border-error/30 bg-error/5' }}">
-                                                                            <div class="flex flex-col gap-1 text-xs">
-                                                                                <div class="flex items-center justify-between gap-1">
-                                                                                    <span class="font-mono font-bold text-success">
-                                                                                        {{ $product['ean'] }}
-                                                                                    </span>
-                                                                                </div>
-                                                                                
-                                                                                @if($product['name'])
-                                                                                    <div class="text-gray-700 font-medium truncate" title="{{ $product['name'] }}">
-                                                                                        {{ Str::limit($product['name'], 30) }}
-                                                                                    </div>
-                                                                                @endif
-                                                                                
-                                                                                @if($product['vendor'])
-                                                                                    <div class="text-gray-500">
-                                                                                        {{ $product['vendor'] }}
-                                                                                    </div>
-                                                                                @endif
-                                                                                
-                                                                                @if($product['price'])
-                                                                                    <div class="flex justify-between items-center mt-1">
-                                                                                        <span class="text-gray-500">Prix:</span>
-                                                                                        <span class="font-semibold">
-                                                                                            {{ number_format($product['price'], 2, ',', ' ') }} 
-                                                                                            {{ $product['currency'] ?? '€' }}
-                                                                                        </span>
-                                                                                    </div>
-                                                                                @endif
-                                                                                
-                                                                                <div class="flex gap-2 mt-1">
-                                                                                    @if($product['url'])
-                                                                                        <a href="{{ $product['url'] }}" 
-                                                                                           target="_blank" 
-                                                                                           class="link link-primary link-hover text-xs flex items-center gap-1">
-                                                                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-                                                                                            </svg>
-                                                                                            Voir
-                                                                                        </a>
-                                                                                    @endif
-                                
-                                                                                </div>
-                                                                            </div>
-                                                                        </div>
-                                                                    @endforeach
-                                                                </div>
-                                                            @else
-                                                                <div class="text-gray-300 text-xs italic p-2 text-center">
-                                                                    Non trouvé
-                                                                </div>
-                                                            @endif
-                                                        </td>
-                                                    @endforeach
+{{-- Colonnes des sites avec les produits scrapés --}}
+@foreach($sites as $site)
+    <td class="align-top">
+        @php
+            $productsForSite = [];
+            foreach($item['ean_list'] as $ean) {
+                if(isset($item['scraped_products'][$ean])) {
+                    foreach($item['scraped_products'][$ean] as $scrapedProduct) {
+                        if($scrapedProduct['site_id'] == $site->id) {
+                            $productsForSite[] = $scrapedProduct;
+                        }
+                    }
+                }
+            }
+        @endphp
+        
+        @if(!empty($productsForSite))
+            @foreach($productsForSite as $product)
+                <div class="text-xs">
+                    <span class="font-mono font-bold text-success">{{ $product['ean'] }}</span>
+                    @if($product['url'])
+                        <a href="{{ $product['url'] }}" target="_blank" class="link link-primary link-hover mx-1">
+                            {{ Str::limit($product['name'], 15) }}
+                        </a>
+                    @else
+                        <span class="mx-1">{{ Str::limit($product['name'], 15) }}</span>
+                    @endif
+                    <span class="font-semibold {{ $product['is_available'] ? 'text-success' : 'text-error' }}">
+                        {{ number_format($product['price'], 2, ',', ' ') }} €
+                    </span>
+                </div>
+                @if(!$loop->last)
+                    <hr class="my-0.5 border-base-200">
+                @endif
+            @endforeach
+        @else
+            <span class="text-gray-300 text-xs">—</span>
+        @endif
+    </td>
+@endforeach
 
                                                 </tr>
                                             @endforeach
