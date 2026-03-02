@@ -337,7 +337,7 @@ new class extends Component {
                                                     </td>
 
                                                     {{-- Titre --}}
-                                                    <td>
+                                                    <td class="font-bold max-w-xs truncate">
                                                         {{ $item['title'] ?? '—' }}
                                                     </td>
 
