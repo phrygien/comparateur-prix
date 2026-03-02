@@ -63,13 +63,23 @@ new class extends Component {
 
             $query = "
                 SELECT
+                    report_granularity,
+                    report_date,
+                    report_category_id,
+                    category_l1,
+                    category_l2,
+                    category_l3,
                     brand,
                     title,
                     variant_gtins,
                     rank,
                     previous_rank,
+                    report_country_code,
                     relative_demand,
-                    relative_demand_change
+                    previous_relative_demand,
+                    relative_demand_change,
+                    inventory_status,
+                    brand_inventory_status
                 FROM best_sellers_product_cluster_view
                 WHERE report_country_code = '{$countryCode}'
                   AND report_granularity = '{$periodCode}'
@@ -113,6 +123,7 @@ new class extends Component {
                 return $ranks;
 
             } catch (\Exception $e) {
+                var_dump($e->getMessage());die();
                 Log::error('Google Merchant popularity rank error: ' . $e->getMessage());
                 return [];
             }
