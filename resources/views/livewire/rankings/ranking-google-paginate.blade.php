@@ -92,6 +92,15 @@ new class extends Component {
 
             $ranks = [];
 
+            // Normalisation GTIN-14 → EAN-13 (supprime le 0 de tête si présent)
+            $normalizeGtin = function (string $gtin): string {
+                $gtin = preg_replace('/\D/', '', $gtin); // retire tout ce qui n'est pas un chiffre
+                if (strlen($gtin) === 14 && $gtin[0] === '0') {
+                    return substr($gtin, 1); // supprime le premier chiffre
+                }
+                return $gtin;
+            };
+
             foreach ($response['results'] ?? [] as $row) {
                 $data     = $row['bestSellersProductClusterView'] ?? [];
                 $rank     = isset($data['rank'])         ? (int) $data['rank']         : null;
@@ -111,7 +120,11 @@ new class extends Component {
                     'relative_demand' => $data['relativeDemand'] ?? null,
                     'title'           => $data['title']          ?? null,
                     'brand'           => $data['brand']          ?? null,
-                    'ean_list'        => $data['variantGtins']   ?? null
+                    // ← EANs normalisés à 13 chiffres
+                    'ean_list'            => array_map(
+                        fn($g) => $normalizeGtin((string) $g),
+                        $data['variantGtins'] ?? []
+                    ),
                 ];
             }
 
