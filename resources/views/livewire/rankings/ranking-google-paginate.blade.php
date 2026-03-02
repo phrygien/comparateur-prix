@@ -645,11 +645,6 @@ new class extends Component {
                             <span class="font-mono font-bold text-xs {{ $product['is_available'] ? 'text-success' : 'text-error' }}">
                                 {{ $product['ean'] }}
                             </span>
-                            @if($product['is_available'])
-                                <span class="badge badge-success badge-xs">Stock</span>
-                            @else
-                                <span class="badge badge-error badge-xs">Rupture</span>
-                            @endif
                         </div>
                         
                         {{-- Ligne 2: Nom du produit (cliquable) --}}
@@ -671,19 +666,7 @@ new class extends Component {
                             <span class="font-semibold {{ $product['is_available'] ? 'text-success' : 'text-error' }}">
                                 {{ number_format($product['price'], 2, ',', ' ') }} {{ $product['currency'] ?? '€' }}
                             </span>
-                            @if($product['vendor'])
-                                <span class="text-gray-500 text-[10px] truncate max-w-[60px]" title="{{ $product['vendor'] }}">
-                                    {{ Str::limit($product['vendor'], 8) }}
-                                </span>
-                            @endif
                         </div>
-                        
-                        {{-- Ligne 4: Date de MAJ (optionnelle) --}}
-                        @if($product['last_checked'])
-                            <div class="text-[8px] text-gray-400 mt-1 text-right">
-                                MAJ: {{ \Carbon\Carbon::parse($product['last_checked'])->format('d/m/Y') }}
-                            </div>
-                        @endif
                     </div>
                 @endforeach
             </div>
