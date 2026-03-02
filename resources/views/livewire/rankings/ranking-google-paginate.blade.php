@@ -94,7 +94,7 @@ new class extends Component {
 
                 Log::info('Google Merchant raw response', ['response' => $response]);
 
-                var_dump($response);die();
+                var_dump($response);
 
                 $ranks = [];
 
@@ -119,6 +119,8 @@ new class extends Component {
                         'brand'           => $data['brand']           ?? null,
                     ];
                 }
+
+                var_dump($ranks);die();
 
                 return $ranks;
 
