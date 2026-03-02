@@ -343,11 +343,13 @@ new class extends Component {
 
                                                     {{-- EANs --}}
                                                     <td>
-                                                        @foreach($item['ean_list'] as $ean14)
-                                                            <tr>
-                                                                <td>{{ $ean14 }}</td>
-                                                            </tr>
-                                                        @endforeach
+                                                        @if($item['ean_list'] != null)
+                                                            @foreach($item['ean_list'] as $ean14)
+                                                                <tr>
+                                                                    <td>{{ $ean14 }}</td>
+                                                                </tr>
+                                                            @endforeach
+                                                        @endif
                                                     </td>
 
                                                     {{-- Demande relative --}}
