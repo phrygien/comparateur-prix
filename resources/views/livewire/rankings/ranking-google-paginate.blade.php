@@ -109,8 +109,9 @@ new class extends Component {
                         default         => '=',
                     },
                     'relative_demand' => $data['relativeDemand'] ?? null,
-                    'title'           => $data['title']           ?? null,
-                    'brand'           => $data['brand']           ?? null,
+                    'title'           => $data['title']          ?? null,
+                    'brand'           => $data['brand']          ?? null,
+                    'ean_list'        => $data['variantGtins']   ?? null
                 ];
             }
 
@@ -307,6 +308,7 @@ new class extends Component {
                                                 <th class="text-center w-24">Rang Google</th>
                                                 <th>Brand</th>
                                                 <th>Titre</th>
+                                                <th>Ean</th>
                                                 <th class="text-center">Demande relative</th>
                                             </tr>
                                         </thead>
@@ -339,6 +341,18 @@ new class extends Component {
                                                         {{ $item['title'] ?? '—' }}
                                                     </td>
 
+                                                    {{-- EANs --}}
+                                                    <td>
+                                                        @if(count($item['ean_list']) == 0)
+                                                            N/A
+                                                        @endif
+                                                        @foreach($item['ean_list'] as $ean14)
+                                                            <tr>
+                                                                <td>{{ $ean14 }}</td>
+                                                            </tr>
+                                                        @endforeach
+                                                    </td>
+
                                                     {{-- Demande relative --}}
                                                     <td class="text-center">
                                                         @if($item['relative_demand'])
@@ -358,6 +372,7 @@ new class extends Component {
                                                 <th class="text-center">Rang Google</th>
                                                 <th>Brand</th>
                                                 <th>Titre</th>
+                                                <th>Ean</th>
                                                 <th class="text-center">Demande relative</th>
                                             </tr>
                                         </tfoot>
