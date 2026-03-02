@@ -641,12 +641,12 @@ new class extends Component {
                 <tbody>
                     @foreach($productsForSite as $product)
                         <tr class="hover:bg-base-200">
-                            <td class="px-1 py-1">
+                            <td class="px-1 py-1 text-right">
                                 <span class="font-mono font-bold text-xs {{ $product['is_available'] ? 'text-success' : 'text-error' }}">
                                     {{ $product['ean'] }}
                                 </span>
                             </td>
-                            <td class="px-1 py-1">
+                            <td class="px-1 py-1 text-right">
                                 @if($product['url'])
                                     <a href="{{ $product['url'] }}" 
                                        target="_blank" 
