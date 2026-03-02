@@ -551,9 +551,9 @@ new class extends Component {
                                                                         {{ isset($item['magento_products'][$ean]) ? 'text-success font-semibold' : 'text-error font-medium' }}">
                                                                         {{ $ean }}
                                                                         @if(isset($item['magento_products'][$ean]))
-                                                                            <span class="text-success" title="Trouvé dans Magento">✓</span>
+                                                                            <span class="text-success" title="Trouvé dans Magento"></span>
                                                                         @else
-                                                                            <span class="text-error" title="Non trouvé dans Magento">✗</span>
+                                                                            <span class="text-error" title="Non trouvé dans Magento"></span>
                                                                         @endif
                                                                     </span>
                                                                 @endforeach
