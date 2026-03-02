@@ -558,19 +558,16 @@ new class extends Component {
                                                             <div class="space-y-1.5">
                                                                 @foreach($item['magento_products'] as $ean => $mag)
                                                                     <div class="bg-white border border-base-200 rounded-md p-2 hover:border-primary/30 transition-colors">
-                                                                        {{-- Ligne 1: SKU et statut --}}
                                                                         <div class="flex items-center justify-between gap-2 mb-1">
                                                                             <span class="font-mono text-xs font-bold text-primary truncate max-w-[100px]" title="{{ $mag['sku'] }}">
                                                                                 {{ $mag['sku'] }}
                                                                             </span>
                                                                         </div>
                                                                         
-                                                                        {{-- Ligne 2: Nom du produit --}}
                                                                         <div class="text-xs mb-1 line-clamp-1" title="{{ $mag['title'] }}">
                                                                             {{ utf8_encode($mag['title']) }}
                                                                         </div>
                                                                         
-                                                                        {{-- Ligne 3: Prix --}}
                                                                         <div class="text-right">
                                                                             @if(!empty($mag['special_price']))
                                                                                 <span class="text-[10px] line-through text-gray-400 mr-1">
