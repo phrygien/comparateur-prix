@@ -346,7 +346,7 @@ new class extends Component {
                                                         @if($item['ean_list'] != null)
                                                             @foreach($item['ean_list'] as $ean14)
                                                                 <tr>
-                                                                    <td>{{ $ean14 }}</td>
+                                                                    {{ $ean14 }}
                                                                 </tr>
                                                             @endforeach
                                                         @endif
