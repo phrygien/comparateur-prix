@@ -54,7 +54,7 @@ new class extends Component {
 
     protected function getMagentoProductsByEans(array $eanList): array
     {
-        //dd($eanList);
+        dd($eanList);
         if (empty($eanList)) {
             return [];
         }
