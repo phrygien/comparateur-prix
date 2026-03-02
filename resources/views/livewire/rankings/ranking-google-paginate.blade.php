@@ -90,8 +90,6 @@ new class extends Component {
 
             Log::info('Google Merchant raw response', ['response' => $response]);
 
-            var_dump($response);
-
             $ranks = [];
 
             foreach ($response['results'] ?? [] as $row) {
@@ -116,12 +114,9 @@ new class extends Component {
                 ];
             }
 
-            var_dump($ranks);die();
-
             return $ranks;
 
         } catch (\Exception $e) {
-            var_dump($e->getMessage());die();
             Log::error('Google Merchant popularity rank error: ' . $e->getMessage());
             return [];
         }
