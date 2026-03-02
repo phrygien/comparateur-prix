@@ -184,7 +184,7 @@
                                     </a>
                                 </li> --}}
 
-                                <li>
+                                {{-- <li>
                                     <a href="/ranking-magento"
                                         class="group flex gap-x-3 rounded-md p-2 text-sm/6 font-semibold {{ request()->is('ranking-magento*') ? 'bg-indigo-700 text-white' : 'text-indigo-200 hover:text-white hover:bg-indigo-700' }}"
                                         :class="sidebarMinimized && 'justify-center'"
@@ -194,9 +194,8 @@
                                         </svg>
                                         <span x-show="!sidebarMinimized" x-transition>Magento top produits / Pays</span>
                                     </a>
-                                </li>
+                                </li> --}}
 
-                                @if($user = auth()->user() &&  $user->name == "Super Admin")
                                 <li>
                                     <a href="/ranking-magento-paginate"
                                         class="group flex gap-x-3 rounded-md p-2 text-sm/6 font-semibold {{ request()->is('ranking-magento-paginate*') ? 'bg-indigo-700 text-white' : 'text-indigo-200 hover:text-white hover:bg-indigo-700' }}"
@@ -208,7 +207,6 @@
                                         <span x-show="!sidebarMinimized" x-transition>Magento top produits / Pays</span>
                                     </a>
                                 </li>
-                                @endif
 
                             </ul>
                         </li>

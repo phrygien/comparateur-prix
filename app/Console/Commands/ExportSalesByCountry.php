@@ -22,12 +22,12 @@ class ExportSalesByCountry extends Command
                             {--date-from=        : Date début YYYY-MM-DD (défaut : 1er janvier de l\'année courante)}
                             {--date-to=          : Date fin YYYY-MM-DD (défaut : 31 décembre de l\'année courante)}
                             {--sort=rank_qty     : Tri — rank_qty ou rank_ca}
-                            {--email=            : Destinataire(s) séparés par virgule (défaut : mphrygien@astucom.com)}
+                            {--email=            : Destinataire(s) séparés par virgule (défaut : mphrygien@techmode-group.com)}
                             {--dry-run           : Génère les fichiers sans envoyer l\'email}';
 
     protected $description = 'Exporte le top 100 des ventes par pays en XLSX et envoie le tout par email';
 
-    private const DEFAULT_EMAILS = ['mphrygien@astucom.com'];
+    private const DEFAULT_EMAILS = ['gpa@techmode-group.com', 'adv@cosma-parfumeries.fr', 'mphrygien@techmode-group.com', 'hrajaonah@astucom.com'];
 
     private const ALL_COUNTRIES = [
         'FR' => 'France',
