@@ -622,7 +622,7 @@ new class extends Component {
                                                     {{-- Colonnes des sites avec les produits scrapés --}}
 {{-- Colonnes des sites avec les produits scrapés --}}
 @foreach($sites as $site)
-    <td class="align-top">
+    <td class="align-top p-0">
         @php
             $productsForSite = [];
             foreach($item['ean_list'] as $ean) {
@@ -637,26 +637,42 @@ new class extends Component {
         @endphp
         
         @if(!empty($productsForSite))
-            @foreach($productsForSite as $product)
-                <div class="text-xs">
-                    <span class="font-mono font-bold text-success">{{ $product['ean'] }}</span>
-                    @if($product['url'])
-                        <a href="{{ $product['url'] }}" target="_blank" class="link link-primary link-hover mx-1">
-                            {{ Str::limit($product['name'], 15) }}
-                        </a>
-                    @else
-                        <span class="mx-1">{{ Str::limit($product['name'], 15) }}</span>
-                    @endif
-                    <span class="font-semibold {{ $product['is_available'] ? 'text-success' : 'text-error' }}">
-                        {{ number_format($product['price'], 2, ',', ' ') }} €
-                    </span>
-                </div>
-                @if(!$loop->last)
-                    <hr class="my-0.5 border-base-200">
-                @endif
-            @endforeach
+            <table class="table table-xs w-full">
+                <tbody>
+                    @foreach($productsForSite as $product)
+                        <tr class="hover:bg-base-200">
+                            <td class="px-1 py-1">
+                                <span class="font-mono font-bold text-xs {{ $product['is_available'] ? 'text-success' : 'text-error' }}">
+                                    {{ $product['ean'] }}
+                                </span>
+                            </td>
+                            <td class="px-1 py-1">
+                                @if($product['url'])
+                                    <a href="{{ $product['url'] }}" 
+                                       target="_blank" 
+                                       class="link link-primary link-hover text-xs"
+                                       title="{{ $product['name'] }}">
+                                        {{ Str::limit($product['name'], 20) }}
+                                    </a>
+                                @else
+                                    <span class="text-xs" title="{{ $product['name'] }}">
+                                        {{ Str::limit($product['name'], 20) }}
+                                    </span>
+                                @endif
+                            </td>
+                            <td class="px-1 py-1 text-right">
+                                <span class="font-semibold text-xs">
+                                    {{ number_format($product['price'], 2, ',', ' ') }}€
+                                </span>
+                            </td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
         @else
-            <span class="text-gray-300 text-xs">—</span>
+            <div class="text-center p-2">
+                <span class="text-gray-300 text-xs">—</span>
+            </div>
         @endif
     </td>
 @endforeach
