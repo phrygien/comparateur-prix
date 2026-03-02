@@ -620,9 +620,8 @@ new class extends Component {
                                                     </td>
 
                                                     {{-- Colonnes des sites avec les produits scrapés --}}
-{{-- Colonnes des sites avec les produits scrapés --}}
 @foreach($sites as $site)
-    <td class="align-top p-0">
+    <td class="align-top p-2 border-l border-base-200 first:border-l-0">
         @php
             $productsForSite = [];
             foreach($item['ean_list'] as $ean) {
@@ -637,41 +636,60 @@ new class extends Component {
         @endphp
         
         @if(!empty($productsForSite))
-            <table class="table table-xs w-full">
-                <tbody>
-                    @foreach($productsForSite as $product)
-                        <tr class="hover:bg-base-200">
-                            <td class="px-1 py-1 text-right">
-                                <span class="font-mono font-bold text-xs {{ $product['is_available'] ? 'text-success' : 'text-error' }}">
-                                    {{ $product['ean'] }}
+            <div class="space-y-2">
+                @foreach($productsForSite as $product)
+                    {{-- Conteneur pour chaque produit avec bordure et espacement --}}
+                    <div class="bg-base-50 rounded p-2 border border-base-200 hover:border-primary/30 transition-colors">
+                        {{-- Ligne 1: EAN et statut --}}
+                        <div class="flex items-center justify-between gap-2 mb-1">
+                            <span class="font-mono font-bold text-xs {{ $product['is_available'] ? 'text-success' : 'text-error' }}">
+                                {{ $product['ean'] }}
+                            </span>
+                            @if($product['is_available'])
+                                <span class="badge badge-success badge-xs">Stock</span>
+                            @else
+                                <span class="badge badge-error badge-xs">Rupture</span>
+                            @endif
+                        </div>
+                        
+                        {{-- Ligne 2: Nom du produit (cliquable) --}}
+                        @if($product['url'])
+                            <a href="{{ $product['url'] }}" 
+                               target="_blank" 
+                               class="link link-primary link-hover text-xs block mb-1 hover:underline"
+                               title="{{ $product['name'] }}">
+                                {{ Str::limit($product['name'], 25) }}
+                            </a>
+                        @else
+                            <div class="text-xs text-gray-700 block mb-1" title="{{ $product['name'] }}">
+                                {{ Str::limit($product['name'], 25) }}
+                            </div>
+                        @endif
+                        
+                        {{-- Ligne 3: Prix et vendeur --}}
+                        <div class="flex items-center justify-between text-xs">
+                            <span class="font-semibold {{ $product['is_available'] ? 'text-success' : 'text-error' }}">
+                                {{ number_format($product['price'], 2, ',', ' ') }} {{ $product['currency'] ?? '€' }}
+                            </span>
+                            @if($product['vendor'])
+                                <span class="text-gray-500 text-[10px] truncate max-w-[60px]" title="{{ $product['vendor'] }}">
+                                    {{ Str::limit($product['vendor'], 8) }}
                                 </span>
-                            </td>
-                            <td class="px-1 py-1 text-right">
-                                @if($product['url'])
-                                    <a href="{{ $product['url'] }}" 
-                                       target="_blank" 
-                                       class="link link-primary link-hover text-xs"
-                                       title="{{ $product['name'] }}">
-                                        {{ Str::limit($product['name'], 20) }}
-                                    </a>
-                                @else
-                                    <span class="text-xs" title="{{ $product['name'] }}">
-                                        {{ Str::limit($product['name'], 20) }}
-                                    </span>
-                                @endif
-                            </td>
-                            <td class="px-1 py-1 text-right">
-                                <span class="font-semibold text-xs">
-                                    {{ number_format($product['price'], 2, ',', ' ') }}€
-                                </span>
-                            </td>
-                        </tr>
-                    @endforeach
-                </tbody>
-            </table>
+                            @endif
+                        </div>
+                        
+                        {{-- Ligne 4: Date de MAJ (optionnelle) --}}
+                        @if($product['last_checked'])
+                            <div class="text-[8px] text-gray-400 mt-1 text-right">
+                                MAJ: {{ \Carbon\Carbon::parse($product['last_checked'])->format('d/m/Y') }}
+                            </div>
+                        @endif
+                    </div>
+                @endforeach
+            </div>
         @else
-            <div class="text-center p-2">
-                <span class="text-gray-300 text-xs">—</span>
+            <div class="flex items-center justify-center h-full min-h-[80px] bg-base-50/50 rounded border border-dashed border-base-300">
+                <span class="text-gray-400 text-xs italic">Aucun produit</span>
             </div>
         @endif
     </td>
