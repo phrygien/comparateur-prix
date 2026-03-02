@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use App\Services\GoogleMerchantService;
 use Livewire\WithPagination;
+use App\Models\Site;
 
 new class extends Component {
     use WithPagination;
@@ -241,12 +242,20 @@ new class extends Component {
         Cache::forget('google_popularity_all_' . md5($countryCode . $periodCode . $date));
     }
 
+    public function getSitesProperty()
+    {
+        return Site::where('country_code', $this->activeCountry)
+            ->orderBy('name')
+            ->get();
+    }
+
     public function with(): array
     {
         $total    = $this->popularityTotal;
         $lastPage = max(1, (int) ceil($total / $this->perPage));
 
         return [
+            'sites' => $this->sites,
             'popularityRanks' => $this->popularityRanks,
             'total'           => $total,
             'lastPage'        => $lastPage,
@@ -515,6 +524,9 @@ new class extends Component {
                                                 <th>EAN</th>
                                                 <th>Magento</th>
                                                 <th class="text-center">Demande relative</th>
+                                                @foreach($sites as $site)
+                                                    <th class="text-right">{{ $site->name }}</th>
+                                                @endforeach
                                             </tr>
                                         </tfoot>
                                     </table>
