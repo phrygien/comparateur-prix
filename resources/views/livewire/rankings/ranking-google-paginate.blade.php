@@ -153,6 +153,45 @@ new class extends Component {
     public function updatedActivePeriod(): void  { $this->currentPage = 1; }
     public function updatedPerPage(): void       { $this->currentPage = 1; }
 
+    public function getProductInMagento($ean){
+
+        $params = [$ean];
+
+        return Cache::remember($cacheKey, now()->addHour(), function () use ($ean) {
+            $sql = "SELECT
+                produit.sku as ean,
+                SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) AS groupe,
+                SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 2), ' - ', -1) AS marque,
+                SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 3), ' - ', -1) AS designation_produit,
+                (CASE
+                    WHEN ROUND(product_decimal.special_price, 2) IS NOT NULL THEN ROUND(product_decimal.special_price, 2)
+                    ELSE ROUND(product_decimal.price, 2)
+                END) as prix_vente_cosma,
+                ROUND(product_decimal.cost, 2) AS cost,
+                ROUND(product_decimal.prix_achat_ht, 2) AS pght
+            FROM catalog_product_entity AS produit
+            LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+            LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
+            WHERE produit.sku = ? LIMIT 1";
+
+            DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+            $results = DB::connection('mysqlMagento')->select($sql, $params);
+
+            foreach ($results as $result) {
+                foreach (['designation_produit', 'marque', 'groupe'] as $field) {
+                    if (isset($result->$field)) {
+                        if (!mb_check_encoding($result->$field, 'UTF-8')) {
+                            $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'ISO-8859-1');
+                        }
+                        $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'UTF-8');
+                    }
+                }
+            }
+
+            return $results;
+        });
+    }
+
     public function setPage(int $page): void
     {
         $this->currentPage = $page;
