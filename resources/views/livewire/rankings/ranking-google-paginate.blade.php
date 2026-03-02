@@ -3,7 +3,6 @@
 use Livewire\Volt\Component;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\DB;
 use App\Services\GoogleMerchantService;
 use Livewire\WithPagination;
 
@@ -52,166 +51,91 @@ new class extends Component {
         $this->googleMerchantService = $googleMerchantService;
     }
 
-    // -------------------------------------------------------------------------
-    // Normalisation GTIN-14 → EAN-13
-    // -------------------------------------------------------------------------
-    protected function normalizeGtin(string $gtin): string
-    {
-        $gtin = preg_replace('/\D/', '', $gtin);
-        if (strlen($gtin) === 14 && $gtin[0] === '0') {
-            return substr($gtin, 1);
-        }
-        return $gtin;
-    }
-
-    // -------------------------------------------------------------------------
-    // Récupère un produit Magento par EAN (avec cache individuel par EAN)
-    // -------------------------------------------------------------------------
-    protected function fetchMagentoProduct(string $ean): ?array
-    {
-        $cacheKey = 'magento_product_' . md5($ean);
-
-        return Cache::remember($cacheKey, now()->addHours(6), function () use ($ean) {
-
-            $sql = "
-                SELECT
-                    produit.sku AS ean,
-                    SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) AS groupe,
-                    SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 2), ' - ', -1) AS marque,
-                    SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 3), ' - ', -1) AS designation_produit,
-                    (CASE
-                        WHEN ROUND(product_decimal.special_price, 2) IS NOT NULL THEN ROUND(product_decimal.special_price, 2)
-                        ELSE ROUND(product_decimal.price, 2)
-                    END) AS prix_vente_cosma,
-                    ROUND(product_decimal.cost, 2) AS cost,
-                    ROUND(product_decimal.prix_achat_ht, 2) AS pght
-                FROM catalog_product_entity AS produit
-                LEFT JOIN product_char    ON product_char.entity_id    = produit.entity_id
-                LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
-                WHERE produit.sku = ?
-                LIMIT 1
-            ";
-
-            DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
-            $results = DB::connection('mysqlMagento')->select($sql, [$ean]);
-
-            if (empty($results)) {
-                return null;
-            }
-
-            $result = $results[0];
-
-            // Nettoyage UTF-8
-            foreach (['designation_produit', 'marque', 'groupe'] as $field) {
-                if (!isset($result->$field)) continue;
-                $value = (string) $result->$field;
-                if (!mb_check_encoding($value, 'UTF-8')) {
-                    $value = mb_convert_encoding($value, 'UTF-8', 'Windows-1252');
-                }
-                $result->$field = $value;
-            }
-
-            return [
-                'ean'                 => $result->ean,
-                'groupe'              => $result->groupe              ?? null,
-                'marque'              => $result->marque              ?? null,
-                'designation_produit' => $result->designation_produit ?? null,
-                'prix_vente_cosma'    => $result->prix_vente_cosma    ?? null,
-                'cost'                => $result->cost                ?? null,
-                'pght'                => $result->pght                ?? null,
-            ];
-        });
-    }
-
-    // -------------------------------------------------------------------------
-    // Récupère tous les résultats Google + enrichit avec Magento, mis en cache
-    // -------------------------------------------------------------------------
     public function getPopularityRanksAllProperty(): array
     {
         $countryCode = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
         $periodCode  = $this->periodCodeMap[$this->activePeriod]   ?? $this->activePeriod;
         $date        = $periodCode === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly;
 
-        $cacheKey = 'google_popularity_all_' . md5($countryCode . $periodCode . $date);
+        $query = "
+            SELECT
+                report_granularity,
+                report_date,
+                report_category_id,
+                category_l1,
+                category_l2,
+                category_l3,
+                brand,
+                title,
+                variant_gtins,
+                rank,
+                previous_rank,
+                report_country_code,
+                relative_demand,
+                previous_relative_demand,
+                relative_demand_change,
+                inventory_status,
+                brand_inventory_status
+            FROM best_sellers_product_cluster_view
+            WHERE report_country_code = '{$countryCode}'
+                AND report_granularity = '{$periodCode}'
+                AND category_l1 LIKE '%Health & Beauty%'
+                AND report_date = '{$date}'
+            ORDER BY rank ASC
+            LIMIT 1000
+        ";
 
-        return Cache::remember($cacheKey, now()->addHours(6), function () use ($countryCode, $periodCode, $date) {
+        try {
+            $response = $this->googleMerchantService->searchReports($query);
 
-            $query = "
-                SELECT
-                    brand,
-                    title,
-                    variant_gtins,
-                    rank,
-                    previous_rank,
-                    relative_demand,
-                    relative_demand_change
-                FROM best_sellers_product_cluster_view
-                WHERE report_country_code = '{$countryCode}'
-                  AND report_granularity = '{$periodCode}'
-                  AND category_l1 LIKE '%Health & Beauty%'
-                  AND report_date = '{$date}'
-                ORDER BY rank ASC
-                LIMIT 1000
-            ";
+            Log::info('Google Merchant raw response', ['response' => $response]);
 
-            try {
-                $response = $this->googleMerchantService->searchReports($query);
+            $ranks = [];
 
-                Log::info('Google Merchant raw response', ['response' => $response]);
-
-                $ranks = [];
-
-                foreach ($response['results'] ?? [] as $row) {
-                    $data     = $row['bestSellersProductClusterView'] ?? [];
-                    $rank     = isset($data['rank'])         ? (int) $data['rank']         : null;
-                    $prevRank = isset($data['previousRank']) ? (int) $data['previousRank'] : null;
-                    $delta    = ($rank !== null && $prevRank !== null) ? ($prevRank - $rank) : null;
-
-                    // Normalisation EANs GTIN-14 → EAN-13
-                    $eanList = array_map(
-                        fn($g) => $this->normalizeGtin((string) $g),
-                        $data['variantGtins'] ?? []
-                    );
-
-                    // Enrichissement Magento pour chaque EAN
-                    $magentoProducts = [];
-                    foreach ($eanList as $ean) {
-                        $product = $this->fetchMagentoProduct($ean);
-                        if ($product !== null) {
-                            $magentoProducts[$ean] = $product;
-                        }
-                    }
-
-                    $ranks[] = [
-                        'rank'             => $rank,
-                        'previous_rank'    => $prevRank,
-                        'delta'            => $delta,
-                        'delta_sign'       => match(true) {
-                            $delta === null => null,
-                            $delta > 0      => '+',
-                            $delta < 0      => '-',
-                            default         => '=',
-                        },
-                        'relative_demand'  => $data['relativeDemand'] ?? null,
-                        'title'            => $data['title']           ?? null,
-                        'brand'            => $data['brand']           ?? null,
-                        'ean_list'         => $eanList,
-                        'magento_products' => $magentoProducts, // ['ean13' => [...données Magento]]
-                    ];
+            // Normalisation GTIN-14 → EAN-13 (supprime le 0 de tête si présent)
+            $normalizeGtin = function (string $gtin): string {
+                $gtin = preg_replace('/\D/', '', $gtin); // retire tout ce qui n'est pas un chiffre
+                if (strlen($gtin) === 14 && $gtin[0] === '0') {
+                    return substr($gtin, 1); // supprime le premier chiffre
                 }
+                return $gtin;
+            };
 
-                return $ranks;
+            foreach ($response['results'] ?? [] as $row) {
+                $data     = $row['bestSellersProductClusterView'] ?? [];
+                $rank     = isset($data['rank'])         ? (int) $data['rank']         : null;
+                $prevRank = isset($data['previousRank']) ? (int) $data['previousRank'] : null;
+                $delta    = ($rank !== null && $prevRank !== null) ? ($prevRank - $rank) : null;
 
-            } catch (\Exception $e) {
-                Log::error('Google Merchant popularity rank error: ' . $e->getMessage());
-                return [];
+                $ranks[] = [
+                    'rank'            => $rank,
+                    'previous_rank'   => $prevRank,
+                    'delta'           => $delta,
+                    'delta_sign'      => match(true) {
+                        $delta === null => null,
+                        $delta > 0      => '+',
+                        $delta < 0      => '-',
+                        default         => '=',
+                    },
+                    'relative_demand' => $data['relativeDemand'] ?? null,
+                    'title'           => $data['title']          ?? null,
+                    'brand'           => $data['brand']          ?? null,
+                    // ← EANs normalisés à 13 chiffres
+                    'ean_list'        => array_map(
+                        fn($g) => $normalizeGtin((string) $g),
+                        $data['variantGtins'] ?? []
+                    ),
+                ];
             }
-        });
+
+            return $ranks;
+
+        } catch (\Exception $e) {
+            Log::error('Google Merchant popularity rank error: ' . $e->getMessage());
+            return [];
+        }
     }
 
-    // -------------------------------------------------------------------------
-    // Pagination en mémoire depuis le cache
-    // -------------------------------------------------------------------------
     public function getPopularityRanksProperty(): array
     {
         return collect($this->popularityRanksAll)
@@ -225,21 +149,55 @@ new class extends Component {
         return count($this->popularityRanksAll);
     }
 
-    // -------------------------------------------------------------------------
-    // Réinitialisation de page sur changement de filtre
-    // -------------------------------------------------------------------------
     public function updatedActiveCountry(): void { $this->currentPage = 1; }
     public function updatedActivePeriod(): void  { $this->currentPage = 1; }
     public function updatedPerPage(): void       { $this->currentPage = 1; }
+
+    public function getProductInMagento($ean)
+    {
+
+        $params = [$ean];
+
+        return Cache::remember($cacheKey, now()->addHour(), function () use ($ean) {
+            $sql = "SELECT
+                produit.sku as ean,
+                SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) AS groupe,
+                SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 2), ' - ', -1) AS marque,
+                SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 3), ' - ', -1) AS designation_produit,
+                (CASE
+                    WHEN ROUND(product_decimal.special_price, 2) IS NOT NULL THEN ROUND(product_decimal.special_price, 2)
+                    ELSE ROUND(product_decimal.price, 2)
+                END) as prix_vente_cosma,
+                ROUND(product_decimal.cost, 2) AS cost,
+                ROUND(product_decimal.prix_achat_ht, 2) AS pght
+            FROM catalog_product_entity AS produit
+            LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+            LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
+            WHERE produit.sku = ? LIMIT 1";
+
+            DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+            $results = DB::connection('mysqlMagento')->select($sql, $params);
+
+            foreach ($results as $result) {
+                foreach (['designation_produit', 'marque', 'groupe'] as $field) {
+                    if (isset($result->$field)) {
+                        if (!mb_check_encoding($result->$field, 'UTF-8')) {
+                            $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'ISO-8859-1');
+                        }
+                        $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'UTF-8');
+                    }
+                }
+            }
+
+            return $results;
+        });
+    }
 
     public function setPage(int $page): void
     {
         $this->currentPage = $page;
     }
 
-    // -------------------------------------------------------------------------
-    // Vider le cache
-    // -------------------------------------------------------------------------
     public function clearCache(): void
     {
         $countryCode = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
@@ -249,9 +207,6 @@ new class extends Component {
         Cache::forget('google_popularity_all_' . md5($countryCode . $periodCode . $date));
     }
 
-    // -------------------------------------------------------------------------
-    // Données envoyées à la vue
-    // -------------------------------------------------------------------------
     public function with(): array
     {
         $total    = $this->popularityTotal;
@@ -288,11 +243,11 @@ new class extends Component {
                             {{-- Filtre période --}}
                             <div class="flex items-center gap-2">
                                 <span class="text-xs text-gray-400">Période</span>
-                                @foreach($period as $periodLabel => $value)
+                                @foreach($period as $label => $value)
                                     <button type="button"
                                         wire:click="$set('activePeriod', '{{ $value }}')"
                                         class="btn btn-xs {{ $activePeriod === $value ? 'bg-orange-900 text-white' : 'btn-outline' }}">
-                                        {{ $periodLabel }}
+                                        {{ $label }}
                                     </button>
                                 @endforeach
                             </div>
@@ -320,7 +275,7 @@ new class extends Component {
                             <button type="button" wire:click="clearCache"
                                 wire:loading.attr="disabled"
                                 wire:loading.class="opacity-60 cursor-not-allowed"
-                                class="btn btn-sm btn-ghost gap-2">
+                                class="btn btn-sm btn-ghost gap-2" title="Vider le cache et recharger">
                                 <span wire:loading.remove wire:target="clearCache" class="flex items-center gap-2">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -335,8 +290,9 @@ new class extends Component {
                             </button>
                         </div>
 
-                        {{-- Barre pagination haut --}}
+                        {{-- Barre pagination --}}
                         <div class="flex flex-wrap items-center justify-around gap-4 mb-4">
+
                             <div class="flex items-center gap-2">
                                 <span class="text-xs text-gray-400">Par page</span>
                                 <select wire:model.live="perPage" class="select select-sm select-bordered w-20">
@@ -353,18 +309,27 @@ new class extends Component {
                             @if($lastPage > 1)
                                 <div class="flex items-center gap-4">
                                     <span class="text-xs text-gray-500">
-                                        Affichage {{ (($currentPage - 1) * $perPage) + 1 }}–{{ min($currentPage * $perPage, $total) }}
+                                        Affichage
+                                        {{ (($currentPage - 1) * $perPage) + 1 }}–{{ min($currentPage * $perPage, $total) }}
                                         sur {{ $total }}
                                     </span>
                                     <div class="join">
-                                        <button class="join-item btn btn-sm" wire:click="setPage(1)" @disabled($currentPage === 1)>«</button>
-                                        <button class="join-item btn btn-sm" wire:click="setPage({{ $currentPage - 1 }})" @disabled($currentPage === 1)>‹</button>
+                                        <button class="join-item btn btn-sm"
+                                            wire:click="setPage(1)"
+                                            @disabled($currentPage === 1)>«</button>
+                                        <button class="join-item btn btn-sm"
+                                            wire:click="setPage({{ $currentPage - 1 }})"
+                                            @disabled($currentPage === 1)>‹</button>
                                         @foreach(range(max(1, $currentPage - 2), min($lastPage, $currentPage + 2)) as $p)
                                             <button class="join-item btn btn-sm {{ $p === $currentPage ? 'btn-active btn-primary' : '' }}"
                                                 wire:click="setPage({{ $p }})">{{ $p }}</button>
                                         @endforeach
-                                        <button class="join-item btn btn-sm" wire:click="setPage({{ $currentPage + 1 }})" @disabled($currentPage === $lastPage)>›</button>
-                                        <button class="join-item btn btn-sm" wire:click="setPage({{ $lastPage }})" @disabled($currentPage === $lastPage)>»</button>
+                                        <button class="join-item btn btn-sm"
+                                            wire:click="setPage({{ $currentPage + 1 }})"
+                                            @disabled($currentPage === $lastPage)>›</button>
+                                        <button class="join-item btn btn-sm"
+                                            wire:click="setPage({{ $lastPage }})"
+                                            @disabled($currentPage === $lastPage)>»</button>
                                     </div>
                                 </div>
                             @endif
@@ -394,12 +359,10 @@ new class extends Component {
                                         <thead>
                                             <tr>
                                                 <th class="text-center w-24">Rang Google</th>
-                                                <th>Google Brand</th>
+                                                <th>Google Group</th>
                                                 <th>Google Titre</th>
-                                                <th>EAN</th>
-                                                <th>Désignation Magento</th>
-                                                <th>Marque Magento</th>
-                                                <th>Prix Cosma</th>
+                                                <th>Ean</th>
+                                                <th>Designation</th>
                                                 <th class="text-center">Demande relative</th>
                                             </tr>
                                         </thead>
@@ -414,70 +377,60 @@ new class extends Component {
                                                                 #{{ number_format($item['rank'], 0, ',', '') }}
                                                             </span>
                                                             @if($item['delta'] !== null)
-                                                                <span class="text-xs font-bold {{ $item['delta_sign'] === '+' ? 'text-success' : ($item['delta_sign'] === '-' ? 'text-error' : 'text-gray-400') }}">
+                                                                <span class="text-xs font-bold
+                                                                    {{ $item['delta_sign'] === '+' ? 'text-success' : ($item['delta_sign'] === '-' ? 'text-error' : 'text-gray-400') }}">
                                                                     {{ $item['delta_sign'] === '+' ? '+' : '' }}{{ $item['delta'] }}
                                                                 </span>
                                                             @endif
                                                         </div>
                                                     </td>
 
-                                                    {{-- Brand Google --}}
+                                                    {{-- Brand --}}
                                                     <td class="font-semibold">
                                                         {{ $item['brand'] ?? '—' }}
                                                     </td>
 
-                                                    {{-- Titre Google --}}
-                                                    <td class="max-w-xs truncate" title="{{ $item['title'] }}">
+                                                    {{-- Titre --}}
+                                                    <td class="font-bold max-w-xs truncate">
                                                         {{ $item['title'] ?? '—' }}
                                                     </td>
 
+                                                    @php
+                                                        $products_magento = array();
+                                                    @endphp
                                                     {{-- EANs --}}
                                                     <td>
-                                                        @forelse($item['ean_list'] as $ean)
-                                                            <div class="font-mono text-xs">{{ $ean }}</div>
-                                                        @empty
-                                                            <span class="text-gray-300">—</span>
-                                                        @endforelse
+                                                        @if($item['ean_list'] != null)
+                                                            <table>
+                                                                <tbody>
+                                                                    @foreach($item['ean_list'] as $ean14)
+                                                                        @php
+                                                                            // get product in our Magento
+                                                                            $magento_product = getProductInMagento($ean14);
+                                                                            $products_magento[$ean14] = $magento_product[0];
+                                                                        @endphp
+                                                                        <tr>
+                                                                            <td>{{ $ean14 }}</td>
+                                                                        </tr>
+                                                                    @endforeach
+                                                                </tbody>
+                                                            </table>
+                                                        @endif
                                                     </td>
 
-                                                    {{-- Désignation Magento --}}
+                                                    {{-- Designation --}}
                                                     <td>
-                                                        @forelse($item['ean_list'] as $ean)
-                                                            @php $mp = $item['magento_products'][$ean] ?? null; @endphp
-                                                            <div class="text-xs {{ $mp ? '' : 'text-gray-300' }}">
-                                                                {{ $mp['designation_produit'] ?? '—' }}
-                                                            </div>
-                                                        @empty
-                                                            <span class="text-gray-300">—</span>
-                                                        @endforelse
-                                                    </td>
-
-                                                    {{-- Marque Magento --}}
-                                                    <td>
-                                                        @forelse($item['ean_list'] as $ean)
-                                                            @php $mp = $item['magento_products'][$ean] ?? null; @endphp
-                                                            <div class="text-xs font-semibold {{ $mp ? '' : 'text-gray-300' }}">
-                                                                {{ $mp['marque'] ?? '—' }}
-                                                            </div>
-                                                        @empty
-                                                            <span class="text-gray-300">—</span>
-                                                        @endforelse
-                                                    </td>
-
-                                                    {{-- Prix Cosma --}}
-                                                    <td>
-                                                        @forelse($item['ean_list'] as $ean)
-                                                            @php $mp = $item['magento_products'][$ean] ?? null; @endphp
-                                                            <div class="text-xs text-right {{ $mp ? 'text-primary font-semibold' : 'text-gray-300' }}">
-                                                                @if($mp && $mp['prix_vente_cosma'])
-                                                                    {{ number_format($mp['prix_vente_cosma'], 2, ',', ' ') }} €
-                                                                @else
-                                                                    —
-                                                                @endif
-                                                            </div>
-                                                        @empty
-                                                            <span class="text-gray-300">—</span>
-                                                        @endforelse
+                                                        @if(count($products_magento) > 0)
+                                                            <table>
+                                                                <tbody>
+                                                                    @foreach($item['ean_list'] as $ean14)
+                                                                        <tr>
+                                                                            <td>{{  $products_magento[$ean14]['designation_produit'] }}</td>
+                                                                        </tr>
+                                                                    @endforeach
+                                                                </tbody>
+                                                            </table>
+                                                        @endif
                                                     </td>
 
                                                     {{-- Demande relative --}}
@@ -497,12 +450,10 @@ new class extends Component {
                                         <tfoot>
                                             <tr>
                                                 <th class="text-center">Rang Google</th>
-                                                <th>Google Brand</th>
+                                                <th>Google Group</th>
                                                 <th>Google Titre</th>
-                                                <th>EAN</th>
-                                                <th>Désignation Magento</th>
-                                                <th>Marque Magento</th>
-                                                <th>Prix Cosma</th>
+                                                <th>Ean</th>
+                                                <th>Designation</th>
                                                 <th class="text-center">Demande relative</th>
                                             </tr>
                                         </tfoot>
@@ -515,18 +466,27 @@ new class extends Component {
                         @if($lastPage > 1)
                             <div class="flex flex-wrap items-center justify-around gap-4 mt-4">
                                 <span class="text-xs text-gray-500">
-                                    Affichage {{ (($currentPage - 1) * $perPage) + 1 }}–{{ min($currentPage * $perPage, $total) }}
+                                    Affichage
+                                    {{ (($currentPage - 1) * $perPage) + 1 }}–{{ min($currentPage * $perPage, $total) }}
                                     sur {{ $total }}
                                 </span>
                                 <div class="join">
-                                    <button class="join-item btn btn-sm" wire:click="setPage(1)" @disabled($currentPage === 1)>«</button>
-                                    <button class="join-item btn btn-sm" wire:click="setPage({{ $currentPage - 1 }})" @disabled($currentPage === 1)>‹</button>
+                                    <button class="join-item btn btn-sm"
+                                        wire:click="setPage(1)"
+                                        @disabled($currentPage === 1)>«</button>
+                                    <button class="join-item btn btn-sm"
+                                        wire:click="setPage({{ $currentPage - 1 }})"
+                                        @disabled($currentPage === 1)>‹</button>
                                     @foreach(range(max(1, $currentPage - 2), min($lastPage, $currentPage + 2)) as $p)
                                         <button class="join-item btn btn-sm {{ $p === $currentPage ? 'btn-active btn-primary' : '' }}"
                                             wire:click="setPage({{ $p }})">{{ $p }}</button>
                                     @endforeach
-                                    <button class="join-item btn btn-sm" wire:click="setPage({{ $currentPage + 1 }})" @disabled($currentPage === $lastPage)>›</button>
-                                    <button class="join-item btn btn-sm" wire:click="setPage({{ $lastPage }})" @disabled($currentPage === $lastPage)>»</button>
+                                    <button class="join-item btn btn-sm"
+                                        wire:click="setPage({{ $currentPage + 1 }})"
+                                        @disabled($currentPage === $lastPage)>›</button>
+                                    <button class="join-item btn btn-sm"
+                                        wire:click="setPage({{ $lastPage }})"
+                                        @disabled($currentPage === $lastPage)>»</button>
                                 </div>
                             </div>
                         @endif
