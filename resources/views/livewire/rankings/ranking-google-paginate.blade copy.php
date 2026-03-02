@@ -3,7 +3,6 @@
 use Livewire\Volt\Component;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\DB;
 use App\Services\GoogleMerchantService;
 use Livewire\WithPagination;
 
@@ -52,56 +51,44 @@ new class extends Component {
         $this->googleMerchantService = $googleMerchantService;
     }
 
-    protected function getMagentoProductsByEans(array $eanList): array
+    public function getProductInMagento($ean)
     {
-        if (empty($eanList)) {
-            return [];
-        }
 
-        $eanList      = array_values(array_unique($eanList));
-        $placeholders = implode(',', array_fill(0, count($eanList), '?'));
+        $params = [$ean];
 
-        $query = "
-            SELECT
-                produit.entity_id                                        AS id,
-                produit.sku                                              AS sku,
-                product_char.reference                                   AS parkode,
-                CAST(product_char.name AS CHAR CHARACTER SET utf8mb4)    AS title,
-                product_char.ean                                         AS ean,
-                ROUND(product_decimal.price, 2)                          AS price,
-                ROUND(product_decimal.special_price, 2)                  AS special_price,
-                ROUND(product_decimal.cost, 2)                           AS cost,
-                stock_item.qty                                           AS quantity,
-                stock_status.stock_status                                AS stock_status,
-                product_int.status                                       AS status
+        return Cache::remember($cacheKey, now()->addHour(), function () use ($ean) {
+            $sql = "SELECT
+                produit.sku as ean,
+                SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) AS groupe,
+                SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 2), ' - ', -1) AS marque,
+                SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 3), ' - ', -1) AS designation_produit,
+                (CASE
+                    WHEN ROUND(product_decimal.special_price, 2) IS NOT NULL THEN ROUND(product_decimal.special_price, 2)
+                    ELSE ROUND(product_decimal.price, 2)
+                END) as prix_vente_cosma,
+                ROUND(product_decimal.cost, 2) AS cost,
+                ROUND(product_decimal.prix_achat_ht, 2) AS pght
             FROM catalog_product_entity AS produit
-            LEFT JOIN product_char
-                ON product_char.entity_id    = produit.entity_id
-            LEFT JOIN product_decimal
-                ON product_decimal.entity_id = produit.entity_id
-            LEFT JOIN product_int
-                ON product_int.entity_id     = produit.entity_id
-            LEFT JOIN cataloginventory_stock_item AS stock_item
-                ON stock_item.product_id     = produit.entity_id
-            LEFT JOIN cataloginventory_stock_status AS stock_status
-                ON stock_status.product_id   = produit.entity_id
-            WHERE product_char.ean IN ({$placeholders})
-        ";
+            LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+            LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
+            WHERE produit.sku = ? LIMIT 1";
 
-        try {
-            $results = DB::connection('mysqlMagento')->select($query, $eanList);
+            DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+            $results = DB::connection('mysqlMagento')->select($sql, $params);
 
-            $indexed = [];
-            foreach ($results as $row) {
-                $indexed[(string) $row->ean] = (array) $row;
+            foreach ($results as $result) {
+                foreach (['designation_produit', 'marque', 'groupe'] as $field) {
+                    if (isset($result->$field)) {
+                        if (!mb_check_encoding($result->$field, 'UTF-8')) {
+                            $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'ISO-8859-1');
+                        }
+                        $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'UTF-8');
+                    }
+                }
             }
 
-            return $indexed;
-
-        } catch (\Exception $e) {
-            Log::error('Magento EAN lookup error: ' . $e->getMessage());
-            return [];
-        }
+            return $results;
+        });
     }
 
     public function getPopularityRanksAllProperty(): array
@@ -145,10 +132,11 @@ new class extends Component {
 
             $ranks = [];
 
+            // Normalisation GTIN-14 → EAN-13 (supprime le 0 de tête si présent)
             $normalizeGtin = function (string $gtin): string {
-                $gtin = preg_replace('/\D/', '', $gtin);
+                $gtin = preg_replace('/\D/', '', $gtin); // retire tout ce qui n'est pas un chiffre
                 if (strlen($gtin) === 14 && $gtin[0] === '0') {
-                    return substr($gtin, 1);
+                    return substr($gtin, 1); // supprime le premier chiffre
                 }
                 return $gtin;
             };
@@ -160,10 +148,10 @@ new class extends Component {
                 $delta    = ($rank !== null && $prevRank !== null) ? ($prevRank - $rank) : null;
 
                 $ranks[] = [
-                    'rank'          => $rank,
-                    'previous_rank' => $prevRank,
-                    'delta'         => $delta,
-                    'delta_sign'    => match(true) {
+                    'rank'            => $rank,
+                    'previous_rank'   => $prevRank,
+                    'delta'           => $delta,
+                    'delta_sign'      => match(true) {
                         $delta === null => null,
                         $delta > 0      => '+',
                         $delta < 0      => '-',
@@ -172,35 +160,13 @@ new class extends Component {
                     'relative_demand' => $data['relativeDemand'] ?? null,
                     'title'           => $data['title']          ?? null,
                     'brand'           => $data['brand']          ?? null,
+                    // ← EANs normalisés à 13 chiffres
                     'ean_list'        => array_map(
                         fn($g) => $normalizeGtin((string) $g),
                         $data['variantGtins'] ?? []
                     ),
-                    'magento_products' => [],
                 ];
             }
-
-            $allEans = [];
-            foreach ($ranks as $item) {
-                foreach ($item['ean_list'] as $ean) {
-                    if ($ean !== '') {
-                        $allEans[] = $ean;
-                    }
-                }
-            }
-
-            $magentoIndex = $this->getMagentoProductsByEans($allEans);
-
-            foreach ($ranks as &$item) {
-                $matched = [];
-                foreach ($item['ean_list'] as $ean) {
-                    if (isset($magentoIndex[$ean])) {
-                        $matched[$ean] = $magentoIndex[$ean];
-                    }
-                }
-                $item['magento_products'] = $matched;
-            }
-            unset($item);
 
             return $ranks;
 
@@ -262,6 +228,7 @@ new class extends Component {
             @foreach($countries as $code => $label)
                 <x-tab name="{{ $code }}" label="{{ $label }}">
 
+                    {{-- Spinner changement de pays --}}
                     <div wire:loading wire:target="activeCountry"
                         class="flex flex-col items-center justify-center gap-3 py-16">
                         <span class="loading loading-spinner loading-lg text-primary"></span>
@@ -270,21 +237,24 @@ new class extends Component {
 
                     <div wire:loading.remove wire:target="activeCountry">
 
+                        {{-- Barre d'outils --}}
                         <div class="flex flex-wrap items-center justify-between gap-4 mb-4 mt-6">
 
+                            {{-- Filtre période --}}
                             <div class="flex items-center gap-2">
                                 <span class="text-xs text-gray-400">Période</span>
-                                @foreach($period as $periodLabel => $value)
+                                @foreach($period as $label => $value)
                                     <button type="button"
                                         wire:click="$set('activePeriod', '{{ $value }}')"
                                         class="btn btn-xs {{ $activePeriod === $value ? 'bg-orange-900 text-white' : 'btn-outline' }}">
-                                        {{ $periodLabel }}
+                                        {{ $label }}
                                     </button>
                                 @endforeach
                             </div>
 
                             <div class="divider divider-horizontal mx-0"></div>
 
+                            {{-- Date selon période --}}
                             @if($activePeriod === 'WEEKLY')
                                 <div class="flex items-center gap-2">
                                     <span class="text-xs text-gray-400">Semaine du lundi</span>
@@ -301,6 +271,7 @@ new class extends Component {
 
                             <div class="divider divider-horizontal mx-0"></div>
 
+                            {{-- Rafraîchir --}}
                             <button type="button" wire:click="clearCache"
                                 wire:loading.attr="disabled"
                                 wire:loading.class="opacity-60 cursor-not-allowed"
@@ -319,6 +290,7 @@ new class extends Component {
                             </button>
                         </div>
 
+                        {{-- Barre pagination --}}
                         <div class="flex flex-wrap items-center justify-around gap-4 mb-4">
 
                             <div class="flex items-center gap-2">
@@ -363,6 +335,7 @@ new class extends Component {
                             @endif
                         </div>
 
+                        {{-- Tableau --}}
                         <div class="relative">
 
                             <div wire:loading wire:target="activePeriod, MondayWeekly, dateMonthly, perPage, setPage, clearCache"
@@ -373,7 +346,7 @@ new class extends Component {
 
                             @if(count($popularityRanks) === 0)
                                 <div class="alert alert-info">
-                                    <svg xmlns="http:
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                                         class="stroke-current shrink-0 w-6 h-6">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                             d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -388,16 +361,7 @@ new class extends Component {
                                                 <th class="text-center w-24">Rang Google</th>
                                                 <th>Google Group</th>
                                                 <th>Google Titre</th>
-                                                <th>EAN</th>
-                                                <th class="min-w-[420px]">
-                                                    <div class="flex items-center gap-1">
-                                                        
-                                                        <svg class="w-3.5 h-3.5 text-orange-500" viewBox="0 0 24 24" fill="currentColor">
-                                                            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                                                        </svg>
-                                                        Magento
-                                                    </div>
-                                                </th>
+                                                <th>Ean</th>
                                                 <th class="text-center">Demande relative</th>
                                             </tr>
                                         </thead>
@@ -405,6 +369,7 @@ new class extends Component {
                                             @foreach($popularityRanks as $item)
                                                 <tr class="hover">
 
+                                                    {{-- Rang + delta --}}
                                                     <td class="text-center">
                                                         <div class="flex flex-col items-center gap-0.5">
                                                             <span class="font-bold font-mono text-sm">
@@ -419,102 +384,32 @@ new class extends Component {
                                                         </div>
                                                     </td>
 
+                                                    {{-- Brand --}}
                                                     <td class="font-semibold">
                                                         {{ $item['brand'] ?? '—' }}
                                                     </td>
 
+                                                    {{-- Titre --}}
                                                     <td class="font-bold max-w-xs truncate">
                                                         {{ $item['title'] ?? '—' }}
                                                     </td>
 
+                                                    {{-- EANs --}}
                                                     <td>
-                                                        @if(!empty($item['ean_list']))
-                                                            <div class="flex flex-col gap-0.5">
-                                                                @foreach($item['ean_list'] as $ean)
-                                                                    <span class="font-mono text-xs
-                                                                        {{ isset($item['magento_products'][$ean]) ? 'text-success font-semibold' : 'text-gray-400' }}">
-                                                                        {{ $ean }}
-                                                                        @if(isset($item['magento_products'][$ean]))
-                                                                            <span title="Trouvé dans Magento">✓</span>
-                                                                        @endif
-                                                                    </span>
-                                                                @endforeach
-                                                            </div>
-                                                        @else
-                                                            <span class="text-gray-300">—</span>
+                                                        @if($item['ean_list'] != null)
+                                                            <table>
+                                                                <tbody>
+                                                                    @foreach($item['ean_list'] as $ean14)
+                                                                        <tr>
+                                                                            <td>{{ $ean14 }}</td>
+                                                                        </tr>
+                                                                    @endforeach
+                                                                </tbody>
+                                                            </table>
                                                         @endif
                                                     </td>
 
-                                                    <td>
-                                                        @if(!empty($item['magento_products']))
-                                                            <div class="flex flex-col gap-1">
-                                                                @foreach($item['magento_products'] as $ean => $mag)
-                                                                    <div class="rounded border border-base-200 bg-base-50 px-2 py-1">
-                                                                        <div class="flex items-center justify-between gap-2 flex-wrap">
-
-                                                                            <span class="font-mono text-xs text-gray-500">
-                                                                                {{ $mag['sku'] }}
-                                                                            </span>
-
-                                                                            <span class="text-xs font-semibold truncate max-w-[180px]" title="{{ $mag['title'] }}">
-                                                                                {{ $mag['title'] }}
-                                                                            </span>
-
-                                                                            <span class="text-xs whitespace-nowrap">
-                                                                                @if(!empty($mag['special_price']))
-                                                                                    <span class="line-through text-gray-400 mr-1">
-                                                                                        {{ number_format($mag['price'] ?? 0, 2, ',', ' ') }} €
-                                                                                    </span>
-                                                                                    <span class="text-success font-bold">
-                                                                                        {{ number_format($mag['special_price'], 2, ',', ' ') }} €
-                                                                                    </span>
-                                                                                @else
-                                                                                    <span class="font-medium">
-                                                                                        {{ number_format($mag['price'] ?? 0, 2, ',', ' ') }} €
-                                                                                    </span>
-                                                                                @endif
-                                                                            </span>
-
-                                                                            <span class="text-xs whitespace-nowrap">
-                                                                                @if($mag['quantity'] !== null)
-                                                                                    <span class="{{ $mag['quantity'] > 0 ? 'text-success' : 'text-warning' }} font-mono">
-                                                                                        {{ number_format($mag['quantity'], 0, ',', ' ') }} u.
-                                                                                    </span>
-                                                                                @else
-                                                                                    <span class="text-gray-300">— u.</span>
-                                                                                @endif
-                                                                            </span>
-
-                                                                            @if($mag['stock_status'] == 1)
-                                                                                <span class="badge badge-success badge-xs">En stock</span>
-                                                                            @else
-                                                                                <span class="badge badge-error badge-xs">Rupture</span>
-                                                                            @endif
-
-                                                                            @if(isset($mag['status']))
-                                                                                @if($mag['status'] == 1)
-                                                                                    <span class="badge badge-outline badge-xs badge-success">Activé</span>
-                                                                                @else
-                                                                                    <span class="badge badge-outline badge-xs badge-warning">Désactivé</span>
-                                                                                @endif
-                                                                            @endif
-
-                                                                        </div>
-                                                                    </div>
-                                                                @endforeach
-                                                            </div>
-                                                        @else
-                                                            
-                                                            <div class="flex items-center gap-1 text-gray-300">
-                                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                                        d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
-                                                                </svg>
-                                                                <span class="text-xs italic">Non référencé</span>
-                                                            </div>
-                                                        @endif
-                                                    </td>
-                                                    
+                                                    {{-- Demande relative --}}
                                                     <td class="text-center">
                                                         @if($item['relative_demand'])
                                                             <span class="badge badge-ghost badge-sm">
@@ -533,8 +428,7 @@ new class extends Component {
                                                 <th class="text-center">Rang Google</th>
                                                 <th>Google Group</th>
                                                 <th>Google Titre</th>
-                                                <th>EAN</th>
-                                                <th>Magento</th>
+                                                <th>Ean</th>
                                                 <th class="text-center">Demande relative</th>
                                             </tr>
                                         </tfoot>
@@ -543,6 +437,7 @@ new class extends Component {
                             @endif
                         </div>
 
+                        {{-- Pagination bas de page --}}
                         @if($lastPage > 1)
                             <div class="flex flex-wrap items-center justify-around gap-4 mt-4">
                                 <span class="text-xs text-gray-500">
