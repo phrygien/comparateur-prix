@@ -57,79 +57,74 @@ new class extends Component {
         $periodCode  = $this->periodCodeMap[$this->activePeriod]   ?? $this->activePeriod;
         $date        = $periodCode === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly;
 
-        $cacheKey = 'google_popularity_all_' . md5($countryCode . $periodCode . $date);
+        $query = "
+            SELECT
+                report_granularity,
+                report_date,
+                report_category_id,
+                category_l1,
+                category_l2,
+                category_l3,
+                brand,
+                title,
+                variant_gtins,
+                rank,
+                previous_rank,
+                report_country_code,
+                relative_demand,
+                previous_relative_demand,
+                relative_demand_change,
+                inventory_status,
+                brand_inventory_status
+            FROM best_sellers_product_cluster_view
+            WHERE report_country_code = '{$countryCode}'
+                AND report_granularity = '{$periodCode}'
+                AND category_l1 LIKE '%Health & Beauty%'
+                AND report_date = '{$date}'
+            ORDER BY rank ASC
+            LIMIT 1000
+        ";
 
-        return Cache::remember($cacheKey, now()->addHours(6), function () use ($countryCode, $periodCode, $date) {
+        try {
+            $response = $this->googleMerchantService->searchReports($query);
 
-            $query = "
-                SELECT
-                    report_granularity,
-                    report_date,
-                    report_category_id,
-                    category_l1,
-                    category_l2,
-                    category_l3,
-                    brand,
-                    title,
-                    variant_gtins,
-                    rank,
-                    previous_rank,
-                    report_country_code,
-                    relative_demand,
-                    previous_relative_demand,
-                    relative_demand_change,
-                    inventory_status,
-                    brand_inventory_status
-                FROM best_sellers_product_cluster_view
-                WHERE report_country_code = '{$countryCode}'
-                  AND report_granularity = '{$periodCode}'
-                  AND category_l1 LIKE '%Health & Beauty%'
-                  AND report_date = '{$date}'
-                ORDER BY rank ASC
-                LIMIT 1000
-            ";
+            Log::info('Google Merchant raw response', ['response' => $response]);
 
-            try {
-                $response = $this->googleMerchantService->searchReports($query);
+            var_dump($response);
 
-                Log::info('Google Merchant raw response', ['response' => $response]);
+            $ranks = [];
 
-                var_dump($response);
+            foreach ($response['results'] ?? [] as $row) {
+                $data     = $row['bestSellersProductClusterView'] ?? [];
+                $rank     = isset($data['rank'])         ? (int) $data['rank']         : null;
+                $prevRank = isset($data['previousRank']) ? (int) $data['previousRank'] : null;
+                $delta    = ($rank !== null && $prevRank !== null) ? ($prevRank - $rank) : null;
 
-                $ranks = [];
-
-                foreach ($response['results'] ?? [] as $row) {
-                    $data     = $row['bestSellersProductClusterView'] ?? [];
-                    $rank     = isset($data['rank'])         ? (int) $data['rank']         : null;
-                    $prevRank = isset($data['previousRank']) ? (int) $data['previousRank'] : null;
-                    $delta    = ($rank !== null && $prevRank !== null) ? ($prevRank - $rank) : null;
-
-                    $ranks[] = [
-                        'rank'            => $rank,
-                        'previous_rank'   => $prevRank,
-                        'delta'           => $delta,
-                        'delta_sign'      => match(true) {
-                            $delta === null => null,
-                            $delta > 0      => '+',
-                            $delta < 0      => '-',
-                            default         => '=',
-                        },
-                        'relative_demand' => $data['relativeDemand'] ?? null,
-                        'title'           => $data['title']           ?? null,
-                        'brand'           => $data['brand']           ?? null,
-                    ];
-                }
-
-                var_dump($ranks);die();
-
-                return $ranks;
-
-            } catch (\Exception $e) {
-                var_dump($e->getMessage());die();
-                Log::error('Google Merchant popularity rank error: ' . $e->getMessage());
-                return [];
+                $ranks[] = [
+                    'rank'            => $rank,
+                    'previous_rank'   => $prevRank,
+                    'delta'           => $delta,
+                    'delta_sign'      => match(true) {
+                        $delta === null => null,
+                        $delta > 0      => '+',
+                        $delta < 0      => '-',
+                        default         => '=',
+                    },
+                    'relative_demand' => $data['relativeDemand'] ?? null,
+                    'title'           => $data['title']           ?? null,
+                    'brand'           => $data['brand']           ?? null,
+                ];
             }
-        });
+
+            var_dump($ranks);die();
+
+            return $ranks;
+
+        } catch (\Exception $e) {
+            var_dump($e->getMessage());die();
+            Log::error('Google Merchant popularity rank error: ' . $e->getMessage());
+            return [];
+        }
     }
 
     public function getPopularityRanksProperty(): array
