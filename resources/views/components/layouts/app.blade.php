@@ -15,12 +15,12 @@
 </head>
 <body class="min-h-screen font-sans antialiased bg-gray-50">
 
-    <div x-data="{ sidebarOpen: false, sidebarMinimized: localStorage.getItem('sidebarMinimized') === 'true' }" 
+    <div x-data="{ sidebarOpen: false, sidebarMinimized: localStorage.getItem('sidebarMinimized') === 'true' }"
          x-init="$watch('sidebarMinimized', value => localStorage.setItem('sidebarMinimized', value))">
         <!-- Off-canvas menu for mobile -->
         <div x-show="sidebarOpen" class="relative z-50 lg:hidden" role="dialog" aria-modal="true">
             <!-- Backdrop -->
-            <div 
+            <div
                 x-show="sidebarOpen"
                 x-transition:enter="transition-opacity ease-linear duration-300"
                 x-transition:enter-start="opacity-0"
@@ -28,14 +28,14 @@
                 x-transition:leave="transition-opacity ease-linear duration-300"
                 x-transition:leave-start="opacity-100"
                 x-transition:leave-end="opacity-0"
-                class="fixed inset-0 bg-gray-900/80" 
+                class="fixed inset-0 bg-gray-900/80"
                 @click="sidebarOpen = false"
                 aria-hidden="true">
             </div>
 
             <div class="fixed inset-0 flex">
                 <!-- Sidebar mobile -->
-                <div 
+                <div
                     x-show="sidebarOpen"
                     x-transition:enter="transition ease-in-out duration-300 transform"
                     x-transition:enter-start="-translate-x-full"
@@ -44,7 +44,7 @@
                     x-transition:leave-start="translate-x-0"
                     x-transition:leave-end="-translate-x-full"
                     class="relative mr-16 flex w-full max-w-xs flex-1">
-                    
+
                     <!-- Close button -->
                     <div class="absolute top-0 left-full flex w-16 justify-center pt-5">
                         <button type="button" class="-m-2.5 p-2.5" @click="sidebarOpen = false">
@@ -93,7 +93,7 @@
                                         </li>
                                     </ul>
                                 </li>
-                                
+
                                 <!-- User profile at bottom -->
                                 @if($user = auth()->user())
                                 <li class="mt-auto -mx-6">
@@ -124,7 +124,7 @@
                     {{-- <div x-show="!sidebarMinimized" x-transition>
                         <x-app-brand />
                     </div> --}}
-                    <button @click="sidebarMinimized = !sidebarMinimized" 
+                    <button @click="sidebarMinimized = !sidebarMinimized"
                             class="p-1.5 rounded-md text-indigo-200 hover:text-white hover:bg-indigo-700 transition-colors"
                             :class="sidebarMinimized && 'mx-auto'">
                         <svg x-show="!sidebarMinimized" class="size-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -140,7 +140,7 @@
                         <li>
                             <ul role="list" class="-mx-2 space-y-1">
                                 <li>
-                                    <a href="/boutique" 
+                                    <a href="/boutique"
                                        class="group flex gap-x-3 rounded-md p-2 text-sm/6 font-semibold {{ request()->is('boutique*') ? 'bg-indigo-700 text-white' : 'text-indigo-200 hover:text-white hover:bg-indigo-700' }}"
                                        :class="sidebarMinimized && 'justify-center'"
                                        :title="sidebarMinimized ? 'Boutiques' : ''">
@@ -159,7 +159,7 @@
                                     </a>
                                 </li> --}}
                                 <li>
-                                    <a href="/scraped_products" 
+                                    <a href="/scraped_products"
                                        class="group flex gap-x-3 rounded-md p-2 text-sm/6 font-semibold {{ request()->is('scraped_products*') ? 'bg-indigo-700 text-white' : 'text-indigo-200 hover:text-white hover:bg-indigo-700' }}"
                                        :class="sidebarMinimized && 'justify-center'"
                                        :title="sidebarMinimized ? 'Parcourir les concurrents' : ''">
@@ -172,8 +172,8 @@
                                     </a>
                                 </li>
 
-                                <li>
-                                    <a href="/import-file" 
+                                {{-- <li>
+                                    <a href="/import-file"
                                         class="group flex gap-x-3 rounded-md p-2 text-sm/6 font-semibold {{ request()->is('import-file*') ? 'bg-indigo-700 text-white' : 'text-indigo-200 hover:text-white hover:bg-indigo-700' }}"
                                         :class="sidebarMinimized && 'justify-center'"
                                         :title="sidebarMinimized ? 'Importer Ranking File' : ''" wire:navigate>
@@ -182,10 +182,10 @@
                                         </svg>
                                         <span x-show="!sidebarMinimized" x-transition>Importer Top produit</span>
                                     </a>
-                                </li>
-                                
+                                </li> --}}
+
                                 <li>
-                                    <a href="/ranking-magento" 
+                                    <a href="/ranking-magento"
                                         class="group flex gap-x-3 rounded-md p-2 text-sm/6 font-semibold {{ request()->is('ranking-magento*') ? 'bg-indigo-700 text-white' : 'text-indigo-200 hover:text-white hover:bg-indigo-700' }}"
                                         :class="sidebarMinimized && 'justify-center'"
                                         :title="sidebarMinimized ? 'Importer Ranking File' : ''" wire:navigate>
@@ -195,10 +195,24 @@
                                         <span x-show="!sidebarMinimized" x-transition>Magento top produits / Pays</span>
                                     </a>
                                 </li>
-                                
+
+                                @if($user = auth()->user() &&  $user->name == "Super Admin")
+                                <li>
+                                    <a href="/ranking-magento-paginate"
+                                        class="group flex gap-x-3 rounded-md p-2 text-sm/6 font-semibold {{ request()->is('ranking-magento-paginate*') ? 'bg-indigo-700 text-white' : 'text-indigo-200 hover:text-white hover:bg-indigo-700' }}"
+                                        :class="sidebarMinimized && 'justify-center'"
+                                        :title="sidebarMinimized ? 'Importer Ranking File' : ''" wire:navigate>
+                                        <svg class="size-6 shrink-0 {{ request()->is('ranking-magento-paginate*') ? 'text-white' : 'text-indigo-200 group-hover:text-white' }}" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z" />
+                                        </svg>
+                                        <span x-show="!sidebarMinimized" x-transition>Magento top produits pagine / Pays</span>
+                                    </a>
+                                </li>
+                                @endif
+
                             </ul>
                         </li>
-                        
+
                         <!-- User profile at bottom -->
                         @if($user = auth()->user())
                         <li class="-mx-6 mt-auto">
