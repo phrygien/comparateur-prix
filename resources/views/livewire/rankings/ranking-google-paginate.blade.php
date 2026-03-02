@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use App\Services\GoogleMerchantService;
 use Livewire\WithPagination;
 use App\Models\Site;
+use App\Models\Product;
 
 new class extends Component {
     use WithPagination;
@@ -105,110 +106,191 @@ new class extends Component {
         }
     }
 
+    /**
+     * Récupère les produits scrapés par liste d'EANs et par pays
+     */
+    protected function getScrapedProductsByEans(array $eanList): array
+    {
+        if (empty($eanList)) {
+            return [];
+        }
+
+        $eanList = array_values(array_unique($eanList));
+
+        try {
+            $results = Product::with(['website' => function($query) {
+                    $query->where('country_code', $this->activeCountry);
+                }])
+                ->whereIn('ean', $eanList)
+                ->whereHas('website', function($query) {
+                    $query->where('country_code', $this->activeCountry);
+                })
+                ->get();
+
+            // Organiser par EAN et par site
+            $indexed = [];
+            foreach ($results as $product) {
+                $ean = (string) $product->ean;
+                if (!isset($indexed[$ean])) {
+                    $indexed[$ean] = [];
+                }
+                
+                $indexed[$ean][] = [
+                    'id' => $product->id,
+                    'site_id' => $product->web_site_id,
+                    'site_name' => $product->website->name ?? null,
+                    'site_country' => $product->website->country_code ?? null,
+                    'ean' => $product->ean,
+                    'name' => $product->name,
+                    'vendor' => $product->vendor,
+                    'price' => $product->prix_ht,
+                    'currency' => $product->currency,
+                    'url' => $product->url,
+                    'image_url' => $product->image_url,
+                    'type' => $product->type,
+                    'variation' => $product->variation,
+                    'is_available' => !empty($product->prix_ht) && $product->prix_ht > 0,
+                    'last_checked' => $product->updated_at,
+                    'created_at' => $product->created_at,
+                ];
+            }
+
+            return $indexed;
+
+        } catch (\Exception $e) {
+            Log::error('Scraped products by EAN lookup error: ' . $e->getMessage());
+            return [];
+        }
+    }
+
     public function getPopularityRanksAllProperty(): array
     {
         $countryCode = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
         $periodCode  = $this->periodCodeMap[$this->activePeriod]   ?? $this->activePeriod;
         $date        = $periodCode === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly;
 
-        $query = "
-            SELECT
-                report_granularity,
-                report_date,
-                report_category_id,
-                category_l1,
-                category_l2,
-                category_l3,
-                brand,
-                title,
-                variant_gtins,
-                rank,
-                previous_rank,
-                report_country_code,
-                relative_demand,
-                previous_relative_demand,
-                relative_demand_change,
-                inventory_status,
-                brand_inventory_status
-            FROM best_sellers_product_cluster_view
-            WHERE report_country_code = '{$countryCode}'
-                AND report_granularity = '{$periodCode}'
-                AND category_l1 LIKE '%Health & Beauty%'
-                AND report_date = '{$date}'
-            ORDER BY rank ASC
-            LIMIT 1000
-        ";
+        // Vérifier le cache
+        $cacheKey = 'google_popularity_all_' . md5($countryCode . $periodCode . $date);
+        
+        return Cache::remember($cacheKey, now()->addHours(6), function() use ($countryCode, $periodCode, $date) {
+            
+            $query = "
+                SELECT
+                    report_granularity,
+                    report_date,
+                    report_category_id,
+                    category_l1,
+                    category_l2,
+                    category_l3,
+                    brand,
+                    title,
+                    variant_gtins,
+                    rank,
+                    previous_rank,
+                    report_country_code,
+                    relative_demand,
+                    previous_relative_demand,
+                    relative_demand_change,
+                    inventory_status,
+                    brand_inventory_status
+                FROM best_sellers_product_cluster_view
+                WHERE report_country_code = '{$countryCode}'
+                    AND report_granularity = '{$periodCode}'
+                    AND category_l1 LIKE '%Health & Beauty%'
+                    AND report_date = '{$date}'
+                ORDER BY rank ASC
+                LIMIT 1000
+            ";
 
-        try {
-            $response = $this->googleMerchantService->searchReports($query);
+            try {
+                $response = $this->googleMerchantService->searchReports($query);
 
-            Log::info('Google Merchant raw response', ['response' => $response]);
+                Log::info('Google Merchant raw response', ['response' => $response]);
 
-            $ranks = [];
+                $ranks = [];
 
-            $normalizeGtin = function (string $gtin): string {
-                $gtin = preg_replace('/\D/', '', $gtin);
-                if (strlen($gtin) === 14 && $gtin[0] === '0') {
-                    return substr($gtin, 1);
+                $normalizeGtin = function (string $gtin): string {
+                    $gtin = preg_replace('/\D/', '', $gtin);
+                    if (strlen($gtin) === 14 && $gtin[0] === '0') {
+                        return substr($gtin, 1);
+                    }
+                    return $gtin;
+                };
+
+                foreach ($response['results'] ?? [] as $row) {
+                    $data     = $row['bestSellersProductClusterView'] ?? [];
+                    $rank     = isset($data['rank'])         ? (int) $data['rank']         : null;
+                    $prevRank = isset($data['previousRank']) ? (int) $data['previousRank'] : null;
+                    $delta    = ($rank !== null && $prevRank !== null) ? ($prevRank - $rank) : null;
+
+                    $ranks[] = [
+                        'rank'          => $rank,
+                        'previous_rank' => $prevRank,
+                        'delta'         => $delta,
+                        'delta_sign'    => match(true) {
+                            $delta === null => null,
+                            $delta > 0      => '+',
+                            $delta < 0      => '-',
+                            default         => '=',
+                        },
+                        'relative_demand' => $data['relativeDemand'] ?? null,
+                        'title'           => $data['title']          ?? null,
+                        'brand'           => $data['brand']          ?? null,
+                        'ean_list'        => array_map(
+                            fn($g) => $normalizeGtin((string) $g),
+                            $data['variantGtins'] ?? []
+                        ),
+                        'magento_products' => [],
+                        'scraped_products' => [], // Produits scrapés par EAN
+                    ];
                 }
-                return $gtin;
-            };
 
-            foreach ($response['results'] ?? [] as $row) {
-                $data     = $row['bestSellersProductClusterView'] ?? [];
-                $rank     = isset($data['rank'])         ? (int) $data['rank']         : null;
-                $prevRank = isset($data['previousRank']) ? (int) $data['previousRank'] : null;
-                $delta    = ($rank !== null && $prevRank !== null) ? ($prevRank - $rank) : null;
-
-                $ranks[] = [
-                    'rank'          => $rank,
-                    'previous_rank' => $prevRank,
-                    'delta'         => $delta,
-                    'delta_sign'    => match(true) {
-                        $delta === null => null,
-                        $delta > 0      => '+',
-                        $delta < 0      => '-',
-                        default         => '=',
-                    },
-                    'relative_demand' => $data['relativeDemand'] ?? null,
-                    'title'           => $data['title']          ?? null,
-                    'brand'           => $data['brand']          ?? null,
-                    'ean_list'        => array_map(
-                        fn($g) => $normalizeGtin((string) $g),
-                        $data['variantGtins'] ?? []
-                    ),
-                    'magento_products' => [],
-                ];
-            }
-
-            $allEans = [];
-            foreach ($ranks as $item) {
-                foreach ($item['ean_list'] as $ean) {
-                    if ($ean !== '') {
-                        $allEans[] = $ean;
+                // Récupérer tous les EANs uniques
+                $allEans = [];
+                foreach ($ranks as $item) {
+                    foreach ($item['ean_list'] as $ean) {
+                        if ($ean !== '') {
+                            $allEans[] = $ean;
+                        }
                     }
                 }
-            }
+                $allEans = array_unique($allEans);
 
-            $magentoIndex = $this->getMagentoProductsByEans($allEans);
+                // Récupérer les produits Magento
+                $magentoIndex = $this->getMagentoProductsByEans($allEans);
+                
+                // Récupérer les produits scrapés
+                $scrapedIndex = $this->getScrapedProductsByEans($allEans);
 
-            foreach ($ranks as &$item) {
-                $matched = [];
-                foreach ($item['ean_list'] as $ean) {
-                    if (isset($magentoIndex[$ean])) {
-                        $matched[$ean] = $magentoIndex[$ean];
+                // Associer les données
+                foreach ($ranks as &$item) {
+                    // Associer les produits Magento
+                    $matchedMagento = [];
+                    foreach ($item['ean_list'] as $ean) {
+                        if (isset($magentoIndex[$ean])) {
+                            $matchedMagento[$ean] = $magentoIndex[$ean];
+                        }
                     }
+                    $item['magento_products'] = $matchedMagento;
+                    
+                    // Associer les produits scrapés
+                    $matchedScraped = [];
+                    foreach ($item['ean_list'] as $ean) {
+                        if (isset($scrapedIndex[$ean])) {
+                            $matchedScraped[$ean] = $scrapedIndex[$ean];
+                        }
+                    }
+                    $item['scraped_products'] = $matchedScraped;
                 }
-                $item['magento_products'] = $matched;
+                unset($item);
+
+                return $ranks;
+
+            } catch (\Exception $e) {
+                Log::error('Google Merchant popularity rank error: ' . $e->getMessage());
+                return [];
             }
-            unset($item);
-
-            return $ranks;
-
-        } catch (\Exception $e) {
-            Log::error('Google Merchant popularity rank error: ' . $e->getMessage());
-            return [];
-        }
+        });
     }
 
     public function getPopularityRanksProperty(): array
@@ -224,9 +306,32 @@ new class extends Component {
         return count($this->popularityRanksAll);
     }
 
-    public function updatedActiveCountry(): void { $this->currentPage = 1; }
-    public function updatedActivePeriod(): void  { $this->currentPage = 1; }
-    public function updatedPerPage(): void       { $this->currentPage = 1; }
+    public function updatedActiveCountry(): void 
+    { 
+        $this->currentPage = 1; 
+        $this->clearCache(); // Vider le cache quand on change de pays
+    }
+    
+    public function updatedActivePeriod(): void  
+    { 
+        $this->currentPage = 1; 
+        $this->clearCache();
+    }
+    
+    public function updatedMondayWeekly(): void
+    {
+        $this->clearCache();
+    }
+    
+    public function updatedDateMonthly(): void
+    {
+        $this->clearCache();
+    }
+    
+    public function updatedPerPage(): void       
+    { 
+        $this->currentPage = 1; 
+    }
 
     public function setPage(int $page): void
     {
@@ -382,7 +487,7 @@ new class extends Component {
 
                             @if(count($popularityRanks) === 0)
                                 <div class="alert alert-info">
-                                    <svg xmlns="http:
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                                         class="stroke-current shrink-0 w-6 h-6">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                             d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -397,10 +502,9 @@ new class extends Component {
                                                 <th class="text-center w-24">Rang Google</th>
                                                 <th>Google Group</th>
                                                 <th>Google Titre</th>
-                                                <th>EAN</th>
+                                                <th>EAN Google</th>
                                                 <th class="min-w-[420px]">
                                                     <div class="flex items-center gap-1">
-                                                        
                                                         <svg class="w-3.5 h-3.5 text-orange-500" viewBox="0 0 24 24" fill="currentColor">
                                                             <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
                                                         </svg>
@@ -409,7 +513,7 @@ new class extends Component {
                                                 </th>
                                                 <th class="text-center">Demande relative</th>
                                                 @foreach($sites as $site)
-                                                    <th class="text-right">{{ $site->name }}</th>
+                                                    <th class="text-center min-w-[150px]">{{ $site->name }}</th>
                                                 @endforeach
                                             </tr>
                                         </thead>
@@ -435,7 +539,7 @@ new class extends Component {
                                                         {{ $item['brand'] ?? '—' }}
                                                     </td>
 
-                                                    <td class="font-bold max-w-xs truncate">
+                                                    <td class="font-bold max-w-xs truncate" title="{{ $item['title'] ?? '' }}">
                                                         {{ $item['title'] ?? '—' }}
                                                     </td>
 
@@ -495,7 +599,6 @@ new class extends Component {
                                                                 @endforeach
                                                             </div>
                                                         @else
-                                                            
                                                             <div class="flex items-center gap-1 text-gray-300">
                                                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -516,6 +619,80 @@ new class extends Component {
                                                         @endif
                                                     </td>
 
+                                                    {{-- Colonnes des sites avec les produits scrapés --}}
+                                                    @foreach($sites as $site)
+                                                        <td class="align-top">
+                                                            @php
+                                                                $productsForSite = [];
+                                                                foreach($item['ean_list'] as $ean) {
+                                                                    if(isset($item['scraped_products'][$ean])) {
+                                                                        foreach($item['scraped_products'][$ean] as $scrapedProduct) {
+                                                                            if($scrapedProduct['site_id'] == $site->id) {
+                                                                                $productsForSite[] = $scrapedProduct;
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            @endphp
+                                                            
+                                                            @if(!empty($productsForSite))
+                                                                <div class="flex flex-col gap-2">
+                                                                    @foreach($productsForSite as $product)
+                                                                        <div class="p-2 rounded border {{ $product['is_available'] ? 'border-success/30 bg-success/5' : 'border-error/30 bg-error/5' }}">
+                                                                            <div class="flex flex-col gap-1 text-xs">
+                                                                                <div class="flex items-center justify-between gap-1">
+                                                                                    <span class="font-mono font-bold text-success">
+                                                                                        {{ $product['ean'] }}
+                                                                                    </span>
+                                                                                </div>
+                                                                                
+                                                                                @if($product['name'])
+                                                                                    <div class="text-gray-700 font-medium truncate" title="{{ $product['name'] }}">
+                                                                                        {{ Str::limit($product['name'], 30) }}
+                                                                                    </div>
+                                                                                @endif
+                                                                                
+                                                                                @if($product['vendor'])
+                                                                                    <div class="text-gray-500">
+                                                                                        {{ $product['vendor'] }}
+                                                                                    </div>
+                                                                                @endif
+                                                                                
+                                                                                @if($product['price'])
+                                                                                    <div class="flex justify-between items-center mt-1">
+                                                                                        <span class="text-gray-500">Prix:</span>
+                                                                                        <span class="font-semibold">
+                                                                                            {{ number_format($product['price'], 2, ',', ' ') }} 
+                                                                                            {{ $product['currency'] ?? '€' }}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                @endif
+                                                                                
+                                                                                <div class="flex gap-2 mt-1">
+                                                                                    @if($product['url'])
+                                                                                        <a href="{{ $product['url'] }}" 
+                                                                                           target="_blank" 
+                                                                                           class="link link-primary link-hover text-xs flex items-center gap-1">
+                                                                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                                                                            </svg>
+                                                                                            Voir
+                                                                                        </a>
+                                                                                    @endif
+                                
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    @endforeach
+                                                                </div>
+                                                            @else
+                                                                <div class="text-gray-300 text-xs italic p-2 text-center">
+                                                                    Non trouvé
+                                                                </div>
+                                                            @endif
+                                                        </td>
+                                                    @endforeach
+
                                                 </tr>
                                             @endforeach
                                         </tbody>
@@ -524,11 +701,11 @@ new class extends Component {
                                                 <th class="text-center">Rang Google</th>
                                                 <th>Google Group</th>
                                                 <th>Google Titre</th>
-                                                <th>EAN</th>
+                                                <th>EAN Google</th>
                                                 <th>Magento</th>
                                                 <th class="text-center">Demande relative</th>
                                                 @foreach($sites as $site)
-                                                    <th class="text-right">{{ $site->name }}</th>
+                                                    <th class="text-center">{{ $site->name }}</th>
                                                 @endforeach
                                             </tr>
                                         </tfoot>
