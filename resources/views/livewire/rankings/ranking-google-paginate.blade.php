@@ -319,8 +319,8 @@ new class extends Component {
                                         <thead>
                                             <tr>
                                                 <th class="text-center w-24">Rang Google</th>
-                                                <th>Brand</th>
-                                                <th>Titre</th>
+                                                <th>Google Group</th>
+                                                <th>Google Titre</th>
                                                 <th>Ean</th>
                                                 <th class="text-center">Demande relative</th>
                                             </tr>
