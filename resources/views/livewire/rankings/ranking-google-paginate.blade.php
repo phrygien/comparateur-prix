@@ -344,11 +344,15 @@ new class extends Component {
                                                     {{-- EANs --}}
                                                     <td>
                                                         @if($item['ean_list'] != null)
-                                                            @foreach($item['ean_list'] as $ean14)
-                                                                <tr>
-                                                                    {{ $ean14 }}
-                                                                </tr>
-                                                            @endforeach
+                                                            <table>
+                                                                <tbody>
+                                                                    @foreach($item['ean_list'] as $ean14)
+                                                                        <tr>
+                                                                            <td>{{ $ean14 }}</td>
+                                                                        </tr>
+                                                                    @endforeach
+                                                                </tbody>
+                                                            </table>
                                                         @endif
                                                     </td>
 
