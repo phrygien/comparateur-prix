@@ -106,9 +106,6 @@ new class extends Component {
         }
     }
 
-    /**
-     * Récupère les produits scrapés par liste d'EANs et par pays
-     */
     protected function getScrapedProductsByEans(array $eanList): array
     {
         if (empty($eanList)) {
@@ -127,7 +124,6 @@ new class extends Component {
                 })
                 ->get();
 
-            // Organiser par EAN et par site
             $indexed = [];
             foreach ($results as $product) {
                 $ean = (string) $product->ean;
@@ -241,11 +237,10 @@ new class extends Component {
                             $data['variantGtins'] ?? []
                         ),
                         'magento_products' => [],
-                        'scraped_products' => [], // Produits scrapés par EAN
+                        'scraped_products' => [],
                     ];
                 }
 
-                // Récupérer tous les EANs uniques
                 $allEans = [];
                 foreach ($ranks as $item) {
                     foreach ($item['ean_list'] as $ean) {
@@ -256,15 +251,11 @@ new class extends Component {
                 }
                 $allEans = array_unique($allEans);
 
-                // Récupérer les produits Magento
                 $magentoIndex = $this->getMagentoProductsByEans($allEans);
                 
-                // Récupérer les produits scrapés
                 $scrapedIndex = $this->getScrapedProductsByEans($allEans);
 
-                // Associer les données
                 foreach ($ranks as &$item) {
-                    // Associer les produits Magento
                     $matchedMagento = [];
                     foreach ($item['ean_list'] as $ean) {
                         if (isset($magentoIndex[$ean])) {
@@ -272,8 +263,7 @@ new class extends Component {
                         }
                     }
                     $item['magento_products'] = $matchedMagento;
-                    
-                    // Associer les produits scrapés
+
                     $matchedScraped = [];
                     foreach ($item['ean_list'] as $ean) {
                         if (isset($scrapedIndex[$ean])) {
@@ -309,7 +299,7 @@ new class extends Component {
     public function updatedActiveCountry(): void 
     { 
         $this->currentPage = 1; 
-        $this->clearCache(); // Vider le cache quand on change de pays
+        $this->clearCache();
     }
     
     public function updatedActivePeriod(): void  
