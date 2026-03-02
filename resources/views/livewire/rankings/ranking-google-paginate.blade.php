@@ -153,7 +153,8 @@ new class extends Component {
     public function updatedActivePeriod(): void  { $this->currentPage = 1; }
     public function updatedPerPage(): void       { $this->currentPage = 1; }
 
-    public function getProductInMagento($ean){
+    public function getProductInMagento($ean)
+    {
 
         $params = [$ean];
 
@@ -361,6 +362,7 @@ new class extends Component {
                                                 <th>Google Group</th>
                                                 <th>Google Titre</th>
                                                 <th>Ean</th>
+                                                <th>Designation</th>
                                                 <th class="text-center">Demande relative</th>
                                             </tr>
                                         </thead>
@@ -393,14 +395,37 @@ new class extends Component {
                                                         {{ $item['title'] ?? '—' }}
                                                     </td>
 
+                                                    @php
+                                                        $products_magento = array();
+                                                    @endphp
                                                     {{-- EANs --}}
                                                     <td>
                                                         @if($item['ean_list'] != null)
                                                             <table>
                                                                 <tbody>
                                                                     @foreach($item['ean_list'] as $ean14)
+                                                                        @php
+                                                                            // get product in our Magento
+                                                                            $magento_product = getProductInMagento($ean14);
+                                                                            $products_magento[$ean14] = $magento_product[0];
+                                                                        @endphp
                                                                         <tr>
                                                                             <td>{{ $ean14 }}</td>
+                                                                        </tr>
+                                                                    @endforeach
+                                                                </tbody>
+                                                            </table>
+                                                        @endif
+                                                    </td>
+
+                                                    {{-- Designation --}}
+                                                    <td>
+                                                        @if(count($products_magento) > 0)
+                                                            <table>
+                                                                <tbody>
+                                                                    @foreach($item['ean_list'] as $ean14)
+                                                                        <tr>
+                                                                            <td>{{  $products_magento[$ean14]['designation_produit'] }}</td>
                                                                         </tr>
                                                                     @endforeach
                                                                 </tbody>
@@ -428,6 +453,7 @@ new class extends Component {
                                                 <th>Google Group</th>
                                                 <th>Google Titre</th>
                                                 <th>Ean</th>
+                                                <th>Designation</th>
                                                 <th class="text-center">Demande relative</th>
                                             </tr>
                                         </tfoot>
