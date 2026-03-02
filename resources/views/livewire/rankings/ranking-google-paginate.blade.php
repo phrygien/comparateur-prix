@@ -731,4 +731,19 @@ new class extends Component {
             @endforeach
         </x-tabs>
     </div>
+
+    <style>
+        /* Dans votre fichier CSS ou dans une balche style */
+.table-pin-cols td {
+    min-width: 180px;
+    max-width: 250px;
+    vertical-align: top;
+}
+
+.table-pin-cols td .link {
+    word-break: break-word;
+    display: inline-block;
+    max-width: 100%;
+}
+    </style>
 </div>
