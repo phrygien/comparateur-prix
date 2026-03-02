@@ -54,7 +54,6 @@ new class extends Component {
 
     protected function getMagentoProductsByEans(array $eanList): array
     {
-        //dd($eanList);
         if (empty($eanList)) {
             return [];
         }
@@ -68,6 +67,7 @@ new class extends Component {
                 produit.sku                                              AS sku,
                 product_char.reference                                   AS parkode,
                 CAST(product_char.name AS CHAR CHARACTER SET utf8mb4)    AS title,
+                produit.sku                                              AS ean,
                 ROUND(product_decimal.price, 2)                          AS price,
                 ROUND(product_decimal.special_price, 2)                  AS special_price,
                 ROUND(product_decimal.cost, 2)                           AS cost,
