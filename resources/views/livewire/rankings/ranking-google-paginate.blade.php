@@ -12,7 +12,7 @@ use App\Models\Product;
 new class extends Component {
     use WithPagination;
 
-    public int $perPage = 25;
+    public int $perPage = 1000;
     public int $currentPage = 1;
     public string $activeCountry = 'FR';
     public string $activePeriod = 'WEEKLY';
@@ -319,10 +319,7 @@ new class extends Component {
 
     public function getPopularityRanksProperty(): array
     {
-        return collect($this->popularityRanksAll)
-            ->forPage($this->currentPage, $this->perPage)
-            ->values()
-            ->toArray();
+        return $this->popularityRanksAll;
     }
 
     public function getPopularityTotalProperty(): int
