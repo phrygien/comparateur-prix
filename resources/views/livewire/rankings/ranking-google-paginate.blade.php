@@ -19,8 +19,6 @@ new class extends Component {
         null
     ];
 
-    public bool $nextTokenPageExist = False;
-
     public string $activeCountry = 'FR';
     public string $activePeriod = 'WEEKLY';
     public string $MondayWeekly = '2026-01-19';
@@ -254,7 +252,6 @@ new class extends Component {
 
                 if(array_key_exists('nextPageToken', $response)){
                     if(!in_array($response['nextPageToken'], $this->tokenPage)){
-                        $this->nextTokenPageExist = True;
                         $this->tokenPage[] = $response['nextPageToken'];
                     }
                 }
@@ -342,7 +339,6 @@ new class extends Component {
 
     public function updatedActiveCountry(): void
     {
-        $this->nextTokenPageExist = False;
         $this->currentPage = 1;
         $this->tokenPage = [
             null
@@ -354,7 +350,6 @@ new class extends Component {
     {
         $this->MondayWeekly = date('Y-m-d', strtotime('monday - 3 weeks'));
         $this->dateMonthly = date('Y-m', strtotime('first day of -2 months'));
-        $this->nextTokenPageExist = False;
         $this->currentPage = 1;
         $this->tokenPage = [
             null
@@ -382,7 +377,6 @@ new class extends Component {
             // Mettre à jour le champ Livewire
             $this->MondayWeekly = $date->format('Y-m-d');
         }
-        $this->nextTokenPageExist = False;
         $this->currentPage = 1;
         $this->tokenPage = [
             null
@@ -392,7 +386,6 @@ new class extends Component {
 
     public function updatedDateMonthly(): void
     {
-        $this->nextTokenPageExist = False;
         $this->currentPage = 1;
         $this->tokenPage = [
             null
@@ -402,7 +395,6 @@ new class extends Component {
 
     public function updatedDisponibiliteFilter(): void
     {
-        $this->nextTokenPageExist = False;
         $this->currentPage = 1;
         $this->tokenPage = [
             null
@@ -764,10 +756,6 @@ new class extends Component {
     {
         $total = $this->popularityTotal;
         $lastPage = count($this->tokenPage);
-
-        // if($this->nextTokenPageExist){
-        //     $lastPage ++;
-        // }
 
         return [
             'sites' => $this->sites,
