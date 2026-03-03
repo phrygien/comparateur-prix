@@ -781,7 +781,7 @@ new class extends Component {
                                         );
                                     }
                                 }">
-                                    <div class="flex flex-wrap gap-2 mb-2">
+                                    <div class="grid grid-cols-2 gap-2 mb-2">
                                         @foreach($disponibiliteFilter as $selectedGroupe)
                                             <div class="badge badge-primary gap-2 py-3 px-3">
                                                 <span class="text-xs font-medium">{{ $selectedGroupe }}</span>
