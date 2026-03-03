@@ -405,6 +405,9 @@ new class extends Component {
     public function updatedPerPage(): void
     {
         $this->currentPage = 1;
+        $this->tokenPage = [
+            null
+        ];
     }
 
     public function setPage(int $page): void
