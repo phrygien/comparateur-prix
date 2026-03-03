@@ -748,6 +748,12 @@ new class extends Component {
                                     </button>
                                 @endforeach
 
+                            </div>
+
+                            <div class="divider divider-horizontal mx-0"></div>
+
+                            <div class="flex items-center gap-2">
+
                                 @if($activePeriod === 'WEEKLY')
                                     <span class="text-xs text-gray-400">Semaine du lundi</span>
                                     <input type="date" wire:model.live="MondayWeekly"
@@ -762,10 +768,6 @@ new class extends Component {
                             </div>
 
                             <div class="divider divider-horizontal mx-0"></div>
-
-                            @if(!empty($disponibiliteFilter))
-                                · Filtre(s) : {{ implode(', ', $disponibiliteFilter) }}
-                            @endif
 
                             <div class="flex items-center gap-2">
                                 {{-- Filtre Groupe --}}
