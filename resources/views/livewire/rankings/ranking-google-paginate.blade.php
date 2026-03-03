@@ -54,7 +54,11 @@ new class extends Component {
         'INVENTORY_STATUS_UNSPECIFIED'
     ];
 
-    public $disponibiliteFilter = [];
+    // valeur par defaut
+    public $disponibiliteFilter = [
+        'IN_STOCK',
+        'OUT_OF_STOCK',
+    ];
 
     protected GoogleMerchantService $googleMerchantService;
 
@@ -352,6 +356,17 @@ new class extends Component {
 
     public function updatedDateMonthly(): void
     {
+        $this->clearCache();
+    }
+
+    public function updateDisponibiliteFilter(): void
+    {
+        if(count($this->disponibiliteFilter) == 0){
+            $this->disponibiliteFilter =  [
+                'IN_STOCK',
+                'OUT_OF_STOCK',
+            ];
+        }
         $this->clearCache();
     }
 
