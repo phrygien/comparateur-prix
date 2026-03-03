@@ -207,7 +207,7 @@ new class extends Component {
 
         $this->inventory_status_group_cache_control = $inventory_status_group;
 
-        return Cache::remember($cacheKey, now()->addHours(6), function () use ($countryCode, $periodCode, $date, $inventory_status_group) {
+        //return Cache::remember($cacheKey, now()->addHours(6), function () use ($countryCode, $periodCode, $date, $inventory_status_group) {
 
             $query = "
                 SELECT
@@ -325,7 +325,7 @@ new class extends Component {
                 Log::error('Google Merchant popularity rank error: ' . $e->getMessage());
                 return [];
             }
-        });
+        //});
     }
 
     public function getPopularityRanksProperty(): array
