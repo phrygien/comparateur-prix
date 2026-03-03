@@ -51,7 +51,7 @@ new class extends Component {
 
     public function mount(): void
     {
-        $this->MondayWeekly = date('Y-m-d', strtotime('monday - 3weeks'));
+        $this->MondayWeekly = date('Y-m-d', strtotime('monday - 3 weeks'));
         $this->dateTo = date('Y-m-01', strtotime('first day of -2 months'));
     }
 
