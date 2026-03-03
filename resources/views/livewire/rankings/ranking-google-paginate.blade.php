@@ -55,10 +55,7 @@ new class extends Component {
     ];
 
     // valeur par defaut
-    public $disponibiliteFilter = [
-        'IN_STOCK',
-        'OUT_OF_STOCK',
-    ];
+    public $disponibiliteFilter = [];
 
     protected GoogleMerchantService $googleMerchantService;
 
@@ -186,6 +183,17 @@ new class extends Component {
         $periodCode = $this->periodCodeMap[$this->activePeriod] ?? $this->activePeriod;
         $date = $periodCode === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly.'-01';
 
+        //ajout filtre
+        $inventory_status_group = "('IN_STOCK', 'NOT_IN_INVENTORY', 'OUT_OF_STOCK', 'INVENTORY_STATUS_UNSPECIFIED')";
+        if (!empty($this->disponibiliteFilter)) {
+            // Nettoyage + mise entre quotes
+            $inValues = implode(
+                ',',
+                array_map(fn($v) => "'" . addslashes($v) . "'", $this->disponibiliteFilter)
+            );
+            $inventory_status_group = "($inValues)";
+        }
+
         // Vérifier le cache
         $cacheKey = 'google_popularity_all_' . md5($countryCode . $periodCode . $date);
 
@@ -215,6 +223,7 @@ new class extends Component {
                     AND report_granularity = '{$periodCode}'
                     AND category_l1 LIKE '%Health & Beauty%'
                     AND report_date = '{$date}'
+                    AND inventory_status IN {$inventory_status_group}
                 ORDER BY rank ASC
                 LIMIT 1000
             ";
@@ -359,14 +368,9 @@ new class extends Component {
         $this->clearCache();
     }
 
-    public function updateDisponibiliteFilter(): void
+    public function updatedDisponibiliteFilter(): void
     {
-        if(count($this->disponibiliteFilter) == 0){
-            $this->disponibiliteFilter =  [
-                'IN_STOCK',
-                'OUT_OF_STOCK',
-            ];
-        }
+        $this->currentPage = 1;
         $this->clearCache();
     }
 
