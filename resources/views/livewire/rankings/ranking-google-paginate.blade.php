@@ -828,10 +828,10 @@ new class extends Component {
                                         <thead>
                                             <tr>
                                                 <th class="text-center w-24">Rang Google</th>
-                                                <th>Google Group</th>
-                                                <th>Google Titre</th>
-                                                <th>EAN Google</th>
-                                                <th class="min-w-[420px]">
+                                                <th class="text-center" >Google Group</th>
+                                                <th class="text-center" >Google Titre</th>
+                                                <th class="text-center" >EAN Google</th>
+                                                <th class="min-w-[420px] text-center">
                                                     <div class="flex items-center gap-1">
                                                         <svg class="w-3.5 h-3.5 text-orange-500" viewBox="0 0 24 24" fill="currentColor">
                                                             <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
@@ -871,7 +871,7 @@ new class extends Component {
                                                         {{ $item['title'] ?? '—' }}
                                                     </td>
 
-                                                    <td class="p-1 align-top">
+                                                    <td class="p-1 align-center">
                                                         @if(!empty($item['ean_list']))
                                                             <div class="flex flex-col gap-0.5">
                                                                 @foreach($item['ean_list'] as $ean)
@@ -1010,14 +1010,21 @@ new class extends Component {
                                         </tbody>
                                         <tfoot>
                                             <tr>
-                                                <th class="text-center">Rang Google</th>
-                                                <th>Google Group</th>
-                                                <th>Google Titre</th>
-                                                <th>EAN Google</th>
-                                                <th>Magento</th>
+                                                <th class="text-center w-24">Rang Google</th>
+                                                <th class="text-center" >Google Group</th>
+                                                <th class="text-center" >Google Titre</th>
+                                                <th class="text-center" >EAN Google</th>
+                                                <th class="min-w-[420px] text-center">
+                                                    <div class="flex items-center gap-1">
+                                                        <svg class="w-3.5 h-3.5 text-orange-500" viewBox="0 0 24 24" fill="currentColor">
+                                                            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                                                        </svg>
+                                                        Magento
+                                                    </div>
+                                                </th>
                                                 <th class="text-center">Demande relative</th>
                                                 @foreach($sites as $site)
-                                                    <th class="text-center">{{ $site->name }}</th>
+                                                    <th class="text-center min-w-[150px]">{{ $site->name }}</th>
                                                 @endforeach
                                             </tr>
                                         </tfoot>
