@@ -813,9 +813,24 @@ new class extends Component {
                                         class="input input-bordered input-sm w-36"
                                     />
                                 @else
-                                    <span class="text-xs text-gray-400">Mois</span>
-                                    <input type="month" wire:model.live="dateMonthly"
-                                        class="input input-bordered input-sm w-36"/>
+                                    <span class="text-xs text-gray-400">Mois : {{ $mois_mensuel }} </span>
+                                    {{-- <input type="month" wire:model.live="dateMonthly"
+                                        class="input input-bordered input-sm w-36"/> --}}
+
+                                     <!-- Input invisible mais fonctionnel -->
+                                    <input
+                                        type="month"
+                                        wire:model.live="dateMonthly"
+                                        class="absolute inset-0 w-6 h-6 opacity-0 cursor-pointer"
+                                    />
+
+                                    <!-- Icône -->
+                                    <svg class="w-6 h-6 text-gray-600 cursor-pointer" fill="none" stroke="currentColor"
+                                        stroke-width="2" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round"
+                                            d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2
+                                            2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                    </svg>
                                 @endif
 
                             </div>
