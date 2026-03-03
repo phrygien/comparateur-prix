@@ -808,7 +808,7 @@ new class extends Component {
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                                             </svg>
-                                            {{ count($disponibiliteFilter) > 0 ? 'Ajouter' : 'Sélectionner' }}
+                                            {{ count($disponibiliteFilter) > 0 ? 'Ajouter filtre disponibilite' : 'Sélectionner filtre disponibilite' }}
                                         </button>
                                         <div x-show="open" @click.away="open = false" x-transition
                                             class="absolute z-50 mt-2 w-80 bg-base-100 rounded-lg shadow-xl border border-base-300">
@@ -834,7 +834,7 @@ new class extends Component {
                                                 </div>
                                             </div>
                                             <div class="p-3 border-t border-base-300 text-xs text-gray-500 flex items-center justify-between">
-                                                <span>{{ count($disponibiliteFilter) }} groupe(s) sélectionné(s)</span>
+                                                <span>{{ count($disponibiliteFilter) }} filtre(s) sélectionné(s)</span>
                                                 <button type="button" @click="open = false" class="text-primary hover:underline">Fermer</button>
                                             </div>
                                         </div>
