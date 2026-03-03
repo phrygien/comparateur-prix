@@ -419,7 +419,7 @@ new class extends Component {
     {
         $countryCode = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
         $periodCode = $this->periodCodeMap[$this->activePeriod] ?? $this->activePeriod;
-        $date = $periodCode === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly;
+        $date = $periodCode === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly.'-01';
 
         Cache::forget('google_popularity_all_' . md5($countryCode . $periodCode . $date . $this->inventory_status_group_cache_control . $this->currentPage .  $this->perPage));
     }
