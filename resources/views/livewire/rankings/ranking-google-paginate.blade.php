@@ -318,8 +318,26 @@ new class extends Component {
         $this->clearCache();
     }
 
-    public function updatedMondayWeekly(): void
+    public function updatedMondayWeekly($value): void
     {
+        // Si vide → rien à faire
+        if (!$value) {
+            return;
+        }
+        // Convertir en objet DateTime
+        $date = new \DateTime($value);
+        $day = (int) $date->format('N'); // 1 = lundi, 7 = dimanche
+
+        if ($day !== 1) {
+            // Calculer la différence pour arriver au lundi
+            $diff = ($day === 7) ? 1 : (1 - $day);
+
+            // Modifier la date vers le lundi le plus proche
+            $date->modify("$diff days");
+
+            // Mettre à jour le champ Livewire
+            $this->MondayWeekly = $date->format('Y-m-d');
+        }
         $this->clearCache();
     }
 
