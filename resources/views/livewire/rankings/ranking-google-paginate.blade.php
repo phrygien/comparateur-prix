@@ -52,7 +52,7 @@ new class extends Component {
     public function mount(): void
     {
         $this->MondayWeekly = date('Y-m-d', strtotime('monday - 3 weeks'));
-        $this->dateTo = date('Y-m-01', strtotime('first day of -2 months'));
+        $this->dateTo = date('Y-m', strtotime('first day of -2 months'));
     }
 
     public function boot(GoogleMerchantService $googleMerchantService): void
@@ -171,7 +171,7 @@ new class extends Component {
     {
         $countryCode = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
         $periodCode = $this->periodCodeMap[$this->activePeriod] ?? $this->activePeriod;
-        $date = $periodCode === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly;
+        $date = $periodCode === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly.'-01';
 
         // Vérifier le cache
         $cacheKey = 'google_popularity_all_' . md5($countryCode . $periodCode . $date);
@@ -731,7 +731,7 @@ new class extends Component {
                             @else
                                 <div class="flex items-center gap-2">
                                     <span class="text-xs text-gray-400">Mois</span>
-                                    <input type="date" wire:model.live="dateMonthly"
+                                    <input type="month" wire:model.live="dateMonthly"
                                         class="input input-bordered input-sm w-36"/>
                                 </div>
                             @endif
