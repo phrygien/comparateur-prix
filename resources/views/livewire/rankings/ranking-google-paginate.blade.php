@@ -17,7 +17,7 @@ new class extends Component {
     public string $activeCountry = 'FR';
     public string $activePeriod = 'WEEKLY';
     public string $MondayWeekly = '2026-01-19';
-    public string $dateMonthly = '2026-01-01';
+    public string $dateMonthly = '2026-01';
 
     public array $countries = [
         'FR' => 'France',
@@ -52,7 +52,7 @@ new class extends Component {
     public function mount(): void
     {
         $this->MondayWeekly = date('Y-m-d', strtotime('monday - 3 weeks'));
-        $this->dateTo = date('Y-m', strtotime('first day of -2 months'));
+        $this->dateMonthly = date('Y-m', strtotime('first day of -2 months'));
     }
 
     public function boot(GoogleMerchantService $googleMerchantService): void
