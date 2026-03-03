@@ -262,6 +262,7 @@ new class extends Component {
                         'relative_demand' => $data['relativeDemand'] ?? null,
                         'title' => $data['title'] ?? null,
                         'brand' => $data['brand'] ?? null,
+                        'disponibilite' => $data['inventoryStatus'] ?? null,
                         'ean_list' => array_map(
                             fn($g) => $normalizeGtin((string) $g),
                             $data['variantGtins'] ?? []
@@ -943,7 +944,7 @@ new class extends Component {
                         </div>
 
                         <div class="relative">
-                            <div wire:loading wire:target="activePeriod, MondayWeekly, dateMonthly, perPage, setPage, clearCache, exportXlsx"
+                            <div wire:loading wire:target="activePeriod, MondayWeekly, dateMonthly, perPage, setPage, clearCache, disponibiliteFilter, exportXlsx"
                                 class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg bg-white/70 backdrop-blur-sm">
                                 <span class="loading loading-spinner loading-lg text-primary"></span>
                                 <span class="text-sm font-medium">Mise à jour…</span>
@@ -976,6 +977,7 @@ new class extends Component {
                                                     </div>
                                                 </th>
                                                 <th class="text-center">Demande relative</th>
+                                                <th class="text-center">Disponibilite</th>
                                                 @foreach($sites as $site)
                                                     <th class="text-center min-w-[150px]">{{ $site->name }}</th>
                                                 @endforeach
@@ -1070,6 +1072,16 @@ new class extends Component {
                                                         @if($item['relative_demand'])
                                                             <span class="badge badge-ghost badge-sm">
                                                                 {{ $item['relative_demand'] }}
+                                                            </span>
+                                                        @else
+                                                            <span class="text-gray-300">—</span>
+                                                        @endif
+                                                    </td>
+
+                                                    <td class="text-center">
+                                                        @if($item['disponibilite'])
+                                                            <span class="badge badge-ghost badge-sm">
+                                                                {{ $item['disponibilite'] }}
                                                             </span>
                                                         @else
                                                             <span class="text-gray-300">—</span>
