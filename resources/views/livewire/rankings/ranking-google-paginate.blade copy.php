@@ -56,6 +56,7 @@ new class extends Component {
 
     // valeur par defaut
     public $disponibiliteFilter = [];
+    protected $inventory_status_group_cache_control = "('IN_STOCK', 'NOT_IN_INVENTORY', 'OUT_OF_STOCK', 'INVENTORY_STATUS_UNSPECIFIED')";
 
     protected GoogleMerchantService $googleMerchantService;
 
@@ -195,7 +196,9 @@ new class extends Component {
         }
 
         // Vérifier le cache
-        $cacheKey = 'google_popularity_all_' . md5($countryCode . $periodCode . $date);
+        $cacheKey = 'google_popularity_all_' . md5($countryCode . $periodCode . $date . $inventory_status_group);
+
+        $this->inventory_status_group_cache_control = $inventory_status_group;
 
         return Cache::remember($cacheKey, now()->addHours(6), function () use ($countryCode, $periodCode, $date, $inventory_status_group) {
 
@@ -391,7 +394,7 @@ new class extends Component {
         $periodCode = $this->periodCodeMap[$this->activePeriod] ?? $this->activePeriod;
         $date = $periodCode === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly;
 
-        Cache::forget('google_popularity_all_' . md5($countryCode . $periodCode . $date));
+        Cache::forget('google_popularity_all_' . md5($countryCode . $periodCode . $date . $this->inventory_status_group_cache_control));
     }
 
     public function getSitesProperty()
