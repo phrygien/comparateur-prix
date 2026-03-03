@@ -14,6 +14,13 @@ new class extends Component {
 
     public int $perPage = 1000;
     public int $currentPage = 1;
+
+    public array $tokenPage = [
+        null
+    ];
+
+    public bool $nextTokenPageExist = False;
+
     public string $activeCountry = 'FR';
     public string $activePeriod = 'WEEKLY';
     public string $MondayWeekly = '2026-01-19';
@@ -196,7 +203,7 @@ new class extends Component {
         }
 
         // Vérifier le cache
-        $cacheKey = 'google_popularity_all_' . md5($countryCode . $periodCode . $date . $inventory_status_group);
+        $cacheKey = 'google_popularity_all_' . md5($countryCode . $periodCode . $date . $inventory_status_group . $this->currentPage);
 
         $this->inventory_status_group_cache_control = $inventory_status_group;
 
@@ -228,11 +235,10 @@ new class extends Component {
                     AND report_date = '{$date}'
                     AND inventory_status IN {$inventory_status_group}
                 ORDER BY rank ASC
-                LIMIT 1000
             ";
 
             try {
-                $response = $this->googleMerchantService->searchReports($query);
+                $response = $this->googleMerchantService->searchReportsNextPageToken($query, $this->tokenPage[$this->currentPage - 1]);
 
                 Log::info('Google Merchant raw response', ['response' => $response]);
 
@@ -245,6 +251,11 @@ new class extends Component {
                     }
                     return $gtin;
                 };
+
+                if($response['nextPageToken'] && !in_array($response['nextPageToken'], $this->tokenPage)){
+                    $this->nextTokenPageExist = True;
+                    $this->tokenPage[] = $response['nextPageToken'];
+                }
 
                 foreach ($response['results'] ?? [] as $row) {
                     $data = $row['bestSellersProductClusterView'] ?? [];
@@ -391,7 +402,7 @@ new class extends Component {
         $periodCode = $this->periodCodeMap[$this->activePeriod] ?? $this->activePeriod;
         $date = $periodCode === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly;
 
-        Cache::forget('google_popularity_all_' . md5($countryCode . $periodCode . $date . $this->inventory_status_group_cache_control));
+        Cache::forget('google_popularity_all_' . md5($countryCode . $periodCode . $date . $this->inventory_status_group_cache_control . $this->currentPage));
     }
 
     public function getSitesProperty()
@@ -728,7 +739,11 @@ new class extends Component {
     public function with(): array
     {
         $total = $this->popularityTotal;
-        $lastPage = max(1, (int) ceil($total / $this->perPage));
+        $lastPage = count($this->tokenPage);
+
+        if($this->nextTokenPageExist){
+            $lastPage ++;
+        }
 
         return [
             'sites' => $this->sites,
@@ -902,11 +917,6 @@ new class extends Component {
                             <div class="flex items-center gap-2">
                                 <span class="text-xs text-gray-400">Par page</span>
                                 <select wire:model.live="perPage" class="select select-sm select-bordered w-20">
-                                    <option value="25">25</option>
-                                    <option value="50">50</option>
-                                    <option value="100">100</option>
-                                    <option value="200">200</option>
-                                    <option value="500">500</option>
                                     <option value="1000">1000</option>
                                 </select>
                             </div>
