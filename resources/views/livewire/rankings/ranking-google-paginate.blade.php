@@ -237,6 +237,10 @@ new class extends Component {
                 ORDER BY rank ASC
             ";
 
+            if (!empty($this->disponibiliteFilter)) {
+                dd($query);
+            }
+
             try {
                 $response = $this->googleMerchantService->searchReportsNextPageToken($query, $this->tokenPage[$this->currentPage - 1]);
 
