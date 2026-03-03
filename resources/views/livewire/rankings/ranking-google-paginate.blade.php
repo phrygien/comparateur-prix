@@ -237,10 +237,6 @@ new class extends Component {
                 ORDER BY rank ASC
             ";
 
-            if (!empty($this->disponibiliteFilter)) {
-                dd($query);
-            }
-
             try {
                 $response = $this->googleMerchantService->searchReportsNextPageToken($query, $this->tokenPage[$this->currentPage - 1]);
 
@@ -255,6 +251,10 @@ new class extends Component {
                     }
                     return $gtin;
                 };
+
+                if (!empty($this->disponibiliteFilter)) {
+                    dd($response);
+                }
 
                 if($response['nextPageToken'] && !in_array($response['nextPageToken'], $this->tokenPage)){
                     $this->nextTokenPageExist = True;
