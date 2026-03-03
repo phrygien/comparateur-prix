@@ -130,7 +130,7 @@ new class extends Component {
                 if (!isset($indexed[$ean])) {
                     $indexed[$ean] = [];
                 }
-                
+
                 $indexed[$ean][] = [
                     'id' => $product->id,
                     'site_id' => $product->web_site_id,
@@ -167,9 +167,9 @@ new class extends Component {
 
         // Vérifier le cache
         $cacheKey = 'google_popularity_all_' . md5($countryCode . $periodCode . $date);
-        
+
         return Cache::remember($cacheKey, now()->addHours(6), function() use ($countryCode, $periodCode, $date) {
-            
+
             $query = "
                 SELECT
                     report_granularity,
@@ -252,7 +252,7 @@ new class extends Component {
                 $allEans = array_unique($allEans);
 
                 $magentoIndex = $this->getMagentoProductsByEans($allEans);
-                
+
                 $scrapedIndex = $this->getScrapedProductsByEans($allEans);
 
                 foreach ($ranks as &$item) {
@@ -296,31 +296,31 @@ new class extends Component {
         return count($this->popularityRanksAll);
     }
 
-    public function updatedActiveCountry(): void 
-    { 
-        $this->currentPage = 1; 
+    public function updatedActiveCountry(): void
+    {
+        $this->currentPage = 1;
         $this->clearCache();
     }
-    
-    public function updatedActivePeriod(): void  
-    { 
-        $this->currentPage = 1; 
+
+    public function updatedActivePeriod(): void
+    {
+        $this->currentPage = 1;
         $this->clearCache();
     }
-    
+
     public function updatedMondayWeekly(): void
     {
         $this->clearCache();
     }
-    
+
     public function updatedDateMonthly(): void
     {
         $this->clearCache();
     }
-    
-    public function updatedPerPage(): void       
-    { 
-        $this->currentPage = 1; 
+
+    public function updatedPerPage(): void
+    {
+        $this->currentPage = 1;
     }
 
     public function setPage(int $page): void
@@ -423,7 +423,7 @@ new class extends Component {
                             </button>
                         </div>
 
-                        <div class="flex flex-wrap items-center justify-around gap-4 mb-4">
+                        <div class="flex items-center justify-between w-full">
 
                             <div class="flex items-center gap-2">
                                 <span class="text-xs text-gray-400">Par page</span>
@@ -563,11 +563,11 @@ new class extends Component {
                                                                                 {{ $mag['sku'] }}
                                                                             </span>
                                                                         </div>
-                                                                        
+
                                                                         <div class="text-xs mb-1 line-clamp-1" title="{{ $mag['title'] }}">
                                                                             {{ utf8_encode($mag['title']) }}
                                                                         </div>
-                                                                        
+
                                                                         <div class="text-right">
                                                                             @if(!empty($mag['special_price']))
                                                                                 <span class="text-[10px] line-through text-gray-400 mr-1">
@@ -597,7 +597,7 @@ new class extends Component {
                                                             </div>
                                                         @endif
                                                     </td>
-                                                    
+
                                                     <td class="text-center">
                                                         @if($item['relative_demand'])
                                                             <span class="badge badge-ghost badge-sm">
@@ -623,7 +623,7 @@ new class extends Component {
                                                                     }
                                                                 }
                                                             @endphp
-                                                            
+
                                                             @if(!empty($productsForSite))
                                                                 <div class="space-y-2">
                                                                     @foreach($productsForSite as $product)
@@ -635,11 +635,11 @@ new class extends Component {
                                                                                     {{ $product['ean'] }}
                                                                                 </span>
                                                                             </div>
-                                                                            
+
                                                                             {{-- Ligne 2: Nom du produit (cliquable) --}}
                                                                             @if($product['url'])
-                                                                                <a href="{{ $product['url'] }}" 
-                                                                                target="_blank" 
+                                                                                <a href="{{ $product['url'] }}"
+                                                                                target="_blank"
                                                                                 class="link link-primary link-hover text-xs block mb-1 hover:underline"
                                                                                 title="{{ $product['name'] }}">
                                                                                     {{ Str::limit($product['name'], 25) }}
@@ -649,7 +649,7 @@ new class extends Component {
                                                                                     {{ Str::limit($product['name'], 25) }}
                                                                                 </div>
                                                                             @endif
-                                                                            
+
                                                                             {{-- Ligne 3: Prix et vendeur --}}
                                                                             <div class="flex items-center justify-between text-xs">
                                                                                 <span class="font-semibold {{ $product['is_available'] ? 'text-success' : 'text-error' }}">
@@ -687,34 +687,6 @@ new class extends Component {
                                 </div>
                             @endif
                         </div>
-
-                        @if($lastPage > 1)
-                            <div class="flex flex-wrap items-center justify-around gap-4 mt-4">
-                                <span class="text-xs text-gray-500">
-                                    Affichage
-                                    {{ (($currentPage - 1) * $perPage) + 1 }}–{{ min($currentPage * $perPage, $total) }}
-                                    sur {{ $total }}
-                                </span>
-                                <div class="join">
-                                    <button class="join-item btn btn-sm"
-                                        wire:click="setPage(1)"
-                                        @disabled($currentPage === 1)>«</button>
-                                    <button class="join-item btn btn-sm"
-                                        wire:click="setPage({{ $currentPage - 1 }})"
-                                        @disabled($currentPage === 1)>‹</button>
-                                    @foreach(range(max(1, $currentPage - 2), min($lastPage, $currentPage + 2)) as $p)
-                                        <button class="join-item btn btn-sm {{ $p === $currentPage ? 'btn-active btn-primary' : '' }}"
-                                            wire:click="setPage({{ $p }})">{{ $p }}</button>
-                                    @endforeach
-                                    <button class="join-item btn btn-sm"
-                                        wire:click="setPage({{ $currentPage + 1 }})"
-                                        @disabled($currentPage === $lastPage)>›</button>
-                                    <button class="join-item btn btn-sm"
-                                        wire:click="setPage({{ $lastPage }})"
-                                        @disabled($currentPage === $lastPage)>»</button>
-                                </div>
-                            </div>
-                        @endif
 
                     </div>
                 </x-tab>
