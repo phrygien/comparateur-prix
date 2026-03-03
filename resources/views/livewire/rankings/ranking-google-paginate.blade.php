@@ -763,9 +763,9 @@ new class extends Component {
         $total = $this->popularityTotal;
         $lastPage = count($this->tokenPage);
 
-        if($this->nextTokenPageExist){
-            $lastPage ++;
-        }
+        // if($this->nextTokenPageExist){
+        //     $lastPage ++;
+        // }
 
         return [
             'sites' => $this->sites,
@@ -975,8 +975,8 @@ new class extends Component {
                                             @disabled($currentPage === $lastPage)>»</button>
                                     </div>
                                 </div>
-                                last page : {{ $lastPage }} | token used for this page : {{ $tokenUsed }}
                             @endif
+                             last page : {{ $lastPage }} | token used for this page : {{ $tokenUsed }}
                         </div>
 
                         <div class="relative">
