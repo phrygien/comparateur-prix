@@ -207,7 +207,7 @@ new class extends Component {
 
         $this->inventory_status_group_cache_control = $inventory_status_group;
 
-        //return Cache::remember($cacheKey, now()->addHours(6), function () use ($countryCode, $periodCode, $date, $inventory_status_group) {
+        // return Cache::remember($cacheKey, now()->addHours(6), function () use ($countryCode, $periodCode, $date, $inventory_status_group) {
 
             $query = "
                 SELECT
@@ -960,10 +960,12 @@ new class extends Component {
                                         <button class="join-item btn btn-sm"
                                             wire:click="setPage({{ $currentPage - 1 }})"
                                             @disabled($currentPage === 1)>‹</button>
+
                                         @foreach(range(max(1, $currentPage - 2), min($lastPage, $currentPage + 2)) as $p)
                                             <button class="join-item btn btn-sm {{ $p === $currentPage ? 'btn-active btn-primary' : '' }}"
                                                 wire:click="setPage({{ $p }})">{{ $p }}</button>
                                         @endforeach
+
                                         <button class="join-item btn btn-sm"
                                             wire:click="setPage({{ $currentPage + 1 }})"
                                             @disabled($currentPage === $lastPage)>›</button>
@@ -972,6 +974,7 @@ new class extends Component {
                                             @disabled($currentPage === $lastPage)>»</button>
                                     </div>
                                 </div>
+                                last page : {{ $lastPage }}
                             @endif
                         </div>
 
