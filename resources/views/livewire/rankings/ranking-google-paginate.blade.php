@@ -200,61 +200,61 @@ new class extends Component {
             $inventory_status_group = "($inValues)";
         }
 
-        // Vérifier le cache
-        $cacheKey = 'google_popularity_all_' . md5($countryCode . $periodCode . $date . $inventory_status_group . $this->currentPage . $this->perPage);
-
         $this->inventory_status_group_cache_control = $inventory_status_group;
 
-        // return Cache::remember($cacheKey, now()->addHours(6), function () use ($countryCode, $periodCode, $date, $inventory_status_group) {
+        $query = "
+            SELECT
+                report_granularity,
+                report_date,
+                report_category_id,
+                category_l1,
+                category_l2,
+                category_l3,
+                brand,
+                title,
+                variant_gtins,
+                rank,
+                previous_rank,
+                report_country_code,
+                relative_demand,
+                previous_relative_demand,
+                relative_demand_change,
+                inventory_status,
+                brand_inventory_status
+            FROM best_sellers_product_cluster_view
+            WHERE report_country_code = '{$countryCode}'
+                AND report_granularity = '{$periodCode}'
+                AND category_l1 LIKE '%Health & Beauty%'
+                AND report_date = '{$date}'
+                AND inventory_status IN {$inventory_status_group}
+            ORDER BY rank ASC
+        ";
 
-            $query = "
-                SELECT
-                    report_granularity,
-                    report_date,
-                    report_category_id,
-                    category_l1,
-                    category_l2,
-                    category_l3,
-                    brand,
-                    title,
-                    variant_gtins,
-                    rank,
-                    previous_rank,
-                    report_country_code,
-                    relative_demand,
-                    previous_relative_demand,
-                    relative_demand_change,
-                    inventory_status,
-                    brand_inventory_status
-                FROM best_sellers_product_cluster_view
-                WHERE report_country_code = '{$countryCode}'
-                    AND report_granularity = '{$periodCode}'
-                    AND category_l1 LIKE '%Health & Beauty%'
-                    AND report_date = '{$date}'
-                    AND inventory_status IN {$inventory_status_group}
-                ORDER BY rank ASC
-            ";
+        try {
+            $response = $this->googleMerchantService->searchReportsNextPageToken($query, $this->perPage, $this->tokenPage[$this->currentPage - 1]);
 
-            try {
-                $response = $this->googleMerchantService->searchReportsNextPageToken($query, $this->perPage, $this->tokenPage[$this->currentPage - 1]);
+            Log::info('Google Merchant raw response', ['response' => $response]);
 
-                Log::info('Google Merchant raw response', ['response' => $response]);
+            $ranks = [];
 
-                $ranks = [];
-
-                $normalizeGtin = function (string $gtin): string {
-                    $gtin = preg_replace('/\D/', '', $gtin);
-                    if (strlen($gtin) === 14 && $gtin[0] === '0') {
-                        return substr($gtin, 1);
-                    }
-                    return $gtin;
-                };
-
-                if(array_key_exists('nextPageToken', $response)){
-                    if(!in_array($response['nextPageToken'], $this->tokenPage)){
-                        $this->tokenPage[] = $response['nextPageToken'];
-                    }
+            $normalizeGtin = function (string $gtin): string {
+                $gtin = preg_replace('/\D/', '', $gtin);
+                if (strlen($gtin) === 14 && $gtin[0] === '0') {
+                    return substr($gtin, 1);
                 }
+                return $gtin;
+            };
+
+            if(array_key_exists('nextPageToken', $response)){
+                if(!in_array($response['nextPageToken'], $this->tokenPage)){
+                    $this->tokenPage[] = $response['nextPageToken'];
+                }
+            }
+
+            // Vérifier le cache
+            $cacheKey = 'google_popularity_all_' . md5($countryCode . $periodCode . $date . $this->inventory_status_group_cache_control . $this->currentPage . $this->perPage);
+
+            return Cache::remember($cacheKey, now()->addHours(6), function () use ($countryCode, $periodCode, $date, $inventory_status_group) {
 
                 foreach ($response['results'] ?? [] as $row) {
                     $data = $row['bestSellersProductClusterView'] ?? [];
@@ -320,11 +320,12 @@ new class extends Component {
 
                 return $ranks;
 
-            } catch (\Exception $e) {
-                Log::error('Google Merchant popularity rank error: ' . $e->getMessage());
-                return [];
-            }
-        //});
+            });
+
+        } catch (\Exception $e) {
+            Log::error('Google Merchant popularity rank error: ' . $e->getMessage());
+            return [];
+        }
     }
 
     public function getPopularityRanksProperty(): array
@@ -343,7 +344,7 @@ new class extends Component {
         $this->tokenPage = [
             null
         ];
-        //$this->clearCache();
+        $this->clearCache();
     }
 
     public function updatedActivePeriod(): void
@@ -354,7 +355,7 @@ new class extends Component {
         $this->tokenPage = [
             null
         ];
-        //$this->clearCache();
+        $this->clearCache();
     }
 
     public function updatedMondayWeekly($value): void
@@ -391,7 +392,7 @@ new class extends Component {
         $this->tokenPage = [
             null
         ];
-        //$this->clearCache();
+        $this->clearCache();
     }
 
     public function updatedDisponibiliteFilter(): void
@@ -400,7 +401,7 @@ new class extends Component {
         $this->tokenPage = [
             null
         ];
-        //$this->clearCache();
+        $this->clearCache();
     }
 
     public function updatedPerPage(): void
@@ -409,6 +410,7 @@ new class extends Component {
         $this->tokenPage = [
             null
         ];
+        $this->clearCache();
     }
 
     public function setPage(int $page): void
@@ -422,7 +424,7 @@ new class extends Component {
         $periodCode = $this->periodCodeMap[$this->activePeriod] ?? $this->activePeriod;
         $date = $periodCode === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly.'-01';
 
-        Cache::forget('google_popularity_all_' . md5($countryCode . $periodCode . $date . $this->inventory_status_group_cache_control . $this->currentPage .  $this->perPage));
+        Cache::forget('google_popularity_all_' . md5($countryCode . $periodCode . $date . $this->inventory_status_group_cache_control . $this->currentPage . $this->perPage));
     }
 
     public function getSitesProperty()
@@ -813,7 +815,7 @@ new class extends Component {
                                         class="input input-bordered input-sm w-36"
                                     />
                                 @else
-                                    <span class="text-xs text-gray-400">Mois : <tag class="text-xs text-black">{{ $mois_mensuel }}</tag> </span>
+                                    <span class="text-xs text-gray-400">Mois : </span>
                                     <input type="month" id="month_input" wire:model.live="dateMonthly" value="{{ $mois_mensuel }}"
                                         class="input input-bordered input-sm w-36"/>
                                 @endif
@@ -975,7 +977,6 @@ new class extends Component {
                                     </div>
                                 </div>
                             @endif
-                             last page : {{ $lastPage }} | token used for this page : {{ $tokenUsed }} | mois mensuel : {{ $mois_mensuel }}
                         </div>
 
                         <div class="relative">
