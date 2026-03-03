@@ -12,12 +12,12 @@ use App\Models\Product;
 new class extends Component {
     use WithPagination;
 
-    public int    $perPage       = 25;
-    public int    $currentPage   = 1;
+    public int $perPage = 25;
+    public int $currentPage = 1;
     public string $activeCountry = 'FR';
-    public string $activePeriod  = 'WEEKLY';
-    public string $MondayWeekly  = '2026-01-19';
-    public string $dateMonthly   = '2026-01-01';
+    public string $activePeriod = 'WEEKLY';
+    public string $MondayWeekly = '2026-01-19';
+    public string $dateMonthly = '2026-01-01';
 
     public array $countries = [
         'FR' => 'France',
@@ -39,11 +39,11 @@ new class extends Component {
 
     public array $period = [
         'Hebdomadaire' => 'WEEKLY',
-        'Mensuel'      => 'MONTHLY',
+        'Mensuel' => 'MONTHLY',
     ];
 
     public array $periodCodeMap = [
-        'WEEKLY'  => 'WEEKLY',
+        'WEEKLY' => 'WEEKLY',
         'MONTHLY' => 'MONTHLY',
     ];
 
@@ -60,7 +60,7 @@ new class extends Component {
             return [];
         }
 
-        $eanList      = array_values(array_unique($eanList));
+        $eanList = array_values(array_unique($eanList));
         $placeholders = implode(',', array_fill(0, count($eanList), '?'));
 
         $query = "
@@ -115,11 +115,13 @@ new class extends Component {
         $eanList = array_values(array_unique($eanList));
 
         try {
-            $results = Product::with(['website' => function($query) {
+            $results = Product::with([
+                'website' => function ($query) {
                     $query->where('country_code', $this->activeCountry);
-                }])
+                }
+            ])
                 ->whereIn('ean', $eanList)
-                ->whereHas('website', function($query) {
+                ->whereHas('website', function ($query) {
                     $query->where('country_code', $this->activeCountry);
                 })
                 ->get();
@@ -162,13 +164,13 @@ new class extends Component {
     public function getPopularityRanksAllProperty(): array
     {
         $countryCode = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
-        $periodCode  = $this->periodCodeMap[$this->activePeriod]   ?? $this->activePeriod;
-        $date        = $periodCode === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly;
+        $periodCode = $this->periodCodeMap[$this->activePeriod] ?? $this->activePeriod;
+        $date = $periodCode === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly;
 
         // Vérifier le cache
         $cacheKey = 'google_popularity_all_' . md5($countryCode . $periodCode . $date);
 
-        return Cache::remember($cacheKey, now()->addHours(6), function() use ($countryCode, $periodCode, $date) {
+        return Cache::remember($cacheKey, now()->addHours(6), function () use ($countryCode, $periodCode, $date) {
 
             $query = "
                 SELECT
@@ -214,25 +216,25 @@ new class extends Component {
                 };
 
                 foreach ($response['results'] ?? [] as $row) {
-                    $data     = $row['bestSellersProductClusterView'] ?? [];
-                    $rank     = isset($data['rank'])         ? (int) $data['rank']         : null;
+                    $data = $row['bestSellersProductClusterView'] ?? [];
+                    $rank = isset($data['rank']) ? (int) $data['rank'] : null;
                     $prevRank = isset($data['previousRank']) ? (int) $data['previousRank'] : null;
-                    $delta    = ($rank !== null && $prevRank !== null) ? ($prevRank - $rank) : null;
+                    $delta = ($rank !== null && $prevRank !== null) ? ($prevRank - $rank) : null;
 
                     $ranks[] = [
-                        'rank'          => $rank,
+                        'rank' => $rank,
                         'previous_rank' => $prevRank,
-                        'delta'         => $delta,
-                        'delta_sign'    => match(true) {
+                        'delta' => $delta,
+                        'delta_sign' => match (true) {
                             $delta === null => null,
-                            $delta > 0      => '+',
-                            $delta < 0      => '-',
-                            default         => '=',
-                        },
+                            $delta > 0 => '+',
+                            $delta < 0 => '-',
+                            default => '=',
+                    },
                         'relative_demand' => $data['relativeDemand'] ?? null,
-                        'title'           => $data['title']          ?? null,
-                        'brand'           => $data['brand']          ?? null,
-                        'ean_list'        => array_map(
+                        'title' => $data['title'] ?? null,
+                        'brand' => $data['brand'] ?? null,
+                        'ean_list' => array_map(
                             fn($g) => $normalizeGtin((string) $g),
                             $data['variantGtins'] ?? []
                         ),
@@ -331,8 +333,8 @@ new class extends Component {
     public function clearCache(): void
     {
         $countryCode = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
-        $periodCode  = $this->periodCodeMap[$this->activePeriod]   ?? $this->activePeriod;
-        $date        = $periodCode === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly;
+        $periodCode = $this->periodCodeMap[$this->activePeriod] ?? $this->activePeriod;
+        $date = $periodCode === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly;
 
         Cache::forget('google_popularity_all_' . md5($countryCode . $periodCode . $date));
     }
@@ -344,342 +346,342 @@ new class extends Component {
             ->get();
     }
 
-public function exportXlsx(): \Symfony\Component\HttpFoundation\BinaryFileResponse
-{
-    $popularityRanks = $this->popularityRanksAll;
-    $sites = $this->sites;
+    public function exportXlsx(): \Symfony\Component\HttpFoundation\BinaryFileResponse
+    {
+        $popularityRanks = $this->popularityRanksAll;
+        $sites = $this->sites;
 
-    $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
-    $sheet = $spreadsheet->getActiveSheet();
-    $countryLabel = $this->countries[$this->activeCountry] ?? $this->activeCountry;
-    
-    $periodLabel = $this->activePeriod === 'WEEKLY' ? 'Semaine' : 'Mois';
-    $dateValue = $this->activePeriod === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly;
-    $sheet->setTitle('Popularité ' . $countryLabel);
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $countryLabel = $this->countries[$this->activeCountry] ?? $this->activeCountry;
 
-    // En-têtes exactement comme dans le tableau
-    $headers = [
-        'Rang Google',
-        'Google Group',
-        'Google Titre',
-        'EAN Google',
-        'Magento',
-        'Demande relative',
-    ];
+        $periodLabel = $this->activePeriod === 'WEEKLY' ? 'Semaine' : 'Mois';
+        $dateValue = $this->activePeriod === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly;
+        $sheet->setTitle('Popularité ' . $countryLabel);
 
-    // Ajouter les sites comme en-têtes
-    foreach ($sites as $site) {
-        $headers[] = $site->name;
-    }
+        // En-têtes exactement comme dans le tableau
+        $headers = [
+            'Rang Google',
+            'Google Group',
+            'Google Titre',
+            'EAN Google',
+            'Magento',
+            'Demande relative',
+        ];
 
-    // Positionner les en-têtes (ligne 1)
-    $col = 1;
-    foreach ($headers as $header) {
-        $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . '1';
-        $sheet->setCellValue($cell, $header);
-        $col++;
-    }
-
-    // Style des en-têtes (comme dans le tableau)
-    $lastColLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($headers));
-    $sheet->getStyle('A1:' . $lastColLetter . '1')->applyFromArray([
-        'fill' => [
-            'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
-            'startColor' => ['rgb' => '2D3748']
-        ],
-        'font' => [
-            'bold' => true,
-            'color' => ['rgb' => 'FFFFFF'],
-            'name' => 'Arial',
-            'size' => 10
-        ],
-        'alignment' => [
-            'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
-            'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER
-        ],
-    ]);
-
-    // Remplir les données exactement comme dans le tableau
-    $row = 2;
-    foreach ($popularityRanks as $item) {
-        $col = 1;
-        
-        // === COLONNE 1: Rang Google (avec évolution) ===
-        $rankCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row;
-        
-        if ($item['rank'] !== null) {
-            $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
-            
-            // Rang
-            $runRank = $richText->createTextRun('#' . $item['rank']);
-            $runRank->getFont()->setBold(true)->setName('Arial')->setSize(9);
-            
-            // Évolution
-            if ($item['delta'] !== null) {
-                $runDelta = $richText->createTextRun("\n" . ($item['delta_sign'] === '+' ? '+' : '') . $item['delta']);
-                $deltaColor = match($item['delta_sign']) {
-                    '+' => '1A7A3C',
-                    '-' => 'CC0000',
-                    default => '888888',
-                };
-                $runDelta->getFont()->setBold(true)->setName('Arial')->setSize(8);
-                $runDelta->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($deltaColor));
-            }
-            
-            $sheet->getCell($rankCell)->setValue($richText);
-            $sheet->getStyle($rankCell)->getAlignment()->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER);
-            $sheet->getStyle($rankCell)->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
-        } else {
-            $sheet->setCellValue($rankCell, '—');
-        }
-        $col++;
-        
-        // === COLONNE 2: Google Group (Marque) ===
-        $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row;
-        $sheet->setCellValue($cell, $item['brand'] ?? '—');
-        $sheet->getStyle($cell)->getFont()->setBold(true);
-        $col++;
-        
-        // === COLONNE 3: Google Titre ===
-        $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row;
-        $sheet->setCellValue($cell, $item['title'] ?? '—');
-        $sheet->getStyle($cell)->getFont()->setBold(true);
-        $col++;
-        
-        // === COLONNE 4: EAN Google ===
-        $eanCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row;
-        if (!empty($item['ean_list'])) {
-            $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
-            $first = true;
-            foreach ($item['ean_list'] as $ean) {
-                if (!$first) {
-                    $richText->createText("\n");
-                }
-                $runEan = $richText->createTextRun($ean);
-                
-                // Colorer selon présence dans Magento
-                $eanColor = isset($item['magento_products'][$ean]) ? '1A7A3C' : 'CC0000';
-                $runEan->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($eanColor));
-                $runEan->getFont()->setBold(isset($item['magento_products'][$ean]));
-                
-                $first = false;
-            }
-            $sheet->getCell($eanCell)->setValue($richText);
-        } else {
-            $sheet->setCellValue($eanCell, '—');
-            $sheet->getStyle($eanCell)->getFont()->getColor()->setRGB('AAAAAA');
-        }
-        $col++;
-        
-        // === COLONNE 5: Magento ===
-        $magentoCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row;
-        if (!empty($item['magento_products'])) {
-            $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
-            $first = true;
-            foreach ($item['magento_products'] as $ean => $mag) {
-                if (!$first) {
-                    $richText->createText("\n\n");
-                }
-                
-                // SKU
-                $runSku = $richText->createTextRun($mag['sku']);
-                $runSku->getFont()->setBold(true)->setName('Arial')->setSize(9);
-                
-                // Titre
-                $richText->createText("\n");
-                $runTitle = $richText->createTextRun(utf8_encode($mag['title']));
-                $runTitle->getFont()->setName('Arial')->setSize(8);
-                
-                // Prix
-                $richText->createText("\n");
-                if (!empty($mag['special_price'])) {
-                    $runPrice = $richText->createTextRun(
-                        number_format($mag['price'] ?? 0, 2, ',', ' ') . '€ → ' . 
-                        number_format($mag['special_price'], 2, ',', ' ') . '€'
-                    );
-                    $runPrice->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('1A7A3C'));
-                } else {
-                    $priceText = number_format($mag['price'] ?? 0, 2, ',', ' ') . '€';
-                    $runPrice = $richText->createTextRun($priceText);
-                    if (($mag['price'] ?? 0) > 0) {
-                        $runPrice->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('1A7A3C'));
-                    }
-                }
-                $runPrice->getFont()->setBold(true)->setName('Arial')->setSize(8);
-                
-                $first = false;
-            }
-            $sheet->getCell($magentoCell)->setValue($richText);
-            $sheet->getStyle($magentoCell)->getAlignment()->setWrapText(true);
-        } else {
-            $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
-            $runText = $richText->createTextRun('Non référencé');
-            $runText->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('AAAAAA'));
-            $runText->getFont()->setItalic(true);
-            $sheet->getCell($magentoCell)->setValue($richText);
-        }
-        $col++;
-        
-        // === COLONNE 6: Demande relative ===
-        $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row;
-        $sheet->setCellValue($cell, $item['relative_demand'] ?? '—');
-        $sheet->getStyle($cell)->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
-        $col++;
-        
-        // === COLONNES DES SITES ===
+        // Ajouter les sites comme en-têtes
         foreach ($sites as $site) {
-            $siteCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row;
-            
-            $productsForSite = [];
-            foreach ($item['ean_list'] as $ean) {
-                if (isset($item['scraped_products'][$ean])) {
-                    foreach ($item['scraped_products'][$ean] as $scrapedProduct) {
-                        if ($scrapedProduct['site_id'] == $site->id) {
-                            $productsForSite[] = $scrapedProduct;
-                        }
-                    }
+            $headers[] = $site->name;
+        }
+
+        // Positionner les en-têtes (ligne 1)
+        $col = 1;
+        foreach ($headers as $header) {
+            $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . '1';
+            $sheet->setCellValue($cell, $header);
+            $col++;
+        }
+
+        // Style des en-têtes (comme dans le tableau)
+        $lastColLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($headers));
+        $sheet->getStyle('A1:' . $lastColLetter . '1')->applyFromArray([
+            'fill' => [
+                'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                'startColor' => ['rgb' => '2D3748']
+            ],
+            'font' => [
+                'bold' => true,
+                'color' => ['rgb' => 'FFFFFF'],
+                'name' => 'Arial',
+                'size' => 10
+            ],
+            'alignment' => [
+                'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
+                'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER
+            ],
+        ]);
+
+        // Remplir les données exactement comme dans le tableau
+        $row = 2;
+        foreach ($popularityRanks as $item) {
+            $col = 1;
+
+            // === COLONNE 1: Rang Google (avec évolution) ===
+            $rankCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row;
+
+            if ($item['rank'] !== null) {
+                $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
+
+                // Rang
+                $runRank = $richText->createTextRun('#' . $item['rank']);
+                $runRank->getFont()->setBold(true)->setName('Arial')->setSize(9);
+
+                // Évolution
+                if ($item['delta'] !== null) {
+                    $runDelta = $richText->createTextRun("\n" . ($item['delta_sign'] === '+' ? '+' : '') . $item['delta']);
+                    $deltaColor = match ($item['delta_sign']) {
+                        '+' => '1A7A3C',
+                        '-' => 'CC0000',
+                        default => '888888',
+                    };
+                    $runDelta->getFont()->setBold(true)->setName('Arial')->setSize(8);
+                    $runDelta->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($deltaColor));
                 }
+
+                $sheet->getCell($rankCell)->setValue($richText);
+                $sheet->getStyle($rankCell)->getAlignment()->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER);
+                $sheet->getStyle($rankCell)->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+            } else {
+                $sheet->setCellValue($rankCell, '—');
             }
-            
-            if (!empty($productsForSite)) {
+            $col++;
+
+            // === COLONNE 2: Google Group (Marque) ===
+            $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row;
+            $sheet->setCellValue($cell, $item['brand'] ?? '—');
+            $sheet->getStyle($cell)->getFont()->setBold(true);
+            $col++;
+
+            // === COLONNE 3: Google Titre ===
+            $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row;
+            $sheet->setCellValue($cell, $item['title'] ?? '—');
+            $sheet->getStyle($cell)->getFont()->setBold(true);
+            $col++;
+
+            // === COLONNE 4: EAN Google ===
+            $eanCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row;
+            if (!empty($item['ean_list'])) {
                 $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
                 $first = true;
-                
-                foreach ($productsForSite as $product) {
+                foreach ($item['ean_list'] as $ean) {
+                    if (!$first) {
+                        $richText->createText("\n");
+                    }
+                    $runEan = $richText->createTextRun($ean);
+
+                    // Colorer selon présence dans Magento
+                    $eanColor = isset($item['magento_products'][$ean]) ? '1A7A3C' : 'CC0000';
+                    $runEan->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($eanColor));
+                    $runEan->getFont()->setBold(isset($item['magento_products'][$ean]));
+
+                    $first = false;
+                }
+                $sheet->getCell($eanCell)->setValue($richText);
+            } else {
+                $sheet->setCellValue($eanCell, '—');
+                $sheet->getStyle($eanCell)->getFont()->getColor()->setRGB('AAAAAA');
+            }
+            $col++;
+
+            // === COLONNE 5: Magento ===
+            $magentoCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row;
+            if (!empty($item['magento_products'])) {
+                $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
+                $first = true;
+                foreach ($item['magento_products'] as $ean => $mag) {
                     if (!$first) {
                         $richText->createText("\n\n");
                     }
-                    
-                    // EAN
-                    $runEan = $richText->createTextRun($product['ean']);
-                    $runEan->getFont()->setBold(true)->setName('Arial')->setSize(8);
-                    $runEan->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color(
-                        $product['is_available'] ? '1A7A3C' : 'CC0000'
-                    ));
-                    
-                    // Nom du produit
+
+                    // SKU
+                    $runSku = $richText->createTextRun($mag['sku']);
+                    $runSku->getFont()->setBold(true)->setName('Arial')->setSize(9);
+
+                    // Titre
                     $richText->createText("\n");
-                    $runName = $richText->createTextRun(\Illuminate\Support\Str::limit($product['name'], 25));
-                    $runName->getFont()->setName('Arial')->setSize(8);
-                    
+                    $runTitle = $richText->createTextRun(utf8_encode($mag['title']));
+                    $runTitle->getFont()->setName('Arial')->setSize(8);
+
                     // Prix
                     $richText->createText("\n");
-                    $runPrice = $richText->createTextRun(
-                        number_format($product['price'], 2, ',', ' ') . ' ' . ($product['currency'] ?? '€')
-                    );
-                    $runPrice->getFont()->setBold(true)->setName('Arial')->setSize(8);
-                    $runPrice->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color(
-                        $product['is_available'] ? '1A7A3C' : 'CC0000'
-                    ));
-                    
-                    // URL (si disponible)
-                    if ($product['url']) {
-                        $richText->createText("\n");
-                        $runUrl = $richText->createTextRun('🔗 Lien');
-                        $runUrl->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('0563C1'));
-                        $runUrl->getFont()->setUnderline(true)->setName('Arial')->setSize(7);
-                        
-                        // Ajouter le lien hypertexte
-                        $sheet->getCell($siteCell)->getHyperlink()->setUrl($product['url']);
+                    if (!empty($mag['special_price'])) {
+                        $runPrice = $richText->createTextRun(
+                            number_format($mag['price'] ?? 0, 2, ',', ' ') . '€ → ' .
+                            number_format($mag['special_price'], 2, ',', ' ') . '€'
+                        );
+                        $runPrice->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('1A7A3C'));
+                    } else {
+                        $priceText = number_format($mag['price'] ?? 0, 2, ',', ' ') . '€';
+                        $runPrice = $richText->createTextRun($priceText);
+                        if (($mag['price'] ?? 0) > 0) {
+                            $runPrice->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('1A7A3C'));
+                        }
                     }
-                    
+                    $runPrice->getFont()->setBold(true)->setName('Arial')->setSize(8);
+
                     $first = false;
                 }
-                
-                $sheet->getCell($siteCell)->setValue($richText);
-                $sheet->getStyle($siteCell)->getAlignment()->setWrapText(true);
-                $sheet->getStyle($siteCell)->getAlignment()->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP);
+                $sheet->getCell($magentoCell)->setValue($richText);
+                $sheet->getStyle($magentoCell)->getAlignment()->setWrapText(true);
             } else {
                 $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
-                $runText = $richText->createTextRun('Aucun produit');
+                $runText = $richText->createTextRun('Non référencé');
                 $runText->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('AAAAAA'));
                 $runText->getFont()->setItalic(true);
-                $sheet->getCell($siteCell)->setValue($richText);
-                $sheet->getStyle($siteCell)->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+                $sheet->getCell($magentoCell)->setValue($richText);
             }
-            
             $col++;
+
+            // === COLONNE 6: Demande relative ===
+            $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row;
+            $sheet->setCellValue($cell, $item['relative_demand'] ?? '—');
+            $sheet->getStyle($cell)->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+            $col++;
+
+            // === COLONNES DES SITES ===
+            foreach ($sites as $site) {
+                $siteCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row;
+
+                $productsForSite = [];
+                foreach ($item['ean_list'] as $ean) {
+                    if (isset($item['scraped_products'][$ean])) {
+                        foreach ($item['scraped_products'][$ean] as $scrapedProduct) {
+                            if ($scrapedProduct['site_id'] == $site->id) {
+                                $productsForSite[] = $scrapedProduct;
+                            }
+                        }
+                    }
+                }
+
+                if (!empty($productsForSite)) {
+                    $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
+                    $first = true;
+
+                    foreach ($productsForSite as $product) {
+                        if (!$first) {
+                            $richText->createText("\n\n");
+                        }
+
+                        // EAN
+                        $runEan = $richText->createTextRun($product['ean']);
+                        $runEan->getFont()->setBold(true)->setName('Arial')->setSize(8);
+                        $runEan->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color(
+                            $product['is_available'] ? '1A7A3C' : 'CC0000'
+                        ));
+
+                        // Nom du produit
+                        $richText->createText("\n");
+                        $runName = $richText->createTextRun(\Illuminate\Support\Str::limit($product['name'], 25));
+                        $runName->getFont()->setName('Arial')->setSize(8);
+
+                        // Prix
+                        $richText->createText("\n");
+                        $runPrice = $richText->createTextRun(
+                            number_format($product['price'], 2, ',', ' ') . ' ' . ($product['currency'] ?? '€')
+                        );
+                        $runPrice->getFont()->setBold(true)->setName('Arial')->setSize(8);
+                        $runPrice->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color(
+                            $product['is_available'] ? '1A7A3C' : 'CC0000'
+                        ));
+
+                        // URL (si disponible)
+                        if ($product['url']) {
+                            $richText->createText("\n");
+                            $runUrl = $richText->createTextRun('🔗 Lien');
+                            $runUrl->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('0563C1'));
+                            $runUrl->getFont()->setUnderline(true)->setName('Arial')->setSize(7);
+
+                            // Ajouter le lien hypertexte
+                            $sheet->getCell($siteCell)->getHyperlink()->setUrl($product['url']);
+                        }
+
+                        $first = false;
+                    }
+
+                    $sheet->getCell($siteCell)->setValue($richText);
+                    $sheet->getStyle($siteCell)->getAlignment()->setWrapText(true);
+                    $sheet->getStyle($siteCell)->getAlignment()->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP);
+                } else {
+                    $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
+                    $runText = $richText->createTextRun('Aucun produit');
+                    $runText->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('AAAAAA'));
+                    $runText->getFont()->setItalic(true);
+                    $sheet->getCell($siteCell)->setValue($richText);
+                    $sheet->getStyle($siteCell)->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+                }
+
+                $col++;
+            }
+
+            // Alterner les couleurs de fond (comme dans le tableau)
+            if (($row - 2) % 2 === 0) {
+                $sheet->getStyle('A' . $row . ':' . $lastColLetter . $row)->applyFromArray([
+                    'fill' => [
+                        'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                        'startColor' => ['rgb' => 'F7FAFC']
+                    ]
+                ]);
+            }
+
+            $row++;
         }
-        
-        // Alterner les couleurs de fond (comme dans le tableau)
-        if (($row - 2) % 2 === 0) {
-            $sheet->getStyle('A' . $row . ':' . $lastColLetter . $row)->applyFromArray([
-                'fill' => [
-                    'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
-                    'startColor' => ['rgb' => 'F7FAFC']
+
+        // Ajuster la largeur des colonnes
+        $sheet->getColumnDimension('A')->setWidth(12);  // Rang Google
+        $sheet->getColumnDimension('B')->setWidth(15);  // Google Group
+        $sheet->getColumnDimension('C')->setWidth(40);  // Google Titre
+        $sheet->getColumnDimension('D')->setWidth(20);  // EAN Google
+        $sheet->getColumnDimension('E')->setWidth(35);  // Magento
+        $sheet->getColumnDimension('F')->setWidth(15);  // Demande relative
+
+        // Colonnes des sites (auto-size)
+        for ($i = 7; $i <= count($headers); $i++) {
+            $colLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($i);
+            $sheet->getColumnDimension($colLetter)->setWidth(25);
+        }
+
+        // Geler la première ligne
+        $sheet->freezePane('A2');
+
+        // Style pour toutes les cellules de données
+        $sheet->getStyle('A2:' . $lastColLetter . ($row - 1))->applyFromArray([
+            'font' => ['name' => 'Arial', 'size' => 9],
+            'borders' => [
+                'allBorders' => [
+                    'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                    'color' => ['rgb' => 'DDDDDD']
                 ]
-            ]);
-        }
-        
-        $row++;
-    }
-
-    // Ajuster la largeur des colonnes
-    $sheet->getColumnDimension('A')->setWidth(12);  // Rang Google
-    $sheet->getColumnDimension('B')->setWidth(15);  // Google Group
-    $sheet->getColumnDimension('C')->setWidth(40);  // Google Titre
-    $sheet->getColumnDimension('D')->setWidth(20);  // EAN Google
-    $sheet->getColumnDimension('E')->setWidth(35);  // Magento
-    $sheet->getColumnDimension('F')->setWidth(15);  // Demande relative
-    
-    // Colonnes des sites (auto-size)
-    for ($i = 7; $i <= count($headers); $i++) {
-        $colLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($i);
-        $sheet->getColumnDimension($colLetter)->setWidth(25);
-    }
-
-    // Geler la première ligne
-    $sheet->freezePane('A2');
-
-    // Style pour toutes les cellules de données
-    $sheet->getStyle('A2:' . $lastColLetter . ($row - 1))->applyFromArray([
-        'font' => ['name' => 'Arial', 'size' => 9],
-        'borders' => [
-            'allBorders' => [
-                'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
-                'color' => ['rgb' => 'DDDDDD']
             ]
-        ]
-    ]);
+        ]);
 
-    // Alignement vertical en haut pour toutes les cellules
-    $sheet->getStyle('A2:' . $lastColLetter . ($row - 1))
-        ->getAlignment()->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP);
+        // Alignement vertical en haut pour toutes les cellules
+        $sheet->getStyle('A2:' . $lastColLetter . ($row - 1))
+            ->getAlignment()->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP);
 
-    // Créer le dossier d'export si nécessaire
-    $exportDir = storage_path('app/public/exports');
-    if (!file_exists($exportDir)) {
-        mkdir($exportDir, 0755, true);
+        // Créer le dossier d'export si nécessaire
+        $exportDir = storage_path('app/public/exports');
+        if (!file_exists($exportDir)) {
+            mkdir($exportDir, 0755, true);
+        }
+
+        // Générer le nom du fichier
+        $fileName = 'popularite_google_' . strtolower($this->activeCountry)
+            . '_' . ($this->activePeriod === 'WEEKLY' ? 'semaine' : 'mois')
+            . '_' . $dateValue
+            . '_' . date('Ymd_His') . '.xlsx';
+        $filePath = $exportDir . '/' . $fileName;
+
+        // Sauvegarder le fichier
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        $writer->save($filePath);
+
+        // Retourner la réponse de téléchargement
+        return response()->download($filePath, $fileName)->deleteFileAfterSend(true);
     }
-
-    // Générer le nom du fichier
-    $fileName = 'popularite_google_' . strtolower($this->activeCountry)
-        . '_' . ($this->activePeriod === 'WEEKLY' ? 'semaine' : 'mois')
-        . '_' . $dateValue
-        . '_' . date('Ymd_His') . '.xlsx';
-    $filePath = $exportDir . '/' . $fileName;
-
-    // Sauvegarder le fichier
-    $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
-    $writer->save($filePath);
-
-    // Retourner la réponse de téléchargement
-    return response()->download($filePath, $fileName)->deleteFileAfterSend(true);
-}
 
 
     public function with(): array
     {
-        $total    = $this->popularityTotal;
+        $total = $this->popularityTotal;
         $lastPage = max(1, (int) ceil($total / $this->perPage));
 
         return [
             'sites' => $this->sites,
             'popularityRanks' => $this->popularityRanks,
-            'total'           => $total,
-            'lastPage'        => $lastPage,
-            'currentPage'     => $this->currentPage,
-            'perPage'         => $this->perPage,
+            'total' => $total,
+            'lastPage' => $lastPage,
+            'currentPage' => $this->currentPage,
+            'perPage' => $this->perPage,
         ];
     }
 }; ?>
@@ -729,46 +731,41 @@ public function exportXlsx(): \Symfony\Component\HttpFoundation\BinaryFileRespon
 
                             <div class="divider divider-horizontal mx-0"></div>
 
-                            <button type="button" wire:click="clearCache"
-                                wire:loading.attr="disabled"
-                                wire:loading.class="opacity-60 cursor-not-allowed"
-                                class="btn btn-sm btn-ghost gap-2" title="Vider le cache et recharger">
-                                <span wire:loading.remove wire:target="clearCache" class="flex items-center gap-2">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                                    </svg>
-                                    Rafraîchir
-                                </span>
-                                <span wire:loading wire:target="clearCache" class="flex items-center gap-2">
-                                    <span class="loading loading-spinner loading-xs"></span>
-                                    Rafraîchissement…
-                                </span>
-                            </button>
+                            <div class="flex items-center gap-2">
+                                <button type="button" wire:click="clearCache"
+                                    wire:loading.attr="disabled"
+                                    wire:loading.class="opacity-60 cursor-not-allowed"
+                                    class="btn btn-sm btn-ghost gap-2" title="Vider le cache et recharger">
+                                    <span wire:loading.remove wire:target="clearCache" class="flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                        </svg>
+                                        Rafraîchir
+                                    </span>
+                                    <span wire:loading wire:target="clearCache" class="flex items-center gap-2">
+                                        <span class="loading loading-spinner loading-xs"></span>
+                                        Rafraîchissement…
+                                    </span>
+                                </button>
+
+                                <button type="button" wire:click="exportXlsx" wire:loading.attr="disabled" class="btn btn-sm btn-success gap-2">
+                                    <span wire:loading.remove wire:target="exportXlsx" class="flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                        </svg>
+                                        Export Excel
+                                    </span>
+                                    <span wire:loading wire:target="exportXlsx" class="flex items-center gap-2">
+                                        <span class="loading loading-spinner loading-xs"></span>
+                                        Export en cours...
+                                    </span>
+                                </button>
+                            </div>
                         </div>
 
-                        <div class="flex items-center gap-2">
-    <button type="button" 
-        wire:click="exportXlsx"
-        wire:loading.attr="disabled"
-        class="btn btn-sm btn-success gap-2">
-        <span wire:loading.remove wire:target="exportXlsx" class="flex items-center gap-2">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-            </svg>
-            Export Excel
-        </span>
-        <span wire:loading wire:target="exportXlsx" class="flex items-center gap-2">
-            <span class="loading loading-spinner loading-xs"></span>
-            Export en cours...
-        </span>
-    </button>
-</div>
-
-                        <div class="flex flex-wrap items-center justify-around gap-4 mb-4">
-                        <div class="flex items-center justify-between w-full">
-
+                        <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
                             <div class="flex items-center gap-2">
                                 <span class="text-xs text-gray-400">Par page</span>
                                 <select wire:model.live="perPage" class="select select-sm select-bordered w-20">
@@ -810,10 +807,9 @@ public function exportXlsx(): \Symfony\Component\HttpFoundation\BinaryFileRespon
                                 </div>
                             @endif
                         </div>
-                        <br>
-                        <div class="relative">
 
-                            <div wire:loading wire:target="activePeriod, MondayWeekly, dateMonthly, perPage, setPage, clearCache"
+                        <div class="relative">
+                            <div wire:loading wire:target="activePeriod, MondayWeekly, dateMonthly, perPage, setPage, clearCache, exportXlsx"
                                 class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg bg-white/70 backdrop-blur-sm">
                                 <span class="loading loading-spinner loading-lg text-primary"></span>
                                 <span class="text-sm font-medium">Mise à jour…</span>
@@ -834,9 +830,9 @@ public function exportXlsx(): \Symfony\Component\HttpFoundation\BinaryFileRespon
                                         <thead>
                                             <tr>
                                                 <th class="text-center w-24">Rang Google</th>
-                                                <th class="text-center" >Google Group</th>
-                                                <th class="text-center" >Google Titre</th>
-                                                <th class="text-center" >EAN Google</th>
+                                                <th class="text-center">Google Group</th>
+                                                <th class="text-center">Google Titre</th>
+                                                <th class="text-center">EAN Google</th>
                                                 <th class="min-w-[420px] text-center">
                                                     <div class="flex items-center gap-1">
                                                         <svg class="w-3.5 h-3.5 text-orange-500" viewBox="0 0 24 24" fill="currentColor">
@@ -854,7 +850,6 @@ public function exportXlsx(): \Symfony\Component\HttpFoundation\BinaryFileRespon
                                         <tbody>
                                             @foreach($popularityRanks as $item)
                                                 <tr class="hover odd:bg-gray-50 even:bg-white">
-
                                                     <td class="text-center">
                                                         <div class="flex flex-col items-center gap-0.5">
                                                             <span class="font-bold font-mono text-sm">
@@ -869,26 +864,21 @@ public function exportXlsx(): \Symfony\Component\HttpFoundation\BinaryFileRespon
                                                         </div>
                                                     </td>
 
-                                                    <td class="font-semibold">
+                                                    <td class="font-semibold text-center">
                                                         {{ $item['brand'] ?? '—' }}
                                                     </td>
 
-                                                    <td class="font-bold max-w-xs truncate" title="{{ $item['title'] ?? '' }}">
+                                                    <td class="font-bold max-w-xs truncate text-center" title="{{ $item['title'] ?? '' }}">
                                                         {{ $item['title'] ?? '—' }}
                                                     </td>
 
-                                                    <td class="p-1 align-center">
+                                                    <td class="p-1 align-center text-center">
                                                         @if(!empty($item['ean_list']))
                                                             <div class="flex flex-col gap-0.5">
                                                                 @foreach($item['ean_list'] as $ean)
                                                                     <span class="font-mono text-xs
                                                                         {{ isset($item['magento_products'][$ean]) ? 'text-success font-semibold' : 'text-error font-medium' }}">
                                                                         {{ $ean }}
-                                                                        @if(isset($item['magento_products'][$ean]))
-                                                                            <span class="text-success" title="Trouvé dans Magento"></span>
-                                                                        @else
-                                                                            <span class="text-error" title="Non trouvé dans Magento"></span>
-                                                                        @endif
                                                                     </span>
                                                                 @endforeach
                                                             </div>
@@ -957,10 +947,10 @@ public function exportXlsx(): \Symfony\Component\HttpFoundation\BinaryFileRespon
                                                         <td class="align-top p-2 border-l border-base-200 first:border-l-0">
                                                             @php
                                                                 $productsForSite = [];
-                                                                foreach($item['ean_list'] as $ean) {
-                                                                    if(isset($item['scraped_products'][$ean])) {
-                                                                        foreach($item['scraped_products'][$ean] as $scrapedProduct) {
-                                                                            if($scrapedProduct['site_id'] == $site->id) {
+                                                                foreach ($item['ean_list'] as $ean) {
+                                                                    if (isset($item['scraped_products'][$ean])) {
+                                                                        foreach ($item['scraped_products'][$ean] as $scrapedProduct) {
+                                                                            if ($scrapedProduct['site_id'] == $site->id) {
                                                                                 $productsForSite[] = $scrapedProduct;
                                                                             }
                                                                         }
@@ -971,21 +961,18 @@ public function exportXlsx(): \Symfony\Component\HttpFoundation\BinaryFileRespon
                                                             @if(!empty($productsForSite))
                                                                 <div class="space-y-2">
                                                                     @foreach($productsForSite as $product)
-                                                                        {{-- Conteneur pour chaque produit avec bordure et espacement --}}
                                                                         <div class="bg-base-50 rounded p-2 border border-base-200 hover:border-primary/30 transition-colors">
-                                                                            {{-- Ligne 1: EAN et statut --}}
                                                                             <div class="flex items-center justify-between gap-2 mb-1">
                                                                                 <span class="font-mono font-bold text-xs {{ $product['is_available'] ? 'text-success' : 'text-error' }}">
                                                                                     {{ $product['ean'] }}
                                                                                 </span>
                                                                             </div>
 
-                                                                            {{-- Ligne 2: Nom du produit (cliquable) --}}
                                                                             @if($product['url'])
                                                                                 <a href="{{ $product['url'] }}"
-                                                                                target="_blank"
-                                                                                class="link link-primary link-hover text-xs block mb-1 hover:underline"
-                                                                                title="{{ $product['name'] }}">
+                                                                                   target="_blank"
+                                                                                   class="link link-primary link-hover text-xs block mb-1 hover:underline"
+                                                                                   title="{{ $product['name'] }}">
                                                                                     {{ Str::limit($product['name'], 25) }}
                                                                                 </a>
                                                                             @else
@@ -994,7 +981,6 @@ public function exportXlsx(): \Symfony\Component\HttpFoundation\BinaryFileRespon
                                                                                 </div>
                                                                             @endif
 
-                                                                            {{-- Ligne 3: Prix et vendeur --}}
                                                                             <div class="flex items-center justify-between text-xs">
                                                                                 <span class="font-semibold {{ $product['is_available'] ? 'text-success' : 'text-error' }}">
                                                                                     {{ number_format($product['price'], 2, ',', ' ') }} {{ $product['currency'] ?? '€' }}
@@ -1010,35 +996,13 @@ public function exportXlsx(): \Symfony\Component\HttpFoundation\BinaryFileRespon
                                                             @endif
                                                         </td>
                                                     @endforeach
-
                                                 </tr>
                                             @endforeach
                                         </tbody>
-                                        <tfoot>
-                                            <tr>
-                                                <th class="text-center w-24">Rang Google</th>
-                                                <th class="text-center" >Google Group</th>
-                                                <th class="text-center" >Google Titre</th>
-                                                <th class="text-center" >EAN Google</th>
-                                                <th class="min-w-[420px] text-center">
-                                                    <div class="flex items-center gap-1">
-                                                        <svg class="w-3.5 h-3.5 text-orange-500" viewBox="0 0 24 24" fill="currentColor">
-                                                            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                                                        </svg>
-                                                        Magento
-                                                    </div>
-                                                </th>
-                                                <th class="text-center">Demande relative</th>
-                                                @foreach($sites as $site)
-                                                    <th class="text-center min-w-[150px]">{{ $site->name }}</th>
-                                                @endforeach
-                                            </tr>
-                                        </tfoot>
                                     </table>
                                 </div>
                             @endif
                         </div>
-
                     </div>
                 </x-tab>
             @endforeach
