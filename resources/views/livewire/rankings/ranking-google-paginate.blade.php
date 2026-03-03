@@ -809,12 +809,12 @@ new class extends Component {
 
                                 @if($activePeriod === 'WEEKLY')
                                     <span class="text-xs text-gray-400">Semaine du lundi</span>
-                                    <input type="date" wire:model.live="MondayWeekly"
+                                    <input type="date"  id="date_input" wire:model.live="MondayWeekly"
                                         class="input input-bordered input-sm w-36"
                                     />
                                 @else
                                     <span class="text-xs text-gray-400">Mois : <tag class="text-xs text-black">{{ $mois_mensuel }}</tag> </span>
-                                    <input type="month" wire:model.live="dateMonthly" value="{{ $mois_mensuel }}"
+                                    <input type="month" id="month_input" wire:model.live="dateMonthly" value="{{ $mois_mensuel }}"
                                         class="input input-bordered input-sm w-36"/>
                                 @endif
 
