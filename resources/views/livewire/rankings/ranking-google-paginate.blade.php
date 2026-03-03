@@ -49,6 +49,12 @@ new class extends Component {
 
     protected GoogleMerchantService $googleMerchantService;
 
+    public function mount(): void
+    {
+        $this->MondayWeekly = date('Y-m-d', strtotime('monday -2 weeks'));
+        $this->dateTo = date('Y-m-01', strtotime('first day of -2 months'));
+    }
+
     public function boot(GoogleMerchantService $googleMerchantService): void
     {
         $this->googleMerchantService = $googleMerchantService;
@@ -718,25 +724,9 @@ new class extends Component {
                             @if($activePeriod === 'WEEKLY')
                                 <div class="flex items-center gap-2">
                                     <span class="text-xs text-gray-400">Semaine du lundi</span>
-                                    <input type="date"  id="mondayInput"
-                                        wire:model.live="MondayWeekly"
+                                    <input type="date" wire:model.live="MondayWeekly"
                                         class="input input-bordered input-sm w-36"
                                     />
-                                    <script>
-                                        document.getElementById('mondayInput').addEventListener('change', function () {
-                                            let date = new Date(this.value);
-                                            let day = date.getDay();
-
-                                            if (day !== 1) {
-                                                // Calcul du lundi précédent
-                                                let diff = day === 0 ? -6 : 1 - day;
-                                                date.setDate(date.getDate() + diff);
-
-                                                // Mise à jour du champ
-                                                this.value = date.toISOString().split('T')[0];
-                                            }
-                                        });
-                                    </script>
                                 </div>
                             @else
                                 <div class="flex items-center gap-2">
