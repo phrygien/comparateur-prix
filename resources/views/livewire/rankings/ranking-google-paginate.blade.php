@@ -866,7 +866,7 @@ $results = Product::with([
                                         </thead>
                                         <tbody>
                                             @foreach($popularityRanks as $item)
-                                                <tr class="hover">
+                                                <tr class="hover odd:bg-gray-50 even:bg-white">
                                                     <td class="text-center">
                                                         <div class="flex flex-col items-center gap-0.5">
                                                             <span class="font-bold font-mono text-sm">
