@@ -466,7 +466,7 @@ new class extends Component {
                                 </div>
                             @endif
                         </div>
-
+                        <br>
                         <div class="relative">
 
                             <div wire:loading wire:target="activePeriod, MondayWeekly, dateMonthly, perPage, setPage, clearCache"
