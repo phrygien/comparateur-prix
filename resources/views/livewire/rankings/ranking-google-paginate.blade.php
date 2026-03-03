@@ -725,9 +725,15 @@ new class extends Component {
                                     <script>
                                         document.getElementById('mondayInput').addEventListener('change', function () {
                                             let date = new Date(this.value);
-                                            if (date.getDay() !== 1) {   // 1 = Monday
-                                                alert("Merci de choisir un lundi.");
-                                                this.value = "";
+                                            let day = date.getDay();
+
+                                            if (day !== 1) {
+                                                // Calcul du lundi précédent
+                                                let diff = day === 0 ? -6 : 1 - day;
+                                                date.setDate(date.getDate() + diff);
+
+                                                // Mise à jour du champ
+                                                this.value = date.toISOString().split('T')[0];
                                             }
                                         });
                                     </script>
