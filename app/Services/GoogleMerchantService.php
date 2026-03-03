@@ -97,7 +97,7 @@ class GoogleMerchantService
         }
     }
 
-    public function searchReportsNextPageToken(string $query, $nextPageToken): array
+    public function searchReportsNextPageToken(string $query, $perPage, $nextPageToken): array
     {
         $accessToken = $this->getAccessToken();
 
@@ -107,7 +107,7 @@ class GoogleMerchantService
                 'Content-Type' => 'application/json',
             ])->post("https://merchantapi.googleapis.com/reports/v1/accounts/{$this->merchantId}/reports:search", [
                 'query' => $query,
-                'pageSize' => 1000,
+                'pageSize' =>  $perPage,
                 'pageToken' => $nextPageToken
             ]);
 
