@@ -47,12 +47,14 @@ new class extends Component {
         'MONTHLY' => 'MONTHLY',
     ];
 
-    public $disponibilite = [
-        'Disponible en stock' => 'IN_STOCK',
-        'Rupture de stock' => 'OUT_OF_STOCK',
-        'Pas dans le catalogue' => 'NOT_IN_INVENTORY',
-        'A verifier' => 'INVENTORY_STATUS_UNSPECIFIED'
+    public $availableDispo = [
+        'IN_STOCK',
+        'OUT_OF_STOCK',
+        'NOT_IN_INVENTORY',
+        'INVENTORY_STATUS_UNSPECIFIED'
     ];
+
+    public $disponibiliteFilter = [];
 
     protected GoogleMerchantService $googleMerchantService;
 
@@ -711,6 +713,7 @@ new class extends Component {
         return [
             'sites' => $this->sites,
             'popularityRanks' => $this->popularityRanks,
+            'availableDispo' => $this->availableDispo,
             'total' => $total,
             'lastPage' => $lastPage,
             'currentPage' => $this->currentPage,
@@ -746,16 +749,95 @@ new class extends Component {
                                 @endforeach
 
                                 @if($activePeriod === 'WEEKLY')
-                                        <span class="text-xs text-gray-400">Semaine du lundi</span>
-                                        <input type="date" wire:model.live="MondayWeekly"
-                                            class="input input-bordered input-sm w-36"
-                                        />
+                                    <span class="text-xs text-gray-400">Semaine du lundi</span>
+                                    <input type="date" wire:model.live="MondayWeekly"
+                                        class="input input-bordered input-sm w-36"
+                                    />
                                 @else
-                                        <span class="text-xs text-gray-400">Mois</span>
-                                        <input type="month" wire:model.live="dateMonthly"
-                                            class="input input-bordered input-sm w-36"/>
+                                    <span class="text-xs text-gray-400">Mois</span>
+                                    <input type="month" wire:model.live="dateMonthly"
+                                        class="input input-bordered input-sm w-36"/>
                                 @endif
 
+                            </div>
+
+                            <div class="divider divider-horizontal mx-0"></div>
+
+                            @if(!empty($disponibiliteFilter))
+                                · Filtre(s) : {{ implode(', ', $disponibiliteFilter) }}
+                            @endif
+
+                            <div class="flex items-center gap-2">
+                                {{-- Filtre Groupe --}}
+                                <div class="form-control" x-data="{
+                                    open: false,
+                                    search: '',
+                                    get filteredGroupes() {
+                                        if (this.search === '') return @js($availableDispo);
+                                        return @js($availableDispo).filter(g =>
+                                            g.toLowerCase().includes(this.search.toLowerCase())
+                                        );
+                                    }
+                                }">
+                                    <div class="flex flex-wrap gap-2 mb-2">
+                                        @foreach($disponibiliteFilter as $selectedGroupe)
+                                            <div class="badge badge-primary gap-2 py-3 px-3">
+                                                <span class="text-xs font-medium">{{ $selectedGroupe }}</span>
+                                                <button type="button"
+                                                    wire:click="$set('disponibiliteFilter', {{ json_encode(array_values(array_diff($disponibiliteFilter, [$selectedGroupe]))) }})"
+                                                    class="btn btn-ghost btn-xs btn-circle">
+                                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        @endforeach
+                                        @if(count($disponibiliteFilter) > 0)
+                                            <button type="button" wire:click="$set('disponibiliteFilter', [])" class="badge badge-ghost gap-2 py-3 px-3 hover:badge-error">
+                                                <span class="text-xs">Tout effacer</span>
+                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                                </svg>
+                                            </button>
+                                        @endif
+                                    </div>
+                                    <div class="relative">
+                                        <button type="button" @click="open = !open" class="btn btn-sm btn-outline btn-primary gap-2">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                            </svg>
+                                            {{ count($disponibiliteFilter) > 0 ? 'Ajouter' : 'Sélectionner' }}
+                                        </button>
+                                        <div x-show="open" @click.away="open = false" x-transition
+                                            class="absolute z-50 mt-2 w-80 bg-base-100 rounded-lg shadow-xl border border-base-300">
+                                            <div class="p-3 border-b border-base-300">
+                                                <input type="text" x-model="search" placeholder="Rechercher ..."
+                                                    class="input input-sm input-bordered w-full" @click.stop/>
+                                            </div>
+                                            <div class="max-h-64 overflow-y-auto p-2">
+                                                <template x-for="groupe in filteredGroupes" :key="groupe">
+                                                    <button type="button"
+                                                        @click="$wire.set('disponibiliteFilter', [...@js($disponibiliteFilter), groupe].filter((v, i, a) => a.indexOf(v) === i)); search = ''"
+                                                        class="w-full text-left px-3 py-2 rounded-md text-sm flex items-center justify-between group hover:bg-base-200"
+                                                        x-show="!@js($disponibiliteFilter).includes(groupe)">
+                                                        <span x-text="groupe"></span>
+                                                        <svg class="w-4 h-4 opacity-0 group-hover:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                                        </svg>
+                                                    </button>
+                                                </template>
+                                                <div x-show="filteredGroupes.length === 0" class="text-center py-8 text-gray-400 text-sm">Aucun filtre trouvé</div>
+                                                <div x-show="filteredGroupes.length > 0 && filteredGroupes.every(g => @js($disponibiliteFilter).includes(g))" class="text-center py-8 text-gray-400 text-sm">
+                                                    Tous les filtrés sont déjà sélectionnés
+                                                </div>
+                                            </div>
+                                            <div class="p-3 border-t border-base-300 text-xs text-gray-500 flex items-center justify-between">
+                                                <span>{{ count($disponibiliteFilter) }} groupe(s) sélectionné(s)</span>
+                                                <button type="button" @click="open = false" class="text-primary hover:underline">Fermer</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="divider divider-horizontal mx-0"></div>
