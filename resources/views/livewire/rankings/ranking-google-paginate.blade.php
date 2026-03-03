@@ -386,8 +386,7 @@ new class extends Component {
 
     public function updatedDateMonthly($value): void
     {
-        $date = new \DateTime($value . '-01');
-        $this->dateMonthly = $date->format('Y-m');
+        $this->dateMonthly = date('Y-m', strtotime($value . '-01'));
         $this->currentPage = 1;
         $this->tokenPage = [
             null
