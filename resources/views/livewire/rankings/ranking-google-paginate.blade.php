@@ -929,8 +929,7 @@ new class extends Component {
                                 <div class="flex items-center gap-4">
                                     <span class="text-xs text-gray-500">
                                         Affichage
-                                        {{ (($currentPage - 1) * $perPage) + 1 }}–{{ min($currentPage * $perPage, $total) }}
-                                        sur {{ $total }}
+                                        {{ (($currentPage - 1) * $perPage) + 1 }}–{{ min(($currentPage * $perPage)*$perPage, (($currentPage - 1) * $perPage) + $total) }}
                                     </span>
                                     <div class="join">
                                         <button class="join-item btn btn-sm"
