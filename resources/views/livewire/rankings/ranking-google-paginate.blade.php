@@ -12,17 +12,22 @@ use App\Models\Product;
 new class extends Component {
     use WithPagination;
 
-    public int $perPage = 50;
-    public int $currentPage = 1;
-
-    public array $tokenPage = [
-        null
-    ];
-
+    public int    $perPage       = 50;
+    public int    $currentPage   = 1;
     public string $activeCountry = 'FR';
-    public string $activePeriod = 'WEEKLY';
-    public string $MondayWeekly = '2026-01-19';
-    public string $dateMonthly = '2026-01';
+    public string $activePeriod  = 'WEEKLY';
+    public string $MondayWeekly  = '';
+    public string $dateMonthly   = '';
+
+    // Stocke les nextPageToken indexés par numéro de page
+    // tokenPage[0] = null (page 1, pas de token)
+    // tokenPage[1] = 'token_abc' (page 2)
+    // tokenPage[2] = 'token_xyz' (page 3)
+    // etc.
+    public array $tokenPage = [null];
+
+    // Nombre total de pages connu (grandit au fil de la navigation)
+    public int $knownLastPage = 1;
 
     public array $countries = [
         'FR' => 'France',
@@ -44,31 +49,32 @@ new class extends Component {
 
     public array $period = [
         'Hebdomadaire' => 'WEEKLY',
-        'Mensuel' => 'MONTHLY',
+        'Mensuel'      => 'MONTHLY',
     ];
 
     public array $periodCodeMap = [
-        'WEEKLY' => 'WEEKLY',
+        'WEEKLY'  => 'WEEKLY',
         'MONTHLY' => 'MONTHLY',
     ];
 
-    public $availableDispo = [
+    public array $availableDispo = [
         'IN_STOCK',
         'OUT_OF_STOCK',
         'NOT_IN_INVENTORY',
-        'INVENTORY_STATUS_UNSPECIFIED'
+        'INVENTORY_STATUS_UNSPECIFIED',
     ];
 
-    // valeur par defaut
-    public $disponibiliteFilter = [];
-    protected $inventory_status_group_cache_control = "('IN_STOCK', 'NOT_IN_INVENTORY', 'OUT_OF_STOCK', 'INVENTORY_STATUS_UNSPECIFIED')";
+    public array $disponibiliteFilter = [];
 
     protected GoogleMerchantService $googleMerchantService;
 
+    // -------------------------------------------------------------------------
+    // Lifecycle
+    // -------------------------------------------------------------------------
     public function mount(): void
     {
         $this->MondayWeekly = date('Y-m-d', strtotime('monday - 3 weeks'));
-        $this->dateMonthly = date('Y-m', strtotime('first day of -2 months'));
+        $this->dateMonthly  = date('Y-m',   strtotime('first day of -2 months'));
     }
 
     public function boot(GoogleMerchantService $googleMerchantService): void
@@ -76,50 +82,84 @@ new class extends Component {
         $this->googleMerchantService = $googleMerchantService;
     }
 
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+    protected function normalizeGtin(string $gtin): string
+    {
+        $gtin = preg_replace('/\D/', '', $gtin);
+        if (strlen($gtin) === 14 && $gtin[0] === '0') {
+            return substr($gtin, 1);
+        }
+        return $gtin;
+    }
+
+    protected function buildInventoryFilter(): string
+    {
+        if (!empty($this->disponibiliteFilter)) {
+            $inValues = implode(',', array_map(
+                fn($v) => "'" . addslashes($v) . "'",
+                $this->disponibiliteFilter
+            ));
+            return "($inValues)";
+        }
+        return "('IN_STOCK', 'OUT_OF_STOCK', 'NOT_IN_INVENTORY', 'INVENTORY_STATUS_UNSPECIFIED')";
+    }
+
+    protected function resetPagination(): void
+    {
+        $this->currentPage  = 1;
+        $this->tokenPage    = [null];
+        $this->knownLastPage = 1;
+    }
+
+    // -------------------------------------------------------------------------
+    // Magento — récupération en batch par liste d'EANs
+    // -------------------------------------------------------------------------
     protected function getMagentoProductsByEans(array $eanList): array
     {
         if (empty($eanList)) {
             return [];
         }
 
-        $eanList = array_values(array_unique($eanList));
+        $eanList      = array_values(array_unique($eanList));
         $placeholders = implode(',', array_fill(0, count($eanList), '?'));
 
-        $query = "
+        $sql = "
             SELECT
-                produit.entity_id                                        AS id,
-                produit.sku                                              AS sku,
-                product_char.reference                                   AS parkode,
-                CAST(product_char.name AS CHAR CHARACTER SET utf8mb4)    AS title,
-                produit.sku                                              AS ean,
-                ROUND(product_decimal.price, 2)                          AS price,
-                ROUND(product_decimal.special_price, 2)                  AS special_price,
-                ROUND(product_decimal.cost, 2)                           AS cost,
-                stock_item.qty                                           AS quantity,
-                stock_status.stock_status                                AS stock_status,
-                product_int.status                                       AS status
+                produit.entity_id                                     AS id,
+                produit.sku                                           AS sku,
+                product_char.reference                                AS parkode,
+                CAST(product_char.name AS CHAR CHARACTER SET utf8mb4) AS title,
+                produit.sku                                           AS ean,
+                ROUND(product_decimal.price, 2)                       AS price,
+                ROUND(product_decimal.special_price, 2)               AS special_price,
+                ROUND(product_decimal.cost, 2)                        AS cost,
+                stock_item.qty                                        AS quantity,
+                stock_status.stock_status                             AS stock_status,
+                product_int.status                                    AS status
             FROM catalog_product_entity AS produit
-            LEFT JOIN product_char
-                ON product_char.entity_id    = produit.entity_id
-            LEFT JOIN product_decimal
-                ON product_decimal.entity_id = produit.entity_id
-            LEFT JOIN product_int
-                ON product_int.entity_id     = produit.entity_id
-            LEFT JOIN cataloginventory_stock_item AS stock_item
-                ON stock_item.product_id     = produit.entity_id
-            LEFT JOIN cataloginventory_stock_status AS stock_status
-                ON stock_status.product_id   = produit.entity_id
+            LEFT JOIN product_char         ON product_char.entity_id    = produit.entity_id
+            LEFT JOIN product_decimal      ON product_decimal.entity_id = produit.entity_id
+            LEFT JOIN product_int          ON product_int.entity_id     = produit.entity_id
+            LEFT JOIN cataloginventory_stock_item   AS stock_item   ON stock_item.product_id   = produit.entity_id
+            LEFT JOIN cataloginventory_stock_status AS stock_status ON stock_status.product_id = produit.entity_id
             WHERE produit.sku IN ({$placeholders})
         ";
 
         try {
-            $results = DB::connection('mysqlMagento')->select($query, $eanList);
+            DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+            $results = DB::connection('mysqlMagento')->select($sql, $eanList);
 
             $indexed = [];
             foreach ($results as $row) {
-                $indexed[(string) $row->ean] = (array) $row;
+                $row = (array) $row;
+                // Nettoyage UTF-8 sur le titre
+                if (!empty($row['title']) && !mb_check_encoding($row['title'], 'UTF-8')) {
+                    $row['title'] = mb_convert_encoding($row['title'], 'UTF-8', 'Windows-1252');
+                }
+                $indexed[(string) $row['ean']] = $row;
             }
-
             return $indexed;
 
         } catch (\Exception $e) {
@@ -128,6 +168,9 @@ new class extends Component {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // Scraped products — récupération en batch par liste d'EANs
+    // -------------------------------------------------------------------------
     protected function getScrapedProductsByEans(array $eanList): array
     {
         if (empty($eanList)) {
@@ -138,43 +181,34 @@ new class extends Component {
 
         try {
             $results = Product::with([
-                'website' => function ($query) {
-                    $query->where('country_code', $this->activeCountry);
-                }
+                'website' => fn($q) => $q->where('country_code', $this->activeCountry),
             ])
                 ->whereIn('ean', $eanList)
-                ->whereHas('website', function ($query) {
-                    $query->where('country_code', $this->activeCountry);
-                })
+                ->whereHas('website', fn($q) => $q->where('country_code', $this->activeCountry))
                 ->get();
 
             $indexed = [];
             foreach ($results as $product) {
                 $ean = (string) $product->ean;
-                if (!isset($indexed[$ean])) {
-                    $indexed[$ean] = [];
-                }
-
                 $indexed[$ean][] = [
-                    'id' => $product->id,
-                    'site_id' => $product->web_site_id,
-                    'site_name' => $product->website->name ?? null,
+                    'id'           => $product->id,
+                    'site_id'      => $product->web_site_id,
+                    'site_name'    => $product->website->name         ?? null,
                     'site_country' => $product->website->country_code ?? null,
-                    'ean' => $product->ean,
-                    'name' => $product->name,
-                    'vendor' => $product->vendor,
-                    'price' => $product->prix_ht,
-                    'currency' => $product->currency,
-                    'url' => $product->url,
-                    'image_url' => $product->image_url,
-                    'type' => $product->type,
-                    'variation' => $product->variation,
+                    'ean'          => $product->ean,
+                    'name'         => $product->name,
+                    'vendor'       => $product->vendor,
+                    'price'        => $product->prix_ht,
+                    'currency'     => $product->currency,
+                    'url'          => $product->url,
+                    'image_url'    => $product->image_url,
+                    'type'         => $product->type,
+                    'variation'    => $product->variation,
                     'is_available' => !empty($product->prix_ht) && $product->prix_ht > 0,
                     'last_checked' => $product->updated_at,
-                    'created_at' => $product->created_at,
+                    'created_at'   => $product->created_at,
                 ];
             }
-
             return $indexed;
 
         } catch (\Exception $e) {
@@ -183,101 +217,94 @@ new class extends Component {
         }
     }
 
-    public function getPopularityRanksAllProperty(): array
+    // -------------------------------------------------------------------------
+    // Propriété principale — une page à la fois via nextPageToken
+    // -------------------------------------------------------------------------
+    public function getPopularityRanksProperty(): array
     {
-        $countryCode = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
-        $periodCode = $this->periodCodeMap[$this->activePeriod] ?? $this->activePeriod;
-        $date = $periodCode === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly.'-01';
+        $countryCode      = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
+        $periodCode       = $this->periodCodeMap[$this->activePeriod]   ?? $this->activePeriod;
+        $date             = $periodCode === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly . '-01';
+        $inventoryFilter  = $this->buildInventoryFilter();
 
-        //ajout filtre
-        $inventory_status_group = "('IN_STOCK', 'NOT_IN_INVENTORY', 'OUT_OF_STOCK', 'INVENTORY_STATUS_UNSPECIFIED')";
-        if (!empty($this->disponibiliteFilter)) {
-            // Nettoyage + mise entre quotes
-            $inValues = implode(
-                ',',
-                array_map(fn($v) => "'" . addslashes($v) . "'", $this->disponibiliteFilter)
-            );
-            $inventory_status_group = "($inValues)";
-        }
+        // Token de la page courante (null = première page)
+        $token = $this->tokenPage[$this->currentPage - 1] ?? null;
 
-        // Vérifier le cache
-        $cacheKey = 'google_popularity_all_' . md5($countryCode . $periodCode . $date . $inventory_status_group . $this->currentPage . $this->perPage);
+        $cacheKey = 'google_popularity_page_' . md5(
+            $countryCode . $periodCode . $date . $inventoryFilter
+            . $this->perPage . ($token ?? 'null')
+        );
 
-        $this->inventory_status_group_cache_control = $inventory_status_group;
-
-        // return Cache::remember($cacheKey, now()->addHours(6), function () use ($countryCode, $periodCode, $date, $inventory_status_group) {
+        //return Cache::remember($cacheKey, now()->addHours(6), function () use ($countryCode, $periodCode, $date, $inventoryFilter, $token) {
 
             $query = "
                 SELECT
-                    report_granularity,
-                    report_date,
-                    report_category_id,
-                    category_l1,
-                    category_l2,
-                    category_l3,
                     brand,
                     title,
                     variant_gtins,
                     rank,
                     previous_rank,
-                    report_country_code,
                     relative_demand,
-                    previous_relative_demand,
                     relative_demand_change,
                     inventory_status,
                     brand_inventory_status
                 FROM best_sellers_product_cluster_view
                 WHERE report_country_code = '{$countryCode}'
-                    AND report_granularity = '{$periodCode}'
-                    AND category_l1 LIKE '%Health & Beauty%'
-                    AND report_date = '{$date}'
-                    AND inventory_status IN {$inventory_status_group}
+                  AND report_granularity = '{$periodCode}'
+                  AND category_l1 LIKE '%Health & Beauty%'
+                  AND report_date = '{$date}'
+                  AND inventory_status IN {$inventoryFilter}
                 ORDER BY rank ASC
             ";
 
             try {
-                $response = $this->googleMerchantService->searchReportsNextPageToken($query, $this->perPage, $this->tokenPage[$this->currentPage - 1]);
+                $response = $this->googleMerchantService->searchReportsNextPageToken(
+                    $query,
+                    $this->perPage,
+                    $token
+                );
 
-                Log::info('Google Merchant raw response', ['response' => $response]);
+                Log::info('Google Merchant response page ' . $this->currentPage, [
+                    'hasNextToken' => array_key_exists('nextPageToken', $response),
+                ]);
 
-                $ranks = [];
+                // Enregistrer le token de la page suivante si on ne l'a pas encore
+                if (array_key_exists('nextPageToken', $response)) {
+                    $nextToken = $response['nextPageToken'];
+                    $nextIndex = $this->currentPage; // index = page suivante - 1
 
-                $normalizeGtin = function (string $gtin): string {
-                    $gtin = preg_replace('/\D/', '', $gtin);
-                    if (strlen($gtin) === 14 && $gtin[0] === '0') {
-                        return substr($gtin, 1);
-                    }
-                    return $gtin;
-                };
-
-                if(array_key_exists('nextPageToken', $response)){
-                    if(!in_array($response['nextPageToken'], $this->tokenPage)){
-                        $this->tokenPage[] = $response['nextPageToken'];
+                    if (!isset($this->tokenPage[$nextIndex])) {
+                        $tokens = $this->tokenPage;
+                        $tokens[$nextIndex] = $nextToken;
+                        $this->tokenPage    = $tokens;
+                        $this->knownLastPage = count($this->tokenPage);
                     }
                 }
 
+                $ranks = [];
+
                 foreach ($response['results'] ?? [] as $row) {
-                    $data = $row['bestSellersProductClusterView'] ?? [];
-                    $rank = isset($data['rank']) ? (int) $data['rank'] : null;
+                    $data     = $row['bestSellersProductClusterView'] ?? [];
+                    $rank     = isset($data['rank'])         ? (int) $data['rank']         : null;
                     $prevRank = isset($data['previousRank']) ? (int) $data['previousRank'] : null;
-                    $delta = ($rank !== null && $prevRank !== null) ? ($prevRank - $rank) : null;
+                    $delta    = ($rank !== null && $prevRank !== null) ? ($prevRank - $rank) : null;
 
                     $ranks[] = [
-                        'rank' => $rank,
-                        'previous_rank' => $prevRank,
-                        'delta' => $delta,
-                        'delta_sign' => match (true) {
+                        'rank'             => $rank,
+                        'previous_rank'    => $prevRank,
+                        'delta'            => $delta,
+                        'delta_sign'       => match(true) {
                             $delta === null => null,
-                            $delta > 0 => '+',
-                            $delta < 0 => '-',
-                            default => '=',
-                    },
-                        'relative_demand' => $data['relativeDemand'] ?? null,
-                        'title' => $data['title'] ?? null,
-                        'brand' => $data['brand'] ?? null,
-                        'disponibilite' => $data['inventoryStatus'] ?? null,
-                        'ean_list' => array_map(
-                            fn($g) => $normalizeGtin((string) $g),
+                            $delta > 0      => '+',
+                            $delta < 0      => '-',
+                            default         => '=',
+                        },
+                        'relative_demand'  => $data['relativeDemand']  ?? null,
+                        'title'            => $data['title']            ?? null,
+                        'brand'            => $data['brand']            ?? null,
+                        'disponibilite'    => $data['inventoryStatus']  ?? null,
+                        'ean_list'         => array_map(
+                            fn($g) => $this->normalizeGtin((string) $g),
                             $data['variantGtins'] ?? []
                         ),
                         'magento_products' => [],
@@ -285,36 +312,24 @@ new class extends Component {
                     ];
                 }
 
-                $allEans = [];
-                foreach ($ranks as $item) {
-                    foreach ($item['ean_list'] as $ean) {
-                        if ($ean !== '') {
-                            $allEans[] = $ean;
-                        }
-                    }
-                }
-                $allEans = array_unique($allEans);
+                // Batch enrichissement Magento + Scraped
+                $allEans = array_unique(array_merge(...array_map(
+                    fn($item) => array_filter($item['ean_list']),
+                    $ranks
+                )));
 
                 $magentoIndex = $this->getMagentoProductsByEans($allEans);
-
                 $scrapedIndex = $this->getScrapedProductsByEans($allEans);
 
                 foreach ($ranks as &$item) {
-                    $matchedMagento = [];
                     foreach ($item['ean_list'] as $ean) {
                         if (isset($magentoIndex[$ean])) {
-                            $matchedMagento[$ean] = $magentoIndex[$ean];
+                            $item['magento_products'][$ean] = $magentoIndex[$ean];
                         }
-                    }
-                    $item['magento_products'] = $matchedMagento;
-
-                    $matchedScraped = [];
-                    foreach ($item['ean_list'] as $ean) {
                         if (isset($scrapedIndex[$ean])) {
-                            $matchedScraped[$ean] = $scrapedIndex[$ean];
+                            $item['scraped_products'][$ean] = $scrapedIndex[$ean];
                         }
                     }
-                    $item['scraped_products'] = $matchedScraped;
                 }
                 unset($item);
 
@@ -327,103 +342,80 @@ new class extends Component {
         //});
     }
 
-    public function getPopularityRanksProperty(): array
-    {
-        return $this->popularityRanksAll;
-    }
-
     public function getPopularityTotalProperty(): int
     {
-        return count($this->popularityRanksAll);
+        return count($this->popularityRanks);
     }
 
-    public function updatedActiveCountry(): void
-    {
-        $this->currentPage = 1;
-        $this->tokenPage = [
-            null
-        ];
-        //$this->clearCache();
-    }
+    // -------------------------------------------------------------------------
+    // Watchers — réinitialise la pagination sur tout changement de filtre
+    // -------------------------------------------------------------------------
+    public function updatedActiveCountry(): void    { $this->resetPagination(); }
+    public function updatedDisponibiliteFilter(): void { $this->resetPagination(); }
+    public function updatedPerPage(): void          { $this->resetPagination(); }
 
     public function updatedActivePeriod(): void
     {
         $this->MondayWeekly = date('Y-m-d', strtotime('monday - 3 weeks'));
-        $this->dateMonthly = date('Y-m', strtotime('first day of -2 months'));
-        $this->currentPage = 1;
-        $this->tokenPage = [
-            null
-        ];
-        //$this->clearCache();
+        $this->dateMonthly  = date('Y-m',   strtotime('first day of -2 months'));
+        $this->resetPagination();
     }
 
-    public function updatedMondayWeekly($value): void
+    public function updatedMondayWeekly(string $value): void
     {
-        // Si vide → rien à faire
-        if (!$value) {
-            return;
-        }
-        // Convertir en objet DateTime
+        if (!$value) return;
+
         $date = new \DateTime($value);
-        $day = (int) $date->format('N'); // 1 = lundi, 7 = dimanche
+        $day  = (int) $date->format('N'); // 1 = lundi
 
         if ($day !== 1) {
-            // Calculer la différence pour arriver au lundi
             $diff = ($day === 7) ? 1 : (1 - $day);
-
-            // Modifier la date vers le lundi le plus proche
-            $date->modify("$diff days");
-
-            // Mettre à jour le champ Livewire
+            $date->modify("{$diff} days");
             $this->MondayWeekly = $date->format('Y-m-d');
         }
-        $this->currentPage = 1;
-        $this->tokenPage = [
-            null
-        ];
+
+        $this->resetPagination();
         $this->clearCache();
     }
 
-    public function updatedDateMonthly(): void
-    {
-        $this->currentPage = 1;
-        $this->tokenPage = [
-            null
-        ];
-        //$this->clearCache();
-    }
+    public function updatedDateMonthly(): void { $this->resetPagination(); }
 
-    public function updatedDisponibiliteFilter(): void
-    {
-        $this->currentPage = 1;
-        $this->tokenPage = [
-            null
-        ];
-        //$this->clearCache();
-    }
-
-    public function updatedPerPage(): void
-    {
-        $this->currentPage = 1;
-        $this->tokenPage = [
-            null
-        ];
-    }
-
+    // -------------------------------------------------------------------------
+    // Navigation
+    // -------------------------------------------------------------------------
     public function setPage(int $page): void
     {
+        // On ne peut pas aller plus loin que les tokens connus
+        if ($page < 1 || $page > $this->knownLastPage) {
+            return;
+        }
         $this->currentPage = $page;
     }
 
+    // -------------------------------------------------------------------------
+    // Cache
+    // -------------------------------------------------------------------------
     public function clearCache(): void
     {
-        $countryCode = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
-        $periodCode = $this->periodCodeMap[$this->activePeriod] ?? $this->activePeriod;
-        $date = $periodCode === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly.'-01';
+        $countryCode     = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
+        $periodCode      = $this->periodCodeMap[$this->activePeriod]   ?? $this->activePeriod;
+        $date            = $periodCode === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly . '-01';
+        $inventoryFilter = $this->buildInventoryFilter();
 
-        Cache::forget('google_popularity_all_' . md5($countryCode . $periodCode . $date . $this->inventory_status_group_cache_control . $this->currentPage .  $this->perPage));
+        // Vider le cache de toutes les pages connues
+        foreach ($this->tokenPage as $token) {
+            Cache::forget('google_popularity_page_' . md5(
+                $countryCode . $periodCode . $date . $inventoryFilter
+                . $this->perPage . ($token ?? 'null')
+            ));
+        }
+
+        $this->resetPagination();
     }
 
+    // -------------------------------------------------------------------------
+    // Sites
+    // -------------------------------------------------------------------------
     public function getSitesProperty()
     {
         return Site::where('country_code', $this->activeCountry)
@@ -431,345 +423,248 @@ new class extends Component {
             ->get();
     }
 
+    // -------------------------------------------------------------------------
+    // Export XLSX
+    // -------------------------------------------------------------------------
     public function exportXlsx(): \Symfony\Component\HttpFoundation\BinaryFileResponse
     {
-        $popularityRanks = $this->popularityRanksAll;
-        $sites = $this->sites;
+        $popularityRanks = $this->popularityRanks;
+        $sites           = $this->sites;
+        $countryLabel    = $this->countries[$this->activeCountry] ?? $this->activeCountry;
+        $dateValue       = $this->activePeriod === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly;
 
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet();
-        $countryLabel = $this->countries[$this->activeCountry] ?? $this->activeCountry;
-
-        $periodLabel = $this->activePeriod === 'WEEKLY' ? 'Semaine' : 'Mois';
-        $dateValue = $this->activePeriod === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly;
+        $sheet       = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Popularité ' . $countryLabel);
 
-        // En-têtes exactement comme dans le tableau
-        $headers = [
-            'Rang Google',
-            'Google Group',
-            'Google Titre',
-            'EAN Google',
-            'Magento',
-            'Demande relative',
-        ];
-
-        // Ajouter les sites comme en-têtes
+        $headers = ['Rang Google', 'Google Group', 'Google Titre', 'EAN Google', 'Magento', 'Demande relative'];
         foreach ($sites as $site) {
             $headers[] = $site->name;
         }
 
-        // Positionner les en-têtes (ligne 1)
+        $lastColLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($headers));
+
+        // En-têtes
         $col = 1;
         foreach ($headers as $header) {
-            $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . '1';
-            $sheet->setCellValue($cell, $header);
+            $sheet->setCellValue(
+                \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . '1',
+                $header
+            );
             $col++;
         }
 
-        // Style des en-têtes (comme dans le tableau)
-        $lastColLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($headers));
         $sheet->getStyle('A1:' . $lastColLetter . '1')->applyFromArray([
-            'fill' => [
-                'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
-                'startColor' => ['rgb' => '2D3748']
-            ],
-            'font' => [
-                'bold' => true,
-                'color' => ['rgb' => 'FFFFFF'],
-                'name' => 'Arial',
-                'size' => 10
-            ],
+            'fill' => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => '2D3748']],
+            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF'], 'name' => 'Arial', 'size' => 10],
             'alignment' => [
                 'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
-                'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER
+                'vertical'   => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
             ],
         ]);
 
-        // Remplir les données exactement comme dans le tableau
         $row = 2;
+
         foreach ($popularityRanks as $item) {
             $col = 1;
 
-            // === COLONNE 1: Rang Google (avec évolution) ===
+            // Rang + delta
             $rankCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row;
-
             if ($item['rank'] !== null) {
-                $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
-
-                // Rang
-                $runRank = $richText->createTextRun('#' . $item['rank']);
+                $rt      = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
+                $runRank = $rt->createTextRun('#' . $item['rank']);
                 $runRank->getFont()->setBold(true)->setName('Arial')->setSize(9);
-
-                // Évolution
                 if ($item['delta'] !== null) {
-                    $runDelta = $richText->createTextRun("\n" . ($item['delta_sign'] === '+' ? '+' : '') . $item['delta']);
-                    $deltaColor = match ($item['delta_sign']) {
-                        '+' => '1A7A3C',
-                        '-' => 'CC0000',
-                        default => '888888',
-                    };
-                    $runDelta->getFont()->setBold(true)->setName('Arial')->setSize(8);
-                    $runDelta->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($deltaColor));
+                    $runDelta = $rt->createTextRun("\n" . ($item['delta_sign'] === '+' ? '+' : '') . $item['delta']);
+                    $color    = match($item['delta_sign']) { '+' => '1A7A3C', '-' => 'CC0000', default => '888888' };
+                    $runDelta->getFont()->setBold(true)->setName('Arial')->setSize(8)
+                        ->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($color));
                 }
-
-                $sheet->getCell($rankCell)->setValue($richText);
-                $sheet->getStyle($rankCell)->getAlignment()->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER);
-                $sheet->getStyle($rankCell)->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+                $sheet->getCell($rankCell)->setValue($rt);
+                $sheet->getStyle($rankCell)->getAlignment()
+                    ->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER)
+                    ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
             } else {
                 $sheet->setCellValue($rankCell, '—');
             }
             $col++;
 
-            // === COLONNE 2: Google Group (Marque) ===
+            // Brand
             $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row;
             $sheet->setCellValue($cell, $item['brand'] ?? '—');
             $sheet->getStyle($cell)->getFont()->setBold(true);
             $col++;
 
-            // === COLONNE 3: Google Titre ===
+            // Titre
             $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row;
             $sheet->setCellValue($cell, $item['title'] ?? '—');
-            $sheet->getStyle($cell)->getFont()->setBold(true);
             $col++;
 
-            // === COLONNE 4: EAN Google ===
+            // EANs
             $eanCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row;
             if (!empty($item['ean_list'])) {
-                $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
+                $rt    = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
                 $first = true;
                 foreach ($item['ean_list'] as $ean) {
-                    if (!$first) {
-                        $richText->createText("\n");
-                    }
-                    $runEan = $richText->createTextRun($ean);
-
-                    // Colorer selon présence dans Magento
-                    $eanColor = isset($item['magento_products'][$ean]) ? '1A7A3C' : 'CC0000';
-                    $runEan->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($eanColor));
-                    $runEan->getFont()->setBold(isset($item['magento_products'][$ean]));
-
+                    if (!$first) $rt->createText("\n");
+                    $run   = $rt->createTextRun($ean);
+                    $color = isset($item['magento_products'][$ean]) ? '1A7A3C' : 'CC0000';
+                    $run->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($color))
+                        ->setBold(isset($item['magento_products'][$ean]));
                     $first = false;
                 }
-                $sheet->getCell($eanCell)->setValue($richText);
+                $sheet->getCell($eanCell)->setValue($rt);
             } else {
                 $sheet->setCellValue($eanCell, '—');
-                $sheet->getStyle($eanCell)->getFont()->getColor()->setRGB('AAAAAA');
             }
             $col++;
 
-            // === COLONNE 5: Magento ===
+            // Magento
             $magentoCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row;
             if (!empty($item['magento_products'])) {
-                $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
+                $rt    = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
                 $first = true;
                 foreach ($item['magento_products'] as $ean => $mag) {
-                    if (!$first) {
-                        $richText->createText("\n\n");
-                    }
-
-                    // SKU
-                    $runSku = $richText->createTextRun($mag['sku']);
-                    $runSku->getFont()->setBold(true)->setName('Arial')->setSize(9);
-
-                    // Titre
-                    $richText->createText("\n");
-                    $runTitle = $richText->createTextRun(utf8_encode($mag['title']));
-                    $runTitle->getFont()->setName('Arial')->setSize(8);
-
-                    // Prix
-                    $richText->createText("\n");
-                    if (!empty($mag['special_price'])) {
-                        $runPrice = $richText->createTextRun(
-                            number_format($mag['price'] ?? 0, 2, ',', ' ') . '€ → ' .
-                            number_format($mag['special_price'], 2, ',', ' ') . '€'
-                        );
-                        $runPrice->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('1A7A3C'));
-                    } else {
-                        $priceText = number_format($mag['price'] ?? 0, 2, ',', ' ') . '€';
-                        $runPrice = $richText->createTextRun($priceText);
-                        if (($mag['price'] ?? 0) > 0) {
-                            $runPrice->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('1A7A3C'));
-                        }
-                    }
-                    $runPrice->getFont()->setBold(true)->setName('Arial')->setSize(8);
-
+                    if (!$first) $rt->createText("\n\n");
+                    $rt->createTextRun($mag['sku'])->getFont()->setBold(true)->setName('Arial')->setSize(9);
+                    $rt->createText("\n");
+                    $rt->createTextRun($mag['title'] ?? '')->getFont()->setName('Arial')->setSize(8);
+                    $rt->createText("\n");
+                    $priceText = !empty($mag['special_price'])
+                        ? number_format($mag['price'] ?? 0, 2, ',', ' ') . '€ → ' . number_format($mag['special_price'], 2, ',', ' ') . '€'
+                        : number_format($mag['price'] ?? 0, 2, ',', ' ') . '€';
+                    $rt->createTextRun($priceText)->getFont()->setBold(true)->setName('Arial')->setSize(8)
+                        ->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('1A7A3C'));
                     $first = false;
                 }
-                $sheet->getCell($magentoCell)->setValue($richText);
+                $sheet->getCell($magentoCell)->setValue($rt);
                 $sheet->getStyle($magentoCell)->getAlignment()->setWrapText(true);
             } else {
-                $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
-                $runText = $richText->createTextRun('Non référencé');
-                $runText->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('AAAAAA'));
-                $runText->getFont()->setItalic(true);
-                $sheet->getCell($magentoCell)->setValue($richText);
+                $rt  = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
+                $run = $rt->createTextRun('Non référencé');
+                $run->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('AAAAAA'))->setItalic(true);
+                $sheet->getCell($magentoCell)->setValue($rt);
             }
             $col++;
 
-            // === COLONNE 6: Demande relative ===
+            // Demande relative
             $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row;
             $sheet->setCellValue($cell, $item['relative_demand'] ?? '—');
             $sheet->getStyle($cell)->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
             $col++;
 
-            // === COLONNES DES SITES ===
+            // Sites scrapés
             foreach ($sites as $site) {
-                $siteCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row;
-
+                $siteCell        = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row;
                 $productsForSite = [];
                 foreach ($item['ean_list'] as $ean) {
-                    if (isset($item['scraped_products'][$ean])) {
-                        foreach ($item['scraped_products'][$ean] as $scrapedProduct) {
-                            if ($scrapedProduct['site_id'] == $site->id) {
-                                $productsForSite[] = $scrapedProduct;
-                            }
+                    foreach ($item['scraped_products'][$ean] ?? [] as $p) {
+                        if ($p['site_id'] == $site->id) {
+                            $productsForSite[] = $p;
                         }
                     }
                 }
 
                 if (!empty($productsForSite)) {
-                    $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
+                    $rt    = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
                     $first = true;
-
                     foreach ($productsForSite as $product) {
-                        if (!$first) {
-                            $richText->createText("\n\n");
-                        }
-
-                        // EAN
-                        $runEan = $richText->createTextRun($product['ean']);
-                        $runEan->getFont()->setBold(true)->setName('Arial')->setSize(8);
-                        $runEan->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color(
-                            $product['is_available'] ? '1A7A3C' : 'CC0000'
-                        ));
-
-                        // Nom du produit
-                        $richText->createText("\n");
-                        $runName = $richText->createTextRun(\Illuminate\Support\Str::limit($product['name'], 25));
-                        $runName->getFont()->setName('Arial')->setSize(8);
-
-                        // Prix
-                        $richText->createText("\n");
-                        $runPrice = $richText->createTextRun(
-                            number_format($product['price'], 2, ',', ' ') . ' ' . ($product['currency'] ?? '€')
-                        );
-                        $runPrice->getFont()->setBold(true)->setName('Arial')->setSize(8);
-                        $runPrice->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color(
-                            $product['is_available'] ? '1A7A3C' : 'CC0000'
-                        ));
-
-                        // URL (si disponible)
+                        if (!$first) $rt->createText("\n\n");
+                        $pColor = $product['is_available'] ? '1A7A3C' : 'CC0000';
+                        $rt->createTextRun($product['ean'])->getFont()->setBold(true)->setName('Arial')->setSize(8)
+                            ->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($pColor));
+                        $rt->createText("\n");
+                        $rt->createTextRun(\Illuminate\Support\Str::limit($product['name'], 25))->getFont()->setName('Arial')->setSize(8);
+                        $rt->createText("\n");
+                        $rt->createTextRun(number_format($product['price'], 2, ',', ' ') . ' ' . ($product['currency'] ?? '€'))
+                            ->getFont()->setBold(true)->setName('Arial')->setSize(8)
+                            ->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($pColor));
                         if ($product['url']) {
-                            $richText->createText("\n");
-                            $runUrl = $richText->createTextRun('🔗 Lien');
-                            $runUrl->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('0563C1'));
-                            $runUrl->getFont()->setUnderline(true)->setName('Arial')->setSize(7);
-
-                            // Ajouter le lien hypertexte
+                            $rt->createText("\n");
+                            $rt->createTextRun('Voir le produit')->getFont()
+                                ->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('0563C1'))
+                                ->setUnderline(true)->setName('Arial')->setSize(7);
                             $sheet->getCell($siteCell)->getHyperlink()->setUrl($product['url']);
                         }
-
                         $first = false;
                     }
-
-                    $sheet->getCell($siteCell)->setValue($richText);
-                    $sheet->getStyle($siteCell)->getAlignment()->setWrapText(true);
-                    $sheet->getStyle($siteCell)->getAlignment()->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP);
+                    $sheet->getCell($siteCell)->setValue($rt);
+                    $sheet->getStyle($siteCell)->getAlignment()->setWrapText(true)
+                        ->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP);
                 } else {
-                    $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
-                    $runText = $richText->createTextRun('Aucun produit');
-                    $runText->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('AAAAAA'));
-                    $runText->getFont()->setItalic(true);
-                    $sheet->getCell($siteCell)->setValue($richText);
+                    $rt  = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
+                    $run = $rt->createTextRun('Aucun produit');
+                    $run->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('AAAAAA'))->setItalic(true);
+                    $sheet->getCell($siteCell)->setValue($rt);
                     $sheet->getStyle($siteCell)->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
                 }
-
                 $col++;
             }
 
-            // Alterner les couleurs de fond (comme dans le tableau)
+            // Alternance couleur
             if (($row - 2) % 2 === 0) {
                 $sheet->getStyle('A' . $row . ':' . $lastColLetter . $row)->applyFromArray([
-                    'fill' => [
-                        'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
-                        'startColor' => ['rgb' => 'F7FAFC']
-                    ]
+                    'fill' => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F7FAFC']],
                 ]);
             }
 
             $row++;
         }
 
-        // Ajuster la largeur des colonnes
-        $sheet->getColumnDimension('A')->setWidth(12);  // Rang Google
-        $sheet->getColumnDimension('B')->setWidth(15);  // Google Group
-        $sheet->getColumnDimension('C')->setWidth(40);  // Google Titre
-        $sheet->getColumnDimension('D')->setWidth(20);  // EAN Google
-        $sheet->getColumnDimension('E')->setWidth(35);  // Magento
-        $sheet->getColumnDimension('F')->setWidth(15);  // Demande relative
-
-        // Colonnes des sites (auto-size)
+        // Largeurs
+        $sheet->getColumnDimension('A')->setWidth(12);
+        $sheet->getColumnDimension('B')->setWidth(15);
+        $sheet->getColumnDimension('C')->setWidth(40);
+        $sheet->getColumnDimension('D')->setWidth(20);
+        $sheet->getColumnDimension('E')->setWidth(35);
+        $sheet->getColumnDimension('F')->setWidth(15);
         for ($i = 7; $i <= count($headers); $i++) {
-            $colLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($i);
-            $sheet->getColumnDimension($colLetter)->setWidth(25);
+            $sheet->getColumnDimension(
+                \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($i)
+            )->setWidth(25);
         }
 
-        // Geler la première ligne
         $sheet->freezePane('A2');
-
-        // Style pour toutes les cellules de données
         $sheet->getStyle('A2:' . $lastColLetter . ($row - 1))->applyFromArray([
-            'font' => ['name' => 'Arial', 'size' => 9],
-            'borders' => [
-                'allBorders' => [
-                    'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
-                    'color' => ['rgb' => 'DDDDDD']
-                ]
-            ]
+            'font'    => ['name' => 'Arial', 'size' => 9],
+            'borders' => ['allBorders' => ['borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN, 'color' => ['rgb' => 'DDDDDD']]],
         ]);
-
-        // Alignement vertical en haut pour toutes les cellules
         $sheet->getStyle('A2:' . $lastColLetter . ($row - 1))
             ->getAlignment()->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP);
 
-        // Créer le dossier d'export si nécessaire
         $exportDir = storage_path('app/public/exports');
         if (!file_exists($exportDir)) {
             mkdir($exportDir, 0755, true);
         }
 
-        // Générer le nom du fichier
         $fileName = 'popularite_google_' . strtolower($this->activeCountry)
             . '_' . ($this->activePeriod === 'WEEKLY' ? 'semaine' : 'mois')
-            . '_' . $dateValue
-            . '_' . date('Ymd_His') . '.xlsx';
+            . '_' . $dateValue . '_' . date('Ymd_His') . '.xlsx';
         $filePath = $exportDir . '/' . $fileName;
 
-        // Sauvegarder le fichier
-        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
-        $writer->save($filePath);
+        (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet))->save($filePath);
 
-        // Retourner la réponse de téléchargement
         return response()->download($filePath, $fileName)->deleteFileAfterSend(true);
     }
 
-
+    // -------------------------------------------------------------------------
+    // Données envoyées à la vue
+    // -------------------------------------------------------------------------
     public function with(): array
     {
-        $total = $this->popularityTotal;
-        $lastPage = count($this->tokenPage);
+        $popularityRanks = $this->popularityRanks;
+        $lastPage        = $this->knownLastPage;
+        $hasNextPage     = isset($this->tokenPage[$this->currentPage]); // token connu pour page suivante
 
         return [
-            'sites' => $this->sites,
-            'popularityRanks' => $this->popularityRanks,
-            'availableDispo' => $this->availableDispo,
-            'total' => $total,
-            'lastPage' => $lastPage,
-            'tokenUsed' =>  $this->tokenPage[$this->currentPage - 1],
-            'mois_mensuel' => $this->dateMonthly,
-            'currentPage' => $this->currentPage,
-            'perPage' => $this->perPage,
+            'sites'            => $this->sites,
+            'popularityRanks'  => $popularityRanks,
+            'availableDispo'   => $this->availableDispo,
+            'total'            => count($popularityRanks),
+            'lastPage'         => $lastPage,
+            'hasNextPage'      => $hasNextPage,
+            'currentPage'      => $this->currentPage,
+            'perPage'          => $this->perPage,
         ];
     }
 }; ?>
@@ -780,6 +675,7 @@ new class extends Component {
             @foreach($countries as $code => $label)
                 <x-tab name="{{ $code }}" label="{{ $label }}">
 
+                    {{-- Spinner pays --}}
                     <div wire:loading wire:target="activeCountry"
                         class="flex flex-col items-center justify-center gap-3 py-16">
                         <span class="loading loading-spinner loading-lg text-primary"></span>
@@ -788,8 +684,12 @@ new class extends Component {
 
                     <div wire:loading.remove wire:target="activeCountry">
 
+                        {{-- ╔══════════════════════════════╗ --}}
+                        {{-- ║        BARRE D'OUTILS        ║ --}}
+                        {{-- ╚══════════════════════════════╝ --}}
                         <div class="flex flex-wrap items-center justify-between gap-4 mb-4 mt-6">
 
+                            {{-- Période --}}
                             <div class="flex items-center gap-2">
                                 <span class="text-xs text-gray-400">Période</span>
                                 @foreach($period as $periodLabel => $value)
@@ -799,96 +699,90 @@ new class extends Component {
                                         {{ $periodLabel }}
                                     </button>
                                 @endforeach
-
                             </div>
 
                             <div class="divider divider-horizontal mx-0"></div>
 
+                            {{-- Date --}}
                             <div class="flex items-center gap-2">
-
                                 @if($activePeriod === 'WEEKLY')
                                     <span class="text-xs text-gray-400">Semaine du lundi</span>
                                     <input type="date" wire:model.live="MondayWeekly"
-                                        class="input input-bordered input-sm w-36"
-                                    />
+                                        class="input input-bordered input-sm w-36"/>
                                 @else
                                     <span class="text-xs text-gray-400">Mois</span>
                                     <input type="month" wire:model.live="dateMonthly"
                                         class="input input-bordered input-sm w-36"/>
                                 @endif
-
                             </div>
 
                             <div class="divider divider-horizontal mx-0"></div>
 
-                            <div class="flex items-center gap-2">
-                                {{-- Filtre Groupe --}}
-                                <div class="form-control" x-data="{
-                                    open: false,
-                                    search: '',
-                                    get filteredGroupes() {
-                                        if (this.search === '') return @js($availableDispo);
-                                        return @js($availableDispo).filter(g =>
-                                            g.toLowerCase().includes(this.search.toLowerCase())
-                                        );
-                                    }
-                                }">
-                                    <div class="grid grid-cols-2 gap-2 mb-2">
-                                        @foreach($disponibiliteFilter as $selectedGroupe)
-                                            <div class="badge badge-primary gap-2 py-3 px-3">
-                                                <span class="text-xs font-medium">{{ $selectedGroupe }}</span>
-                                                <button type="button"
-                                                    wire:click="$set('disponibiliteFilter', {{ json_encode(array_values(array_diff($disponibiliteFilter, [$selectedGroupe]))) }})"
-                                                    class="btn btn-ghost btn-xs btn-circle">
-                                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                                                    </svg>
-                                                </button>
-                                            </div>
-                                        @endforeach
-                                        @if(count($disponibiliteFilter) > 0)
-                                            <button type="button" wire:click="$set('disponibiliteFilter', [])" class="badge badge-ghost gap-2 py-3 px-3 hover:badge-error">
-                                                <span class="text-xs">Tout effacer</span>
+                            {{-- Filtre disponibilité --}}
+                            <div class="form-control" x-data="{
+                                open: false,
+                                search: '',
+                                get filteredGroupes() {
+                                    if (this.search === '') return @js($availableDispo);
+                                    return @js($availableDispo).filter(g =>
+                                        g.toLowerCase().includes(this.search.toLowerCase())
+                                    );
+                                }
+                            }">
+                                <div class="flex flex-wrap gap-2 mb-2">
+                                    @foreach($disponibiliteFilter as $selectedDispo)
+                                        <div class="badge badge-primary gap-2 py-3 px-3">
+                                            <span class="text-xs font-medium">{{ $selectedDispo }}</span>
+                                            <button type="button"
+                                                wire:click="$set('disponibiliteFilter', {{ json_encode(array_values(array_diff($disponibiliteFilter, [$selectedDispo]))) }})"
+                                                class="btn btn-ghost btn-xs btn-circle">
                                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                                                 </svg>
                                             </button>
-                                        @endif
-                                    </div>
-                                    <div class="relative">
-                                        <button type="button" @click="open = !open" class="btn btn-sm btn-outline btn-primary gap-2">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                        </div>
+                                    @endforeach
+                                    @if(count($disponibiliteFilter) > 0)
+                                        <button type="button" wire:click="$set('disponibiliteFilter', [])"
+                                            class="badge badge-ghost gap-2 py-3 px-3 hover:badge-error">
+                                            <span class="text-xs">Tout effacer</span>
+                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                                             </svg>
-                                            {{ count($disponibiliteFilter) > 0 ? 'Ajouter filtre disponibilite' : 'Sélectionner filtre disponibilite' }}
                                         </button>
-                                        <div x-show="open" @click.away="open = false" x-transition
-                                            class="absolute z-50 mt-2 w-80 bg-base-100 rounded-lg shadow-xl border border-base-300">
-                                            <div class="p-3 border-b border-base-300">
-                                                <input type="text" x-model="search" placeholder="Rechercher ..."
-                                                    class="input input-sm input-bordered w-full" @click.stop/>
-                                            </div>
-                                            <div class="max-h-64 overflow-y-auto p-2">
-                                                <template x-for="groupe in filteredGroupes" :key="groupe">
-                                                    <button type="button"
-                                                        @click="$wire.set('disponibiliteFilter', [...@js($disponibiliteFilter), groupe].filter((v, i, a) => a.indexOf(v) === i)); search = ''"
-                                                        class="w-full text-left px-3 py-2 rounded-md text-sm flex items-center justify-between group hover:bg-base-200"
-                                                        x-show="!@js($disponibiliteFilter).includes(groupe)">
-                                                        <span x-text="groupe"></span>
-                                                        <svg class="w-4 h-4 opacity-0 group-hover:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                                                        </svg>
-                                                    </button>
-                                                </template>
-                                                <div x-show="filteredGroupes.length === 0" class="text-center py-8 text-gray-400 text-sm">Aucun filtre trouvé</div>
-                                                <div x-show="filteredGroupes.length > 0 && filteredGroupes.every(g => @js($disponibiliteFilter).includes(g))" class="text-center py-8 text-gray-400 text-sm">
-                                                    Tous les filtrés sont déjà sélectionnés
-                                                </div>
-                                            </div>
-                                            <div class="p-3 border-t border-base-300 text-xs text-gray-500 flex items-center justify-between">
-                                                <span>{{ count($disponibiliteFilter) }} filtre(s) sélectionné(s)</span>
-                                                <button type="button" @click="open = false" class="text-primary hover:underline">Fermer</button>
-                                            </div>
+                                    @endif
+                                </div>
+                                <div class="relative">
+                                    <button type="button" @click="open = !open" class="btn btn-sm btn-outline btn-primary gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                        </svg>
+                                        {{ count($disponibiliteFilter) > 0 ? 'Ajouter filtre' : 'Filtrer disponibilité' }}
+                                    </button>
+                                    <div x-show="open" @click.away="open = false" x-transition
+                                        class="absolute z-50 mt-2 w-72 bg-base-100 rounded-lg shadow-xl border border-base-300">
+                                        <div class="p-3 border-b border-base-300">
+                                            <input type="text" x-model="search" placeholder="Rechercher…"
+                                                class="input input-sm input-bordered w-full" @click.stop/>
+                                        </div>
+                                        <div class="max-h-48 overflow-y-auto p-2">
+                                            <template x-for="groupe in filteredGroupes" :key="groupe">
+                                                <button type="button"
+                                                    @click="$wire.set('disponibiliteFilter', [...@js($disponibiliteFilter), groupe].filter((v,i,a)=>a.indexOf(v)===i)); search=''"
+                                                    class="w-full text-left px-3 py-2 rounded-md text-sm flex items-center justify-between group hover:bg-base-200"
+                                                    x-show="!@js($disponibiliteFilter).includes(groupe)">
+                                                    <span x-text="groupe"></span>
+                                                    <svg class="w-4 h-4 opacity-0 group-hover:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                                    </svg>
+                                                </button>
+                                            </template>
+                                            <div x-show="filteredGroupes.length === 0"
+                                                class="text-center py-6 text-gray-400 text-sm">Aucun résultat</div>
+                                        </div>
+                                        <div class="p-3 border-t border-base-300 text-xs text-gray-500 flex items-center justify-between">
+                                            <span>{{ count($disponibiliteFilter) }} sélectionné(s)</span>
+                                            <button type="button" @click="open = false" class="text-primary hover:underline">Fermer</button>
                                         </div>
                                     </div>
                                 </div>
@@ -896,11 +790,11 @@ new class extends Component {
 
                             <div class="divider divider-horizontal mx-0"></div>
 
+                            {{-- Actions --}}
                             <div class="flex items-center gap-2">
                                 <button type="button" wire:click="clearCache"
-                                    wire:loading.attr="disabled"
-                                    wire:loading.class="opacity-60 cursor-not-allowed"
-                                    class="btn btn-sm btn-ghost gap-2" title="Vider le cache et recharger">
+                                    wire:loading.attr="disabled" wire:loading.class="opacity-60 cursor-not-allowed"
+                                    class="btn btn-sm btn-ghost gap-2">
                                     <span wire:loading.remove wire:target="clearCache" class="flex items-center gap-2">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -914,23 +808,29 @@ new class extends Component {
                                     </span>
                                 </button>
 
-                                <button type="button" wire:click="exportXlsx" wire:loading.attr="disabled" class="btn btn-sm btn-success gap-2">
+                                <button type="button" wire:click="exportXlsx"
+                                    wire:loading.attr="disabled" wire:loading.class="opacity-60 cursor-not-allowed"
+                                    class="btn btn-sm btn-success gap-2">
                                     <span wire:loading.remove wire:target="exportXlsx" class="flex items-center gap-2">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
                                         </svg>
                                         Export Excel
                                     </span>
                                     <span wire:loading wire:target="exportXlsx" class="flex items-center gap-2">
                                         <span class="loading loading-spinner loading-xs"></span>
-                                        Export en cours...
+                                        Export en cours…
                                     </span>
                                 </button>
                             </div>
                         </div>
 
+                        {{-- ╔══════════════════════════════╗ --}}
+                        {{-- ║      BARRE DE PAGINATION     ║ --}}
+                        {{-- ╚══════════════════════════════╝ --}}
                         <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+
                             <div class="flex items-center gap-2">
                                 <span class="text-xs text-gray-400">Par page</span>
                                 <select wire:model.live="perPage" class="select select-sm select-bordered w-20">
@@ -938,45 +838,38 @@ new class extends Component {
                                     <option value="100">100</option>
                                     <option value="200">200</option>
                                     <option value="500">500</option>
-                                    <option value="1000">1000</option>
                                 </select>
                             </div>
 
                             <p class="text-sm text-gray-500">
-                                {{ $total }} résultat(s) · Page {{ $currentPage }}/{{ $lastPage }}
+                                {{ $total }} résultat(s) sur cette page · Page {{ $currentPage }}
+                                @if($lastPage > 1) / {{ $lastPage }}+ @endif
                             </p>
 
-                            @if($lastPage > 1)
-                                <div class="flex items-center gap-4">
-                                    <span class="text-xs text-gray-500">
-                                        Affichage
-                                        {{ (($currentPage - 1) * $perPage) + 1 }}–{{ min(($currentPage * $perPage)*$perPage, (($currentPage - 1) * $perPage) + $total) }}
-                                    </span>
-                                    <div class="join">
-                                        <button class="join-item btn btn-sm"
-                                            wire:click="setPage(1)"
-                                            @disabled($currentPage === 1)>«</button>
-                                        <button class="join-item btn btn-sm"
-                                            wire:click="setPage({{ $currentPage - 1 }})"
-                                            @disabled($currentPage === 1)>‹</button>
+                            {{-- Pagination — on ne peut avancer que si on a le token de la page suivante --}}
+                            <div class="join">
+                                <button class="join-item btn btn-sm"
+                                    wire:click="setPage(1)"
+                                    @disabled($currentPage === 1)>«</button>
+                                <button class="join-item btn btn-sm"
+                                    wire:click="setPage({{ $currentPage - 1 }})"
+                                    @disabled($currentPage === 1)>‹</button>
 
-                                        @foreach(range(max(1, $currentPage - 2), min($lastPage, $currentPage + 2)) as $p)
-                                            <button class="join-item btn btn-sm {{ $p === $currentPage ? 'btn-active btn-primary' : '' }}"
-                                                wire:click="setPage({{ $p }})">{{ $p }}</button>
-                                        @endforeach
+                                @foreach(range(max(1, $currentPage - 2), $lastPage) as $p)
+                                    <button class="join-item btn btn-sm {{ $p === $currentPage ? 'btn-active btn-primary' : '' }}"
+                                        wire:click="setPage({{ $p }})">{{ $p }}</button>
+                                @endforeach
 
-                                        <button class="join-item btn btn-sm"
-                                            wire:click="setPage({{ $currentPage + 1 }})"
-                                            @disabled($currentPage === $lastPage)>›</button>
-                                        <button class="join-item btn btn-sm"
-                                            wire:click="setPage({{ $lastPage }})"
-                                            @disabled($currentPage === $lastPage)>»</button>
-                                    </div>
-                                </div>
-                            @endif
-                             last page : {{ $lastPage }} | token used for this page : {{ $tokenUsed }} | mois mensuel : {{ $mois_mensuel }}
+                                {{-- Bouton suivant : actif seulement si le token suivant est connu --}}
+                                <button class="join-item btn btn-sm"
+                                    wire:click="setPage({{ $currentPage + 1 }})"
+                                    @disabled(!$hasNextPage)>›</button>
+                            </div>
                         </div>
 
+                        {{-- ╔══════════════════════════════╗ --}}
+                        {{-- ║           TABLEAU            ║ --}}
+                        {{-- ╚══════════════════════════════╝ --}}
                         <div class="relative">
                             <div wire:loading wire:target="activePeriod, MondayWeekly, dateMonthly, perPage, setPage, clearCache, disponibiliteFilter, exportXlsx"
                                 class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg bg-white/70 backdrop-blur-sm">
@@ -1011,7 +904,7 @@ new class extends Component {
                                                     </div>
                                                 </th>
                                                 <th class="text-center">Demande relative</th>
-                                                <th class="text-center">Disponibilite</th>
+                                                <th class="text-center">Disponibilité</th>
                                                 @foreach($sites as $site)
                                                     <th class="text-center min-w-[150px]">{{ $site->name }}</th>
                                                 @endforeach
@@ -1020,6 +913,8 @@ new class extends Component {
                                         <tbody>
                                             @foreach($popularityRanks as $item)
                                                 <tr class="hover odd:bg-gray-50 even:bg-white">
+
+                                                    {{-- Rang + delta --}}
                                                     <td class="text-center">
                                                         <div class="flex flex-col items-center gap-0.5">
                                                             <span class="font-bold font-mono text-sm">
@@ -1034,44 +929,40 @@ new class extends Component {
                                                         </div>
                                                     </td>
 
+                                                    {{-- Brand --}}
                                                     <td class="font-semibold text-center">
                                                         {{ $item['brand'] ?? '—' }}
                                                     </td>
 
+                                                    {{-- Titre --}}
                                                     <td class="font-bold max-w-xs truncate text-center" title="{{ $item['title'] ?? '' }}">
                                                         {{ $item['title'] ?? '—' }}
                                                     </td>
 
-                                                    <td class="p-1 align-center text-center">
-                                                        @if(!empty($item['ean_list']))
-                                                            <div class="flex flex-col gap-0.5">
-                                                                @foreach($item['ean_list'] as $ean)
-                                                                    <span class="font-mono text-xs
-                                                                        {{ isset($item['magento_products'][$ean]) ? 'text-success font-semibold' : 'text-error font-medium' }}">
-                                                                        {{ $ean }}
-                                                                    </span>
-                                                                @endforeach
+                                                    {{-- EANs --}}
+                                                    <td class="text-center">
+                                                        @forelse($item['ean_list'] as $ean)
+                                                            <div class="font-mono text-xs
+                                                                {{ isset($item['magento_products'][$ean]) ? 'text-success font-semibold' : 'text-error font-medium' }}">
+                                                                {{ $ean }}
                                                             </div>
-                                                        @else
+                                                        @empty
                                                             <span class="text-gray-300">—</span>
-                                                        @endif
+                                                        @endforelse
                                                     </td>
 
+                                                    {{-- Magento --}}
                                                     <td class="align-top p-2">
                                                         @if(!empty($item['magento_products']))
                                                             <div class="space-y-1.5">
                                                                 @foreach($item['magento_products'] as $ean => $mag)
                                                                     <div class="bg-white border border-base-200 rounded-md p-2 hover:border-primary/30 transition-colors">
-                                                                        <div class="flex items-center justify-between gap-2 mb-1">
-                                                                            <span class="font-mono text-xs font-bold text-primary truncate max-w-[100px]" title="{{ $mag['sku'] }}">
-                                                                                {{ $mag['sku'] }}
-                                                                            </span>
-                                                                        </div>
-
+                                                                        <span class="font-mono text-xs font-bold text-primary truncate block" title="{{ $mag['sku'] }}">
+                                                                            {{ $mag['sku'] }}
+                                                                        </span>
                                                                         <div class="text-xs mb-1 line-clamp-1" title="{{ $mag['title'] }}">
-                                                                            {{ utf8_encode($mag['title']) }}
+                                                                            {{ $mag['title'] }}
                                                                         </div>
-
                                                                         <div class="text-right">
                                                                             @if(!empty($mag['special_price']))
                                                                                 <span class="text-[10px] line-through text-gray-400 mr-1">
@@ -1081,7 +972,7 @@ new class extends Component {
                                                                                     {{ number_format($mag['special_price'], 2, ',', ' ') }}€
                                                                                 </span>
                                                                             @else
-                                                                                <span class="text-xs font-bold {{ $mag['price'] > 0 ? 'text-success' : 'text-gray-400' }}">
+                                                                                <span class="text-xs font-bold {{ ($mag['price'] ?? 0) > 0 ? 'text-success' : 'text-gray-400' }}">
                                                                                     {{ number_format($mag['price'] ?? 0, 2, ',', ' ') }}€
                                                                                 </span>
                                                                             @endif
@@ -1090,31 +981,33 @@ new class extends Component {
                                                                 @endforeach
                                                             </div>
                                                         @else
-                                                            <div class="flex items-center justify-center h-full min-h-[80px]">
-                                                                <div class="text-gray-300 text-xs italic flex flex-col items-center gap-1">
-                                                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                                            d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
-                                                                    </svg>
-                                                                    <span>Non référencé</span>
-                                                                </div>
+                                                            <div class="flex items-center justify-center h-full min-h-[60px]">
+                                                                <span class="text-gray-300 text-xs italic">Non référencé</span>
                                                             </div>
                                                         @endif
                                                     </td>
 
+                                                    {{-- Demande relative --}}
                                                     <td class="text-center">
                                                         @if($item['relative_demand'])
-                                                            <span class="badge badge-ghost badge-sm">
-                                                                {{ $item['relative_demand'] }}
-                                                            </span>
+                                                            <span class="badge badge-ghost badge-sm">{{ $item['relative_demand'] }}</span>
                                                         @else
                                                             <span class="text-gray-300">—</span>
                                                         @endif
                                                     </td>
 
+                                                    {{-- Disponibilité --}}
                                                     <td class="text-center">
                                                         @if($item['disponibilite'])
-                                                            <span class="badge badge-ghost badge-sm">
+                                                            @php
+                                                                $badgeColor = match($item['disponibilite']) {
+                                                                    'IN_STOCK'                   => 'badge-success',
+                                                                    'OUT_OF_STOCK'               => 'badge-error',
+                                                                    'NOT_IN_INVENTORY'           => 'badge-warning',
+                                                                    default                      => 'badge-ghost',
+                                                                };
+                                                            @endphp
+                                                            <span class="badge {{ $badgeColor }} badge-sm text-[10px]">
                                                                 {{ $item['disponibilite'] }}
                                                             </span>
                                                         @else
@@ -1122,17 +1015,15 @@ new class extends Component {
                                                         @endif
                                                     </td>
 
-                                                    {{-- Colonnes des sites avec les produits scrapés --}}
+                                                    {{-- Sites scrapés --}}
                                                     @foreach($sites as $site)
-                                                        <td class="align-top p-2 border-l border-base-200 first:border-l-0">
+                                                        <td class="align-top p-2 border-l border-base-200">
                                                             @php
                                                                 $productsForSite = [];
                                                                 foreach ($item['ean_list'] as $ean) {
-                                                                    if (isset($item['scraped_products'][$ean])) {
-                                                                        foreach ($item['scraped_products'][$ean] as $scrapedProduct) {
-                                                                            if ($scrapedProduct['site_id'] == $site->id) {
-                                                                                $productsForSite[] = $scrapedProduct;
-                                                                            }
+                                                                    foreach ($item['scraped_products'][$ean] ?? [] as $p) {
+                                                                        if ($p['site_id'] == $site->id) {
+                                                                            $productsForSite[] = $p;
                                                                         }
                                                                     }
                                                                 }
@@ -1142,47 +1033,56 @@ new class extends Component {
                                                                 <div class="space-y-2">
                                                                     @foreach($productsForSite as $product)
                                                                         <div class="bg-base-50 rounded p-2 border border-base-200 hover:border-primary/30 transition-colors">
-                                                                            <div class="flex items-center justify-between gap-2 mb-1">
-                                                                                <span class="font-mono font-bold text-xs {{ $product['is_available'] ? 'text-success' : 'text-error' }}">
-                                                                                    {{ $product['ean'] }}
-                                                                                </span>
-                                                                            </div>
-
+                                                                            <span class="font-mono font-bold text-xs block {{ $product['is_available'] ? 'text-success' : 'text-error' }}">
+                                                                                {{ $product['ean'] }}
+                                                                            </span>
                                                                             @if($product['url'])
-                                                                                <a href="{{ $product['url'] }}"
-                                                                                   target="_blank"
-                                                                                   class="link link-primary link-hover text-xs block mb-1 hover:underline"
-                                                                                   title="{{ $product['name'] }}">
+                                                                                <a href="{{ $product['url'] }}" target="_blank"
+                                                                                    class="link link-primary link-hover text-xs block mb-1"
+                                                                                    title="{{ $product['name'] }}">
                                                                                     {{ Str::limit($product['name'], 25) }}
                                                                                 </a>
                                                                             @else
-                                                                                <div class="text-xs text-gray-700 block mb-1" title="{{ $product['name'] }}">
+                                                                                <div class="text-xs text-gray-700 mb-1">
                                                                                     {{ Str::limit($product['name'], 25) }}
                                                                                 </div>
                                                                             @endif
-
-                                                                            <div class="flex items-center justify-between text-xs">
-                                                                                <span class="font-semibold {{ $product['is_available'] ? 'text-success' : 'text-error' }}">
-                                                                                    {{ number_format($product['price'], 2, ',', ' ') }} {{ $product['currency'] ?? '€' }}
-                                                                                </span>
-                                                                            </div>
+                                                                            <span class="text-xs font-semibold {{ $product['is_available'] ? 'text-success' : 'text-error' }}">
+                                                                                {{ number_format($product['price'], 2, ',', ' ') }} {{ $product['currency'] ?? '€' }}
+                                                                            </span>
                                                                         </div>
                                                                     @endforeach
                                                                 </div>
                                                             @else
-                                                                <div class="flex items-center justify-center h-full min-h-[80px] bg-base-50/50 rounded border border-dashed border-base-300">
+                                                                <div class="flex items-center justify-center h-full min-h-[60px] rounded border border-dashed border-base-300">
                                                                     <span class="text-gray-400 text-xs italic">Aucun produit</span>
                                                                 </div>
                                                             @endif
                                                         </td>
                                                     @endforeach
+
                                                 </tr>
                                             @endforeach
                                         </tbody>
+                                        <tfoot>
+                                            <tr>
+                                                <th class="text-center">Rang Google</th>
+                                                <th class="text-center">Google Group</th>
+                                                <th class="text-center">Google Titre</th>
+                                                <th class="text-center">EAN Google</th>
+                                                <th class="text-center">Magento</th>
+                                                <th class="text-center">Demande relative</th>
+                                                <th class="text-center">Disponibilité</th>
+                                                @foreach($sites as $site)
+                                                    <th class="text-center">{{ $site->name }}</th>
+                                                @endforeach
+                                            </tr>
+                                        </tfoot>
                                     </table>
                                 </div>
                             @endif
                         </div>
+
                     </div>
                 </x-tab>
             @endforeach
