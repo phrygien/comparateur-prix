@@ -718,8 +718,19 @@ new class extends Component {
                             @if($activePeriod === 'WEEKLY')
                                 <div class="flex items-center gap-2">
                                     <span class="text-xs text-gray-400">Semaine du lundi</span>
-                                    <input type="date" wire:model.live="MondayWeekly"
-                                        class="input input-bordered input-sm w-36"/>
+                                    <input type="date"  id="mondayInput"
+                                        wire:model.live="MondayWeekly"
+                                        class="input input-bordered input-sm w-36"
+                                    />
+                                    <script>
+                                        document.getElementById('mondayInput').addEventListener('change', function () {
+                                            let date = new Date(this.value);
+                                            if (date.getDay() !== 1) {   // 1 = Monday
+                                                alert("Merci de choisir un lundi.");
+                                                this.value = "";
+                                            }
+                                        });
+                                    </script>
                                 </div>
                             @else
                                 <div class="flex items-center gap-2">
