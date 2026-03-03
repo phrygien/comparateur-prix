@@ -197,7 +197,7 @@ new class extends Component {
         // Vérifier le cache
         $cacheKey = 'google_popularity_all_' . md5($countryCode . $periodCode . $date);
 
-        return Cache::remember($cacheKey, now()->addHours(6), function () use ($countryCode, $periodCode, $date) {
+        return Cache::remember($cacheKey, now()->addHours(6), function () use ($countryCode, $periodCode, $date, $inventory_status_group) {
 
             $query = "
                 SELECT
