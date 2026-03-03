@@ -21,8 +21,8 @@ new class extends Component {
 
     public string $activeCountry = 'FR';
     public string $activePeriod = 'WEEKLY';
-    public string $MondayWeekly = '2026-01-19';
-    public string $dateMonthly = '2026-01';
+    public string $MondayWeekly = '';
+    public string $dateMonthly = '';
 
     public array $countries = [
         'FR' => 'France',
