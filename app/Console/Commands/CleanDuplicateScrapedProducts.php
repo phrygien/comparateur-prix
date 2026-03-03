@@ -13,29 +13,27 @@ class CleanDuplicateScrapedProducts extends Command
      * @var string
      */
     protected $signature = 'scraped-products:clean-duplicates 
-                            {--dry-run : Afficher le nombre de doublons sans les supprimer}
-                            {--keep=2 : Nombre d\'enregistrements à conserver par groupe}';
+                            {--dry-run : Afficher le nombre de doublons sans les supprimer}';
 
     /**
      * The description of the console command.
      *
      * @var string
      */
-    protected $description = 'Supprime les doublons de scraped_product en gardant les 2 plus récents par groupe (url, vendor, name, type, variation)';
+    protected $description = 'Supprime les doublons de scraped_product en gardant le plus récent par groupe (ean, web_site_id)';
 
     /**
      * Execute the console command.
      */
     public function handle()
     {
-        $keep = (int) $this->option('keep');
         $isDryRun = $this->option('dry-run');
 
         $this->info('Recherche des doublons dans scraped_product...');
 
         try {
             // Compter les doublons
-            $duplicatesCount = $this->countDuplicates($keep);
+            $duplicatesCount = $this->countDuplicates();
 
             if ($duplicatesCount === 0) {
                 $this->info('Aucun doublon trouvé !');
@@ -56,7 +54,7 @@ class CleanDuplicateScrapedProducts extends Command
             }
 
             // Exécuter la suppression
-            $deletedCount = $this->deleteDuplicates($keep);
+            $deletedCount = $this->deleteDuplicates();
 
             $this->info("{$deletedCount} doublons supprimés avec succès !");
 
@@ -71,7 +69,7 @@ class CleanDuplicateScrapedProducts extends Command
     /**
      * Compte le nombre de doublons
      */
-    private function countDuplicates(int $keep): int
+    private function countDuplicates(): int
     {
         $query = "
             SELECT COUNT(*) as count
@@ -79,22 +77,22 @@ class CleanDuplicateScrapedProducts extends Command
                 SELECT
                     id,
                     ROW_NUMBER() OVER (
-                        PARTITION BY url, vendor, name, type, variation
+                        PARTITION BY ean, web_site_id
                         ORDER BY created_at DESC
                     ) AS rn
                 FROM scraped_product
             ) AS t
-            WHERE rn > ?
+            WHERE rn > 1
         ";
 
-        $result = DB::selectOne($query, [$keep]);
+        $result = DB::selectOne($query);
         return $result->count;
     }
 
     /**
      * Supprime les doublons
      */
-    private function deleteDuplicates(int $keep): int
+    private function deleteDuplicates(): int
     {
         $query = "
             DELETE FROM scraped_product
@@ -103,15 +101,15 @@ class CleanDuplicateScrapedProducts extends Command
                     SELECT
                         id,
                         ROW_NUMBER() OVER (
-                            PARTITION BY url, vendor, name, type, variation
+                            PARTITION BY ean, web_site_id
                             ORDER BY created_at DESC
                         ) AS rn
                     FROM scraped_product
                 ) AS t
-                WHERE rn > ?
+                WHERE rn > 1
             )
         ";
 
-        return DB::delete($query, [$keep]);
+        return DB::delete($query);
     }
 }
