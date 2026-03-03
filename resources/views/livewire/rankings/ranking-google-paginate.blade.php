@@ -115,35 +115,17 @@ new class extends Component {
         $eanList = array_values(array_unique($eanList));
 
         try {
-            // $results = Product::with([
-            //     'website' => function ($query) {
-            //         $query->where('country_code', $this->activeCountry);
-            //     }
-            // ])
-            //     ->whereIn('ean', $eanList)
-            //     ->whereHas('website', function ($query) {
-            //         $query->where('country_code', $this->activeCountry);
-            //     })
-            //     ->get();
-$results = Product::with([
-    'website' => function ($query) {
-        $query->where('country_code', $this->activeCountry);
-    }
-])
-->whereIn('ean', $eanList)
-->whereHas('website', function ($query) {
-    $query->where('country_code', $this->activeCountry);
-})
-->whereIn('id', function ($query) {
-    $query->select(DB::raw('MAX(id)'))  // Ou MAX(scrap_reference_id) selon votre besoin
-        ->from('products')
-        ->whereIn('ean', $eanList)
-        ->whereHas('website', function ($q) {
-            $q->where('country_code', $this->activeCountry);
-        })
-        ->groupBy('ean', 'website_id');  // Groupement par EAN ET site
-})
-->get();
+            $results = Product::with([
+                'website' => function ($query) {
+                    $query->where('country_code', $this->activeCountry);
+                }
+            ])
+                ->whereIn('ean', $eanList)
+                ->whereHas('website', function ($query) {
+                    $query->where('country_code', $this->activeCountry);
+                })
+                ->get();
+
             $indexed = [];
             foreach ($results as $product) {
                 $ean = (string) $product->ean;
