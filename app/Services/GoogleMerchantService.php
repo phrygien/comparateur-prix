@@ -43,7 +43,7 @@ class GoogleMerchantService
             $this->client->setAuthConfig($credentials);
             $this->client->addScope('https://www.googleapis.com/auth/content');
             $this->client->setAccessType('offline');
-            
+
         } catch (\Exception $e) {
             Log::error('Failed to initialize Google Client: ' . $e->getMessage());
             throw $e;
@@ -59,11 +59,11 @@ class GoogleMerchantService
         try {
             $this->client->fetchAccessTokenWithAssertion();
             $token = $this->client->getAccessToken();
-            
+
             if (!isset($token['access_token'])) {
                 throw new \Exception('No access token in response: ' . json_encode($token));
             }
-            
+
             $this->accessToken = $token['access_token'];
             return $this->accessToken;
 
@@ -76,13 +76,39 @@ class GoogleMerchantService
     public function searchReports(string $query): array
     {
         $accessToken = $this->getAccessToken();
-        
+
         try {
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $accessToken,
                 'Content-Type' => 'application/json',
             ])->post("https://merchantapi.googleapis.com/reports/v1/accounts/{$this->merchantId}/reports:search", [
                 'query' => $query
+            ]);
+
+            if ($response->failed()) {
+                throw new \Exception('API request failed: ' . $response->body());
+            }
+
+            return $response->json();
+
+        } catch (\Exception $e) {
+            Log::error('Google Merchant API Error: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    public function searchReportsNextPageToken(string $query, $nextPageToken): array
+    {
+        $accessToken = $this->getAccessToken();
+
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $accessToken,
+                'Content-Type' => 'application/json',
+            ])->post("https://merchantapi.googleapis.com/reports/v1/accounts/{$this->merchantId}/reports:search", [
+                'query' => $query,
+                'pageSize' => 1000,
+                'pageToken' => $nextPageToken
             ]);
 
             if ($response->failed()) {
