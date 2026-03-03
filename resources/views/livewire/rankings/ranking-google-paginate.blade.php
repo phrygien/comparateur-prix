@@ -817,20 +817,24 @@ new class extends Component {
                                     {{-- <input type="month" wire:model.live="dateMonthly"
                                         class="input input-bordered input-sm w-36"/> --}}
 
-                                     <!-- Input invisible mais fonctionnel -->
                                     <input
                                         type="month"
                                         wire:model.live="dateMonthly"
-                                        class="absolute inset-0 w-6 h-6 opacity-0 cursor-pointer"
+                                        id="monthPicker"
+                                        class="hidden"
                                     />
 
-                                    <!-- Icône -->
-                                    <svg class="w-6 h-6 text-gray-600 cursor-pointer" fill="none" stroke="currentColor"
-                                        stroke-width="2" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round"
-                                            d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2
-                                            2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                                    </svg>
+                                    <button onclick="document.getElementById('monthPicker').showPicker()"
+                                            class="p-2 border rounded bg-white">
+                                        <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor"
+                                            stroke-width="2" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round"
+                                                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2
+                                                2 0 002-2V7a2 2 0 002-2H5a2 2 0
+                                                00-2 2v12a2 2 0 00-2 2z"/>
+                                        </svg>
+                                    </button>
+
                                 @endif
 
                             </div>
