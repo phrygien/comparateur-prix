@@ -69,7 +69,7 @@ new class extends Component {
 
         if (!empty($this->groupeFilter)) {
             $placeholders    = implode(',', array_fill(0, count($this->groupeFilter), '?'));
-            $groupeCondition = "AND groupe IN ($placeholders)";
+            $groupeCondition = "AND SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) IN ($placeholders)";
             $params          = array_merge($params, $this->groupeFilter);
         }
 

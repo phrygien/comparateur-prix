@@ -47,6 +47,13 @@ new class extends Component {
         'MONTHLY' => 'MONTHLY',
     ];
 
+    public $disponibilite = [
+        'Disponible en stock' => 'IN_STOCK',
+        'Rupture de stock' => 'OUT_OF_STOCK',
+        'Pas dans le catalogue' => 'NOT_IN_INVENTORY',
+        'A verifier' => 'INVENTORY_STATUS_UNSPECIFIED'
+    ];
+
     protected GoogleMerchantService $googleMerchantService;
 
     public function mount(): void
@@ -738,8 +745,6 @@ new class extends Component {
                                     </button>
                                 @endforeach
                             </div>
-
-                            <div class="divider divider-horizontal mx-0"></div>
 
                             @if($activePeriod === 'WEEKLY')
                                 <div class="flex items-center gap-2">
