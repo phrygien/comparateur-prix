@@ -744,22 +744,19 @@ new class extends Component {
                                         {{ $periodLabel }}
                                     </button>
                                 @endforeach
-                            </div>
 
-                            @if($activePeriod === 'WEEKLY')
-                                <div class="flex items-center gap-2">
-                                    <span class="text-xs text-gray-400">Semaine du lundi</span>
-                                    <input type="date" wire:model.live="MondayWeekly"
-                                        class="input input-bordered input-sm w-36"
-                                    />
-                                </div>
-                            @else
-                                <div class="flex items-center gap-2">
-                                    <span class="text-xs text-gray-400">Mois</span>
-                                    <input type="month" wire:model.live="dateMonthly"
-                                        class="input input-bordered input-sm w-36"/>
-                                </div>
-                            @endif
+                                @if($activePeriod === 'WEEKLY')
+                                        <span class="text-xs text-gray-400">Semaine du lundi</span>
+                                        <input type="date" wire:model.live="MondayWeekly"
+                                            class="input input-bordered input-sm w-36"
+                                        />
+                                @else
+                                        <span class="text-xs text-gray-400">Mois</span>
+                                        <input type="month" wire:model.live="dateMonthly"
+                                            class="input input-bordered input-sm w-36"/>
+                                @endif
+
+                            </div>
 
                             <div class="divider divider-horizontal mx-0"></div>
 
