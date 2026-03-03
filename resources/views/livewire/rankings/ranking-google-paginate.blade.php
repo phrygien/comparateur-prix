@@ -312,6 +312,8 @@ new class extends Component {
 
     public function updatedActivePeriod(): void
     {
+        $this->MondayWeekly = date('Y-m-d', strtotime('monday - 3 weeks'));
+        $this->dateMonthly = date('Y-m', strtotime('first day of -2 months'));
         $this->currentPage = 1;
         $this->clearCache();
     }
