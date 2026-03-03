@@ -125,9 +125,7 @@ new class extends Component {
             //         $query->where('country_code', $this->activeCountry);
             //     })
             //     ->get();
-
-            
-            $results = Product::with([
+$results = Product::with([
     'website' => function ($query) {
         $query->where('country_code', $this->activeCountry);
     }
@@ -136,12 +134,16 @@ new class extends Component {
 ->whereHas('website', function ($query) {
     $query->where('country_code', $this->activeCountry);
 })
-->orderBy('scrap_reference_id', 'desc')
-->get()
-->unique(function ($item) {
-    return $item->ean . '_' . $item->website_id;  // Unicité par couple EAN-site
-});
-
+->whereIn('id', function ($query) {
+    $query->select(DB::raw('MAX(id)'))  // Ou MAX(scrap_reference_id) selon votre besoin
+        ->from('products')
+        ->whereIn('ean', $eanList)
+        ->whereHas('website', function ($q) {
+            $q->where('country_code', $this->activeCountry);
+        })
+        ->groupBy('ean', 'website_id');  // Groupement par EAN ET site
+})
+->get();
             $indexed = [];
             foreach ($results as $product) {
                 $ean = (string) $product->ean;
