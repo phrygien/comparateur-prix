@@ -340,7 +340,11 @@ new class extends Component {
 
     public function updatedActiveCountry(): void
     {
+        $this->nextTokenPageExist = False;
         $this->currentPage = 1;
+        $this->tokenPage = [
+            null
+        ];
         $this->clearCache();
     }
 
@@ -348,7 +352,11 @@ new class extends Component {
     {
         $this->MondayWeekly = date('Y-m-d', strtotime('monday - 3 weeks'));
         $this->dateMonthly = date('Y-m', strtotime('first day of -2 months'));
+        $this->nextTokenPageExist = False;
         $this->currentPage = 1;
+        $this->tokenPage = [
+            null
+        ];
         $this->clearCache();
     }
 
@@ -372,17 +380,31 @@ new class extends Component {
             // Mettre à jour le champ Livewire
             $this->MondayWeekly = $date->format('Y-m-d');
         }
+        $this->nextTokenPageExist = False;
+        $this->currentPage = 1;
+        $this->tokenPage = [
+            null
+        ];
         $this->clearCache();
     }
 
     public function updatedDateMonthly(): void
     {
+        $this->nextTokenPageExist = False;
+        $this->currentPage = 1;
+        $this->tokenPage = [
+            null
+        ];
         $this->clearCache();
     }
 
     public function updatedDisponibiliteFilter(): void
     {
+        $this->nextTokenPageExist = False;
         $this->currentPage = 1;
+        $this->tokenPage = [
+            null
+        ];
         $this->clearCache();
     }
 
