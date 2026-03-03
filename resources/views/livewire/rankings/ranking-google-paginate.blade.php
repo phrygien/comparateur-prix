@@ -345,7 +345,7 @@ new class extends Component {
         $this->tokenPage = [
             null
         ];
-        $this->clearCache();
+        //$this->clearCache();
     }
 
     public function updatedActivePeriod(): void
@@ -357,7 +357,7 @@ new class extends Component {
         $this->tokenPage = [
             null
         ];
-        $this->clearCache();
+        //$this->clearCache();
     }
 
     public function updatedMondayWeekly($value): void
@@ -395,7 +395,7 @@ new class extends Component {
         $this->tokenPage = [
             null
         ];
-        $this->clearCache();
+        //$this->clearCache();
     }
 
     public function updatedDisponibiliteFilter(): void
@@ -405,7 +405,7 @@ new class extends Component {
         $this->tokenPage = [
             null
         ];
-        $this->clearCache();
+        //$this->clearCache();
     }
 
     public function updatedPerPage(): void
