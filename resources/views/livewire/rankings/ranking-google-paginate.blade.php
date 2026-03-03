@@ -374,98 +374,161 @@ new class extends Component {
 
                     <div wire:loading.remove wire:target="activeCountry">
 
-                        <div class="flex flex-wrap items-center justify-between gap-4 mb-4 mt-6">
+<div class="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
+    <!-- Barre principale avec les contrôles -->
+    <div class="p-4 border-b border-gray-200">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+            <!-- Section période -->
+            <div class="flex items-center gap-4">
+                <span class="text-sm font-medium text-gray-700">Période</span>
+                <div class="flex gap-1 p-1 bg-gray-100 rounded-lg">
+                    @foreach($period as $periodLabel => $value)
+                        <button type="button"
+                            wire:click="$set('activePeriod', '{{ $value }}')"
+                            class="px-3 py-1.5 text-sm font-medium rounded-md transition-colors duration-150
+                                {{ $activePeriod === $value 
+                                    ? 'bg-white text-orange-600 shadow-sm' 
+                                    : 'text-gray-600 hover:text-gray-900 hover:bg-white/50' }}">
+                            {{ $periodLabel }}
+                        </button>
+                    @endforeach
+                </div>
+            </div>
 
-                            <div class="flex items-center gap-2">
-                                <span class="text-xs text-gray-400">Période</span>
-                                @foreach($period as $periodLabel => $value)
-                                    <button type="button"
-                                        wire:click="$set('activePeriod', '{{ $value }}')"
-                                        class="btn btn-xs {{ $activePeriod === $value ? 'bg-orange-900 text-white' : 'btn-outline' }}">
-                                        {{ $periodLabel }}
-                                    </button>
-                                @endforeach
-                            </div>
+            <!-- Sélecteur de date -->
+            <div class="flex items-center gap-3">
+                <div class="flex items-center gap-2">
+                    @if($activePeriod === 'WEEKLY')
+                        <span class="text-sm text-gray-600">Semaine du</span>
+                        <div class="relative">
+                            <input type="date" wire:model.live="MondayWeekly"
+                                class="pl-3 pr-8 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"/>
+                            <svg class="absolute right-2 top-2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                            </svg>
+                        </div>
+                    @else
+                        <span class="text-sm text-gray-600">Mois</span>
+                        <div class="relative">
+                            <input type="month" wire:model.live="dateMonthly"
+                                class="pl-3 pr-8 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"/>
+                            <svg class="absolute right-2 top-2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                            </svg>
+                        </div>
+                    @endif
+                </div>
 
-                            <div class="divider divider-horizontal mx-0"></div>
+                <!-- Séparateur vertical -->
+                <div class="w-px h-8 bg-gray-200"></div>
 
-                            @if($activePeriod === 'WEEKLY')
-                                <div class="flex items-center gap-2">
-                                    <span class="text-xs text-gray-400">Semaine du lundi</span>
-                                    <input type="date" wire:model.live="MondayWeekly"
-                                        class="input input-bordered input-sm w-36"/>
-                                </div>
-                            @else
-                                <div class="flex items-center gap-2">
-                                    <span class="text-xs text-gray-400">Mois</span>
-                                    <input type="date" wire:model.live="dateMonthly"
-                                        class="input input-bordered input-sm w-36"/>
-                                </div>
-                            @endif
+                <!-- Bouton rafraîchir -->
+                <button type="button" 
+                    wire:click="clearCache"
+                    wire:loading.attr="disabled"
+                    class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span wire:loading.remove wire:target="clearCache" class="flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                        </svg>
+                        Rafraîchir
+                    </span>
+                    <span wire:loading wire:target="clearCache" class="flex items-center gap-2">
+                        <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Chargement...
+                    </span>
+                </button>
+            </div>
+        </div>
+    </div>
 
-                            <div class="divider divider-horizontal mx-0"></div>
+    <!-- Barre secondaire avec pagination et contrôles -->
+    <div class="px-4 py-3 bg-gray-50/50 rounded-b-lg">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+            <!-- Lignes par page -->
+            <div class="flex items-center gap-3">
+                <span class="text-sm text-gray-600">Afficher</span>
+                <select wire:model.live="perPage" 
+                    class="pl-3 pr-8 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-white">
+                    <option value="25">25 lignes</option>
+                    <option value="50">50 lignes</option>
+                    <option value="100">100 lignes</option>
+                </select>
+            </div>
 
-                            <button type="button" wire:click="clearCache"
-                                wire:loading.attr="disabled"
-                                wire:loading.class="opacity-60 cursor-not-allowed"
-                                class="btn btn-sm btn-ghost gap-2" title="Vider le cache et recharger">
-                                <span wire:loading.remove wire:target="clearCache" class="flex items-center gap-2">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                                    </svg>
-                                    Rafraîchir
-                                </span>
-                                <span wire:loading wire:target="clearCache" class="flex items-center gap-2">
-                                    <span class="loading loading-spinner loading-xs"></span>
-                                    Rafraîchissement…
-                                </span>
+            <!-- Statistiques -->
+            <div class="flex items-center gap-4">
+                <div class="flex items-center gap-2">
+                    <span class="text-sm text-gray-600">{{ $total }} résultat(s)</span>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                        Page {{ $currentPage }}/{{ $lastPage }}
+                    </span>
+                </div>
+
+                <!-- Pagination -->
+                @if($lastPage > 1)
+                    <div class="flex items-center gap-3">
+                        <span class="text-sm text-gray-500">
+                            {{ (($currentPage - 1) * $perPage) + 1 }}–{{ min($currentPage * $perPage, $total) }}
+                            sur {{ $total }}
+                        </span>
+                        
+                        <nav class="flex items-center gap-1" aria-label="Pagination">
+                            <button class="p-1.5 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                wire:click="setPage(1)"
+                                @disabled($currentPage === 1)>
+                                <span class="sr-only">Première page</span>
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M15.707 15.707a1 1 0 01-1.414 0l-5-5a1 1 0 010-1.414l5-5a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 010 1.414zm-6 0a1 1 0 01-1.414 0l-5-5a1 1 0 010-1.414l5-5a1 1 0 011.414 1.414L5.414 10l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" />
+                                </svg>
                             </button>
-                        </div>
 
-                        <div class="flex flex-wrap items-center justify-around gap-4 mb-4">
+                            <button class="p-1.5 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                wire:click="setPage({{ $currentPage - 1 }})"
+                                @disabled($currentPage === 1)>
+                                <span class="sr-only">Page précédente</span>
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
+                                </svg>
+                            </button>
 
-                            <div class="flex items-center gap-2">
-                                <span class="text-xs text-gray-400">Par page</span>
-                                <select wire:model.live="perPage" class="select select-sm select-bordered w-20">
-                                    <option value="25">25</option>
-                                    <option value="50">50</option>
-                                    <option value="100">100</option>
-                                </select>
-                            </div>
+                            @foreach(range(max(1, $currentPage - 2), min($lastPage, $currentPage + 2)) as $p)
+                                <button class="min-w-[2rem] px-2 py-1 text-sm font-medium rounded-md 
+                                    {{ $p === $currentPage 
+                                        ? 'bg-orange-500 text-white' 
+                                        : 'text-gray-700 hover:bg-gray-100' }}"
+                                    wire:click="setPage({{ $p }})">
+                                    {{ $p }}
+                                </button>
+                            @endforeach
 
-                            <p class="text-sm text-gray-500">
-                                {{ $total }} résultat(s) · Page {{ $currentPage }}/{{ $lastPage }}
-                            </p>
+                            <button class="p-1.5 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                wire:click="setPage({{ $currentPage + 1 }})"
+                                @disabled($currentPage === $lastPage)>
+                                <span class="sr-only">Page suivante</span>
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                                </svg>
+                            </button>
 
-                            @if($lastPage > 1)
-                                <div class="flex items-center gap-4">
-                                    <span class="text-xs text-gray-500">
-                                        Affichage
-                                        {{ (($currentPage - 1) * $perPage) + 1 }}–{{ min($currentPage * $perPage, $total) }}
-                                        sur {{ $total }}
-                                    </span>
-                                    <div class="join">
-                                        <button class="join-item btn btn-sm"
-                                            wire:click="setPage(1)"
-                                            @disabled($currentPage === 1)>«</button>
-                                        <button class="join-item btn btn-sm"
-                                            wire:click="setPage({{ $currentPage - 1 }})"
-                                            @disabled($currentPage === 1)>‹</button>
-                                        @foreach(range(max(1, $currentPage - 2), min($lastPage, $currentPage + 2)) as $p)
-                                            <button class="join-item btn btn-sm {{ $p === $currentPage ? 'btn-active btn-primary' : '' }}"
-                                                wire:click="setPage({{ $p }})">{{ $p }}</button>
-                                        @endforeach
-                                        <button class="join-item btn btn-sm"
-                                            wire:click="setPage({{ $currentPage + 1 }})"
-                                            @disabled($currentPage === $lastPage)>›</button>
-                                        <button class="join-item btn btn-sm"
-                                            wire:click="setPage({{ $lastPage }})"
-                                            @disabled($currentPage === $lastPage)>»</button>
-                                    </div>
-                                </div>
-                            @endif
-                        </div>
+                            <button class="p-1.5 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                wire:click="setPage({{ $lastPage }})"
+                                @disabled($currentPage === $lastPage)>
+                                <span class="sr-only">Dernière page</span>
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M4.293 15.707a1 1 0 010-1.414L8.586 10 4.293 6.707a1 1 0 011.414-1.414l5 5a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0zm6 0a1 1 0 010-1.414L14.586 10l-4.293-4.293a1 1 0 011.414-1.414l5 5a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                                </svg>
+                            </button>
+                        </nav>
+                    </div>
+                @endif
+            </div>
+        </div>
+    </div>
+</div>
 
                         <div class="relative">
 
