@@ -252,13 +252,11 @@ new class extends Component {
                     return $gtin;
                 };
 
-                if (!empty($this->disponibiliteFilter)) {
-                    dd($response);
-                }
-
-                if($response['nextPageToken'] && !in_array($response['nextPageToken'], $this->tokenPage)){
-                    $this->nextTokenPageExist = True;
-                    $this->tokenPage[] = $response['nextPageToken'];
+                if(array_key_exists('nextPageToken', $response)){
+                    if(!in_array($response['nextPageToken'], $this->tokenPage)){
+                        $this->nextTokenPageExist = True;
+                        $this->tokenPage[] = $response['nextPageToken'];
+                    }
                 }
 
                 foreach ($response['results'] ?? [] as $row) {
