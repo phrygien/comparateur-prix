@@ -115,34 +115,17 @@ new class extends Component {
         $eanList = array_values(array_unique($eanList));
 
         try {
-            // $results = Product::with([
-            //     'website' => function ($query) {
-            //         $query->where('country_code', $this->activeCountry);
-            //     }
-            // ])
-            //     ->whereIn('ean', $eanList)
-            //     ->whereHas('website', function ($query) {
-            //         $query->where('country_code', $this->activeCountry);
-            //     })
-            //     ->get();
-$results = Product::with([
-    'website' => function ($query) {
-        $query->where('country_code', $this->activeCountry);
-    }
-])
-->whereIn('ean', $eanList)
-->whereHas('website', function ($query) {
-    $query->where('country_code', $this->activeCountry);
-})
-->orderBy('scrap_reference_id', 'desc')
-->get()
-->groupBy(function ($item) {
-    return $item->ean . '_' . $item->website_id;
-})
-->map(function ($group) {
-    return $group->first(); // Prend le premier = plus récent grâce au orderBy
-})
-->values();
+            $results = Product::with([
+                'website' => function ($query) {
+                    $query->where('country_code', $this->activeCountry);
+                }
+            ])
+                ->whereIn('ean', $eanList)
+                ->whereHas('website', function ($query) {
+                    $query->where('country_code', $this->activeCountry);
+                })
+                ->get();
+
             $indexed = [];
             foreach ($results as $product) {
                 $ean = (string) $product->ean;
@@ -866,7 +849,7 @@ $results = Product::with([
                                         </thead>
                                         <tbody>
                                             @foreach($popularityRanks as $item)
-                                                <tr class="hover odd:bg-gray-50 even:bg-white">
+                                                <tr class="hover">
                                                     <td class="text-center">
                                                         <div class="flex flex-col items-center gap-0.5">
                                                             <span class="font-bold font-mono text-sm">
