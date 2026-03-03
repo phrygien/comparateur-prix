@@ -115,17 +115,34 @@ new class extends Component {
         $eanList = array_values(array_unique($eanList));
 
         try {
-            $results = Product::with([
-                'website' => function ($query) {
-                    $query->where('country_code', $this->activeCountry);
-                }
-            ])
-                ->whereIn('ean', $eanList)
-                ->whereHas('website', function ($query) {
-                    $query->where('country_code', $this->activeCountry);
-                })
-                ->get();
-
+            // $results = Product::with([
+            //     'website' => function ($query) {
+            //         $query->where('country_code', $this->activeCountry);
+            //     }
+            // ])
+            //     ->whereIn('ean', $eanList)
+            //     ->whereHas('website', function ($query) {
+            //         $query->where('country_code', $this->activeCountry);
+            //     })
+            //     ->get();
+$results = Product::with([
+    'website' => function ($query) {
+        $query->where('country_code', $this->activeCountry);
+    }
+])
+->whereIn('ean', $eanList)
+->whereHas('website', function ($query) {
+    $query->where('country_code', $this->activeCountry);
+})
+->orderBy('scrap_reference_id', 'desc')
+->get()
+->groupBy(function ($item) {
+    return $item->ean . '_' . $item->website_id;
+})
+->map(function ($group) {
+    return $group->first(); // Prend le premier = plus récent grâce au orderBy
+})
+->values();
             $indexed = [];
             foreach ($results as $product) {
                 $ean = (string) $product->ean;
