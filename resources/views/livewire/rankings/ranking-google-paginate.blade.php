@@ -384,8 +384,10 @@ new class extends Component {
         $this->clearCache();
     }
 
-    public function updatedDateMonthly(): void
+    public function updatedDateMonthly($value): void
     {
+        $date = new \DateTime($value . '-01');
+        $this->dateMonthly = $date->format('Y-m');
         $this->currentPage = 1;
         $this->tokenPage = [
             null
