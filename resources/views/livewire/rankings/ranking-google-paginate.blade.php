@@ -344,6 +344,210 @@ new class extends Component {
             ->get();
     }
 
+    public function exportXlsx(): \Symfony\Component\HttpFoundation\BinaryFileResponse
+{
+    $popularityRanks = $this->popularityRanksAll;
+    $sites = $this->sites;
+
+    $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $sheet = $spreadsheet->getActiveSheet();
+    $countryLabel = $this->countries[$this->activeCountry] ?? $this->activeCountry;
+    
+    $periodLabel = $this->activePeriod === 'WEEKLY' ? 'Semaine' : 'Mois';
+    $dateValue = $this->activePeriod === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly;
+    $sheet->setTitle('Popularité ' . $countryLabel);
+
+    // En-têtes
+    $headers = [
+        'Rang Google',
+        'Évolution',
+        'Marque',
+        'Titre Google',
+        'EANs Google',
+        'Demande relative',
+        'Produits Magento',
+    ];
+
+    // Ajouter les sites comme en-têtes
+    foreach ($sites as $site) {
+        $headers[] = $site->name;
+    }
+
+    // Positionner les en-têtes
+    $col = 1;
+    foreach ($headers as $header) {
+        $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . '1';
+        $sheet->setCellValue($cell, $header);
+        $col++;
+    }
+
+    // Style des en-têtes
+    $lastColLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($headers));
+    $sheet->getStyle('A1:' . $lastColLetter . '1')->applyFromArray([
+        'fill' => [
+            'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+            'startColor' => ['rgb' => '2D3748']
+        ],
+        'font' => [
+            'bold' => true,
+            'color' => ['rgb' => 'FFFFFF'],
+            'name' => 'Arial',
+            'size' => 10
+        ],
+        'alignment' => [
+            'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
+            'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER
+        ],
+    ]);
+
+    // Remplir les données
+    $row = 2;
+    foreach ($popularityRanks as $item) {
+        $col = 1;
+        
+        // Rang Google
+        $sheet->setCellValueByColumnAndRow($col++, $row, $item['rank'] ?? '—');
+        
+        // Évolution
+        $delta = $item['delta'] ?? null;
+        $deltaSign = $item['delta_sign'] ?? null;
+        if ($delta !== null) {
+            $deltaText = ($deltaSign === '+' ? '+' : '') . $delta;
+            $sheet->setCellValueByColumnAndRow($col, $row, $deltaText);
+            
+            // Colorer l'évolution
+            $color = match($deltaSign) {
+                '+' => '1A7A3C',
+                '-' => 'CC0000',
+                default => '888888',
+            };
+            $sheet->getStyleByColumnAndRow($col, $row)->getFont()->getColor()->setRGB($color);
+            $sheet->getStyleByColumnAndRow($col, $row)->getFont()->setBold(true);
+        } else {
+            $sheet->setCellValueByColumnAndRow($col, $row, '—');
+        }
+        $col++;
+        
+        // Marque
+        $sheet->setCellValueByColumnAndRow($col++, $row, $item['brand'] ?? '—');
+        
+        // Titre Google
+        $sheet->setCellValueByColumnAndRow($col++, $row, $item['title'] ?? '—');
+        
+        // EANs Google
+        if (!empty($item['ean_list'])) {
+            $eans = implode("\n", $item['ean_list']);
+            $sheet->setCellValueByColumnAndRow($col, $row, $eans);
+            $sheet->getStyleByColumnAndRow($col, $row)->getAlignment()->setWrapText(true);
+        } else {
+            $sheet->setCellValueByColumnAndRow($col, $row, '—');
+        }
+        $col++;
+        
+        // Demande relative
+        $sheet->setCellValueByColumnAndRow($col++, $row, $item['relative_demand'] ?? '—');
+        
+        // Produits Magento
+        if (!empty($item['magento_products'])) {
+            $magentoText = '';
+            foreach ($item['magento_products'] as $ean => $mag) {
+                $magentoText .= "SKU: {$mag['sku']}\n";
+                $magentoText .= "Prix: " . number_format($mag['price'] ?? 0, 2, ',', ' ') . "€\n";
+                if (!empty($mag['special_price'])) {
+                    $magentoText .= "Prix promo: " . number_format($mag['special_price'], 2, ',', ' ') . "€\n";
+                }
+                $magentoText .= "Stock: {$mag['quantity']}\n";
+                $magentoText .= "---\n";
+            }
+            $sheet->setCellValueByColumnAndRow($col, $row, rtrim($magentoText, "---\n"));
+            $sheet->getStyleByColumnAndRow($col, $row)->getAlignment()->setWrapText(true);
+        } else {
+            $sheet->setCellValueByColumnAndRow($col, $row, 'Non référencé');
+        }
+        $col++;
+        
+        // Colonnes des sites avec produits scrapés
+        foreach ($sites as $site) {
+            $productsForSite = [];
+            foreach ($item['ean_list'] as $ean) {
+                if (isset($item['scraped_products'][$ean])) {
+                    foreach ($item['scraped_products'][$ean] as $scrapedProduct) {
+                        if ($scrapedProduct['site_id'] == $site->id) {
+                            $productsForSite[] = $scrapedProduct;
+                        }
+                    }
+                }
+            }
+            
+            if (!empty($productsForSite)) {
+                $siteText = '';
+                foreach ($productsForSite as $product) {
+                    $siteText .= "EAN: {$product['ean']}\n";
+                    $siteText .= "Produit: {$product['name']}\n";
+                    $siteText .= "Prix: " . number_format($product['price'], 2, ',', ' ') . " {$product['currency']}\n";
+                    $siteText .= "Dispo: " . ($product['is_available'] ? 'Oui' : 'Non') . "\n";
+                    if ($product['url']) {
+                        $siteText .= "URL: {$product['url']}\n";
+                    }
+                    $siteText .= "---\n";
+                }
+                $sheet->setCellValueByColumnAndRow($col, $row, rtrim($siteText, "---\n"));
+                $sheet->getStyleByColumnAndRow($col, $row)->getAlignment()->setWrapText(true);
+                
+                // Colorer en vert si disponible
+                if ($productsForSite[0]['is_available']) {
+                    $sheet->getStyleByColumnAndRow($col, $row)->getFont()->getColor()->setRGB('1A7A3C');
+                }
+            } else {
+                $sheet->setCellValueByColumnAndRow($col, $row, 'Aucun produit');
+                $sheet->getStyleByColumnAndRow($col, $row)->getFont()->getColor()->setRGB('AAAAAA');
+            }
+            $col++;
+        }
+        
+        $row++;
+    }
+
+    // Ajuster automatiquement la largeur des colonnes
+    foreach (range('A', $lastColLetter) as $columnID) {
+        $sheet->getColumnDimension($columnID)->setAutoSize(true);
+    }
+
+    // Geler la première ligne
+    $sheet->freezePane('A2');
+
+    // Style pour toutes les cellules de données
+    $sheet->getStyle('A2:' . $lastColLetter . ($row - 1))->applyFromArray([
+        'font' => ['name' => 'Arial', 'size' => 9],
+        'borders' => [
+            'allBorders' => [
+                'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                'color' => ['rgb' => 'DDDDDD']
+            ]
+        ]
+    ]);
+
+    // Créer le dossier d'export si nécessaire
+    $exportDir = storage_path('app/public/exports');
+    if (!file_exists($exportDir)) {
+        mkdir($exportDir, 0755, true);
+    }
+
+    // Générer le nom du fichier
+    $fileName = 'popularite_google_' . strtolower($this->activeCountry)
+        . '_' . ($this->activePeriod === 'WEEKLY' ? 'semaine' : 'mois')
+        . '_' . $dateValue
+        . '_' . date('Ymd_His') . '.xlsx';
+    $filePath = $exportDir . '/' . $fileName;
+
+    // Sauvegarder le fichier
+    $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+    $writer->save($filePath);
+
+    // Retourner la réponse de téléchargement
+    return response()->download($filePath, $fileName)->deleteFileAfterSend(true);
+}
+
     public function with(): array
     {
         $total    = $this->popularityTotal;
@@ -422,6 +626,25 @@ new class extends Component {
                                 </span>
                             </button>
                         </div>
+
+                        <div class="flex items-center gap-2">
+    <button type="button" 
+        wire:click="exportXlsx"
+        wire:loading.attr="disabled"
+        class="btn btn-sm btn-success gap-2">
+        <span wire:loading.remove wire:target="exportXlsx" class="flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+            </svg>
+            Export Excel
+        </span>
+        <span wire:loading wire:target="exportXlsx" class="flex items-center gap-2">
+            <span class="loading loading-spinner loading-xs"></span>
+            Export en cours...
+        </span>
+    </button>
+</div>
 
                         <div class="flex flex-wrap items-center justify-around gap-4 mb-4">
 
