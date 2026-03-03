@@ -814,8 +814,8 @@ new class extends Component {
                                     />
                                 @else
                                     <span class="text-xs text-gray-400">Mois : <tag class="text-xs text-black">{{ $mois_mensuel }}</tag> </span>
-                                    <input type="month" wire:model.live="dateMonthly"
-                                        class="input input-bordered input-sm text-white w-5"/>
+                                    <input type="month" wire:model.live="dateMonthly" value="{{ $mois_mensuel }}"
+                                        class="input input-bordered input-sm w-36"/>
                                 @endif
 
                             </div>
