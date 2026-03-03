@@ -767,6 +767,7 @@ new class extends Component {
             'total' => $total,
             'lastPage' => $lastPage,
             'tokenUsed' =>  $this->tokenPage[$this->currentPage - 1],
+            'mois_mensuel' => $this->dateMonthly,
             'currentPage' => $this->currentPage,
             'perPage' => $this->perPage,
         ];
@@ -973,7 +974,7 @@ new class extends Component {
                                     </div>
                                 </div>
                             @endif
-                             last page : {{ $lastPage }} | token used for this page : {{ $tokenUsed }}
+                             last page : {{ $lastPage }} | token used for this page : {{ $tokenUsed }} | mois mensuel : {{ $mois_mensuel }}
                         </div>
 
                         <div class="relative">
