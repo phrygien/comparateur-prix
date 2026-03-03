@@ -773,6 +773,7 @@ new class extends Component {
             'availableDispo' => $this->availableDispo,
             'total' => $total,
             'lastPage' => $lastPage,
+            'tokenUsed' =>  $this->tokenPage[$this->currentPage - 1],
             'currentPage' => $this->currentPage,
             'perPage' => $this->perPage,
         ];
@@ -974,7 +975,7 @@ new class extends Component {
                                             @disabled($currentPage === $lastPage)>»</button>
                                     </div>
                                 </div>
-                                last page : {{ $lastPage }}
+                                last page : {{ $lastPage }} | token used for this page : {{ $tokenUsed }}
                             @endif
                         </div>
 
