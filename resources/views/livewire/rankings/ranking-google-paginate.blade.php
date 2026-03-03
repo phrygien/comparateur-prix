@@ -813,46 +813,9 @@ new class extends Component {
                                         class="input input-bordered input-sm w-36"
                                     />
                                 @else
-                                    <span class="text-xs text-gray-400">Mois : {{ $mois_mensuel }} </span>
-                                    {{-- <input type="month" wire:model.live="dateMonthly"
-                                        class="input input-bordered input-sm w-36"/> --}}
-
-                                    <div x-data="{ open: false }" class="relative">
-
-                                        <!-- Bouton icône -->
-                                        <button @click="open = true"
-                                                class="p-2 border rounded bg-white shadow">
-                                            <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor"
-                                                stroke-width="2" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round"
-                                                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2
-                                                    2 0 002-2V7a2 2 0 00-2-2H5a2 2 0
-                                                    00-2 2v12a2 2 0 00-2 2z"/>
-                                            </svg>
-                                        </button>
-
-                                        <!-- MODAL CENTRÉ -->
-                                        <div x-show="open"
-                                            class="fixed inset-0 flex justify-center items-center bg-black/40"
-                                            x-transition>
-
-                                            <div class="bg-white p-4 rounded shadow w-64">
-                                                <h3 class="text-sm font-semibold mb-2">Sélectionner un mois</h3>
-
-                                                <input type="month"
-                                                    wire:model.live="dateMonthly"
-                                                    class="border px-2 py-1 rounded w-full"
-                                                    @change="open = false">
-
-                                                <button @click="open = false"
-                                                        class="mt-3 text-sm text-blue-600">
-                                                    Fermer
-                                                </button>
-                                            </div>
-
-                                        </div>
-                                    </div>
-
+                                    <span class="text-xs text-gray-400">Mois : <tag class="text-xs text-black">{{ $mois_mensuel }}</tag> </span>
+                                    <input type="month" wire:model.live="dateMonthly"
+                                        class="input input-bordered input-sm w-36"/>
                                 @endif
 
                             </div>
