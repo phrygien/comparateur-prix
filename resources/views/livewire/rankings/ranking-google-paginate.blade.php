@@ -115,16 +115,37 @@ new class extends Component {
         $eanList = array_values(array_unique($eanList));
 
         try {
+            // $results = Product::with([
+            //     'website' => function ($query) {
+            //         $query->where('country_code', $this->activeCountry);
+            //     }
+            // ])
+            //     ->whereIn('ean', $eanList)
+            //     ->whereHas('website', function ($query) {
+            //         $query->where('country_code', $this->activeCountry);
+            //     })
+            //     ->get();
+
             $results = Product::with([
                 'website' => function ($query) {
                     $query->where('country_code', $this->activeCountry);
                 }
             ])
-                ->whereIn('ean', $eanList)
-                ->whereHas('website', function ($query) {
-                    $query->where('country_code', $this->activeCountry);
+            ->select('products.*')
+            ->join(DB::raw('(SELECT ean, MAX(scrap_reference_id) as max_scrap_ref 
+                            FROM products 
+                            WHERE ean IN (' . implode(',', array_fill(0, count($eanList), '?')) . ')
+                            GROUP BY ean) as latest'), 
+                function ($join) {
+                    $join->on('products.ean', '=', 'latest.ean')
+                            ->on('products.scrap_reference_id', '=', 'latest.max_scrap_ref');
                 })
-                ->get();
+            ->whereIn('products.ean', $eanList)
+            ->whereHas('website', function ($query) {
+                $query->where('country_code', $this->activeCountry);
+            })
+            ->setBindings(array_merge($eanList, $eanList))
+            ->get();
 
             $indexed = [];
             foreach ($results as $product) {
