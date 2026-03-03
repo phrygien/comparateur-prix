@@ -254,7 +254,7 @@ new class extends Component {
             // Vérifier le cache
             $cacheKey = 'google_popularity_all_' . md5($countryCode . $periodCode . $date . $this->inventory_status_group_cache_control . $this->currentPage . $this->perPage);
 
-            return Cache::remember($cacheKey, now()->addHours(6), function () use ($countryCode, $periodCode, $date, $inventory_status_group) {
+            // return Cache::remember($cacheKey, now()->addHours(6), function () use ($countryCode, $periodCode, $date, $inventory_status_group) {
 
                 foreach ($response['results'] ?? [] as $row) {
                     $data = $row['bestSellersProductClusterView'] ?? [];
@@ -320,7 +320,7 @@ new class extends Component {
 
                 return $ranks;
 
-            });
+            //});
 
         } catch (\Exception $e) {
             Log::error('Google Merchant popularity rank error: ' . $e->getMessage());
@@ -344,7 +344,7 @@ new class extends Component {
         $this->tokenPage = [
             null
         ];
-        $this->clearCache();
+        //$this->clearCache();
     }
 
     public function updatedActivePeriod(): void
@@ -355,7 +355,7 @@ new class extends Component {
         $this->tokenPage = [
             null
         ];
-        $this->clearCache();
+        //$this->clearCache();
     }
 
     public function updatedMondayWeekly($value): void
@@ -382,7 +382,7 @@ new class extends Component {
         $this->tokenPage = [
             null
         ];
-        $this->clearCache();
+        //$this->clearCache();
     }
 
     public function updatedDateMonthly($value): void
@@ -392,7 +392,7 @@ new class extends Component {
         $this->tokenPage = [
             null
         ];
-        $this->clearCache();
+        //$this->clearCache();
     }
 
     public function updatedDisponibiliteFilter(): void
@@ -401,7 +401,7 @@ new class extends Component {
         $this->tokenPage = [
             null
         ];
-        $this->clearCache();
+        //$this->clearCache();
     }
 
     public function updatedPerPage(): void
@@ -410,7 +410,7 @@ new class extends Component {
         $this->tokenPage = [
             null
         ];
-        $this->clearCache();
+        //$this->clearCache();
     }
 
     public function setPage(int $page): void
