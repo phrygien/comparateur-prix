@@ -328,6 +328,8 @@ new class extends Component {
                                     continue;
                                 }
 
+                                dd($scrapedIndex[$ean]);
+
                                 // calcul de la différence
                                 $priceDiff = $scrapedIndex[$ean]['price'] - $prixCosma;
 
