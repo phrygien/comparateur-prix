@@ -1198,7 +1198,9 @@ new class extends Component {
 
                                                                             <div class="flex items-center justify-between text-xs">
                                                                                 <span class="font-semibold {{ isset($product['percentDiff']) ? 'text-primary' : 'text-error' }}">
-                                                                                    {{ number_format($product['percentDiff'], 2, ',', ' ') }} %
+                                                                                    @if (isset($product['percentDiff']))
+                                                                                        {{ number_format($product['percentDiff'], 2, ',', ' ') }} %
+                                                                                    @endif
                                                                                 </span>
                                                                             </div>
 
