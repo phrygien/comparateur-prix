@@ -311,7 +311,30 @@ new class extends Component {
                     $matchedScraped = [];
                     foreach ($item['ean_list'] as $ean) {
                         if (isset($scrapedIndex[$ean])) {
+                            // copy scraped data
                             $matchedScraped[$ean] = $scrapedIndex[$ean];
+
+                            // si produit Magento existe
+                            if (isset($matchedMagento[$ean])) {
+
+                                // prix de référence Cosma
+                                $prixCosma = !empty($matchedMagento[$ean]['special_price'])
+                                    ? $matchedMagento[$ean]['special_price']
+                                    : $matchedMagento[$ean]['price'];
+
+                                // éviter division par 0
+                                if ($prixCosma <= 0) {
+                                    $matchedScraped[$ean]['percentDiff'] = null;
+                                    continue;
+                                }
+
+                                // calcul de la différence
+                                $priceDiff = $scrapedIndex[$ean]['price'] - $prixCosma;
+
+                                // pourcentage
+                                $matchedScraped[$ean]['percentDiff'] = round(($priceDiff / $prixCosma) * 100, 2);
+                            }
+
                         }
                     }
                     $item['scraped_products'] = $matchedScraped;
