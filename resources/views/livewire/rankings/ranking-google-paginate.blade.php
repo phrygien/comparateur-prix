@@ -254,7 +254,7 @@ new class extends Component {
             // Vérifier le cache
             $cacheKey = 'google_popularity_all_' . md5($countryCode . $periodCode . $date . $this->inventory_status_group_cache_control . $this->currentPage . $this->perPage);
 
-            // return Cache::remember($cacheKey, now()->addHours(6), function () use ($countryCode, $periodCode, $date, $inventory_status_group) {
+            return Cache::remember($cacheKey, now()->addHours(6), function () use () {
 
                 foreach ($response['results'] ?? [] as $row) {
                     $data = $row['bestSellersProductClusterView'] ?? [];
@@ -320,9 +320,10 @@ new class extends Component {
 
                 return $ranks;
 
-            //});
+            });
 
         } catch (\Exception $e) {
+            dd($e);
             Log::error('Google Merchant popularity rank error: ' . $e->getMessage());
             return [];
         }
