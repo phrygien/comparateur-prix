@@ -254,7 +254,7 @@ new class extends Component {
             // Vérifier le cache
             $cacheKey = 'google_popularity_all_' . md5($countryCode . $periodCode . $date . $this->inventory_status_group_cache_control . $this->currentPage . $this->perPage);
 
-            return Cache::remember($cacheKey, now()->addHours(6), function () use ($ranks, $normalizeGtin) {
+            //return Cache::remember($cacheKey, now()->addHours(6), function () use ($ranks, $normalizeGtin) {
 
                 foreach ($response['results'] ?? [] as $row) {
                     $data = $row['bestSellersProductClusterView'] ?? [];
@@ -320,7 +320,7 @@ new class extends Component {
 
                 return $ranks;
 
-            });
+            //});
 
         } catch (\Exception $e) {
             dd($e);
@@ -419,14 +419,14 @@ new class extends Component {
         $this->currentPage = $page;
     }
 
-    public function clearCache(): void
-    {
-        $countryCode = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
-        $periodCode = $this->periodCodeMap[$this->activePeriod] ?? $this->activePeriod;
-        $date = $periodCode === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly.'-01';
+    // public function clearCache(): void
+    // {
+    //     $countryCode = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
+    //     $periodCode = $this->periodCodeMap[$this->activePeriod] ?? $this->activePeriod;
+    //     $date = $periodCode === 'WEEKLY' ? $this->MondayWeekly : $this->dateMonthly.'-01';
 
-        Cache::forget('google_popularity_all_' . md5($countryCode . $periodCode . $date . $this->inventory_status_group_cache_control . $this->currentPage . $this->perPage));
-    }
+    //     Cache::forget('google_popularity_all_' . md5($countryCode . $periodCode . $date . $this->inventory_status_group_cache_control . $this->currentPage . $this->perPage));
+    // }
 
     public function getSitesProperty()
     {
