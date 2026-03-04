@@ -322,7 +322,7 @@ new class extends Component {
                                     ? $matchedMagento[$ean]['special_price']
                                     : $matchedMagento[$ean]['price'];
 
-                                foreach ($matchedScraped[$ean] as $scrapedSite) {
+                                foreach ($matchedScraped[$ean] as &$scrapedSite) {
 
                                     // éviter division par 0
                                     if ($prixCosma <= 0) {
@@ -333,11 +333,12 @@ new class extends Component {
                                     // calcul de la différence
                                     $priceDiff = $scrapedSite['price'] - $prixCosma;
 
-                                    // pourcentage
+                                    // écrire directement dans l'array
                                     $scrapedSite['percentDiff'] = round(($priceDiff / $prixCosma) * 100, 2);
                                 }
+                                unset($scrapedSite); // ⚠️ IMPORTANT : nettoyer la référence
 
-                                dd($scrapedIndex[$ean]);
+                                dd($matchedScraped[$ean]);
                             }
                         }
                     }
