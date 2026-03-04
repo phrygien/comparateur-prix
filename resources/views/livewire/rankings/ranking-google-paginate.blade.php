@@ -322,21 +322,23 @@ new class extends Component {
                                     ? $matchedMagento[$ean]['special_price']
                                     : $matchedMagento[$ean]['price'];
 
-                                // éviter division par 0
-                                if ($prixCosma <= 0) {
-                                    $matchedScraped[$ean]['percentDiff'] = null;
-                                    continue;
+                                foreach ($matchedScraped[$ean] as $scrapedSite) {
+
+                                    // éviter division par 0
+                                    if ($prixCosma <= 0) {
+                                        $scrapedSite['percentDiff'] = null;
+                                        continue;
+                                    }
+
+                                    // calcul de la différence
+                                    $priceDiff = $scrapedSite['price'] - $prixCosma;
+
+                                    // pourcentage
+                                    $scrapedSite['percentDiff'] = round(($priceDiff / $prixCosma) * 100, 2);
                                 }
 
                                 dd($scrapedIndex[$ean]);
-
-                                // calcul de la différence
-                                $priceDiff = $scrapedIndex[$ean]['price'] - $prixCosma;
-
-                                // pourcentage
-                                $matchedScraped[$ean]['percentDiff'] = round(($priceDiff / $prixCosma) * 100, 2);
                             }
-
                         }
                     }
                     $item['scraped_products'] = $matchedScraped;
