@@ -323,7 +323,7 @@ new class extends Component {
             //});
 
         } catch (\Exception $e) {
-            dd($e);
+            //dd($e);
             Log::error('Google Merchant popularity rank error: ' . $e->getMessage());
             return [];
         }
@@ -1154,7 +1154,7 @@ new class extends Component {
                                                                             @if($product['url'])
                                                                                 <a href="{{ $product['url'] }}"
                                                                                    target="_blank"
-                                                                                   class="link link-secondary link-hover text-xs block mb-1 hover:underline"
+                                                                                   class="link link-primary-content link-hover text-xs block mb-1 hover:underline"
                                                                                    title="{{ $product['name'] }}">
                                                                                     {{ Str::limit($product['name'], 25) }}
                                                                                 </a>
