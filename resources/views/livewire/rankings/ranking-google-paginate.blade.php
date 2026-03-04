@@ -254,7 +254,7 @@ new class extends Component {
             // Vérifier le cache
             $cacheKey = 'google_popularity_all_' . md5($countryCode . $periodCode . $date . $this->inventory_status_group_cache_control . $this->currentPage . $this->perPage);
 
-            return Cache::remember($cacheKey, now()->addHours(6), function () use () {
+            return Cache::remember($cacheKey, now()->addHours(6), function () {
 
                 foreach ($response['results'] ?? [] as $row) {
                     $data = $row['bestSellersProductClusterView'] ?? [];
