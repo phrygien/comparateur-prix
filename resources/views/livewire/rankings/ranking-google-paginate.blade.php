@@ -346,7 +346,7 @@ new class extends Component {
             //});
 
         } catch (\Exception $e) {
-            //dd($e);
+            dd($e);
             Log::error('Google Merchant popularity rank error: ' . $e->getMessage());
             return [];
         }
