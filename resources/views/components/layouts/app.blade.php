@@ -208,7 +208,6 @@
                                     </a>
                                 </li>
 
-                                @if($user = auth()->user() && $user->name == "Super Admin")
                                 <li>
                                     <a href="/ranking-google-paginate"
                                         class="group flex gap-x-3 rounded-md p-2 text-sm/6 font-semibold {{ request()->is('ranking-google-paginate*') ? 'bg-indigo-700 text-white' : 'text-indigo-200 hover:text-white hover:bg-indigo-700' }}"
@@ -220,7 +219,6 @@
                                         <span x-show="!sidebarMinimized" x-transition>Google top produits / Pays</span>
                                     </a>
                                 </li>
-                                @endif
 
                             </ul>
                         </li>
