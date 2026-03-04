@@ -337,8 +337,6 @@ new class extends Component {
                                     $scrapedSite['percentDiff'] = round(($priceDiff / $prixCosma) * 100, 2);
                                 }
                                 unset($scrapedSite); // ⚠️ IMPORTANT : nettoyer la référence
-
-                                dd($matchedScraped[$ean]);
                             }
                         }
                     }
@@ -1197,6 +1195,14 @@ new class extends Component {
                                                                                     {{ number_format($product['price'], 2, ',', ' ') }} {{ $product['currency'] ?? '€' }}
                                                                                 </span>
                                                                             </div>
+
+                                                                            <div class="flex items-center justify-between text-xs">
+                                                                                <span class="font-semibold {{ isset($product['percentDiff']) ? 'text-primary' : 'text-error' }}">
+                                                                                    {{ number_format($product['percentDiff'], 2, ',', ' ') }} %
+                                                                                </span>
+                                                                            </div>
+
+
                                                                         </div>
                                                                     @endforeach
                                                                 </div>
