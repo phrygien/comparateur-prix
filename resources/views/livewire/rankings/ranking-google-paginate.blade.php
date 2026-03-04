@@ -1080,11 +1080,11 @@ new class extends Component {
                                                                                 <span class="text-[10px] line-through text-gray-400 mr-1">
                                                                                     {{ number_format($mag['price'] ?? 0, 2, ',', ' ') }}€
                                                                                 </span>
-                                                                                <span class="text-xs font-bold text-success">
+                                                                                <span class="text-xs font-bold text-primary">
                                                                                     {{ number_format($mag['special_price'], 2, ',', ' ') }}€
                                                                                 </span>
                                                                             @else
-                                                                                <span class="text-xs font-bold {{ $mag['price'] > 0 ? 'text-success' : 'text-gray-400' }}">
+                                                                                <span class="text-xs font-bold {{ $mag['price'] > 0 ? 'text-primary' : 'text-gray-400' }}">
                                                                                     {{ number_format($mag['price'] ?? 0, 2, ',', ' ') }}€
                                                                                 </span>
                                                                             @endif
@@ -1154,7 +1154,7 @@ new class extends Component {
                                                                             @if($product['url'])
                                                                                 <a href="{{ $product['url'] }}"
                                                                                    target="_blank"
-                                                                                   class="link link-primary link-hover text-xs block mb-1 hover:underline"
+                                                                                   class="link link-secondary link-hover text-xs block mb-1 hover:underline"
                                                                                    title="{{ $product['name'] }}">
                                                                                     {{ Str::limit($product['name'], 25) }}
                                                                                 </a>
@@ -1165,7 +1165,7 @@ new class extends Component {
                                                                             @endif
 
                                                                             <div class="flex items-center justify-between text-xs">
-                                                                                <span class="font-semibold {{ $product['is_available'] ? 'text-success' : 'text-error' }}">
+                                                                                <span class="font-semibold {{ $product['is_available'] ? 'text-primary' : 'text-error' }}">
                                                                                     {{ number_format($product['price'], 2, ',', ' ') }} {{ $product['currency'] ?? '€' }}
                                                                                 </span>
                                                                             </div>
