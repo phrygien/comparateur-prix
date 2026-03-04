@@ -1197,13 +1197,18 @@ new class extends Component {
                                                                             </div>
 
                                                                             <div class="flex items-center justify-between text-xs">
-                                                                                <span class="font-semibold {{ isset($product['percentDiff']) ? 'text-primary' : 'text-error' }}">
-                                                                                    @if (isset($product['percentDiff']))
-                                                                                        {{ number_format($product['percentDiff'], 2, ',', ' ') }} %
-                                                                                    @endif
-                                                                                </span>
-                                                                            </div>
+                                                                                @if(isset($product['percentDiff']))
+                                                                                    @php
+                                                                                        $percent = $product['percentDiff'];
+                                                                                        $isPositive = $percent >= 0;
+                                                                                    @endphp
 
+                                                                                    <span class="font-semibold {{ $isPositive ? 'text-success' : 'text-error' }}">
+                                                                                        {{ $isPositive ? '+' : '' }}
+                                                                                        {{ number_format($percent, 2, ',', ' ') }} %
+                                                                                    </span>
+                                                                                @endif
+                                                                            </div>
 
                                                                         </div>
                                                                     @endforeach
