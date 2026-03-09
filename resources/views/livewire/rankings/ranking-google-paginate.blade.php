@@ -225,6 +225,7 @@ new class extends Component {
             WHERE report_country_code = '{$countryCode}'
                 AND report_granularity = '{$periodCode}'
                 AND category_l1 LIKE '%Health & Beauty%'
+                AND category_l3 LIKE '%Cosmetics%'
                 AND report_date = '{$date}'
                 AND inventory_status IN {$inventory_status_group}
             ORDER BY rank ASC
