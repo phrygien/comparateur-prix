@@ -226,6 +226,7 @@ new class extends Component {
                 AND report_granularity = '{$periodCode}'
                 AND category_l1 LIKE '%Health & Beauty%'
                 AND category_l3 LIKE '%Cosmetics%'
+                AND category_l4 LIKE '%Perfume & Cologne%'
                 AND report_date = '{$date}'
                 AND inventory_status IN {$inventory_status_group}
             ORDER BY rank ASC
