@@ -82,20 +82,30 @@ new class extends Component {
             $sql = "
                 SELECT COUNT(*) as total
                 FROM (
-                    SELECT oi.sku
-                    FROM sales_order_item oi
-                    JOIN sales_order o ON oi.order_id = o.entity_id
-                    JOIN sales_order_address addr ON addr.parent_id = o.entity_id
+                    SELECT produit.sku
+                    FROM catalog_product_entity AS produit
+
+                    LEFT JOIN product_char
+                        ON product_char.entity_id = produit.entity_id
+
+                    LEFT JOIN sales_order_item oi
+                        ON oi.sku = produit.sku
+                        AND oi.row_total > 0
+
+                    LEFT JOIN sales_order o
+                        ON oi.order_id = o.entity_id
+                        AND o.state IN ('processing', 'complete')
+                        AND o.created_at >= ?
+                        AND o.created_at <= ?
+
+                    LEFT JOIN sales_order_address addr
+                        ON addr.parent_id = o.entity_id
                         AND addr.address_type = 'shipping'
-                    JOIN catalog_product_entity AS produit ON oi.sku = produit.sku
-                    LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
-                    WHERE o.state IN ('processing', 'complete')
-                    AND o.created_at >= ?
-                    AND o.created_at <= ?
-                    AND addr.country_id = ?
-                    AND oi.row_total > 0
+                        AND addr.country_id = ?
+
                     {$groupeCondition}
-                    GROUP BY oi.sku, addr.country_id
+
+                    GROUP BY produit.sku
                 ) AS counted
             ";
 
@@ -138,31 +148,47 @@ new class extends Component {
                 WITH sales AS (
                     SELECT
                         addr.country_id AS country,
-                        oi.sku as ean,
+                        produit.sku as ean,
+
                         SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) AS groupe,
                         SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 2), ' - ', -1) AS marque,
                         SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 3), ' - ', -1) AS designation_produit,
+
                         (CASE
                             WHEN ROUND(product_decimal.special_price, 2) IS NOT NULL THEN ROUND(product_decimal.special_price, 2)
                             ELSE ROUND(product_decimal.price, 2)
                         END) as prix_vente_cosma,
+
                         ROUND(product_decimal.cost, 2) AS cost,
                         ROUND(product_decimal.prix_achat_ht, 2) AS pght,
-                        CAST(SUM(oi.qty_ordered) AS UNSIGNED) AS total_qty_sold,
-                        ROUND(SUM(oi.base_row_total), 2) AS total_revenue
-                    FROM sales_order_item oi
-                    JOIN sales_order o ON oi.order_id = o.entity_id
-                    JOIN sales_order_address addr ON addr.parent_id = o.entity_id
+
+                        COALESCE(SUM(oi.qty_ordered), 0) AS total_qty_sold,
+                        COALESCE(ROUND(SUM(oi.base_row_total), 2), 0) AS total_revenue
+
+                    FROM catalog_product_entity AS produit
+
+                    LEFT JOIN product_char
+                        ON product_char.entity_id = produit.entity_id
+
+                    LEFT JOIN product_decimal
+                        ON product_decimal.entity_id = produit.entity_id
+
+                    LEFT JOIN sales_order_item oi
+                        ON oi.sku = produit.sku
+                        AND oi.row_total > 0
+
+                    LEFT JOIN sales_order o
+                        ON oi.order_id = o.entity_id
+                        AND o.state IN ('processing', 'complete')
+                        AND o.created_at >= ?
+                        AND o.created_at <= ?
+
+                    LEFT JOIN sales_order_address addr
+                        ON addr.parent_id = o.entity_id
                         AND addr.address_type = 'shipping'
-                    JOIN catalog_product_entity AS produit ON oi.sku = produit.sku
-                    LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
-                    LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
-                    WHERE o.state IN ('processing', 'complete')
-                    AND o.created_at >= ?
-                    AND o.created_at <= ?
-                    AND addr.country_id = ?
-                    AND oi.row_total > 0
-                    GROUP BY oi.sku, oi.name, addr.country_id
+                        AND addr.country_id = ?
+
+                    GROUP BY produit.sku, addr.country_id
                 ),
                 ranked_sales AS (
                     SELECT
@@ -400,25 +426,39 @@ new class extends Component {
         return Cache::remember($cacheKey, now()->addHour(), function () use ($dateFrom, $dateTo) {
 
             $sql = "
-                WITH sales AS (
+                WITH groupes AS (
                     SELECT DISTINCT
-                        SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) AS groupe
-                    FROM sales_order_item oi
-                    JOIN sales_order o ON oi.order_id = o.entity_id
-                    JOIN sales_order_address addr ON addr.parent_id = o.entity_id
+                        SUBSTRING_INDEX(
+                            CAST(product_char.name AS CHAR CHARACTER SET utf8mb4),
+                            ' - ',
+                            1
+                        ) AS groupe
+
+                    FROM catalog_product_entity AS produit
+
+                    LEFT JOIN product_char
+                        ON product_char.entity_id = produit.entity_id
+
+                    LEFT JOIN sales_order_item oi
+                        ON oi.sku = produit.sku
+                        AND oi.row_total > 0
+
+                    LEFT JOIN sales_order o
+                        ON oi.order_id = o.entity_id
+                        AND o.state IN ('processing', 'complete')
+                        AND o.created_at >= ?
+                        AND o.created_at <= ?
+
+                    LEFT JOIN sales_order_address addr
+                        ON addr.parent_id = o.entity_id
                         AND addr.address_type = 'shipping'
-                    JOIN catalog_product_entity AS produit ON oi.sku = produit.sku
-                    LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
-                    WHERE o.state IN ('processing', 'complete')
-                      AND o.created_at >= ?
-                      AND o.created_at <= ?
-                      AND addr.country_id = ?
-                      AND oi.row_total > 0
+                        AND addr.country_id = ?
                 )
+
                 SELECT groupe
-                FROM sales
+                FROM groupes
                 WHERE groupe IS NOT NULL
-                  AND groupe != ''
+                AND groupe != ''
                 ORDER BY groupe ASC
             ";
 
