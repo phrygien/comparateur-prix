@@ -103,6 +103,11 @@ new class extends Component {
                         AND addr.address_type = 'shipping'
                         AND addr.country_id = ?
 
+                    LEFT JOIN product_int
+                        ON product_int.entity_id = produit.entity_id
+
+                    WHERE product_int.status IN (0, 1)
+
                     {$groupeCondition}
 
                     GROUP BY produit.sku
@@ -187,6 +192,11 @@ new class extends Component {
                         ON addr.parent_id = o.entity_id
                         AND addr.address_type = 'shipping'
                         AND addr.country_id = ?
+
+                    LEFT JOIN product_int
+                        ON product_int.entity_id = produit.entity_id
+
+                    WHERE product_int.status IN (0, 1)
 
                     GROUP BY produit.sku, addr.country_id
                 ),
@@ -453,6 +463,11 @@ new class extends Component {
                         ON addr.parent_id = o.entity_id
                         AND addr.address_type = 'shipping'
                         AND addr.country_id = ?
+
+                    LEFT JOIN product_int
+                        ON product_int.entity_id = produit.entity_id
+
+                    WHERE product_int.status IN (0, 1)
                 )
 
                 SELECT groupe
