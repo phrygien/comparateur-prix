@@ -138,7 +138,6 @@ new class extends Component {
                     if (!mb_check_encoding($result->$field, 'UTF-8')) {
                         $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'ISO-8859-1');
                     }
-                    $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'UTF-8');
                 }
             }
 
