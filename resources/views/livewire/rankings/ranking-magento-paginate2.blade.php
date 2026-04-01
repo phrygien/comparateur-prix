@@ -55,17 +55,18 @@ new class extends Component {
 
     public function mount(): void
     {
-        $this->dateFrom = date('Y-01-01');
-        $this->dateTo = date('Y-12-31');
+        // $this->dateFrom = date('Y-01-01');
+        // $this->dateTo = date('Y-12-31');
     }
 
     public function getSalesTotalProperty(): int
     {
-        $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
-        $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
+        // $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
+        // $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
 
         $groupeCondition = '';
-        $params = [$dateFrom, $dateTo, $this->activeCountry];
+        // $params = [$dateFrom, $dateTo, $this->activeCountry];
+        $params = [$this->activeCountry];
 
         if (!empty($this->groupeFilter)) {
             $placeholders    = implode(',', array_fill(0, count($this->groupeFilter), '?'));
@@ -81,37 +82,24 @@ new class extends Component {
 
             $sql = "
                 SELECT COUNT(*) as total
-                FROM (
-                    SELECT produit.sku
-                    FROM catalog_product_entity AS produit
+                FROM catalog_product_entity AS produit
 
-                    LEFT JOIN product_char
-                        ON product_char.entity_id = produit.entity_id
+                LEFT JOIN product_char
+                    ON product_char.entity_id = produit.entity_id
 
-                    LEFT JOIN sales_order_item oi
-                        ON oi.sku = produit.sku
-                        AND oi.row_total > 0
+                LEFT JOIN sales_order_address addr
+                    ON addr.parent_id = o.entity_id
+                    AND addr.address_type = 'shipping'
+                    AND addr.country_id = ?
 
-                    LEFT JOIN sales_order o
-                        ON oi.order_id = o.entity_id
-                        AND o.state IN ('processing', 'complete')
-                        AND o.created_at >= ?
-                        AND o.created_at <= ?
+                LEFT JOIN product_int
+                    ON product_int.entity_id = produit.entity_id
 
-                    LEFT JOIN sales_order_address addr
-                        ON addr.parent_id = o.entity_id
-                        AND addr.address_type = 'shipping'
-                        AND addr.country_id = ?
+                WHERE product_int.status IN (0, 1)
 
-                    LEFT JOIN product_int
-                        ON product_int.entity_id = produit.entity_id
+                {$groupeCondition}
 
-                    WHERE product_int.status IN (0, 1)
-
-                    {$groupeCondition}
-
-                    GROUP BY produit.sku
-                ) AS counted
+                GROUP BY produit.sku
             ";
 
             $result = DB::connection('mysqlMagento')->selectOne($sql, $params);
@@ -121,17 +109,18 @@ new class extends Component {
 
     public function getSalesProperty()
     {
-        $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
-        $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
+        // $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
+        // $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
 
         $orderCol = $this->sortBy === 'rank_ca' ? 'total_revenue' : 'total_qty_sold';
 
         $groupeCondition = '';
-        $params = [$dateFrom, $dateTo, $this->activeCountry];
+        // $params = [$dateFrom, $dateTo, $this->activeCountry];
+        $params = [$this->activeCountry];
 
         if (!empty($this->groupeFilter)) {
             $placeholders    = implode(',', array_fill(0, count($this->groupeFilter), '?'));
-            $groupeCondition = "WHERE groupe IN ($placeholders)";
+            $groupeCondition = "AND groupe IN ($placeholders)";
             $params          = array_merge($params, $this->groupeFilter);
         }
 
@@ -150,68 +139,45 @@ new class extends Component {
         return Cache::remember($cacheKey, now()->addHour(), function () use ($dateFrom, $dateTo, $groupeCondition, $params, $orderCol) {
 
             $sql = "
-                WITH sales AS (
-                    SELECT
-                        addr.country_id AS country,
-                        produit.sku as ean,
+                SELECT
+                    addr.country_id AS country,
+                    produit.sku as ean,
 
-                        SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) AS groupe,
-                        SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 2), ' - ', -1) AS marque,
-                        SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 3), ' - ', -1) AS designation_produit,
+                    SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) AS groupe,
+                    SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 2), ' - ', -1) AS marque,
+                    SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 3), ' - ', -1) AS designation_produit,
 
-                        (CASE
-                            WHEN ROUND(product_decimal.special_price, 2) IS NOT NULL THEN ROUND(product_decimal.special_price, 2)
-                            ELSE ROUND(product_decimal.price, 2)
-                        END) as prix_vente_cosma,
+                    (CASE
+                        WHEN ROUND(product_decimal.special_price, 2) IS NOT NULL THEN ROUND(product_decimal.special_price, 2)
+                        ELSE ROUND(product_decimal.price, 2)
+                    END) as prix_vente_cosma,
 
-                        ROUND(product_decimal.cost, 2) AS cost,
-                        ROUND(product_decimal.prix_achat_ht, 2) AS pght,
+                    ROUND(product_decimal.cost, 2) AS cost,
+                    ROUND(product_decimal.prix_achat_ht, 2) AS pght,
 
-                        COALESCE(SUM(oi.qty_ordered), 0) AS total_qty_sold,
-                        COALESCE(ROUND(SUM(oi.base_row_total), 2), 0) AS total_revenue
+                FROM catalog_product_entity AS produit
 
-                    FROM catalog_product_entity AS produit
+                LEFT JOIN product_char
+                    ON product_char.entity_id = produit.entity_id
 
-                    LEFT JOIN product_char
-                        ON product_char.entity_id = produit.entity_id
+                LEFT JOIN product_decimal
+                    ON product_decimal.entity_id = produit.entity_id
 
-                    LEFT JOIN product_decimal
-                        ON product_decimal.entity_id = produit.entity_id
+                LEFT JOIN sales_order_address addr
+                    ON addr.parent_id = o.entity_id
+                    AND addr.address_type = 'shipping'
+                    AND addr.country_id = ?
 
-                    LEFT JOIN sales_order_item oi
-                        ON oi.sku = produit.sku
-                        AND oi.row_total > 0
+                LEFT JOIN product_int
+                    ON product_int.entity_id = produit.entity_id
 
-                    LEFT JOIN sales_order o
-                        ON oi.order_id = o.entity_id
-                        AND o.state IN ('processing', 'complete')
-                        AND o.created_at >= ?
-                        AND o.created_at <= ?
+                WHERE product_int.status IN (0, 1) {$groupeCondition}
 
-                    LEFT JOIN sales_order_address addr
-                        ON addr.parent_id = o.entity_id
-                        AND addr.address_type = 'shipping'
-                        AND addr.country_id = ?
+                GROUP BY produit.sku, addr.country_id
 
-                    LEFT JOIN product_int
-                        ON product_int.entity_id = produit.entity_id
-
-                    WHERE product_int.status IN (0, 1)
-
-                    GROUP BY produit.sku, addr.country_id
-                ),
-                ranked_sales AS (
-                    SELECT
-                        *,
-                        ROW_NUMBER() OVER (ORDER BY total_qty_sold DESC) AS rank_qty,
-                        ROW_NUMBER() OVER (ORDER BY total_revenue DESC) AS rank_ca
-                    FROM sales
-                )
-                SELECT *
-                FROM ranked_sales
-                {$groupeCondition}
                 ORDER BY {$orderCol} DESC
                 LIMIT ? OFFSET ?
+
             ";
 
             DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
@@ -424,8 +390,8 @@ new class extends Component {
 
     public function getAvailableGroupesProperty()
     {
-        $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
-        $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
+        // $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
+        // $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
 
         $cacheKey = 'available_groupes_' . md5(
             $this->activeCountry
@@ -436,45 +402,25 @@ new class extends Component {
         return Cache::remember($cacheKey, now()->addHour(), function () use ($dateFrom, $dateTo) {
 
             $sql = "
-                WITH groupes AS (
-                    SELECT DISTINCT
-                        SUBSTRING_INDEX(
-                            CAST(product_char.name AS CHAR CHARACTER SET utf8mb4),
-                            ' - ',
-                            1
-                        ) AS groupe
-
-                    FROM catalog_product_entity AS produit
-
-                    LEFT JOIN product_char
-                        ON product_char.entity_id = produit.entity_id
-
-                    LEFT JOIN sales_order_item oi
-                        ON oi.sku = produit.sku
-                        AND oi.row_total > 0
-
-                    LEFT JOIN sales_order o
-                        ON oi.order_id = o.entity_id
-                        AND o.state IN ('processing', 'complete')
-                        AND o.created_at >= ?
-                        AND o.created_at <= ?
-
-                    LEFT JOIN sales_order_address addr
-                        ON addr.parent_id = o.entity_id
-                        AND addr.address_type = 'shipping'
-                        AND addr.country_id = ?
-
-                    LEFT JOIN product_int
-                        ON product_int.entity_id = produit.entity_id
-
-                    WHERE product_int.status IN (0, 1)
-                )
-
-                SELECT groupe
-                FROM groupes
-                WHERE groupe IS NOT NULL
-                AND groupe != ''
-                ORDER BY groupe ASC
+                SELECT DISTINCT
+                    SUBSTRING_INDEX(
+                        CAST(product_char.name AS CHAR CHARACTER SET utf8mb4),
+                        ' - ',
+                        1
+                    ) AS groupe
+                FROM catalog_product_entity AS produit
+                LEFT JOIN product_char
+                    ON product_char.entity_id = produit.entity_id
+                LEFT JOIN sales_order_address addr
+                    ON addr.parent_id = o.entity_id
+                    AND addr.address_type = 'shipping'
+                    AND addr.country_id = ?
+                LEFT JOIN product_int
+                    ON product_int.entity_id = produit.entity_id
+                WHERE product_int.status IN (0, 1)
+                AND SUBSTRING_INDEX( CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) IS NOT NULL
+                AND SUBSTRING_INDEX( CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1)  != ''
+                ORDER BY SUBSTRING_INDEX( CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) ASC
             ";
 
             $groupes = DB::connection('mysqlMagento')
@@ -763,15 +709,15 @@ new class extends Component {
             $eanKey = $ean ? str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT) : null;
             $pop = $eanKey ? ($popularityRanks[$eanKey] ?? null) : null;
 
-            $sheet->setCellValue('A' . $row, $r->rank_qty);
-            $sheet->setCellValue('B' . $row, $r->rank_ca);
+            // $sheet->setCellValue('A' . $row, $r->rank_qty);
+            // $sheet->setCellValue('B' . $row, $r->rank_ca);
             $sheet->setCellValue('C' . $row, $r->ean);
             $sheet->setCellValue('D' . $row, $r->groupe ?? '');
             $sheet->setCellValue('E' . $row, $r->marque ?? '');
             $sheet->setCellValue('F' . $row, $r->designation_produit ?? '');
             $sheet->setCellValue('G' . $row, $r->prix_vente_cosma);
-            $sheet->setCellValue('H' . $row, $r->total_qty_sold);
-            $sheet->setCellValue('I' . $row, $r->total_revenue);
+            //$sheet->setCellValue('H' . $row, $r->total_qty_sold);
+            //$sheet->setCellValue('I' . $row, $r->total_revenue);
             $sheet->setCellValue('J' . $row, $r->pght ?: '');
 
             // Colonne popularité Google Merchant (K uniquement)
@@ -943,8 +889,8 @@ new class extends Component {
             'somme_perte'               => $this->somme_perte,
             'percentage_gain_marche'    => $this->percentage_gain_marche,
             'percentage_perte_marche'   => $this->percentage_perte_marche,
-            'dateFrom'                  => $this->dateFrom,
-            'dateTo'                    => $this->dateTo,
+            // 'dateFrom'                  => $this->dateFrom,
+            // 'dateTo'                    => $this->dateTo,
             'salesTotal'                => $total,
             'lastPage'                  => $lastPage,
             'currentPage'               => $this->currentPage,
@@ -1084,16 +1030,16 @@ new class extends Component {
                                 <div class="divider divider-horizontal mx-0"></div>
 
                                 {{-- Dates --}}
-                                <div class="flex items-center gap-2">
+                                <!-- <div class="flex items-center gap-2">
                                     <input type="date" wire:model.live="dateFrom" value="{{ $dateFrom }}" class="input input-bordered input-sm w-36"/>
                                     <span class="text-xs text-gray-400">→</span>
                                     <input type="date" wire:model.live="dateTo" value="{{ $dateTo }}" class="input input-bordered input-sm w-36"/>
-                                </div>
+                                </div> -->
 
                                 <div class="divider divider-horizontal mx-0"></div>
 
                                 {{-- Tri --}}
-                                <div class="flex items-center gap-2">
+                                <!-- <div class="flex items-center gap-2">
                                     <span class="text-xs text-gray-400">Trier par</span>
                                     {{-- <button type="button" @click="$wire.setSortBy ('rank_qty')" --}}
                                     <button type="button" wire:click="setSortBy('rank_qty')"
@@ -1107,7 +1053,7 @@ new class extends Component {
                                         @if($sortBy === 'rank_ca')<svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>@endif
                                         CA total
                                     </button>
-                                </div>
+                                </div> -->
 
                                 <div class="divider divider-horizontal mx-0"></div>
 
@@ -1230,8 +1176,8 @@ new class extends Component {
                                     <table class="table table-xs table-pin-rows table-pin-cols">
                                         <thead>
                                             <tr>
-                                                <th>Rang Qty</th>
-                                                <th>Rang CA</th>
+                                                {{-- <th>Rang Qty</th>
+                                                <th>Rang CA</th> --}}
                                                 <th class="text-center" title="Rang de popularité Google Merchant (Best Sellers)">
                                                     <div class="flex items-center justify-center gap-1">
                                                         <svg class="w-3 h-3 text-blue-500" viewBox="0 0 24 24" fill="currentColor">
@@ -1245,7 +1191,7 @@ new class extends Component {
                                                 <th>Marque</th>
                                                 <th>Désignation</th>
                                                 <th>Prix Cosma</th>
-                                                <th>
+                                                {{-- <th>
                                                     <button @click="$wire.setSortBy ('rank_qty')" class="flex items-center gap-1 hover:underline cursor-pointer">
                                                         Qté vendue
                                                         <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4l3 4H5l3-4zm0 8l-3-4h6l-3 4z"/></svg>
@@ -1256,7 +1202,7 @@ new class extends Component {
                                                         CA total
                                                         <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4l3 4H5l3-4zm0 8l-3-4h6l-3 4z"/></svg>
                                                     </button>
-                                                </th>
+                                                </th> --}}
                                                 <th>PGHT</th>
                                                 {{-- ▲ Fin colonnes Google --}}
                                                 @foreach($sites as $site)
@@ -1279,7 +1225,7 @@ new class extends Component {
                                                     $deltaSign  = $pop['delta_sign'] ?? null;
                                                 @endphp
                                                 <tr class="hover">
-                                                    <th>
+                                                    {{-- <th>
                                                         <span class="font-semibold {{ $sortBy === 'rank_qty' ? 'text-orange-900' : '' }}">
                                                             {{ $sortBy === 'rank_qty' ? "#".$row->rank_qty : $row->rank_qty }}
                                                         </span>
@@ -1288,7 +1234,7 @@ new class extends Component {
                                                         <span class="font-semibold {{ $sortBy === 'rank_ca' ? 'text-orange-900' : '' }}">
                                                             {{ $sortBy === 'rank_ca' ? "#".$row->rank_ca : $row->rank_ca }}
                                                         </span>
-                                                    </th>
+                                                    </th> --}}
 
                                                     <td class="text-center">
                                                         @if($googleRank)
@@ -1320,7 +1266,7 @@ new class extends Component {
                                                     <td class="text-right font-semibold text-primary">
                                                         {{ number_format($prixCosma, 2, ',', ' ') }} €
                                                     </td>
-                                                    <td>
+                                                    {{-- <td>
                                                         <span class="font-semibold {{ $sortBy === 'rank_qty' ? 'text-orange-900' : '' }}">
                                                             {{ number_format($row->total_qty_sold, 0, ',', ' ') }}
                                                         </span>
@@ -1329,7 +1275,7 @@ new class extends Component {
                                                         <span class="font-semibold {{ $sortBy === 'rank_ca' ? 'text-orange-900' : '' }}">
                                                             {{ number_format($row->total_revenue, 2, ',', ' ') }} €
                                                         </span>
-                                                    </td>
+                                                    </td> --}}
                                                     <td class="text-right text-xs">
                                                         @if($row->pght)
                                                             {{ number_format($row->pght, 2, ',', ' ') }} €
@@ -1395,16 +1341,16 @@ new class extends Component {
                                         </tbody>
                                         <tfoot>
                                             <tr>
-                                                <th>Rang Qty</th>
-                                                <th>Rang CA</th>
+                                                {{-- <th>Rang Qty</th>
+                                                <th>Rang CA</th> --}}
                                                 <th class="text-center">Popularite Google</th>
                                                 <th>EAN</th>
                                                 <th>Groupe</th>
                                                 <th>Marque</th>
                                                 <th>Désignation</th>
                                                 <th>Prix Cosma</th>
-                                                <th>Qté vendue</th>
-                                                <th>CA total</th>
+                                                {{-- <th>Qté vendue</th>
+                                                <th>CA total</th> --}}
                                                 <th>PGHT</th>
                                                 @foreach($sites as $site)
                                                     <th class="text-right">{{ $site->name }}</th>
