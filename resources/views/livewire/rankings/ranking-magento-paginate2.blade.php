@@ -64,7 +64,7 @@ new class extends Component {
 
         $groupeCondition = '';
         // $params = [$dateFrom, $dateTo, $this->activeCountry];
-        $params = [$this->activeCountry];
+        // $params = [$this->activeCountry];
 
         if (!empty($this->groupeFilter)) {
             $placeholders    = implode(',', array_fill(0, count($this->groupeFilter), '?'));
@@ -108,7 +108,7 @@ new class extends Component {
 
         $groupeCondition = '';
         // $params = [$dateFrom, $dateTo, $this->activeCountry];
-        $params = [$this->activeCountry];
+        // $params = [$this->activeCountry];
 
         if (!empty($this->groupeFilter)) {
             $placeholders    = implode(',', array_fill(0, count($this->groupeFilter), '?'));
@@ -408,7 +408,7 @@ new class extends Component {
             ";
 
             $groupes = DB::connection('mysqlMagento')
-                ->select($sql, [$this->activeCountry]);
+                ->select($sql, []);
 
             return collect($groupes)->pluck('groupe')->toArray();
         });
