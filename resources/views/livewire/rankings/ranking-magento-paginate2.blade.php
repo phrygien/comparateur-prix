@@ -94,9 +94,10 @@ new class extends Component {
 
     public function getSalesProperty()
     {
-        // Si on est en mode "tout chargé", on retourne les données accumulées
-        if (!$this->isLoadingAll && !empty($this->accumulatedSales)) {
-            return collect($this->accumulatedSales)->map(fn($item) => (object) $item);
+        // Retourner les accumulés dès qu'il y en a, que ce soit en cours ou terminé
+        if (!empty($this->accumulatedSales)) {
+            return collect($this->accumulatedSales)
+                ->map(fn($item) => (object) $item);
         }
 
         $groupeCondition = '';
@@ -387,8 +388,23 @@ new class extends Component {
 
     // ─── Lifecycle hooks ──────────────────────────────────────────────────────
 
-    public function updatedActiveCountry(): void { $this->currentPage = 1; }
-    public function updatedGroupeFilter(): void   { $this->currentPage = 1; }
+    // public function updatedActiveCountry(): void { $this->currentPage = 1; }
+    // public function updatedGroupeFilter(): void   { $this->currentPage = 1; }
+
+    public function updatedActiveCountry(): void
+    {
+        $this->currentPage = 1;
+        $this->accumulatedSales = [];
+        $this->isLoadingAll = false;
+    }
+
+    public function updatedGroupeFilter(): void
+    {
+        $this->currentPage = 1;
+        $this->accumulatedSales = [];
+        $this->isLoadingAll = false;
+    }
+
     public function updatedPerPage(): void        { $this->currentPage = 1; }
 
     public function setPage(int $page): void
@@ -807,6 +823,7 @@ new class extends Component {
             'isLoadingAll'  => $this->isLoadingAll,
             'loadedBatches' => $this->loadedBatches,
             'totalBatches'  => $this->totalBatches,
+            'accumulatedCount'          => count($this->accumulatedSales), // ← pour le Blade
         ];
     }
 }; ?>
@@ -1041,19 +1058,28 @@ new class extends Component {
 
                         {{-- Barre de progression chargement progressif --}}
                         @if($isLoadingAll)
-                            <div class="my-3 p-3 bg-blue-50 border border-blue-200 rounded-lg"
-                                x-data="{}"
-                                x-init="$nextTick(() => $wire.loadNextBatch())"
-                                wire:key="batch-{{ $loadedBatches }}">
-                                <div class="flex items-center justify-between mb-1">
-                                    <span class="text-sm font-medium text-blue-700">
-                                        Chargement… batch {{ $loadedBatches }}/{{ $totalBatches }}
+                            <div
+                                class="my-3 p-3 bg-blue-50 border border-blue-200 rounded-lg"
+                                wire:key="progress-bar-{{ $loadedBatches }}"
+                                x-data="{ triggered: false }"
+                                x-init="
+                                    if (!triggered) {
+                                        triggered = true;
+                                        setTimeout(() => $wire.loadNextBatch(), 50);
+                                    }
+                                "
+                            >
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-sm font-medium text-blue-700 flex items-center gap-2">
+                                        <span class="loading loading-spinner loading-xs"></span>
+                                        Chargement… batch {{ $loadedBatches + 1 }}/{{ $totalBatches }}
                                     </span>
                                     <span class="text-xs text-blue-500">
-                                        {{ count($accumulatedSales ?? []) }} / {{ $salesTotal }} produits
+                                        {{ $accumulatedCount }} / {{ $salesTotal }} produits chargés
                                     </span>
                                 </div>
-                                <progress class="progress progress-info w-full"
+                                <progress
+                                    class="progress progress-info w-full"
                                     value="{{ $totalBatches > 0 ? round(($loadedBatches / $totalBatches) * 100) : 0 }}"
                                     max="100">
                                 </progress>
