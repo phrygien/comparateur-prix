@@ -133,7 +133,7 @@ new class extends Component {
             $results = DB::connection('mysqlMagento')->select($sql, $params);
 
             foreach ($results as $result) {
-                foreach (['designation_produit', 'marque', 'groupe'] as $field) {
+                foreach (['ean', 'designation_produit', 'marque', 'groupe'] as $field) {
                     if (!isset($result->$field)) continue;
                     if (!mb_check_encoding($result->$field, 'UTF-8')) {
                         $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'ISO-8859-1');
@@ -153,7 +153,16 @@ new class extends Component {
 
         if (empty($sales)) return [];
 
-        $eans = collect($sales)->pluck('ean')->filter()->unique()->values()->toArray();
+        $eans = collect($sales)
+            ->pluck('ean')
+            ->filter()
+            ->map(fn($ean) => mb_check_encoding($ean, 'UTF-8')
+                ? $ean
+                : mb_convert_encoding($ean, 'UTF-8', 'ISO-8859-1')
+            )
+            ->unique()
+            ->values()
+            ->toArray();
 
         if (empty($eans)) return [];
 
