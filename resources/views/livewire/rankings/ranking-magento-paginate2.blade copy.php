@@ -43,11 +43,6 @@ new class extends Component {
 
     protected GoogleMerchantService $googleMerchantService;
 
-    // ─── Nouvelles propriétés pour le chargement progressif ───────────────────
-    public bool $isLoadingAll = false;
-    public int $loadedBatches = 0;
-    public int $totalBatches = 0;
-
     public function boot(GoogleMerchantService $googleMerchantService): void
     {
         $this->googleMerchantService = $googleMerchantService;
@@ -697,33 +692,6 @@ new class extends Component {
         return response()->download($filePath, $fileName)->deleteFileAfterSend(true);
     }
 
-    // ─── Nouvelle action : charger tout par batches ───────────────────────────
-    public function loadAllData(): void
-    {
-        $total = $this->salesTotal;
-        $this->totalBatches = (int) ceil($total / 25);
-        $this->loadedBatches = 0;
-        $this->isLoadingAll = true;
-        $this->currentPage = 1;
-        $this->perPage = 25;
-    }
-
-    public function loadNextBatch(): void
-    {
-        $this->loadedBatches++;
-        $loaded = $this->loadedBatches * 25;
-
-        if ($loaded >= $this->salesTotal) {
-            // Dernier batch : on affiche tout
-            $this->perPage = $this->salesTotal;
-            $this->currentPage = 1;
-            $this->isLoadingAll = false;
-        } else {
-            $this->perPage = $loaded;
-            $this->currentPage = 1;
-        }
-    }
-
     // ─── View data ────────────────────────────────────────────────────────────
 
     public function with(): array
@@ -747,9 +715,6 @@ new class extends Component {
             'lastPage'                  => $lastPage,
             'currentPage'               => $this->currentPage,
             'perPage'                   => $this->perPage,
-            'isLoadingAll'  => $this->isLoadingAll,
-            'loadedBatches' => $this->loadedBatches,
-            'totalBatches'  => $this->totalBatches,
         ];
     }
 }; ?>
@@ -920,26 +885,6 @@ new class extends Component {
                                     </span>
                                 </button>
 
-                                <div class="divider divider-horizontal mx-0"></div>
-
-                                <button type="button" wire:click="loadAllData"
-                                    wire:loading.attr="disabled"
-                                    wire:loading.class="opacity-60 cursor-not-allowed"
-                                    class="btn btn-sm btn-info gap-2"
-                                    title="Charger toutes les données par batches de 25">
-                                    <span wire:loading.remove wire:target="loadAllData" class="flex items-center gap-2">
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
-                                        </svg>
-                                        Charger tout
-                                    </span>
-                                    <span wire:loading wire:target="loadAllData" class="flex items-center gap-2">
-                                        <span class="loading loading-spinner loading-xs"></span>
-                                        Initialisation…
-                                    </span>
-                                </button>
-
                             </div>
                         </div>
 
@@ -981,31 +926,6 @@ new class extends Component {
                                 </div>
                             @endif
                         </div>
-
-                        {{-- Barre de progression chargement progressif --}}
-                        @if($isLoadingAll)
-                            <div class="my-3 p-3 bg-blue-50 border border-blue-200 rounded-lg"
-                                x-data="{}"
-                                x-init="
-                                    $nextTick(() => {
-                                        $wire.loadNextBatch();
-                                    })
-                                "
-                                wire:key="loading-batch-{{ $loadedBatches }}">
-                                <div class="flex items-center justify-between mb-1">
-                                    <span class="text-sm font-medium text-blue-700">
-                                        Chargement en cours… batch {{ $loadedBatches }}/{{ $totalBatches }}
-                                    </span>
-                                    <span class="text-xs text-blue-500">
-                                        {{ min($loadedBatches * 25, $salesTotal) }} / {{ $salesTotal }} produits chargés
-                                    </span>
-                                </div>
-                                <progress class="progress progress-info w-full"
-                                    value="{{ $totalBatches > 0 ? round(($loadedBatches / $totalBatches) * 100) : 0 }}"
-                                    max="100">
-                                </progress>
-                            </div>
-                        @endif
 
                         <br>
 
