@@ -71,7 +71,7 @@ new class extends Component {
                     FROM catalog_product_entity AS produit
                     LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
                     INNER JOIN product_int ON product_int.entity_id = produit.entity_id
-                        AND product_int.status IN (0, 1)
+                        AND product_int.status IN (0, 1, 2)
                     WHERE 1=1
                         AND produit.sku REGEXP '^[0-9]+$'
                         {$groupeCondition}
@@ -125,7 +125,7 @@ new class extends Component {
                 LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
                 LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
                 INNER JOIN product_int ON product_int.entity_id = produit.entity_id
-                    AND product_int.status IN (0, 1)
+                    AND product_int.status IN (0, 1, 2)
                 WHERE 1=1
                     AND produit.sku REGEXP '^[0-9]+$'
                 {$groupeCondition}
@@ -256,7 +256,7 @@ new class extends Component {
                 FROM catalog_product_entity AS produit
                 LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
                 INNER JOIN product_int ON product_int.entity_id = produit.entity_id
-                    AND product_int.status IN (0, 1)
+                    AND product_int.status IN (0, 1, 2)
                 WHERE 1=1
                     AND produit.sku REGEXP '^[0-9]+$'
                     AND SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) IS NOT NULL
