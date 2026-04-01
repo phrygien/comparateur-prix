@@ -257,7 +257,13 @@ new class extends Component {
                 ORDER BY SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) ASC
             ";
 
-            return collect(DB::connection('mysqlMagento')->select($sql, []))->pluck('groupe')->toArray();
+            return collect(DB::connection('mysqlMagento')->select($sql, []))
+                ->pluck('groupe')
+                ->map(fn($g) => mb_check_encoding($g, 'UTF-8')
+                    ? $g
+                    : mb_convert_encoding($g, 'UTF-8', 'ISO-8859-1')
+                )
+                ->toArray();
         });
     }
 
