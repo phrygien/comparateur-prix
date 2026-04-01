@@ -387,7 +387,7 @@ new class extends Component {
             . Date('Y-m-d')
         );;
 
-        return Cache::remember($cacheKey, now()->addHour(), function () use ($dateFrom, $dateTo) {
+        return Cache::remember($cacheKey, now()->addHour(), function (){
 
             $sql = "
                 SELECT DISTINCT
