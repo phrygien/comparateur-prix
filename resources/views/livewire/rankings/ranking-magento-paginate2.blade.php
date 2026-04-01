@@ -164,7 +164,7 @@ new class extends Component {
 
                 GROUP BY produit.sku
 
-                ORDER BY {$orderCol} DESC
+                ORDER BY produit.entity_id DESC
                 LIMIT ? OFFSET ?
             ";
 
