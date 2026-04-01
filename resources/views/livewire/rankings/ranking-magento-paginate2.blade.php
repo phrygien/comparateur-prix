@@ -1002,7 +1002,7 @@ new class extends Component {
                                                     </td>
                                                     <td class="text-right text-xs">
                                                         <div>
-                                                            {{ $row->quantity ?? '0' }}
+                                                            {{ number_format($row->quantity, 2, ',', ' ')  ?? '0' }}
                                                         </div>
                                                     </td>
                                                     <td class="text-right font-semibold text-primary">
