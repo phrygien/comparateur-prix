@@ -41,13 +41,13 @@ new class extends Component {
     public $percentage_gain_marche = 0;
     public $percentage_perte_marche = 0;
 
-    protected GoogleMerchantService $googleMerchantService;
-
-    // Propriétés chargement progressif
+    // ─── Propriétés chargement progressif ────────────────────────────────────
     public bool $isLoadingAll = false;
     public int $loadedBatches = 0;
     public int $totalBatches = 0;
-    public array $accumulatedSales = []; // résultats cumulés
+    public array $accumulatedSales = [];
+
+    protected GoogleMerchantService $googleMerchantService;
 
     public function boot(GoogleMerchantService $googleMerchantService): void
     {
@@ -94,12 +94,13 @@ new class extends Component {
 
     public function getSalesProperty()
     {
-        // Retourner les accumulés dès qu'il y en a, que ce soit en cours ou terminé
+        // Si des données accumulées existent (en cours ou terminé), on les retourne
         if (!empty($this->accumulatedSales)) {
             return collect($this->accumulatedSales)
                 ->map(fn($item) => (object) $item);
         }
 
+        // Sinon : pagination normale
         $groupeCondition = '';
         $params = [];
 
@@ -388,14 +389,13 @@ new class extends Component {
 
     // ─── Lifecycle hooks ──────────────────────────────────────────────────────
 
-    // public function updatedActiveCountry(): void { $this->currentPage = 1; }
-    // public function updatedGroupeFilter(): void   { $this->currentPage = 1; }
-
     public function updatedActiveCountry(): void
     {
         $this->currentPage = 1;
         $this->accumulatedSales = [];
         $this->isLoadingAll = false;
+        $this->loadedBatches = 0;
+        $this->totalBatches = 0;
     }
 
     public function updatedGroupeFilter(): void
@@ -403,9 +403,19 @@ new class extends Component {
         $this->currentPage = 1;
         $this->accumulatedSales = [];
         $this->isLoadingAll = false;
+        $this->loadedBatches = 0;
+        $this->totalBatches = 0;
     }
 
-    public function updatedPerPage(): void        { $this->currentPage = 1; }
+    public function updatedPerPage(): void
+    {
+        $this->currentPage = 1;
+        // Si on change le perPage manuellement, on sort du mode "tout chargé"
+        $this->accumulatedSales = [];
+        $this->isLoadingAll = false;
+        $this->loadedBatches = 0;
+        $this->totalBatches = 0;
+    }
 
     public function setPage(int $page): void
     {
@@ -430,7 +440,95 @@ new class extends Component {
             $this->activeCountry . date('Y-m-d')
         ));
         Cache::forget('google_popularity_v2_' . md5($countryCode . implode(',', $gtins14)));
+
+        // Reset aussi le chargement progressif
+        $this->accumulatedSales = [];
+        $this->isLoadingAll = false;
+        $this->loadedBatches = 0;
+        $this->totalBatches = 0;
     }
+
+    // ─── Chargement progressif ────────────────────────────────────────────────
+
+    public function loadAllData(): void
+    {
+        $total = $this->salesTotal;
+        $this->totalBatches = (int) ceil($total / 25);
+        $this->loadedBatches = 0;
+        $this->accumulatedSales = [];
+        $this->isLoadingAll = true;
+    }
+
+    public function loadNextBatch(): void
+    {
+        $offset = $this->loadedBatches * 25;
+
+        $groupeCondition = '';
+        $params = [];
+
+        if (!empty($this->groupeFilter)) {
+            $placeholders = implode(',', array_fill(0, count($this->groupeFilter), '?'));
+            $groupeCondition = "AND groupe IN ($placeholders)";
+            $params = $this->groupeFilter;
+        }
+
+        $params[] = 25;      // LIMIT
+        $params[] = $offset; // OFFSET
+
+        DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+
+        $sql = "
+            SELECT
+                produit.sku AS ean,
+                SUBSTRING_INDEX(product_char.name, ' - ', 1) AS groupe,
+                SUBSTRING_INDEX(SUBSTRING_INDEX(product_char.name, ' - ', 2), ' - ', -1) AS marque,
+                SUBSTRING_INDEX(SUBSTRING_INDEX(product_char.name, ' - ', 3), ' - ', -1) AS designation_produit,
+                CASE
+                    WHEN product_decimal.special_price IS NOT NULL
+                        THEN ROUND(product_decimal.special_price, 2)
+                    ELSE ROUND(product_decimal.price, 2)
+                END AS prix_vente_cosma,
+                ROUND(product_decimal.cost, 2) AS cost,
+                ROUND(product_decimal.prix_achat_ht, 2) AS pght,
+                stock_item.qty as quantity
+            FROM catalog_product_entity AS produit
+            LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+            LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
+            LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id
+            INNER JOIN product_int ON product_int.entity_id = produit.entity_id
+                AND product_int.status IN (0, 1, 2)
+            WHERE 1=1
+                AND produit.sku REGEXP '^[0-9]+$'
+            {$groupeCondition}
+            GROUP BY produit.sku
+            ORDER BY produit.entity_id DESC
+            LIMIT ? OFFSET ?
+        ";
+
+        $batch = DB::connection('mysqlMagento')->select($sql, $params);
+
+        // Encodage UTF-8
+        foreach ($batch as $result) {
+            foreach (['ean', 'designation_produit', 'marque', 'groupe'] as $field) {
+                if (!isset($result->$field)) continue;
+                if (!mb_check_encoding($result->$field, 'UTF-8')) {
+                    $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'ISO-8859-1');
+                }
+            }
+        }
+
+        // stdClass → array pour Livewire (les propriétés publiques doivent être sérialisables)
+        $batchArray = array_map(fn($item) => (array) $item, $batch);
+        $this->accumulatedSales = array_merge($this->accumulatedSales, $batchArray);
+        $this->loadedBatches++;
+
+        // Dernier batch ou résultat vide : on arrête
+        if ($this->loadedBatches >= $this->totalBatches || empty($batch)) {
+            $this->isLoadingAll = false;
+        }
+    }
+
+    // ─── Export XLSX ──────────────────────────────────────────────────────────
 
     public function exportXlsx(): \Symfony\Component\HttpFoundation\BinaryFileResponse
     {
@@ -443,17 +541,15 @@ new class extends Component {
         $countryLabel = $this->countries[$this->activeCountry] ?? $this->activeCountry;
         $sheet->setTitle('Ventes ' . $countryLabel);
 
-        // Colonnes de base : A=EAN, B=Groupe, C=Marque, D=Désignation, E=Prix Cosma, F=PGHT, G=Rang Google
-        // puis N colonnes sites, puis Prix marché
         $baseHeaders = ['EAN', 'Groupe', 'Marque', 'Désignation', 'Prix Cosma', 'PGHT', 'Quantite', 'Rang Google'];
 
         $lastColIndex  = count($baseHeaders) + $sites->count();
         $lastColLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($lastColIndex + 1);
 
-        $sheet->getColumnDimension('A')->setAutoSize(false)->setWidth(16); // EAN
-        $sheet->getColumnDimension('B')->setAutoSize(false)->setWidth(18); // Groupe
-        $sheet->getColumnDimension('C')->setAutoSize(false)->setWidth(18); // Marque
-        $sheet->getColumnDimension('D')->setAutoSize(false)->setWidth(40); // Désignation
+        $sheet->getColumnDimension('A')->setAutoSize(false)->setWidth(16);
+        $sheet->getColumnDimension('B')->setAutoSize(false)->setWidth(18);
+        $sheet->getColumnDimension('C')->setAutoSize(false)->setWidth(18);
+        $sheet->getColumnDimension('D')->setAutoSize(false)->setWidth(40);
 
         // ── Pass 1: compute summary stats ─────────────────────────────────────
         $somme_prix_marche_total = 0;
@@ -556,7 +652,6 @@ new class extends Component {
         $sheet->getRowDimension($headerRow)->setRowHeight(20);
 
         // ── Data rows ─────────────────────────────────────────────────────────
-        // Colonnes fixes : A=EAN B=Groupe C=Marque D=Désignation E=Prix Cosma F=PGHT G=Quantity H=Rang Google
         $colGoogle = 'H';
 
         foreach ($comparisons as $comparison) {
@@ -565,7 +660,6 @@ new class extends Component {
             $eanKey = $ean ? str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT) : null;
             $pop    = $eanKey ? ($popularityRanks[$eanKey] ?? null) : null;
 
-            // Colonnes fixes
             $sheet->setCellValue('A' . $row, $r->ean ?? '');
             $sheet->setCellValue('B' . $row, $r->groupe ?? '');
             $sheet->setCellValue('C' . $row, $r->marque ?? '');
@@ -578,7 +672,6 @@ new class extends Component {
             }
             $sheet->setCellValue('G' . $row, number_format($r->quantity, 0, ',', ' '));
 
-            // Colonne G : Rang Google
             if ($pop && ($pop['rank'] ?? null) !== null) {
                 $googleRank = $pop['rank'];
                 $delta      = $pop['delta'] ?? null;
@@ -608,15 +701,13 @@ new class extends Component {
                 $sheet->getStyle($colGoogle . $row)->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
             }
 
-            // Zebra striping
             if (($row - $dataStartRow) % 2 === 0) {
                 $sheet->getStyle('A' . $row . ':' . $lastColLetter . $row)->applyFromArray([
                     'fill' => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F7FAFC']],
                 ]);
             }
 
-            // Colonnes sites (à partir de H)
-            $colIdx = count($baseHeaders); // 7 → col H
+            $colIdx = count($baseHeaders);
             foreach ($sites as $site) {
                 $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIdx + 1) . $row;
                 $siteData  = $comparison['sites'][$site->id] ?? null;
@@ -665,7 +756,6 @@ new class extends Component {
                 $colIdx++;
             }
 
-            // Colonne Prix marché (dernière)
             $marcheCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIdx + 1) . $row;
 
             if ($comparison['prix_moyen_marche'] !== null) {
@@ -686,7 +776,6 @@ new class extends Component {
 
         $lastDataRow = $row - 1;
 
-        // Auto-size toutes les colonnes sauf A B C D (largeurs fixes)
         for ($i = 5; $i <= $lastColIndex + 1; $i++) {
             $sheet->getColumnDimension(
                 \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($i)
@@ -701,7 +790,6 @@ new class extends Component {
         $sheet->getStyle('E' . $dataStartRow . ':' . $lastColLetter . $lastDataRow)
             ->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_RIGHT);
 
-        // ── Save & download ───────────────────────────────────────────────────
         $exportDir = storage_path('app/public/exports');
         if (!file_exists($exportDir)) {
             mkdir($exportDir, 0755, true);
@@ -717,84 +805,6 @@ new class extends Component {
         (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet))->save($filePath);
 
         return response()->download($filePath, $fileName)->deleteFileAfterSend(true);
-    }
-
-    // ─── Nouvelle action : charger tout par batches ───────────────────────────
-    public function loadAllData(): void
-    {
-        $total = $this->salesTotal;
-        $this->totalBatches = (int) ceil($total / 25);
-        $this->loadedBatches = 0;
-        $this->accumulatedSales = [];
-        $this->isLoadingAll = true;
-    }
-
-    public function loadNextBatch(): void
-    {
-        $offset = $this->loadedBatches * 25;
-        $groupeCondition = '';
-        $params = [];
-
-        if (!empty($this->groupeFilter)) {
-            $placeholders = implode(',', array_fill(0, count($this->groupeFilter), '?'));
-            $groupeCondition = "AND groupe IN ($placeholders)";
-            $params = $this->groupeFilter;
-        }
-
-        $params[] = 25;        // LIMIT
-        $params[] = $offset;   // OFFSET
-
-        DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
-
-        $sql = "
-            SELECT
-                produit.sku AS ean,
-                SUBSTRING_INDEX(product_char.name, ' - ', 1) AS groupe,
-                SUBSTRING_INDEX(SUBSTRING_INDEX(product_char.name, ' - ', 2), ' - ', -1) AS marque,
-                SUBSTRING_INDEX(SUBSTRING_INDEX(product_char.name, ' - ', 3), ' - ', -1) AS designation_produit,
-                CASE
-                    WHEN product_decimal.special_price IS NOT NULL
-                        THEN ROUND(product_decimal.special_price, 2)
-                    ELSE ROUND(product_decimal.price, 2)
-                END AS prix_vente_cosma,
-                ROUND(product_decimal.cost, 2) AS cost,
-                ROUND(product_decimal.prix_achat_ht, 2) AS pght,
-                stock_item.qty as quantity
-            FROM catalog_product_entity AS produit
-            LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
-            LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
-            LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id
-            INNER JOIN product_int ON product_int.entity_id = produit.entity_id
-                AND product_int.status IN (0, 1, 2)
-            WHERE 1=1
-                AND produit.sku REGEXP '^[0-9]+$'
-            {$groupeCondition}
-            GROUP BY produit.sku
-            ORDER BY produit.entity_id DESC
-            LIMIT ? OFFSET ?
-        ";
-
-        $batch = DB::connection('mysqlMagento')->select($sql, $params);
-
-        // Encodage UTF-8
-        foreach ($batch as $result) {
-            foreach (['ean', 'designation_produit', 'marque', 'groupe'] as $field) {
-                if (!isset($result->$field)) continue;
-                if (!mb_check_encoding($result->$field, 'UTF-8')) {
-                    $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'ISO-8859-1');
-                }
-            }
-        }
-
-        // Convertir stdClass → array pour stocker dans la propriété Livewire
-        $batchArray = array_map(fn($item) => (array) $item, $batch);
-        $this->accumulatedSales = array_merge($this->accumulatedSales, $batchArray);
-        $this->loadedBatches++;
-
-        // Dernier batch : on arrête
-        if ($this->loadedBatches >= $this->totalBatches || empty($batch)) {
-            $this->isLoadingAll = false;
-        }
     }
 
     // ─── View data ────────────────────────────────────────────────────────────
@@ -820,10 +830,10 @@ new class extends Component {
             'lastPage'                  => $lastPage,
             'currentPage'               => $this->currentPage,
             'perPage'                   => $this->perPage,
-            'isLoadingAll'  => $this->isLoadingAll,
-            'loadedBatches' => $this->loadedBatches,
-            'totalBatches'  => $this->totalBatches,
-            'accumulatedCount'          => count($this->accumulatedSales), // ← pour le Blade
+            'isLoadingAll'              => $this->isLoadingAll,
+            'loadedBatches'             => $this->loadedBatches,
+            'totalBatches'              => $this->totalBatches,
+            'accumulatedCount'          => count($this->accumulatedSales),
         ];
     }
 }; ?>
@@ -962,6 +972,7 @@ new class extends Component {
 
                                 <div class="divider divider-horizontal mx-0"></div>
 
+                                {{-- Rafraîchir --}}
                                 <button type="button" wire:click="clearCache"
                                     wire:loading.attr="disabled" wire:loading.class="opacity-60 cursor-not-allowed"
                                     class="btn btn-sm btn-ghost gap-2" title="Vider le cache et recharger les données">
@@ -979,6 +990,7 @@ new class extends Component {
 
                                 <div class="divider divider-horizontal mx-0"></div>
 
+                                {{-- Export XLSX --}}
                                 <button type="button" wire:click="exportXlsx"
                                     wire:loading.attr="disabled" wire:loading.class="opacity-60 cursor-not-allowed"
                                     class="btn btn-sm btn-success gap-2" title="Exporter les données affichées en Excel">
@@ -996,70 +1008,45 @@ new class extends Component {
 
                                 <div class="divider divider-horizontal mx-0"></div>
 
-                                <button type="button" wire:click="loadAllData"
-                                    wire:loading.attr="disabled"
-                                    wire:loading.class="opacity-60 cursor-not-allowed"
-                                    class="btn btn-sm btn-info gap-2"
-                                    title="Charger toutes les données par batches de 25">
-                                    <span wire:loading.remove wire:target="loadAllData" class="flex items-center gap-2">
+                                {{-- Charger tout --}}
+                                @if(!$isLoadingAll && empty($accumulatedSales))
+                                    <button type="button" wire:click="loadAllData"
+                                        wire:loading.attr="disabled"
+                                        wire:loading.class="opacity-60 cursor-not-allowed"
+                                        class="btn btn-sm btn-info gap-2"
+                                        title="Charger toutes les données par batches de 25">
+                                        <span wire:loading.remove wire:target="loadAllData" class="flex items-center gap-2">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                                            </svg>
+                                            Charger tout
+                                        </span>
+                                        <span wire:loading wire:target="loadAllData" class="flex items-center gap-2">
+                                            <span class="loading loading-spinner loading-xs"></span>
+                                            Initialisation…
+                                        </span>
+                                    </button>
+                                @elseif(!$isLoadingAll && !empty($accumulatedSales))
+                                    {{-- Tout est chargé : bouton reset --}}
+                                    <button type="button"
+                                        wire:click="$set('accumulatedSales', [])"
+                                        class="btn btn-sm btn-ghost gap-2"
+                                        title="Revenir à la pagination normale">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                                         </svg>
-                                        Charger tout
-                                    </span>
-                                    <span wire:loading wire:target="loadAllData" class="flex items-center gap-2">
-                                        <span class="loading loading-spinner loading-xs"></span>
-                                        Initialisation…
-                                    </span>
-                                </button>
-
-                            </div>
-                        </div>
-
-                        <div class="flex items-center justify-between w-full">
-                            <div class="flex items-center gap-2">
-                                <span class="text-xs text-gray-400">Par page</span>
-                                <select wire:model.live="perPage" class="select select-sm select-bordered w-20">
-                                    <option value="25">25</option>
-                                    <option value="50">50</option>
-                                    <option value="100">100</option>
-                                    <option value="200">200</option>
-                                    <option value="500">500</option>
-                                    <option value="1000">1000</option>
-                                    <option value="{{ $salesTotal }}">Tous les donnees</option>
-                                </select>
-                            </div>
-
-                            <p class="mt-0.5 text-sm text-gray-500 text-center">
-                                {{ $salesTotal }} résultat(s) au total · Page {{ $currentPage }}/{{ $lastPage }}
-                                @if(!empty($groupeFilter))
-                                    · Groupe(s) : {{ implode(', ', $groupeFilter) }}
+                                        Réduire
+                                    </button>
                                 @endif
-                            </p>
 
-                            @if($lastPage > 1)
-                                <div class="flex items-center">
-                                    <div class="join">
-                                        <button class="join-item btn btn-sm" wire:click="setPage(1)" @disabled($currentPage === 1)>«</button>
-                                        <button class="join-item btn btn-sm" wire:click="setPage({{ $currentPage - 1 }})" @disabled($currentPage === 1)>‹</button>
-
-                                        @foreach(range(max(1, $currentPage - 2), min($lastPage, $currentPage + 2)) as $p)
-                                            <button class="join-item btn btn-sm {{ $p === $currentPage ? 'btn-active btn-primary' : '' }}"
-                                                wire:click="setPage({{ $p }})">{{ $p }}</button>
-                                        @endforeach
-
-                                        <button class="join-item btn btn-sm" wire:click="setPage({{ $currentPage + 1 }})" @disabled($currentPage === $lastPage)>›</button>
-                                        <button class="join-item btn btn-sm" wire:click="setPage({{ $lastPage }})" @disabled($currentPage === $lastPage)>»</button>
-                                    </div>
-                                </div>
-                            @endif
+                            </div>
                         </div>
 
                         {{-- Barre de progression chargement progressif --}}
                         @if($isLoadingAll)
                             <div
-                                class="my-3 p-3 bg-blue-50 border border-blue-200 rounded-lg"
+                                class="my-3 p-4 bg-blue-50 border border-blue-200 rounded-lg"
                                 wire:key="progress-bar-{{ $loadedBatches }}"
                                 x-data="{ triggered: false }"
                                 x-init="
@@ -1070,11 +1057,11 @@ new class extends Component {
                                 "
                             >
                                 <div class="flex items-center justify-between mb-2">
-                                    <span class="text-sm font-medium text-blue-700 flex items-center gap-2">
-                                        <span class="loading loading-spinner loading-xs"></span>
+                                    <span class="text-sm font-semibold text-blue-700 flex items-center gap-2">
+                                        <span class="loading loading-spinner loading-xs text-blue-500"></span>
                                         Chargement… batch {{ $loadedBatches + 1 }}/{{ $totalBatches }}
                                     </span>
-                                    <span class="text-xs text-blue-500">
+                                    <span class="text-xs font-medium text-blue-500">
                                         {{ $accumulatedCount }} / {{ $salesTotal }} produits chargés
                                     </span>
                                 </div>
@@ -1083,6 +1070,59 @@ new class extends Component {
                                     value="{{ $totalBatches > 0 ? round(($loadedBatches / $totalBatches) * 100) : 0 }}"
                                     max="100">
                                 </progress>
+                            </div>
+                        @endif
+
+                        {{-- Pagination (masquée si tout est chargé en mode accumulé) --}}
+                        @if(empty($accumulatedSales))
+                            <div class="flex items-center justify-between w-full mt-3">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs text-gray-400">Par page</span>
+                                    <select wire:model.live="perPage" class="select select-sm select-bordered w-20">
+                                        <option value="25">25</option>
+                                        <option value="50">50</option>
+                                        <option value="100">100</option>
+                                        <option value="200">200</option>
+                                        <option value="500">500</option>
+                                        <option value="1000">1000</option>
+                                    </select>
+                                </div>
+
+                                <p class="mt-0.5 text-sm text-gray-500 text-center">
+                                    {{ $salesTotal }} résultat(s) au total · Page {{ $currentPage }}/{{ $lastPage }}
+                                    @if(!empty($groupeFilter))
+                                        · Groupe(s) : {{ implode(', ', $groupeFilter) }}
+                                    @endif
+                                </p>
+
+                                @if($lastPage > 1)
+                                    <div class="flex items-center">
+                                        <div class="join">
+                                            <button class="join-item btn btn-sm" wire:click="setPage(1)" @disabled($currentPage === 1)>«</button>
+                                            <button class="join-item btn btn-sm" wire:click="setPage({{ $currentPage - 1 }})" @disabled($currentPage === 1)>‹</button>
+
+                                            @foreach(range(max(1, $currentPage - 2), min($lastPage, $currentPage + 2)) as $p)
+                                                <button class="join-item btn btn-sm {{ $p === $currentPage ? 'btn-active btn-primary' : '' }}"
+                                                    wire:click="setPage({{ $p }})">{{ $p }}</button>
+                                            @endforeach
+
+                                            <button class="join-item btn btn-sm" wire:click="setPage({{ $currentPage + 1 }})" @disabled($currentPage === $lastPage)>›</button>
+                                            <button class="join-item btn btn-sm" wire:click="setPage({{ $lastPage }})" @disabled($currentPage === $lastPage)>»</button>
+                                        </div>
+                                    </div>
+                                @else
+                                    <div></div>
+                                @endif
+                            </div>
+                        @else
+                            {{-- Mode tout chargé : juste le compteur --}}
+                            <div class="flex items-center justify-center w-full mt-3">
+                                <p class="text-sm text-gray-500">
+                                    {{ $accumulatedCount }} produits chargés au total
+                                    @if(!empty($groupeFilter))
+                                        · Groupe(s) : {{ implode(', ', $groupeFilter) }}
+                                    @endif
+                                </p>
                             </div>
                         @endif
 
@@ -1096,7 +1136,7 @@ new class extends Component {
                                 <span class="text-sm font-medium">Mise à jour…</span>
                             </div>
 
-                            @if(count($sales) === 0)
+                            @if(count($sales) === 0 && !$isLoadingAll)
                                 <div class="alert alert-info">
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -1134,13 +1174,13 @@ new class extends Component {
                                         <tbody>
                                             @foreach($comparisons as $comparison)
                                                 @php
-                                                    $row      = $comparison['row'];
+                                                    $row       = $comparison['row'];
                                                     $prixCosma = $row->prix_vente_cosma;
-                                                    $ean      = $row->ean ?? null;
-                                                    $eanKey   = $ean ? str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT) : null;
-                                                    $pop      = $eanKey ? ($popularityRanks[$eanKey] ?? null) : null;
+                                                    $ean       = $row->ean ?? null;
+                                                    $eanKey    = $ean ? str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT) : null;
+                                                    $pop       = $eanKey ? ($popularityRanks[$eanKey] ?? null) : null;
                                                     $googleRank = $pop['rank'] ?? null;
-                                                    $delta    = $pop['delta'] ?? null;
+                                                    $delta     = $pop['delta'] ?? null;
                                                     $deltaSign = $pop['delta_sign'] ?? null;
                                                 @endphp
                                                 <tr class="hover">
@@ -1167,9 +1207,7 @@ new class extends Component {
                                                         </div>
                                                     </td>
                                                     <td class="text-right text-xs">
-                                                        <div>
-                                                            {{ number_format($row->quantity, 0, ',', ' ')  ?? '0' }}
-                                                        </div>
+                                                        {{ number_format($row->quantity, 0, ',', ' ') ?? '0' }}
                                                     </td>
                                                     <td class="text-right font-semibold text-primary">
                                                         {{ number_format($prixCosma, 2, ',', ' ') }} €
@@ -1255,6 +1293,7 @@ new class extends Component {
                                 </div>
                             @endif
                         </div>
+
                     </div>
                 </x-tab>
             @endforeach
