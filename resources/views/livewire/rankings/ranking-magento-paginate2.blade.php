@@ -132,20 +132,20 @@ new class extends Component {
 
             $sql = "
                 SELECT
-                    addr.country_id AS country,
-                    produit.sku as ean,
+                    produit.sku AS ean,
 
-                    SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) AS groupe,
-                    SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 2), ' - ', -1) AS marque,
-                    SUBSTRING_INDEX(SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 3), ' - ', -1) AS designation_produit,
+                    SUBSTRING_INDEX(product_char.name, ' - ', 1) AS groupe,
+                    SUBSTRING_INDEX(SUBSTRING_INDEX(product_char.name, ' - ', 2), ' - ', -1) AS marque,
+                    SUBSTRING_INDEX(SUBSTRING_INDEX(product_char.name, ' - ', 3), ' - ', -1) AS designation_produit,
 
-                    (CASE
-                        WHEN ROUND(product_decimal.special_price, 2) IS NOT NULL THEN ROUND(product_decimal.special_price, 2)
+                    CASE
+                        WHEN product_decimal.special_price IS NOT NULL
+                            THEN ROUND(product_decimal.special_price, 2)
                         ELSE ROUND(product_decimal.price, 2)
-                    END) as prix_vente_cosma,
+                    END AS prix_vente_cosma,
 
                     ROUND(product_decimal.cost, 2) AS cost,
-                    ROUND(product_decimal.prix_achat_ht, 2) AS pght,
+                    ROUND(product_decimal.prix_achat_ht, 2) AS pght
 
                 FROM catalog_product_entity AS produit
 
@@ -159,13 +159,13 @@ new class extends Component {
                     ON product_int.entity_id = produit.entity_id
                     AND product_int.status IN (0, 1)
 
-                WHERE 1=1 {$groupeCondition}
+                WHERE 1=1
+                {$groupeCondition}
 
-                GROUP BY produit.sku, addr.country_id
+                GROUP BY produit.sku
 
                 ORDER BY {$orderCol} DESC
                 LIMIT ? OFFSET ?
-
             ";
 
             DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
@@ -402,8 +402,8 @@ new class extends Component {
                     ON product_int.entity_id = produit.entity_id
                     AND product_int.status IN (0, 1)
                 WHERE 1=1
-                AND SUBSTRING_INDEX( CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) IS NOT NULL
-                AND SUBSTRING_INDEX( CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1)  != ''
+                    AND SUBSTRING_INDEX( CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) IS NOT NULL
+                    AND SUBSTRING_INDEX( CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1)  != ''
                 ORDER BY SUBSTRING_INDEX( CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) ASC
             ";
 
