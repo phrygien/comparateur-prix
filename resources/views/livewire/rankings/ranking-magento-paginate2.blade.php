@@ -43,10 +43,11 @@ new class extends Component {
 
     protected GoogleMerchantService $googleMerchantService;
 
-    // ─── Nouvelles propriétés pour le chargement progressif ───────────────────
+    // Propriétés chargement progressif
     public bool $isLoadingAll = false;
     public int $loadedBatches = 0;
     public int $totalBatches = 0;
+    public array $accumulatedSales = []; // résultats cumulés
 
     public function boot(GoogleMerchantService $googleMerchantService): void
     {
@@ -93,6 +94,11 @@ new class extends Component {
 
     public function getSalesProperty()
     {
+        // Si on est en mode "tout chargé", on retourne les données accumulées
+        if (!$this->isLoadingAll && !empty($this->accumulatedSales)) {
+            return collect($this->accumulatedSales)->map(fn($item) => (object) $item);
+        }
+
         $groupeCondition = '';
         $params = [];
 
@@ -703,24 +709,75 @@ new class extends Component {
         $total = $this->salesTotal;
         $this->totalBatches = (int) ceil($total / 25);
         $this->loadedBatches = 0;
+        $this->accumulatedSales = [];
         $this->isLoadingAll = true;
-        $this->currentPage = 1;
-        $this->perPage = 25;
     }
 
     public function loadNextBatch(): void
     {
-        $this->loadedBatches++;
-        $loaded = $this->loadedBatches * 25;
+        $offset = $this->loadedBatches * 25;
+        $groupeCondition = '';
+        $params = [];
 
-        if ($loaded >= $this->salesTotal) {
-            // Dernier batch : on affiche tout
-            $this->perPage = $this->salesTotal;
-            $this->currentPage = 1;
+        if (!empty($this->groupeFilter)) {
+            $placeholders = implode(',', array_fill(0, count($this->groupeFilter), '?'));
+            $groupeCondition = "AND groupe IN ($placeholders)";
+            $params = $this->groupeFilter;
+        }
+
+        $params[] = 25;        // LIMIT
+        $params[] = $offset;   // OFFSET
+
+        DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+
+        $sql = "
+            SELECT
+                produit.sku AS ean,
+                SUBSTRING_INDEX(product_char.name, ' - ', 1) AS groupe,
+                SUBSTRING_INDEX(SUBSTRING_INDEX(product_char.name, ' - ', 2), ' - ', -1) AS marque,
+                SUBSTRING_INDEX(SUBSTRING_INDEX(product_char.name, ' - ', 3), ' - ', -1) AS designation_produit,
+                CASE
+                    WHEN product_decimal.special_price IS NOT NULL
+                        THEN ROUND(product_decimal.special_price, 2)
+                    ELSE ROUND(product_decimal.price, 2)
+                END AS prix_vente_cosma,
+                ROUND(product_decimal.cost, 2) AS cost,
+                ROUND(product_decimal.prix_achat_ht, 2) AS pght,
+                stock_item.qty as quantity
+            FROM catalog_product_entity AS produit
+            LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+            LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
+            LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id
+            INNER JOIN product_int ON product_int.entity_id = produit.entity_id
+                AND product_int.status IN (0, 1, 2)
+            WHERE 1=1
+                AND produit.sku REGEXP '^[0-9]+$'
+            {$groupeCondition}
+            GROUP BY produit.sku
+            ORDER BY produit.entity_id DESC
+            LIMIT ? OFFSET ?
+        ";
+
+        $batch = DB::connection('mysqlMagento')->select($sql, $params);
+
+        // Encodage UTF-8
+        foreach ($batch as $result) {
+            foreach (['ean', 'designation_produit', 'marque', 'groupe'] as $field) {
+                if (!isset($result->$field)) continue;
+                if (!mb_check_encoding($result->$field, 'UTF-8')) {
+                    $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'ISO-8859-1');
+                }
+            }
+        }
+
+        // Convertir stdClass → array pour stocker dans la propriété Livewire
+        $batchArray = array_map(fn($item) => (array) $item, $batch);
+        $this->accumulatedSales = array_merge($this->accumulatedSales, $batchArray);
+        $this->loadedBatches++;
+
+        // Dernier batch : on arrête
+        if ($this->loadedBatches >= $this->totalBatches || empty($batch)) {
             $this->isLoadingAll = false;
-        } else {
-            $this->perPage = $loaded;
-            $this->currentPage = 1;
         }
     }
 
@@ -986,18 +1043,14 @@ new class extends Component {
                         @if($isLoadingAll)
                             <div class="my-3 p-3 bg-blue-50 border border-blue-200 rounded-lg"
                                 x-data="{}"
-                                x-init="
-                                    $nextTick(() => {
-                                        $wire.loadNextBatch();
-                                    })
-                                "
-                                wire:key="loading-batch-{{ $loadedBatches }}">
+                                x-init="$nextTick(() => $wire.loadNextBatch())"
+                                wire:key="batch-{{ $loadedBatches }}">
                                 <div class="flex items-center justify-between mb-1">
                                     <span class="text-sm font-medium text-blue-700">
-                                        Chargement en cours… batch {{ $loadedBatches }}/{{ $totalBatches }}
+                                        Chargement… batch {{ $loadedBatches }}/{{ $totalBatches }}
                                     </span>
                                     <span class="text-xs text-blue-500">
-                                        {{ min($loadedBatches * 25, $salesTotal) }} / {{ $salesTotal }} produits chargés
+                                        {{ count($accumulatedSales ?? []) }} / {{ $salesTotal }} produits
                                     </span>
                                 </div>
                                 <progress class="progress progress-info w-full"
