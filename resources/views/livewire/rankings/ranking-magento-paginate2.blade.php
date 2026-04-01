@@ -110,7 +110,7 @@ new class extends Component {
         // $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
         // $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
 
-        $orderCol = ''
+        $orderCol = '';
 
         $groupeCondition = '';
         // $params = [$dateFrom, $dateTo, $this->activeCountry];
