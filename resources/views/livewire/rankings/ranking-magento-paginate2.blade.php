@@ -16,9 +16,7 @@ new class extends Component {
     public int $currentPage = 1;
 
     public string $activeCountry = 'FR';
-    public string $dateFrom      = '';
-    public string $dateTo        = '';
-    public string $sortBy        = 'rank_qty';
+
     public array $groupeFilter  = [];
 
     public array $countries = [
@@ -75,10 +73,10 @@ new class extends Component {
         }
 
         $cacheKey = 'top_products_total_' . md5(
-            $this->activeCountry . $dateFrom . $dateTo . implode(',', $this->groupeFilter)
+            $this->activeCountry . Date('Y-m-d') . implode(',', $this->groupeFilter)
         );
 
-        return Cache::remember($cacheKey, now()->addHour(), function () use ($dateFrom, $dateTo, $groupeCondition, $params) {
+        return Cache::remember($cacheKey, now()->addHour(), function () use ($groupeCondition, $params) {
 
             $sql = "
                 SELECT COUNT(*) as total
@@ -112,7 +110,7 @@ new class extends Component {
         // $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
         // $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
 
-        $orderCol = $this->sortBy === 'rank_ca' ? 'total_revenue' : 'total_qty_sold';
+        $orderCol = ''
 
         $groupeCondition = '';
         // $params = [$dateFrom, $dateTo, $this->activeCountry];
@@ -131,7 +129,7 @@ new class extends Component {
         $params[] = $offset;
 
         $cacheKey = 'top_products_' . md5(
-            $this->activeCountry . $dateFrom . $dateTo . $orderCol
+            $this->activeCountry . Date('Y-m-d') . $orderCol
             . implode(',', $this->groupeFilter)
             . $this->currentPage . $this->perPage
         );
@@ -395,8 +393,7 @@ new class extends Component {
 
         $cacheKey = 'available_groupes_' . md5(
             $this->activeCountry
-            . $dateFrom
-            . $dateTo
+            . Date('Y-m-d')
         );;
 
         return Cache::remember($cacheKey, now()->addHour(), function () use ($dateFrom, $dateTo) {
@@ -424,7 +421,7 @@ new class extends Component {
             ";
 
             $groupes = DB::connection('mysqlMagento')
-                ->select($sql, [$dateFrom, $dateTo, $this->activeCountry]);
+                ->select($sql, [$this->activeCountry]);
 
             return collect($groupes)->pluck('groupe')->toArray();
         });
@@ -536,11 +533,6 @@ new class extends Component {
     public function updatedGroupeFilter(): void    { $this->currentPage = 1; }
     public function updatedPerPage(): void         { $this->currentPage = 1; }
 
-    public function setSortBy(string $column): void
-    {
-        $this->sortBy = $column;
-        $this->currentPage = 1;
-    }
 
     public function setPage(int $page): void
     {
@@ -549,27 +541,23 @@ new class extends Component {
 
     public function clearCache(): void
     {
-        $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
-        $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
 
-        $orderCol = $this->sortBy === 'rank_ca' ? 'total_revenue' : 'total_qty_sold';
+        $orderCol = '';
 
         Cache::forget('top_products_' . md5(
             $this->activeCountry
-            . $dateFrom
-            . $dateTo
+            . Date('Y-m-d')
             . $orderCol
             . implode(',', $this->groupeFilter)
         ));
 
         Cache::forget('available_groupes_' . md5(
             $this->activeCountry
-            . $dateFrom
-            . $dateTo
+            . Date('Y-m-d')
         ));
 
         Cache::forget('top_products_total_' . md5(
-            $this->activeCountry . $dateFrom . $dateTo . implode(',', $this->groupeFilter)
+            $this->activeCountry . Date('Y-m-d') . implode(',', $this->groupeFilter)
         ));
 
         // Vider le cache popularité avec la même clé normalisée GTIN-14
@@ -633,7 +621,6 @@ new class extends Component {
             'Pays'               => $countryLabel,
             'Période'            => $this->dateFrom . ' → ' . $this->dateTo,
             'Groupe(s)'          => $groupeLabel,
-            'Tri'                => $this->sortBy === 'rank_qty' ? 'Qté vendue' : 'CA total',
             'Produits exportés'  => count($this->sales),
             'Produits comparés'  => $comparisonsAvecPrix,
         ];
@@ -1038,25 +1025,6 @@ new class extends Component {
 
                                 <div class="divider divider-horizontal mx-0"></div>
 
-                                {{-- Tri --}}
-                                <!-- <div class="flex items-center gap-2">
-                                    <span class="text-xs text-gray-400">Trier par</span>
-                                    {{-- <button type="button" @click="$wire.setSortBy ('rank_qty')" --}}
-                                    <button type="button" wire:click="setSortBy('rank_qty')"
-                                        class="btn btn-xs {{ $sortBy === 'rank_qty' ? 'bg-orange-900 text-white' : 'btn-outline btn-white' }}">
-                                        @if($sortBy === 'rank_qty')<svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>@endif
-                                        Qté vendue
-                                    </button>
-                                    {{-- <button type="button" @click="$wire.setSortBy ('rank_ca')" --}}
-                                    <button type="button" wire:click="setSortBy('rank_ca')"
-                                        class="btn btn-xs {{ $sortBy === 'rank_ca' ? 'bg-orange-900 text-white' : 'btn-outline btn-white' }}">
-                                        @if($sortBy === 'rank_ca')<svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12L4 6h8z"/></svg>@endif
-                                        CA total
-                                    </button>
-                                </div> -->
-
-                                <div class="divider divider-horizontal mx-0"></div>
-
                                 <button type="button" wire:click="clearCache"
                                     wire:loading.attr="disabled" wire:loading.class="opacity-60 cursor-not-allowed"
                                     class="btn btn-sm btn-ghost gap-2" title="Vider le cache et recharger les données">
@@ -1156,7 +1124,7 @@ new class extends Component {
                         {{-- Tableau --}}
                         <div class="relative">
 
-                            <div wire:loading wire:target="dateFrom, dateTo, sortBy, groupeFilter, setSortBy, perPage, setPage"
+                            <div wire:loading wire:target="groupeFilter, perPage, setPage"
                                 class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg bg-white/70 backdrop-blur-sm">
                                 <span class="loading loading-spinner loading-lg text-primary"></span>
                                 <span class="text-sm font-medium">Mise à jour…</span>
@@ -1172,7 +1140,7 @@ new class extends Component {
                             @else
                                 <div class="overflow-x-auto overflow-y-auto max-h-[70vh]"
                                     wire:loading.class="opacity-40 pointer-events-none"
-                                    wire:target="dateFrom, dateTo, sortBy, groupeFilter">
+                                    wire:target="groupeFilter">
                                     <table class="table table-xs table-pin-rows table-pin-cols">
                                         <thead>
                                             <tr>
@@ -1191,18 +1159,6 @@ new class extends Component {
                                                 <th>Marque</th>
                                                 <th>Désignation</th>
                                                 <th>Prix Cosma</th>
-                                                {{-- <th>
-                                                    <button @click="$wire.setSortBy ('rank_qty')" class="flex items-center gap-1 hover:underline cursor-pointer">
-                                                        Qté vendue
-                                                        <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4l3 4H5l3-4zm0 8l-3-4h6l-3 4z"/></svg>
-                                                    </button>
-                                                </th>
-                                                <th>
-                                                    <button @click="$wire.setSortBy ('rank_ca')" class="flex items-center gap-1 hover:underline cursor-pointer">
-                                                        CA total
-                                                        <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4l3 4H5l3-4zm0 8l-3-4h6l-3 4z"/></svg>
-                                                    </button>
-                                                </th> --}}
                                                 <th>PGHT</th>
                                                 {{-- ▲ Fin colonnes Google --}}
                                                 @foreach($sites as $site)
@@ -1225,17 +1181,6 @@ new class extends Component {
                                                     $deltaSign  = $pop['delta_sign'] ?? null;
                                                 @endphp
                                                 <tr class="hover">
-                                                    {{-- <th>
-                                                        <span class="font-semibold {{ $sortBy === 'rank_qty' ? 'text-orange-900' : '' }}">
-                                                            {{ $sortBy === 'rank_qty' ? "#".$row->rank_qty : $row->rank_qty }}
-                                                        </span>
-                                                    </th>
-                                                    <th>
-                                                        <span class="font-semibold {{ $sortBy === 'rank_ca' ? 'text-orange-900' : '' }}">
-                                                            {{ $sortBy === 'rank_ca' ? "#".$row->rank_ca : $row->rank_ca }}
-                                                        </span>
-                                                    </th> --}}
-
                                                     <td class="text-center">
                                                         @if($googleRank)
                                                             <div class="flex flex-col items-center gap-0.5">
@@ -1266,16 +1211,6 @@ new class extends Component {
                                                     <td class="text-right font-semibold text-primary">
                                                         {{ number_format($prixCosma, 2, ',', ' ') }} €
                                                     </td>
-                                                    {{-- <td>
-                                                        <span class="font-semibold {{ $sortBy === 'rank_qty' ? 'text-orange-900' : '' }}">
-                                                            {{ number_format($row->total_qty_sold, 0, ',', ' ') }}
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        <span class="font-semibold {{ $sortBy === 'rank_ca' ? 'text-orange-900' : '' }}">
-                                                            {{ number_format($row->total_revenue, 2, ',', ' ') }} €
-                                                        </span>
-                                                    </td> --}}
                                                     <td class="text-right text-xs">
                                                         @if($row->pght)
                                                             {{ number_format($row->pght, 2, ',', ' ') }} €
@@ -1341,16 +1276,12 @@ new class extends Component {
                                         </tbody>
                                         <tfoot>
                                             <tr>
-                                                {{-- <th>Rang Qty</th>
-                                                <th>Rang CA</th> --}}
                                                 <th class="text-center">Popularite Google</th>
                                                 <th>EAN</th>
                                                 <th>Groupe</th>
                                                 <th>Marque</th>
                                                 <th>Désignation</th>
                                                 <th>Prix Cosma</th>
-                                                {{-- <th>Qté vendue</th>
-                                                <th>CA total</th> --}}
                                                 <th>PGHT</th>
                                                 @foreach($sites as $site)
                                                     <th class="text-right">{{ $site->name }}</th>
