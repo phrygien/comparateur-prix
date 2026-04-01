@@ -134,37 +134,27 @@ new class extends Component {
             $sql = "
                 SELECT
                     produit.sku AS ean,
-
                     SUBSTRING_INDEX(product_char.name, ' - ', 1) AS groupe,
                     SUBSTRING_INDEX(SUBSTRING_INDEX(product_char.name, ' - ', 2), ' - ', -1) AS marque,
                     SUBSTRING_INDEX(SUBSTRING_INDEX(product_char.name, ' - ', 3), ' - ', -1) AS designation_produit,
-
                     CASE
                         WHEN product_decimal.special_price IS NOT NULL
                             THEN ROUND(product_decimal.special_price, 2)
                         ELSE ROUND(product_decimal.price, 2)
                     END AS prix_vente_cosma,
-
                     ROUND(product_decimal.cost, 2) AS cost,
                     ROUND(product_decimal.prix_achat_ht, 2) AS pght
-
                 FROM catalog_product_entity AS produit
-
                 LEFT JOIN product_char
                     ON product_char.entity_id = produit.entity_id
-
                 LEFT JOIN product_decimal
                     ON product_decimal.entity_id = produit.entity_id
-
                 INNER JOIN product_int
                     ON product_int.entity_id = produit.entity_id
                     AND product_int.status IN (0, 1)
-
                 WHERE 1=1
                 {$groupeCondition}
-
                 GROUP BY produit.sku
-
                 ORDER BY produit.entity_id DESC
                 LIMIT ? OFFSET ?
             ";
