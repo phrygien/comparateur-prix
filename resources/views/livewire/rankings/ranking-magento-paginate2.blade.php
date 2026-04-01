@@ -530,7 +530,7 @@ new class extends Component {
 
         // ── Data rows ─────────────────────────────────────────────────────────
         // Colonnes fixes : A=EAN B=Groupe C=Marque D=Désignation E=Prix Cosma F=PGHT G=Rang Google
-        $colGoogle = 'G';
+        $colGoogle = 'H';
 
         foreach ($comparisons as $comparison) {
             $r      = $comparison['row'];
@@ -549,6 +549,7 @@ new class extends Component {
             if ($r->pght) {
                 $sheet->getStyle('F' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
             }
+            $sheet->setCellValue('G' . $row, number_format($r->quantity, 0, ',', ' '));
 
             // Colonne G : Rang Google
             if ($pop && ($pop['rank'] ?? null) !== null) {
@@ -683,7 +684,7 @@ new class extends Component {
             ? '_' . implode('-', array_map('strtolower', $this->groupeFilter))
             : '';
 
-        $fileName = 'ventes_' . strtolower($this->activeCountry) . $groupeSuffix . '_' . date('His') . '.xlsx';
+        $fileName = 'produit_' . strtolower($this->activeCountry) . $groupeSuffix . '_' . date('His') . '.xlsx';
         $filePath = $exportDir . '/' . $fileName;
 
         (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet))->save($filePath);
