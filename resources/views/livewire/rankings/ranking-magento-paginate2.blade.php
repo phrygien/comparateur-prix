@@ -120,10 +120,12 @@ new class extends Component {
                         ELSE ROUND(product_decimal.price, 2)
                     END AS prix_vente_cosma,
                     ROUND(product_decimal.cost, 2) AS cost,
-                    ROUND(product_decimal.prix_achat_ht, 2) AS pght
+                    ROUND(product_decimal.prix_achat_ht, 2) AS pght,
+                    stock_item.qty as quantity
                 FROM catalog_product_entity AS produit
                 LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
                 LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
+                LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id
                 INNER JOIN product_int ON product_int.entity_id = produit.entity_id
                     AND product_int.status IN (0, 1, 2)
                 WHERE 1=1
@@ -757,9 +759,9 @@ new class extends Component {
                         {{-- Toolbar --}}
                         <div class="flex flex-wrap items-center justify-between gap-4 mb-4 mt-6">
                             <div>
-                                <h1 class="text-base font-semibold text-gray-900">Ventes — {{ $label }}</h1>
+                                <h1 class="text-base font-semibold text-gray-900">Marché — {{ $label }}</h1>
                                 <p class="mt-0.5 text-sm text-gray-500">
-                                    Top ventes produits · {{ count($sales) }} résultat(s)
+                                    Produits · {{ count($sales) }} résultat(s)
                                     @if(!empty($groupeFilter))
                                         · Groupe(s) : {{ implode(', ', $groupeFilter) }}
                                     @endif
@@ -887,6 +889,8 @@ new class extends Component {
                                     <option value="50">50</option>
                                     <option value="100">100</option>
                                     <option value="200">200</option>
+                                    <option value="500">500</option>
+                                    <option value="1000">1000</option>
                                     <option value="{{ $salesTotal }}">Tous les donnees</option>
                                 </select>
                             </div>
@@ -952,6 +956,7 @@ new class extends Component {
                                                 <th>Groupe</th>
                                                 <th>Marque</th>
                                                 <th>Désignation</th>
+                                                <th>Quantite</th>
                                                 <th>Prix Cosma</th>
                                                 <th>PGHT</th>
                                                 @foreach($sites as $site)
@@ -993,6 +998,11 @@ new class extends Component {
                                                     <td>
                                                         <div class="font-bold max-w-xs truncate" title="{{ $row->designation_produit }}">
                                                             {{ $row->designation_produit ?? '—' }}
+                                                        </div>
+                                                    </td>
+                                                    <td class="text-right text-xs">
+                                                        <div>
+                                                            {{ $row->quantity ?? '0' }}
                                                         </div>
                                                     </td>
                                                     <td class="text-right font-semibold text-primary">
@@ -1066,6 +1076,7 @@ new class extends Component {
                                                 <th>Groupe</th>
                                                 <th>Marque</th>
                                                 <th>Désignation</th>
+                                                <th>Quantite</th>
                                                 <th>Prix Cosma</th>
                                                 <th>PGHT</th>
                                                 @foreach($sites as $site)
