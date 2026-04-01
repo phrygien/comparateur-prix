@@ -415,8 +415,8 @@ new class extends Component {
         $sheet->setTitle('Ventes ' . $countryLabel);
 
         $baseHeaders = [
-            'Rang Qty', 'Rang CA', 'EAN', 'Groupe', 'Marque',
-            'Désignation', 'Prix Cosma', 'Qté vendue', 'CA total', 'PGHT',
+            'EAN', 'Groupe', 'Marque',
+            'Désignation', 'Prix Cosma', 'PGHT',
             'Rang Google',
         ];
 
