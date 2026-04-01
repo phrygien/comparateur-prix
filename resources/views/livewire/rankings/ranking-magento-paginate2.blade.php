@@ -1045,33 +1045,62 @@ new class extends Component {
 
                         {{-- Barre de progression chargement progressif --}}
                         @if($isLoadingAll)
-                            <div
-                                class="my-3 p-4 bg-blue-50 border border-blue-200 rounded-lg"
-                                wire:key="progress-bar-{{ $loadedBatches }}"
-                                x-data="{ triggered: false }"
-                                x-init="
-                                    if (!triggered) {
-                                        triggered = true;
-                                        setTimeout(() => $wire.loadNextBatch(), 50);
-                                    }
-                                "
-                            >
-                                <div class="flex items-center justify-between mb-2">
-                                    <span class="text-sm font-semibold text-blue-700 flex items-center gap-2">
-                                        <span class="loading loading-spinner loading-xs text-blue-500"></span>
-                                        Chargement… batch {{ $loadedBatches + 1 }}/{{ $totalBatches }}
+                        {{-- Déclencheur invisible : wire:key change à chaque batch, recrée le nœud --}}
+                        <div
+                            wire:key="batch-trigger-{{ $loadedBatches }}"
+                            x-data="{ triggered: false }"
+                            x-init="
+                                // Enregistre la durée du batch qui vient de finir
+                                $store.batchLoader.recordBatch({{ $totalBatches - $loadedBatches - 1 }});
+
+                                if (!triggered) {
+                                    triggered = true;
+                                    setTimeout(() => $wire.loadNextBatch(), 50);
+                                }
+                            "
+                            class="hidden">
+                        </div>
+
+                        {{-- UI du loader : sans wire:key, donc Alpine ne la recrée pas --}}
+                        <div
+                            class="my-3 p-4 bg-blue-50 border border-blue-200 rounded-lg"
+                            x-data
+                            x-init="$store.batchLoader.start !== undefined && $store.batchLoader.startTime === null && $store.batchLoader.start()"
+                        >
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-sm font-semibold text-blue-700 flex items-center gap-2">
+                                    <span class="loading loading-spinner loading-xs text-blue-500"></span>
+                                    Batch {{ $loadedBatches + 1 }}/{{ $totalBatches }}
+                                    &nbsp;·&nbsp;
+                                    <span class="font-mono font-normal">
+                                        Écoulé : <span x-text="$store.batchLoader.fmt($store.batchLoader.elapsed)" class="font-bold"></span>
                                     </span>
-                                    <span class="text-xs font-medium text-blue-500">
-                                        {{ $accumulatedCount }} / {{ $salesTotal }} produits chargés
+                                </span>
+
+                                <span class="flex items-center gap-4 text-xs font-medium">
+                                    <span class="text-blue-500">
+                                        {{ $accumulatedCount }} / {{ $salesTotal }} produits
                                     </span>
-                                </div>
-                                <progress
-                                    class="progress progress-info w-full"
-                                    value="{{ $totalBatches > 0 ? round(($loadedBatches / $totalBatches) * 100) : 0 }}"
-                                    max="100">
-                                </progress>
+                                </span>
                             </div>
-                        @endif
+
+                            <progress
+                                class="progress progress-info w-full"
+                                value="{{ $totalBatches > 0 ? round(($loadedBatches / $totalBatches) * 100) : 0 }}"
+                                max="100">
+                            </progress>
+
+                            <div class="flex justify-between mt-1 text-xs text-blue-400">
+                                <span>{{ $totalBatches > 0 ? round(($loadedBatches / $totalBatches) * 100) : 0 }}%</span>
+                                <span x-show="$store.batchLoader.avgBatchTime > 0">
+                                    ~<span x-text="$store.batchLoader.fmt(Math.round($store.batchLoader.avgBatchTime))"></span>/batch
+                                </span>
+                            </div>
+                        </div>
+                    @else
+                        {{-- Quand c'est terminé, on arrête le timer --}}
+                        <div x-data x-init="$store.batchLoader.stop()" class="hidden"></div>
+                    @endif
 
                         {{-- Pagination (masquée si tout est chargé en mode accumulé) --}}
                         @if(empty($accumulatedSales))
@@ -1300,3 +1329,64 @@ new class extends Component {
         </x-tabs>
     </div>
 </div>
+<script>
+    document.addEventListener('alpine:init', () => {
+        Alpine.store('batchLoader', {
+            startTime: null,
+            elapsed: 0,
+            remaining: null,
+            avgBatchTime: 0,
+            batchTimes: [],
+            batchStart: null,
+            tickTimer: null,
+
+            start() {
+                this.startTime = Date.now();
+                this.batchStart = Date.now();
+                this.elapsed = 0;
+                this.remaining = null;
+                this.avgBatchTime = 0;
+                this.batchTimes = [];
+
+                if (this.tickTimer) clearInterval(this.tickTimer);
+                this.tickTimer = setInterval(() => {
+                    this.elapsed = Math.floor((Date.now() - this.startTime) / 1000);
+                    if (this.avgBatchTime > 0 && this.batchStart) {
+                        const inBatch = (Date.now() - this.batchStart) / 1000;
+                        const left = Alpine.store('batchLoader')._batchesLeft;
+                        this.remaining = Math.max(1,
+                            Math.round((left * this.avgBatchTime) + (this.avgBatchTime - inBatch))
+                        );
+                    }
+                }, 200);
+            },
+
+            recordBatch(batchesLeft) {
+                this._batchesLeft = batchesLeft;
+                if (this.batchStart) {
+                    const duration = (Date.now() - this.batchStart) / 1000;
+                    this.batchTimes.push(duration);
+                    const last5 = this.batchTimes.slice(-5);
+                    this.avgBatchTime = last5.reduce((a, b) => a + b, 0) / last5.length;
+                }
+                this.batchStart = Date.now();
+            },
+
+            stop() {
+                this.remaining = 0;
+                if (this.tickTimer) {
+                    clearInterval(this.tickTimer);
+                    this.tickTimer = null;
+                }
+            },
+
+            fmt(s) {
+                if (s === null) return '…';
+                if (s < 60) return s + 's';
+                return Math.floor(s / 60) + 'min' + (s % 60 > 0 ? ' ' + (s % 60) + 's' : '');
+            },
+
+            _batchesLeft: 0,
+        });
+    });
+</script>
