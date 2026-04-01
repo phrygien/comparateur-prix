@@ -72,7 +72,9 @@ new class extends Component {
                     LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
                     INNER JOIN product_int ON product_int.entity_id = produit.entity_id
                         AND product_int.status IN (0, 1)
-                    WHERE 1=1 {$groupeCondition}
+                    WHERE 1=1
+                        AND produit.sku REGEXP '^[0-9]+$'
+                        {$groupeCondition}
                     GROUP BY produit.sku
                 ) AS subquery
             ";
@@ -125,6 +127,7 @@ new class extends Component {
                 INNER JOIN product_int ON product_int.entity_id = produit.entity_id
                     AND product_int.status IN (0, 1)
                 WHERE 1=1
+                    AND produit.sku REGEXP '^[0-9]+$'
                 {$groupeCondition}
                 GROUP BY produit.sku
                 ORDER BY produit.entity_id DESC
@@ -255,6 +258,7 @@ new class extends Component {
                 INNER JOIN product_int ON product_int.entity_id = produit.entity_id
                     AND product_int.status IN (0, 1)
                 WHERE 1=1
+                    AND produit.sku REGEXP '^[0-9]+$'
                     AND SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) IS NOT NULL
                     AND SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) != ''
                 ORDER BY SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) ASC
