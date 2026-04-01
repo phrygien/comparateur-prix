@@ -134,7 +134,7 @@ new class extends Component {
             . $this->currentPage . $this->perPage
         );
 
-        return Cache::remember($cacheKey, now()->addHour(), function () use ($dateFrom, $dateTo, $groupeCondition, $params, $orderCol) {
+        return Cache::remember($cacheKey, now()->addHour(), function () use ($groupeCondition, $params, $orderCol) {
 
             $sql = "
                 SELECT
