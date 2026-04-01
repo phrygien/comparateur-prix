@@ -14,10 +14,8 @@ new class extends Component {
 
     public int $perPage = 25;
     public int $currentPage = 1;
-
     public string $activeCountry = 'FR';
-
-    public array $groupeFilter  = [];
+    public array $groupeFilter = [];
 
     public array $countries = [
         'FR' => 'France',
@@ -28,7 +26,6 @@ new class extends Component {
         'IT' => 'Italie',
     ];
 
-    // Mapping pays → code Google Merchant
     protected array $countryCodeMap = [
         'FR' => 'FR',
         'BE' => 'BE',
@@ -51,47 +48,29 @@ new class extends Component {
         $this->googleMerchantService = $googleMerchantService;
     }
 
-    public function mount(): void
-    {
-        // $this->dateFrom = date('Y-01-01');
-        // $this->dateTo = date('Y-12-31');
-    }
+    // ─── Computed: Total count ────────────────────────────────────────────────
 
     public function getSalesTotalProperty(): int
     {
-        // $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
-        // $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
-
         $groupeCondition = '';
-        // $params = [$dateFrom, $dateTo, $this->activeCountry];
-        // $params = [$this->activeCountry];
         $params = [];
 
         if (!empty($this->groupeFilter)) {
-            $placeholders    = implode(',', array_fill(0, count($this->groupeFilter), '?'));
+            $placeholders = implode(',', array_fill(0, count($this->groupeFilter), '?'));
             $groupeCondition = "AND SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) IN ($placeholders)";
-            $params          = array_merge($params, $this->groupeFilter);
+            $params = $this->groupeFilter;
         }
 
-        $cacheKey = 'top_products_total_' . md5(
-            $this->activeCountry . Date('Y-m-d') . implode(',', $this->groupeFilter)
-        );
+        $cacheKey = 'top_products_total_' . md5($this->activeCountry . date('Y-m-d') . implode(',', $this->groupeFilter));
 
         return Cache::remember($cacheKey, now()->addHour(), function () use ($groupeCondition, $params) {
-
             $sql = "
                 SELECT COUNT(*) as total
                 FROM catalog_product_entity AS produit
-
-                LEFT JOIN product_char
-                    ON product_char.entity_id = produit.entity_id
-
-                INNER JOIN product_int
-                    ON product_int.entity_id = produit.entity_id
+                LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+                INNER JOIN product_int ON product_int.entity_id = produit.entity_id
                     AND product_int.status IN (0, 1)
-
                 WHERE 1=1 {$groupeCondition}
-
                 GROUP BY produit.sku
             ";
 
@@ -100,37 +79,30 @@ new class extends Component {
         });
     }
 
+    // ─── Computed: Paginated sales ────────────────────────────────────────────
+
     public function getSalesProperty()
     {
-        // $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
-        // $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
-
-        $orderCol = '';
-
         $groupeCondition = '';
-        // $params = [$dateFrom, $dateTo, $this->activeCountry];
-        // $params = [$this->activeCountry];
+        $params = [];
 
         if (!empty($this->groupeFilter)) {
-            $placeholders    = implode(',', array_fill(0, count($this->groupeFilter), '?'));
+            $placeholders = implode(',', array_fill(0, count($this->groupeFilter), '?'));
             $groupeCondition = "AND groupe IN ($placeholders)";
-            $params          = array_merge($params, $this->groupeFilter);
+            $params = $this->groupeFilter;
         }
 
         $offset = ($this->currentPage - 1) * $this->perPage;
-
-        // On ajoute LIMIT et OFFSET en fin de params (valeurs entières, bindées proprement)
         $params[] = $this->perPage;
         $params[] = $offset;
 
         $cacheKey = 'top_products_' . md5(
-            $this->activeCountry . Date('Y-m-d') . $orderCol
+            $this->activeCountry . date('Y-m-d')
             . implode(',', $this->groupeFilter)
             . $this->currentPage . $this->perPage
         );
 
-        return Cache::remember($cacheKey, now()->addHour(), function () use ($groupeCondition, $params, $orderCol) {
-
+        return Cache::remember($cacheKey, now()->addHour(), function () use ($groupeCondition, $params) {
             $sql = "
                 SELECT
                     produit.sku AS ean,
@@ -145,12 +117,9 @@ new class extends Component {
                     ROUND(product_decimal.cost, 2) AS cost,
                     ROUND(product_decimal.prix_achat_ht, 2) AS pght
                 FROM catalog_product_entity AS produit
-                LEFT JOIN product_char
-                    ON product_char.entity_id = produit.entity_id
-                LEFT JOIN product_decimal
-                    ON product_decimal.entity_id = produit.entity_id
-                INNER JOIN product_int
-                    ON product_int.entity_id = produit.entity_id
+                LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+                LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
+                INNER JOIN product_int ON product_int.entity_id = produit.entity_id
                     AND product_int.status IN (0, 1)
                 WHERE 1=1
                 {$groupeCondition}
@@ -165,12 +134,11 @@ new class extends Component {
 
             foreach ($results as $result) {
                 foreach (['designation_produit', 'marque', 'groupe'] as $field) {
-                    if (isset($result->$field)) {
-                        if (!mb_check_encoding($result->$field, 'UTF-8')) {
-                            $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'ISO-8859-1');
-                        }
-                        $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'UTF-8');
+                    if (!isset($result->$field)) continue;
+                    if (!mb_check_encoding($result->$field, 'UTF-8')) {
+                        $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'ISO-8859-1');
                     }
+                    $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'UTF-8');
                 }
             }
 
@@ -178,56 +146,34 @@ new class extends Component {
         });
     }
 
+    // ─── Computed: Google Merchant popularity ranks ───────────────────────────
+
     public function getPopularityRanksProperty(): array
     {
         $sales = $this->sales;
 
-        if (empty($sales)) {
-            return [];
-        }
+        if (empty($sales)) return [];
 
-        $eans = collect($sales)
-            ->pluck('ean')
-            ->filter()
-            ->unique()
-            ->values()
-            ->toArray();
+        $eans = collect($sales)->pluck('ean')->filter()->unique()->values()->toArray();
 
-        if (empty($eans)) {
-            return [];
-        }
+        if (empty($eans)) return [];
 
         $toGtin14 = fn(string $ean): string => str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT);
-
         $countryCode = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
-
         $gtins14 = array_unique(array_map($toGtin14, $eans));
 
         $cacheKey = 'google_popularity_v2_' . md5($countryCode . implode(',', $gtins14));
 
         return Cache::remember($cacheKey, now()->addHours(6), function () use ($gtins14, $countryCode, $toGtin14) {
-
             $gtinList = implode("', '", $gtins14);
 
             $query = "
                 SELECT
-                    report_granularity,
-                    report_date,
-                    report_category_id,
-                    category_l1,
-                    category_l2,
-                    category_l3,
-                    brand,
-                    title,
-                    variant_gtins,
-                    rank,
-                    previous_rank,
-                    report_country_code,
-                    relative_demand,
-                    previous_relative_demand,
-                    relative_demand_change,
-                    inventory_status,
-                    brand_inventory_status
+                    report_granularity, report_date, report_category_id,
+                    category_l1, category_l2, category_l3,
+                    brand, title, variant_gtins, rank, previous_rank,
+                    report_country_code, relative_demand, previous_relative_demand,
+                    relative_demand_change, inventory_status, brand_inventory_status
                 FROM best_sellers_product_cluster_view
                 WHERE report_country_code = '{$countryCode}'
                   AND report_granularity = 'WEEKLY'
@@ -238,18 +184,17 @@ new class extends Component {
 
             try {
                 $response = $this->googleMerchantService->searchReports($query);
-
                 Log::info('Google Merchant raw response', ['response' => $response]);
 
                 $ranksByGtin = [];
 
                 foreach ($response['results'] ?? [] as $row) {
-                    $data         = $row['bestSellersProductClusterView'] ?? [];
+                    $data = $row['bestSellersProductClusterView'] ?? [];
                     $variantGtins = $data['variantGtins'] ?? [];
 
-                    $rank     = isset($data['rank'])          ? (int) $data['rank']          : null;
-                    $prevRank = isset($data['previousRank'])  ? (int) $data['previousRank']  : null;
-                    $delta    = ($rank !== null && $prevRank !== null) ? ($prevRank - $rank) : null;
+                    $rank = isset($data['rank']) ? (int) $data['rank'] : null;
+                    $prevRank = isset($data['previousRank']) ? (int) $data['previousRank'] : null;
+                    $delta = ($rank !== null && $prevRank !== null) ? ($prevRank - $rank) : null;
 
                     $rankInfo = [
                         'rank'            => $rank,
@@ -275,7 +220,6 @@ new class extends Component {
                 }
 
                 Log::info('Google Merchant ranks by GTIN-14', ['ranksByGtin' => $ranksByGtin]);
-
                 return $ranksByGtin;
 
             } catch (\Exception $e) {
@@ -285,141 +229,44 @@ new class extends Component {
         });
     }
 
-    public function debugPopularity(): void
-    {
-        $toGtin14 = fn(string $ean): string => str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT);
-
-        $sales = $this->sales;
-        $eans  = collect($sales)->pluck('ean')->filter()->unique()->values()->toArray();
-
-        Log::info('[DEBUG] EANs Magento bruts', ['eans' => $eans]);
-
-        $gtins14 = array_unique(array_map($toGtin14, $eans));
-        Log::info('[DEBUG] EANs normalisés GTIN-14 envoyés à Google', ['gtins14' => $gtins14]);
-
-        $countryCode = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
-        $gtinList    = implode("', '", $gtins14);
-
-        $query = "
-            SELECT
-                report_granularity,
-                report_date,
-                report_category_id,
-                category_l1,
-                category_l2,
-                category_l3,
-                brand,
-                title,
-                variant_gtins,
-                rank,
-                previous_rank,
-                report_country_code,
-                relative_demand,
-                previous_relative_demand,
-                relative_demand_change,
-                inventory_status,
-                brand_inventory_status
-            FROM best_sellers_product_cluster_view
-            WHERE report_country_code = '{$countryCode}'
-              AND report_granularity = 'WEEKLY'
-              AND category_l1 LIKE '%Health & Beauty%'
-              AND variant_gtins CONTAINS ANY ('{$gtinList}')
-            LIMIT 10
-        ";
-
-        Log::info('[DEBUG] Requête Google Merchant', ['query' => $query]);
-
-        try {
-            $response = $this->googleMerchantService->searchReports($query);
-            Log::info('[DEBUG] Réponse brute Google', ['response' => $response]);
-
-            $results = $response['results'] ?? [];
-            Log::info('[DEBUG] Nombre de résultats', ['count' => count($results)]);
-
-            foreach ($results as $i => $row) {
-                $data = $row['bestSellersProductClusterView'] ?? [];
-                Log::info("[DEBUG] Résultat #{$i}", [
-                    'title'        => $data['title'] ?? null,
-                    'rank'         => $data['rank'] ?? null,
-                    'previousRank' => $data['previousRank'] ?? null,
-                    'variantGtins' => $data['variantGtins'] ?? [],
-                    'normalized'   => array_map($toGtin14, array_map('strval', $data['variantGtins'] ?? [])),
-                ]);
-            }
-
-            foreach ($gtins14 as $gtin) {
-                $found = false;
-                foreach ($results as $row) {
-                    $data    = $row['bestSellersProductClusterView'] ?? [];
-                    $gtins   = array_map(fn($g) => $toGtin14((string) $g), $data['variantGtins'] ?? []);
-                    if (in_array($gtin, $gtins)) {
-                        $found = true;
-                        Log::info("[DEBUG] MATCH trouvé", ['gtin' => $gtin, 'rank' => $data['rank'] ?? null]);
-                    }
-                }
-                if (!$found) {
-                    Log::warning("[DEBUG] Pas de match Google pour ce GTIN", ['gtin' => $gtin]);
-                }
-            }
-
-        } catch (\Exception $e) {
-            Log::error('[DEBUG] Erreur API Google Merchant', ['message' => $e->getMessage()]);
-        }
-    }
+    // ─── Computed: Available groupes ──────────────────────────────────────────
 
     public function getAvailableGroupesProperty()
     {
-        // $dateFrom = ($this->dateFrom ?: date('Y-01-01')) . ' 00:00:00';
-        // $dateTo   = ($this->dateTo   ?: date('Y-12-31')) . ' 23:59:59';
+        $cacheKey = 'available_groupes_' . md5($this->activeCountry . date('Y-m-d'));
 
-        $cacheKey = 'available_groupes_' . md5(
-            $this->activeCountry
-            . Date('Y-m-d')
-        );;
-
-        return Cache::remember($cacheKey, now()->addHour(), function (){
-
+        return Cache::remember($cacheKey, now()->addHour(), function () {
             $sql = "
                 SELECT DISTINCT
-                    SUBSTRING_INDEX(
-                        CAST(product_char.name AS CHAR CHARACTER SET utf8mb4),
-                        ' - ',
-                        1
-                    ) AS groupe
+                    SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) AS groupe
                 FROM catalog_product_entity AS produit
-                LEFT JOIN product_char
-                    ON product_char.entity_id = produit.entity_id
-                INNER JOIN product_int
-                    ON product_int.entity_id = produit.entity_id
+                LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+                INNER JOIN product_int ON product_int.entity_id = produit.entity_id
                     AND product_int.status IN (0, 1)
                 WHERE 1=1
-                    AND SUBSTRING_INDEX( CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) IS NOT NULL
-                    AND SUBSTRING_INDEX( CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1)  != ''
-                ORDER BY SUBSTRING_INDEX( CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) ASC
+                    AND SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) IS NOT NULL
+                    AND SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) != ''
+                ORDER BY SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) ASC
             ";
 
-            $groupes = DB::connection('mysqlMagento')
-                ->select($sql, []);
-
-            return collect($groupes)->pluck('groupe')->toArray();
+            return collect(DB::connection('mysqlMagento')->select($sql, []))->pluck('groupe')->toArray();
         });
     }
 
+    // ─── Computed: Price comparisons ──────────────────────────────────────────
+
     public function getComparisonsProperty()
     {
-        $sites = Site::where('country_code', $this->activeCountry)
-            ->orderBy('name')
-            ->get();
+        $sites = Site::where('country_code', $this->activeCountry)->orderBy('name')->get();
+        $siteIds = $sites->pluck('id')->toArray();
 
         $this->somme_prix_marche_total = 0;
         $this->somme_gain = 0;
         $this->somme_perte = 0;
 
-        $sales = $this->sales;
         $comparisons = [];
-        $siteIds = $sites->pluck('id')->toArray();
 
-        foreach ($sales as $row) {
+        foreach ($this->sales as $row) {
             $scrapedProducts = collect([]);
 
             if (!empty($row->ean) && !empty($siteIds)) {
@@ -431,47 +278,46 @@ new class extends Component {
             }
 
             $comparison = [
-                'row' => $row,
-                'sites' => [],
-                'prix_moyen_marche' => null,
-                'percentage_marche' => null,
-                'difference_marche' => null,
+                'row'                => $row,
+                'sites'              => [],
+                'prix_moyen_marche'  => null,
+                'percentage_marche'  => null,
+                'difference_marche'  => null,
             ];
 
             $somme_prix_marche = 0;
             $nombre_site = 0;
+            $prixCosma = $row->prix_vente_cosma;
 
             foreach ($sites as $site) {
-                if (isset($scrapedProducts[$site->id])) {
-                    $scrapedProduct = $scrapedProducts[$site->id];
-                    $prixCosma = $row->prix_vente_cosma;
-                    $priceDiff = null;
-                    $pricePercentage = null;
-
-                    if ($prixCosma > 0 && $scrapedProduct->prix_ht > 0) {
-                        $priceDiff = $scrapedProduct->prix_ht - $prixCosma;
-                        $pricePercentage = round(($priceDiff / $prixCosma) * 100, 2);
-                    }
-
-                    $comparison['sites'][$site->id] = [
-                        'prix_ht'          => $scrapedProduct->prix_ht,
-                        'url'              => $scrapedProduct->url,
-                        'name'             => $scrapedProduct->name,
-                        'vendor'           => $scrapedProduct->vendor,
-                        'ean'              => $scrapedProduct->ean ?? null,
-                        'price_diff'       => $priceDiff,
-                        'price_percentage' => $pricePercentage,
-                        'site_name'        => $site->name,
-                    ];
-
-                    $somme_prix_marche += $scrapedProduct->prix_ht;
-                    $nombre_site++;
-                } else {
+                if (!isset($scrapedProducts[$site->id])) {
                     $comparison['sites'][$site->id] = null;
+                    continue;
                 }
-            }
 
-            $prixCosma = $row->prix_vente_cosma;
+                $scrapedProduct = $scrapedProducts[$site->id];
+                $priceDiff = null;
+                $pricePercentage = null;
+
+                if ($prixCosma > 0 && $scrapedProduct->prix_ht > 0) {
+                    $priceDiff = $scrapedProduct->prix_ht - $prixCosma;
+                    $pricePercentage = round(($priceDiff / $prixCosma) * 100, 2);
+                }
+
+                $comparison['sites'][$site->id] = [
+                    'prix_ht'          => $scrapedProduct->prix_ht,
+                    'url'              => $scrapedProduct->url,
+                    'name'             => $scrapedProduct->name,
+                    'vendor'           => $scrapedProduct->vendor,
+                    'ean'              => $scrapedProduct->ean ?? null,
+                    'price_diff'       => $priceDiff,
+                    'price_percentage' => $pricePercentage,
+                    'site_name'        => $site->name,
+                ];
+
+                $somme_prix_marche += $scrapedProduct->prix_ht;
+                $nombre_site++;
+            }
 
             if ($somme_prix_marche > 0 && $prixCosma > 0) {
                 $comparison['prix_moyen_marche'] = $somme_prix_marche / $nombre_site;
@@ -498,58 +344,48 @@ new class extends Component {
         return collect($comparisons);
     }
 
+    // ─── Computed: Sites ──────────────────────────────────────────────────────
+
     public function getSitesProperty()
     {
-        return Site::where('country_code', $this->activeCountry)
-            ->orderBy('name')
-            ->get();
+        return Site::where('country_code', $this->activeCountry)->orderBy('name')->get();
     }
 
-    public function updatedActiveCountry(): void  { $this->currentPage = 1; }
-    public function updatedDateFrom(): void        { $this->currentPage = 1; }
-    public function updatedDateTo(): void          { $this->currentPage = 1; }
-    public function updatedGroupeFilter(): void    { $this->currentPage = 1; }
-    public function updatedPerPage(): void         { $this->currentPage = 1; }
+    // ─── Lifecycle hooks ──────────────────────────────────────────────────────
 
+    public function updatedActiveCountry(): void { $this->currentPage = 1; }
+    public function updatedGroupeFilter(): void   { $this->currentPage = 1; }
+    public function updatedPerPage(): void        { $this->currentPage = 1; }
 
     public function setPage(int $page): void
     {
         $this->currentPage = $page;
     }
 
+    // ─── Actions ──────────────────────────────────────────────────────────────
+
     public function clearCache(): void
     {
-
-        $orderCol = '';
+        $toGtin14 = fn(string $ean): string => str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT);
+        $countryCode = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
+        $gtins14 = array_unique(array_map($toGtin14, collect($this->sales)->pluck('ean')->filter()->toArray()));
 
         Cache::forget('top_products_' . md5(
-            $this->activeCountry
-            . Date('Y-m-d')
-            . $orderCol
-            . implode(',', $this->groupeFilter)
+            $this->activeCountry . date('Y-m-d') . implode(',', $this->groupeFilter)
         ));
-
-        Cache::forget('available_groupes_' . md5(
-            $this->activeCountry
-            . Date('Y-m-d')
-        ));
-
         Cache::forget('top_products_total_' . md5(
-            $this->activeCountry . Date('Y-m-d') . implode(',', $this->groupeFilter)
+            $this->activeCountry . date('Y-m-d') . implode(',', $this->groupeFilter)
         ));
-
-        // Vider le cache popularité avec la même clé normalisée GTIN-14
-        $toGtin14    = fn(string $ean): string => str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT);
-        $countryCode = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
-        $gtins14     = array_unique(array_map($toGtin14, collect($this->sales)->pluck('ean')->filter()->toArray()));
-
+        Cache::forget('available_groupes_' . md5(
+            $this->activeCountry . date('Y-m-d')
+        ));
         Cache::forget('google_popularity_v2_' . md5($countryCode . implode(',', $gtins14)));
     }
 
     public function exportXlsx(): \Symfony\Component\HttpFoundation\BinaryFileResponse
     {
-        $sites          = $this->sites;
-        $comparisons    = $this->comparisons;
+        $sites           = $this->sites;
+        $comparisons     = $this->comparisons;
         $popularityRanks = $this->popularityRanks;
 
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
@@ -560,7 +396,7 @@ new class extends Component {
         $baseHeaders = [
             'Rang Qty', 'Rang CA', 'EAN', 'Groupe', 'Marque',
             'Désignation', 'Prix Cosma', 'Qté vendue', 'CA total', 'PGHT',
-            'Rang Google', // ← popularité Google Merchant
+            'Rang Google',
         ];
 
         $lastColIndex  = count($baseHeaders) + $sites->count();
@@ -571,42 +407,37 @@ new class extends Component {
         $sheet->getColumnDimension('C')->setAutoSize(false)->setWidth(16);
         $sheet->getColumnDimension('F')->setAutoSize(false)->setWidth(35);
 
-        // PASS 1 : statistiques
+        // ── Pass 1: compute summary stats ──────────────────────────────────────
         $somme_prix_marche_total = 0;
         $somme_gain  = 0;
         $somme_perte = 0;
         $comparisonsAvecPrix = 0;
 
         foreach ($comparisons as $comparison) {
-            if ($comparison['prix_moyen_marche'] !== null) {
-                $prixMoyen = $comparison['prix_moyen_marche'];
-                $somme_prix_marche_total += $prixMoyen;
-                $diff = $comparison['difference_marche'];
-                if ($diff > 0) $somme_gain  += $diff;
-                else           $somme_perte += $diff;
-                $comparisonsAvecPrix++;
-            }
+            if ($comparison['prix_moyen_marche'] === null) continue;
+            $somme_prix_marche_total += $comparison['prix_moyen_marche'];
+            $diff = $comparison['difference_marche'];
+            if ($diff > 0) $somme_gain  += $diff;
+            else           $somme_perte += $diff;
+            $comparisonsAvecPrix++;
         }
 
-        $pct_gain = $somme_prix_marche_total > 0
-            ? ((($somme_prix_marche_total + $somme_gain)  * 100) / $somme_prix_marche_total) - 100 : 0;
-        $pct_perte = $somme_prix_marche_total > 0
-            ? ((($somme_prix_marche_total + $somme_perte) * 100) / $somme_prix_marche_total) - 100 : 0;
+        $pct_gain  = $somme_prix_marche_total > 0 ? ((($somme_prix_marche_total + $somme_gain)  * 100) / $somme_prix_marche_total) - 100 : 0;
+        $pct_perte = $somme_prix_marche_total > 0 ? ((($somme_prix_marche_total + $somme_perte) * 100) / $somme_prix_marche_total) - 100 : 0;
 
-        $row1 = 1;
+        // ── Row 1: info line ───────────────────────────────────────────────────
         $groupeLabel = !empty($this->groupeFilter) ? implode(', ', $this->groupeFilter) : 'Tous';
         $infoLine = [
-            'Pays'               => $countryLabel,
-            'Période'            => $this->dateFrom . ' → ' . $this->dateTo,
-            'Groupe(s)'          => $groupeLabel,
-            'Produits exportés'  => count($this->sales),
-            'Produits comparés'  => $comparisonsAvecPrix,
+            'Pays'              => $countryLabel,
+            'Groupe(s)'         => $groupeLabel,
+            'Produits exportés' => count($this->sales),
+            'Produits comparés' => $comparisonsAvecPrix,
         ];
 
         $col = 1;
         foreach ($infoLine as $label => $value) {
-            $labelCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row1;
-            $valueCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col + 1) . $row1;
+            $labelCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . '1';
+            $valueCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col + 1) . '1';
             $sheet->setCellValue($labelCell, $label . ' :');
             $sheet->setCellValue($valueCell, $value);
             $sheet->getStyle($labelCell)->getFont()->setBold(true)->setName('Arial')->setSize(9);
@@ -614,7 +445,7 @@ new class extends Component {
             $col += 2;
         }
 
-        $row2 = 2;
+        // ── Row 2: KPI line ────────────────────────────────────────────────────
         $kpis = [
             ['↓ Moins chers (€)',  $comparisonsAvecPrix > 0 ? number_format(abs($somme_gain  / $comparisonsAvecPrix), 2, ',', ' ') . ' €' : 'N/A', '1A7A3C'],
             ['↓ Moins chers (%)',  number_format(abs($pct_gain),  2, ',', ' ') . ' %', '1A7A3C'],
@@ -624,8 +455,8 @@ new class extends Component {
 
         $col = 1;
         foreach ($kpis as [$label, $value, $color]) {
-            $labelCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row2;
-            $valueCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col + 1) . $row2;
+            $labelCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . '2';
+            $valueCell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col + 1) . '2';
             $sheet->setCellValue($labelCell, $label . ' :');
             $sheet->getStyle($labelCell)->getFont()->setBold(true)->setName('Arial')->setSize(9);
             $sheet->setCellValue($valueCell, $value);
@@ -635,86 +466,84 @@ new class extends Component {
         }
 
         $sheet->getStyle('A1:' . $lastColLetter . '2')->applyFromArray([
-            'fill' => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EDF2F7']],
+            'fill'    => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => 'EDF2F7']],
             'borders' => ['outline' => ['borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_MEDIUM, 'color' => ['rgb' => 'CBD5E0']]],
         ]);
         $sheet->getRowDimension(1)->setRowHeight(16);
         $sheet->getRowDimension(2)->setRowHeight(16);
 
-        $r2          = 3;
-        $dataStartRow = $r2 + 1;
-        $headerRow    = $r2;
+        // ── Row 3: column headers ──────────────────────────────────────────────
+        $headerRow   = 3;
+        $dataStartRow = 4;
         $row          = $dataStartRow;
 
         $hColIdx = 0;
         foreach ($baseHeaders as $header) {
-            $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($hColIdx + 1) . $headerRow;
-            $sheet->setCellValue($cell, $header);
+            $sheet->setCellValue(
+                \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($hColIdx + 1) . $headerRow,
+                $header
+            );
             $hColIdx++;
         }
         foreach ($sites as $site) {
-            $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($hColIdx + 1) . $headerRow;
-            $sheet->setCellValue($cell, $site->name);
+            $sheet->setCellValue(
+                \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($hColIdx + 1) . $headerRow,
+                $site->name
+            );
             $hColIdx++;
         }
-        $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($hColIdx + 1) . $headerRow;
-        $sheet->setCellValue($cell, 'Prix marché');
+        $sheet->setCellValue(
+            \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($hColIdx + 1) . $headerRow,
+            'Prix marché'
+        );
 
         $sheet->getStyle('A' . $headerRow . ':' . $lastColLetter . $headerRow)->applyFromArray([
-            'fill' => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => '2D3748']],
-            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF'], 'name' => 'Arial', 'size' => 10],
-            'alignment' => ['horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER, 'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER],
+            'fill'      => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => '2D3748']],
+            'font'      => ['bold' => true, 'color' => ['rgb' => 'FFFFFF'], 'name' => 'Arial', 'size' => 10],
+            'alignment' => [
+                'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
+                'vertical'   => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
+            ],
         ]);
         $sheet->getRowDimension($headerRow)->setRowHeight(20);
 
+        // ── Data rows ──────────────────────────────────────────────────────────
         foreach ($comparisons as $comparison) {
-            $r   = $comparison['row'];
-            $ean = $r->ean ?? null;
-            // Normaliser l'EAN Magento en GTIN-14 pour matcher la clé de $popularityRanks
+            $r      = $comparison['row'];
+            $ean    = $r->ean ?? null;
             $eanKey = $ean ? str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT) : null;
-            $pop = $eanKey ? ($popularityRanks[$eanKey] ?? null) : null;
+            $pop    = $eanKey ? ($popularityRanks[$eanKey] ?? null) : null;
 
-            // $sheet->setCellValue('A' . $row, $r->rank_qty);
-            // $sheet->setCellValue('B' . $row, $r->rank_ca);
             $sheet->setCellValue('C' . $row, $r->ean);
             $sheet->setCellValue('D' . $row, $r->groupe ?? '');
             $sheet->setCellValue('E' . $row, $r->marque ?? '');
             $sheet->setCellValue('F' . $row, $r->designation_produit ?? '');
             $sheet->setCellValue('G' . $row, $r->prix_vente_cosma);
-            //$sheet->setCellValue('H' . $row, $r->total_qty_sold);
-            //$sheet->setCellValue('I' . $row, $r->total_revenue);
             $sheet->setCellValue('J' . $row, $r->pght ?: '');
 
-            // Colonne popularité Google Merchant (K uniquement)
-            if ($pop) {
-                $googleRank = $pop['rank'] ?? null;
+            // Google Merchant rank (column K)
+            if ($pop && ($pop['rank'] ?? null) !== null) {
+                $googleRank = $pop['rank'];
                 $delta      = $pop['delta'] ?? null;
                 $deltaSign  = $pop['delta_sign'] ?? null;
 
-                if ($googleRank !== null) {
-                    $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
+                $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
+                $runRank  = $richText->createTextRun('#' . $googleRank);
+                $runRank->getFont()->setBold(true)->setName('Arial');
+                $runRank->getFont()->getColor()->setRGB('000000');
 
-                    $runRank = $richText->createTextRun('#' . $googleRank);
-                    $runRank->getFont()->setBold(true)->setName('Arial');
-                    $runRank->getFont()->getColor()->setRGB('000000');
-
-                    if ($delta !== null) {
-                        $deltaColor = match($deltaSign) {
-                            '+'     => 'FF1A7A3C',
-                            '-'     => 'FFCC0000',
-                            default => 'FF888888',
-                        };
-                        $deltaStr = ' (' . ($deltaSign === '+' ? '+' : '') . $delta . ')';
-                        $runDelta = $richText->createTextRun($deltaStr);
-                        $runDelta->getFont()->setBold(true)->setName('Arial');
-                        $runDelta->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($deltaColor));
-                    }
-
-                    $sheet->getCell('K' . $row)->setValue($richText);
-                } else {
-                    $sheet->setCellValue('K' . $row, '—');
-                    $sheet->getStyle('K' . $row)->getFont()->getColor()->setRGB('AAAAAA');
+                if ($delta !== null) {
+                    $deltaColor = match($deltaSign) {
+                        '+'     => 'FF1A7A3C',
+                        '-'     => 'FFCC0000',
+                        default => 'FF888888',
+                    };
+                    $runDelta = $richText->createTextRun(' (' . ($deltaSign === '+' ? '+' : '') . $delta . ')');
+                    $runDelta->getFont()->setBold(true)->setName('Arial');
+                    $runDelta->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($deltaColor));
                 }
+
+                $sheet->getCell('K' . $row)->setValue($richText);
             } else {
                 $sheet->setCellValue('K' . $row, '—');
                 $sheet->getStyle('K' . $row)->getFont()->getColor()->setRGB('AAAAAA');
@@ -730,18 +559,16 @@ new class extends Component {
                 ]);
             }
 
-            $colIdx = count($baseHeaders); // commence après les colonnes de base
+            // Site columns
+            $colIdx = count($baseHeaders);
             foreach ($sites as $site) {
                 $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIdx + 1) . $row;
                 $siteData  = $comparison['sites'][$site->id] ?? null;
 
                 if ($siteData) {
                     $pricePercentage = $siteData['price_percentage'];
-                    $priceColor = 'FF000000';
-
-                    if ($pricePercentage !== null) {
-                        $priceColor = $r->prix_vente_cosma > $siteData['prix_ht'] ? 'FFCC0000' : 'FF1A7A3C';
-                    }
+                    $priceColor = $r->prix_vente_cosma > $siteData['prix_ht'] ? 'FFCC0000' : 'FF1A7A3C';
+                    if ($pricePercentage === null) $priceColor = 'FF000000';
 
                     $prixText = number_format($siteData['prix_ht'], 2, ',', ' ') . ' €';
                     if ($pricePercentage !== null) {
@@ -782,6 +609,7 @@ new class extends Component {
                 $colIdx++;
             }
 
+            // Prix marché column
             $marcheCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIdx + 1) . $row;
 
             if ($comparison['prix_moyen_marche'] !== null) {
@@ -809,39 +637,38 @@ new class extends Component {
         }
 
         $sheet->freezePane('A' . $dataStartRow);
-
         $sheet->getStyle('A' . $headerRow . ':' . $lastColLetter . $lastDataRow)->applyFromArray([
             'borders' => ['allBorders' => ['borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN, 'color' => ['rgb' => 'DDDDDD']]],
-            'font' => ['name' => 'Arial', 'size' => 9],
+            'font'    => ['name' => 'Arial', 'size' => 9],
         ]);
-
         $sheet->getStyle('G' . $dataStartRow . ':' . $lastColLetter . $lastDataRow)
             ->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_RIGHT);
 
+        // ── Save & download ────────────────────────────────────────────────────
         $exportDir = storage_path('app/public/exports');
         if (!file_exists($exportDir)) {
             mkdir($exportDir, 0755, true);
         }
 
-        $groupeSuffix = !empty($this->groupeFilter) ? '_' . implode('-', array_map('strtolower', $this->groupeFilter)) : '';
-        $fileName = 'ventes_' . strtolower($this->activeCountry)
-            . '_' . $this->dateFrom . '_' . $this->dateTo
-            . $groupeSuffix
-            . '_' . date('His') . '.xlsx';
+        $groupeSuffix = !empty($this->groupeFilter)
+            ? '_' . implode('-', array_map('strtolower', $this->groupeFilter))
+            : '';
+
+        $fileName = 'ventes_' . strtolower($this->activeCountry) . $groupeSuffix . '_' . date('His') . '.xlsx';
         $filePath = $exportDir . '/' . $fileName;
 
-        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
-        $writer->save($filePath);
+        (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet))->save($filePath);
 
         return response()->download($filePath, $fileName)->deleteFileAfterSend(true);
     }
 
+    // ─── View data ────────────────────────────────────────────────────────────
+
     public function with(): array
     {
         $comparisons = $this->comparisons;
-        $comparisonsAvecPrixMarche = $comparisons->filter(fn($c) => $c['prix_moyen_marche'] !== null)->count();
-        $total                     = $this->salesTotal;
-        $lastPage                  = (int) ceil($total / $this->perPage);
+        $total       = $this->salesTotal;
+        $lastPage    = (int) ceil($total / $this->perPage);
 
         return [
             'sales'                     => $this->sales,
@@ -849,13 +676,11 @@ new class extends Component {
             'sites'                     => $this->sites,
             'availableGroupes'          => $this->availableGroupes,
             'popularityRanks'           => $this->popularityRanks,
-            'comparisonsAvecPrixMarche' => $comparisonsAvecPrixMarche,
+            'comparisonsAvecPrixMarche' => $comparisons->filter(fn($c) => $c['prix_moyen_marche'] !== null)->count(),
             'somme_gain'                => $this->somme_gain,
             'somme_perte'               => $this->somme_perte,
             'percentage_gain_marche'    => $this->percentage_gain_marche,
             'percentage_perte_marche'   => $this->percentage_perte_marche,
-            // 'dateFrom'                  => $this->dateFrom,
-            // 'dateTo'                    => $this->dateTo,
             'salesTotal'                => $total,
             'lastPage'                  => $lastPage,
             'currentPage'               => $this->currentPage,
@@ -908,7 +733,7 @@ new class extends Component {
                             </div>
                         @endif
 
-                        {{-- Barre d'outils --}}
+                        {{-- Toolbar --}}
                         <div class="flex flex-wrap items-center justify-between gap-4 mb-4 mt-6">
                             <div>
                                 <h1 class="text-base font-semibold text-gray-900">Ventes — {{ $label }}</h1>
@@ -919,9 +744,10 @@ new class extends Component {
                                     @endif
                                 </p>
                             </div>
+
                             <div class="flex flex-wrap items-center gap-3">
 
-                                {{-- Filtre Groupe --}}
+                                {{-- Groupe filter --}}
                                 <div class="form-control" x-data="{
                                     open: false,
                                     search: '',
@@ -945,6 +771,7 @@ new class extends Component {
                                                 </button>
                                             </div>
                                         @endforeach
+
                                         @if(count($groupeFilter) > 0)
                                             <button type="button" wire:click="$set('groupeFilter', [])" class="badge badge-ghost gap-2 py-3 px-3 hover:badge-error">
                                                 <span class="text-xs">Tout effacer</span>
@@ -954,6 +781,7 @@ new class extends Component {
                                             </button>
                                         @endif
                                     </div>
+
                                     <div class="relative">
                                         <button type="button" @click="open = !open" class="btn btn-sm btn-outline btn-primary gap-2">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -961,6 +789,7 @@ new class extends Component {
                                             </svg>
                                             {{ count($groupeFilter) > 0 ? 'Ajouter un vendor' : 'Sélectionner des vendor' }}
                                         </button>
+
                                         <div x-show="open" @click.away="open = false" x-transition
                                             class="absolute z-50 mt-2 w-80 bg-base-100 rounded-lg shadow-xl border border-base-300">
                                             <div class="p-3 border-b border-base-300">
@@ -994,15 +823,6 @@ new class extends Component {
 
                                 <div class="divider divider-horizontal mx-0"></div>
 
-                                {{-- Dates --}}
-                                <!-- <div class="flex items-center gap-2">
-                                    <input type="date" wire:model.live="dateFrom" value="{{ $dateFrom }}" class="input input-bordered input-sm w-36"/>
-                                    <span class="text-xs text-gray-400">→</span>
-                                    <input type="date" wire:model.live="dateTo" value="{{ $dateTo }}" class="input input-bordered input-sm w-36"/>
-                                </div> -->
-
-                                <div class="divider divider-horizontal mx-0"></div>
-
                                 <button type="button" wire:click="clearCache"
                                     wire:loading.attr="disabled" wire:loading.class="opacity-60 cursor-not-allowed"
                                     class="btn btn-sm btn-ghost gap-2" title="Vider le cache et recharger les données">
@@ -1017,16 +837,6 @@ new class extends Component {
                                         Rafraîchissement…
                                     </span>
                                 </button>
-
-                                {{-- DEBUG temporaire --}}
-                                {{-- <button type="button" wire:click="debugPopularity"
-                                    class="btn btn-sm btn-warning gap-2" title="Debug popularité Google dans les logs">
-                                    <span wire:loading.remove wire:target="debugPopularity">🔍 Debug Google</span>
-                                    <span wire:loading wire:target="debugPopularity" class="flex items-center gap-2">
-                                        <span class="loading loading-spinner loading-xs"></span>
-                                        Analyse…
-                                    </span>
-                                </button> --}}
 
                                 <div class="divider divider-horizontal mx-0"></div>
 
@@ -1049,7 +859,6 @@ new class extends Component {
                         </div>
 
                         <div class="flex items-center justify-between w-full">
-                            <!-- Par page -->
                             <div class="flex items-center gap-2">
                                 <span class="text-xs text-gray-400">Par page</span>
                                 <select wire:model.live="perPage" class="select select-sm select-bordered w-20">
@@ -1061,47 +870,35 @@ new class extends Component {
                                 </select>
                             </div>
 
-                            <!-- Résultats + pagination info -->
                             <p class="mt-0.5 text-sm text-gray-500 text-center">
-                                {{ $salesTotal }} résultat(s) au total
-                                · Page {{ $currentPage }}/{{ $lastPage }}
+                                {{ $salesTotal }} résultat(s) au total · Page {{ $currentPage }}/{{ $lastPage }}
                                 @if(!empty($groupeFilter))
                                     · Groupe(s) : {{ implode(', ', $groupeFilter) }}
                                 @endif
                             </p>
 
-                            <!-- Pagination -->
                             @if($lastPage > 1)
                                 <div class="flex items-center">
                                     <div class="join">
-                                        <button class="join-item btn btn-sm"
-                                            wire:click="setPage(1)"
-                                            @disabled($currentPage === 1)>«</button>
-
-                                        <button class="join-item btn btn-sm"
-                                            wire:click="setPage({{ $currentPage - 1 }})"
-                                            @disabled($currentPage === 1)>‹</button>
+                                        <button class="join-item btn btn-sm" wire:click="setPage(1)" @disabled($currentPage === 1)>«</button>
+                                        <button class="join-item btn btn-sm" wire:click="setPage({{ $currentPage - 1 }})" @disabled($currentPage === 1)>‹</button>
 
                                         @foreach(range(max(1, $currentPage - 2), min($lastPage, $currentPage + 2)) as $p)
                                             <button class="join-item btn btn-sm {{ $p === $currentPage ? 'btn-active btn-primary' : '' }}"
                                                 wire:click="setPage({{ $p }})">{{ $p }}</button>
                                         @endforeach
 
-                                        <button class="join-item btn btn-sm"
-                                            wire:click="setPage({{ $currentPage + 1 }})"
-                                            @disabled($currentPage === $lastPage)>›</button>
-
-                                        <button class="join-item btn btn-sm"
-                                            wire:click="setPage({{ $lastPage }})"
-                                            @disabled($currentPage === $lastPage)>»</button>
+                                        <button class="join-item btn btn-sm" wire:click="setPage({{ $currentPage + 1 }})" @disabled($currentPage === $lastPage)>›</button>
+                                        <button class="join-item btn btn-sm" wire:click="setPage({{ $lastPage }})" @disabled($currentPage === $lastPage)>»</button>
                                     </div>
                                 </div>
                             @endif
                         </div>
-                        <br>
-                        {{-- Tableau --}}
-                        <div class="relative">
 
+                        <br>
+
+                        {{-- Table --}}
+                        <div class="relative">
                             <div wire:loading wire:target="groupeFilter, perPage, setPage"
                                 class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg bg-white/70 backdrop-blur-sm">
                                 <span class="loading loading-spinner loading-lg text-primary"></span>
@@ -1113,7 +910,7 @@ new class extends Component {
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                                     </svg>
-                                    <span>Aucune vente trouvée pour cette période{{ !empty($groupeFilter) ? ' et ce(s) groupe(s)' : '' }}.</span>
+                                    <span>Aucune vente trouvée{{ !empty($groupeFilter) ? ' pour ce(s) groupe(s)' : '' }}.</span>
                                 </div>
                             @else
                                 <div class="overflow-x-auto overflow-y-auto max-h-[70vh]"
@@ -1122,8 +919,6 @@ new class extends Component {
                                     <table class="table table-xs table-pin-rows table-pin-cols">
                                         <thead>
                                             <tr>
-                                                {{-- <th>Rang Qty</th>
-                                                <th>Rang CA</th> --}}
                                                 <th class="text-center" title="Rang de popularité Google Merchant (Best Sellers)">
                                                     <div class="flex items-center justify-center gap-1">
                                                         <svg class="w-3 h-3 text-blue-500" viewBox="0 0 24 24" fill="currentColor">
@@ -1138,7 +933,6 @@ new class extends Component {
                                                 <th>Désignation</th>
                                                 <th>Prix Cosma</th>
                                                 <th>PGHT</th>
-                                                {{-- ▲ Fin colonnes Google --}}
                                                 @foreach($sites as $site)
                                                     <th class="text-right">{{ $site->name }}</th>
                                                 @endforeach
@@ -1148,23 +942,20 @@ new class extends Component {
                                         <tbody>
                                             @foreach($comparisons as $comparison)
                                                 @php
-                                                    $row       = $comparison['row'];
+                                                    $row      = $comparison['row'];
                                                     $prixCosma = $row->prix_vente_cosma;
-                                                    $ean       = $row->ean ?? null;
-                                                    $eanKey    = $ean ? str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT) : null;
-                                                    $pop       = $eanKey ? ($popularityRanks[$eanKey] ?? null) : null;
-
+                                                    $ean      = $row->ean ?? null;
+                                                    $eanKey   = $ean ? str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT) : null;
+                                                    $pop      = $eanKey ? ($popularityRanks[$eanKey] ?? null) : null;
                                                     $googleRank = $pop['rank'] ?? null;
-                                                    $delta      = $pop['delta'] ?? null;
-                                                    $deltaSign  = $pop['delta_sign'] ?? null;
+                                                    $delta    = $pop['delta'] ?? null;
+                                                    $deltaSign = $pop['delta_sign'] ?? null;
                                                 @endphp
                                                 <tr class="hover">
                                                     <td class="text-center">
                                                         @if($googleRank)
                                                             <div class="flex flex-col items-center gap-0.5">
-                                                                <span class="font-bold font-mono text-sm">
-                                                                    #{{ number_format($googleRank, 0, ',', '') }}
-                                                                </span>
+                                                                <span class="font-bold font-mono text-sm">#{{ number_format($googleRank, 0, ',', '') }}</span>
                                                                 @if($delta !== null)
                                                                     <span class="text-xs font-bold {{ $deltaSign === '+' ? 'text-success' : ($deltaSign === '-' ? 'text-error' : 'text-gray-400') }}">
                                                                         {{ $deltaSign === '+' ? '+' : '' }}{{ $delta }}
@@ -1175,10 +966,7 @@ new class extends Component {
                                                             <span class="text-gray-300 text-xs">—</span>
                                                         @endif
                                                     </td>
-
-                                                    <td>
-                                                        <span class="font-mono text-xs">{{ $row->ean }}</span>
-                                                    </td>
+                                                    <td><span class="font-mono text-xs">{{ $row->ean }}</span></td>
                                                     <td><div class="text-xs">{{ $row->groupe ?? '—' }}</div></td>
                                                     <td><div class="text-xs font-semibold">{{ $row->marque ?? '—' }}</div></td>
                                                     <td>
@@ -1236,9 +1024,7 @@ new class extends Component {
                                                                 $textClassMoyen = $prixCosma > $comparison['prix_moyen_marche'] ? 'text-error' : 'text-success';
                                                             @endphp
                                                             <div class="flex flex-col gap-1 items-end">
-                                                                <span class="font-semibold">
-                                                                    {{ number_format($comparison['prix_moyen_marche'], 2, ',', ' ') }} €
-                                                                </span>
+                                                                <span class="font-semibold">{{ number_format($comparison['prix_moyen_marche'], 2, ',', ' ') }} €</span>
                                                                 @if($comparison['percentage_marche'] !== null)
                                                                     <span class="text-xs {{ $textClassMoyen }} font-bold">
                                                                         {{ $comparison['percentage_marche'] > 0 ? '+' : '' }}{{ $comparison['percentage_marche'] }}%
