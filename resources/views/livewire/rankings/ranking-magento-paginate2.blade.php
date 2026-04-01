@@ -453,7 +453,7 @@ new class extends Component {
     public function loadAllData(): void
     {
         $total = $this->salesTotal;
-        $this->totalBatches = (int) ceil($total / 25);
+        $this->totalBatches = (int) ceil($total / 100);
         $this->loadedBatches = 0;
         $this->accumulatedSales = [];
         $this->isLoadingAll = true;
@@ -461,7 +461,7 @@ new class extends Component {
 
     public function loadNextBatch(): void
     {
-        $offset = $this->loadedBatches * 25;
+        $offset = $this->loadedBatches * 100;
 
         $groupeCondition = '';
         $params = [];
@@ -472,7 +472,7 @@ new class extends Component {
             $params = $this->groupeFilter;
         }
 
-        $params[] = 25;      // LIMIT
+        $params[] = 100;      // LIMIT
         $params[] = $offset; // OFFSET
 
         DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
@@ -1070,7 +1070,7 @@ new class extends Component {
                             <div class="flex items-center justify-between mb-2">
                                 <span class="text-sm font-semibold text-blue-700 flex items-center gap-2">
                                     <span class="loading loading-spinner loading-xs text-blue-500"></span>
-                                    Batch {{ $loadedBatches + 1 }}/{{ $totalBatches }}
+                                    Batch {{ $loadedBatches }}/{{ $totalBatches }}
                                     &nbsp;·&nbsp;
                                     <span class="font-mono font-normal">
                                         Écoulé : <span x-text="$store.batchLoader.fmt($store.batchLoader.elapsed)" class="font-bold"></span>
