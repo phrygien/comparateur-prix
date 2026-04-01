@@ -1093,7 +1093,12 @@ new class extends Component {
                             <div class="flex justify-between mt-1 text-xs text-blue-400">
                                 <span>{{ $totalBatches > 0 ? round(($loadedBatches / $totalBatches) * 100) : 0 }}%</span>
                                 <span x-show="$store.batchLoader.avgBatchTime > 0">
-                                    ~<span x-text="$store.batchLoader.fmt(Math.round($store.batchLoader.avgBatchTime))"></span>/batch
+                                    ~<span x-text="(function() {
+                                        var s = Math.round($store.batchLoader.avgBatchTime);
+                                        if (s <= 0) return '';
+                                        if (s < 60) return '~' + s + 's/batch';
+                                        return '~' + Math.floor(s / 60) + 'min ' + (s % 60 > 0 ? s % 60 + 's' : '') + '/batch';
+                                    })()"></span>/batch
                                 </span>
                             </div>
                         </div>
