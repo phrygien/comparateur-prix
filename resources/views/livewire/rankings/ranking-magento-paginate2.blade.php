@@ -65,6 +65,7 @@ new class extends Component {
         $groupeCondition = '';
         // $params = [$dateFrom, $dateTo, $this->activeCountry];
         // $params = [$this->activeCountry];
+        $params = [];
 
         if (!empty($this->groupeFilter)) {
             $placeholders    = implode(',', array_fill(0, count($this->groupeFilter), '?'));
