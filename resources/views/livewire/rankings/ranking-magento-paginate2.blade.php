@@ -412,25 +412,23 @@ new class extends Component {
         $popularityRanks = $this->popularityRanks;
 
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet();
+        $sheet       = $spreadsheet->getActiveSheet();
         $countryLabel = $this->countries[$this->activeCountry] ?? $this->activeCountry;
         $sheet->setTitle('Ventes ' . $countryLabel);
 
-        $baseHeaders = [
-            'EAN', 'Groupe', 'Marque',
-            'Désignation', 'Prix Cosma', 'PGHT',
-            'Rang Google',
-        ];
+        // Colonnes de base : A=EAN, B=Groupe, C=Marque, D=Désignation, E=Prix Cosma, F=PGHT, G=Rang Google
+        // puis N colonnes sites, puis Prix marché
+        $baseHeaders = ['EAN', 'Groupe', 'Marque', 'Désignation', 'Prix Cosma', 'PGHT', 'Rang Google'];
 
         $lastColIndex  = count($baseHeaders) + $sites->count();
         $lastColLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($lastColIndex + 1);
 
-        $sheet->getColumnDimension('A')->setAutoSize(false)->setWidth(10);
-        $sheet->getColumnDimension('B')->setAutoSize(false)->setWidth(10);
-        $sheet->getColumnDimension('C')->setAutoSize(false)->setWidth(16);
-        $sheet->getColumnDimension('F')->setAutoSize(false)->setWidth(35);
+        $sheet->getColumnDimension('A')->setAutoSize(false)->setWidth(16); // EAN
+        $sheet->getColumnDimension('B')->setAutoSize(false)->setWidth(18); // Groupe
+        $sheet->getColumnDimension('C')->setAutoSize(false)->setWidth(18); // Marque
+        $sheet->getColumnDimension('D')->setAutoSize(false)->setWidth(40); // Désignation
 
-        // ── Pass 1: compute summary stats ──────────────────────────────────────
+        // ── Pass 1: compute summary stats ─────────────────────────────────────
         $somme_prix_marche_total = 0;
         $somme_gain  = 0;
         $somme_perte = 0;
@@ -448,7 +446,7 @@ new class extends Component {
         $pct_gain  = $somme_prix_marche_total > 0 ? ((($somme_prix_marche_total + $somme_gain)  * 100) / $somme_prix_marche_total) - 100 : 0;
         $pct_perte = $somme_prix_marche_total > 0 ? ((($somme_prix_marche_total + $somme_perte) * 100) / $somme_prix_marche_total) - 100 : 0;
 
-        // ── Row 1: info line ───────────────────────────────────────────────────
+        // ── Row 1: info line ──────────────────────────────────────────────────
         $groupeLabel = !empty($this->groupeFilter) ? implode(', ', $this->groupeFilter) : 'Tous';
         $infoLine = [
             'Pays'              => $countryLabel,
@@ -468,7 +466,7 @@ new class extends Component {
             $col += 2;
         }
 
-        // ── Row 2: KPI line ────────────────────────────────────────────────────
+        // ── Row 2: KPI line ───────────────────────────────────────────────────
         $kpis = [
             ['↓ Moins chers (€)',  $comparisonsAvecPrix > 0 ? number_format(abs($somme_gain  / $comparisonsAvecPrix), 2, ',', ' ') . ' €' : 'N/A', '1A7A3C'],
             ['↓ Moins chers (%)',  number_format(abs($pct_gain),  2, ',', ' ') . ' %', '1A7A3C'],
@@ -495,8 +493,8 @@ new class extends Component {
         $sheet->getRowDimension(1)->setRowHeight(16);
         $sheet->getRowDimension(2)->setRowHeight(16);
 
-        // ── Row 3: column headers ──────────────────────────────────────────────
-        $headerRow   = 3;
+        // ── Row 3: column headers ─────────────────────────────────────────────
+        $headerRow    = 3;
         $dataStartRow = 4;
         $row          = $dataStartRow;
 
@@ -530,21 +528,29 @@ new class extends Component {
         ]);
         $sheet->getRowDimension($headerRow)->setRowHeight(20);
 
-        // ── Data rows ──────────────────────────────────────────────────────────
+        // ── Data rows ─────────────────────────────────────────────────────────
+        // Colonnes fixes : A=EAN B=Groupe C=Marque D=Désignation E=Prix Cosma F=PGHT G=Rang Google
+        $colGoogle = 'G';
+
         foreach ($comparisons as $comparison) {
             $r      = $comparison['row'];
             $ean    = $r->ean ?? null;
             $eanKey = $ean ? str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT) : null;
             $pop    = $eanKey ? ($popularityRanks[$eanKey] ?? null) : null;
 
-            $sheet->setCellValue('C' . $row, $r->ean);
-            $sheet->setCellValue('D' . $row, $r->groupe ?? '');
-            $sheet->setCellValue('E' . $row, $r->marque ?? '');
-            $sheet->setCellValue('F' . $row, $r->designation_produit ?? '');
-            $sheet->setCellValue('G' . $row, $r->prix_vente_cosma);
-            $sheet->setCellValue('J' . $row, $r->pght ?: '');
+            // Colonnes fixes
+            $sheet->setCellValue('A' . $row, $r->ean ?? '');
+            $sheet->setCellValue('B' . $row, $r->groupe ?? '');
+            $sheet->setCellValue('C' . $row, $r->marque ?? '');
+            $sheet->setCellValue('D' . $row, $r->designation_produit ?? '');
+            $sheet->setCellValue('E' . $row, $r->prix_vente_cosma);
+            $sheet->getStyle('E' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
+            $sheet->setCellValue('F' . $row, $r->pght ?: '');
+            if ($r->pght) {
+                $sheet->getStyle('F' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
+            }
 
-            // Google Merchant rank (column K)
+            // Colonne G : Rang Google
             if ($pop && ($pop['rank'] ?? null) !== null) {
                 $googleRank = $pop['rank'];
                 $delta      = $pop['delta'] ?? null;
@@ -566,24 +572,23 @@ new class extends Component {
                     $runDelta->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($deltaColor));
                 }
 
-                $sheet->getCell('K' . $row)->setValue($richText);
+                $sheet->getCell($colGoogle . $row)->setValue($richText);
+                $sheet->getStyle($colGoogle . $row)->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
             } else {
-                $sheet->setCellValue('K' . $row, '—');
-                $sheet->getStyle('K' . $row)->getFont()->getColor()->setRGB('AAAAAA');
+                $sheet->setCellValue($colGoogle . $row, '—');
+                $sheet->getStyle($colGoogle . $row)->getFont()->getColor()->setRGB('AAAAAA');
+                $sheet->getStyle($colGoogle . $row)->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
             }
 
-            $sheet->getStyle('G' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
-            $sheet->getStyle('I' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
-            $sheet->getStyle('J' . $row)->getNumberFormat()->setFormatCode('#,##0.00 "€"');
-
+            // Zebra striping
             if (($row - $dataStartRow) % 2 === 0) {
                 $sheet->getStyle('A' . $row . ':' . $lastColLetter . $row)->applyFromArray([
                     'fill' => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => 'F7FAFC']],
                 ]);
             }
 
-            // Site columns
-            $colIdx = count($baseHeaders);
+            // Colonnes sites (à partir de H)
+            $colIdx = count($baseHeaders); // 7 → col H
             foreach ($sites as $site) {
                 $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIdx + 1) . $row;
                 $siteData  = $comparison['sites'][$site->id] ?? null;
@@ -632,7 +637,7 @@ new class extends Component {
                 $colIdx++;
             }
 
-            // Prix marché column
+            // Colonne Prix marché (dernière)
             $marcheCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIdx + 1) . $row;
 
             if ($comparison['prix_moyen_marche'] !== null) {
@@ -653,10 +658,11 @@ new class extends Component {
 
         $lastDataRow = $row - 1;
 
-        foreach (range('D', $lastColLetter) as $col) {
-            if (!in_array($col, ['A', 'B', 'C', 'F'])) {
-                $sheet->getColumnDimension($col)->setAutoSize(true);
-            }
+        // Auto-size toutes les colonnes sauf A B C D (largeurs fixes)
+        for ($i = 5; $i <= $lastColIndex + 1; $i++) {
+            $sheet->getColumnDimension(
+                \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($i)
+            )->setAutoSize(true);
         }
 
         $sheet->freezePane('A' . $dataStartRow);
@@ -664,10 +670,10 @@ new class extends Component {
             'borders' => ['allBorders' => ['borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN, 'color' => ['rgb' => 'DDDDDD']]],
             'font'    => ['name' => 'Arial', 'size' => 9],
         ]);
-        $sheet->getStyle('G' . $dataStartRow . ':' . $lastColLetter . $lastDataRow)
+        $sheet->getStyle('E' . $dataStartRow . ':' . $lastColLetter . $lastDataRow)
             ->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_RIGHT);
 
-        // ── Save & download ────────────────────────────────────────────────────
+        // ── Save & download ───────────────────────────────────────────────────
         $exportDir = storage_path('app/public/exports');
         if (!file_exists($exportDir)) {
             mkdir($exportDir, 0755, true);
