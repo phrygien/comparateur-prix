@@ -12,7 +12,7 @@ use Livewire\WithPagination;
 new class extends Component {
     use WithPagination;
 
-    public int $perPage = 100;
+    public int $perPage = 25;
     public int $currentPage = 1;
     public string $activeCountry = 'FR';
     public array $groupeFilter = [];
@@ -453,7 +453,7 @@ new class extends Component {
     public function loadAllData(): void
     {
         $total = $this->salesTotal;
-        $this->totalBatches = (int) ceil($total / 100);
+        $this->totalBatches = (int) ceil($total / 25);
         $this->loadedBatches = 0;
         $this->accumulatedSales = [];
         $this->isLoadingAll = true;
@@ -461,7 +461,7 @@ new class extends Component {
 
     public function loadNextBatch(): void
     {
-        $offset = $this->loadedBatches * 100;
+        $offset = $this->loadedBatches * 25;
 
         $groupeCondition = '';
         $params = [];
@@ -472,7 +472,7 @@ new class extends Component {
             $params = $this->groupeFilter;
         }
 
-        $params[] = 100;      // LIMIT
+        $params[] = 25;      // LIMIT
         $params[] = $offset; // OFFSET
 
         DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
@@ -1048,88 +1048,21 @@ new class extends Component {
                             <div
                                 class="my-3 p-4 bg-blue-50 border border-blue-200 rounded-lg"
                                 wire:key="progress-bar-{{ $loadedBatches }}"
-                                x-data="{
-                                    triggered: false,
-                                    startTime: null,
-                                    elapsed: 0,
-                                    avgBatchTime: 0,
-                                    batchTimes: [],
-                                    batchStart: null,
-                                    timer: null,
-                                    tickTimer: null,
-                                    remaining: null,
-
-                                    init() {
-                                        if (this.startTime === null) {
-                                            this.startTime = Date.now();
-                                        }
-                                        this.batchStart = Date.now();
-
-                                        if (!this.triggered) {
-                                            this.triggered = true;
-
-                                            // Tick toutes les 100ms pour mettre à jour le compte à rebours
-                                            this.tickTimer = setInterval(() => {
-                                                if (this.avgBatchTime > 0) {
-                                                    const timeInCurrentBatch = (Date.now() - this.batchStart) / 1000;
-                                                    const batchesLeft = {{ $totalBatches }} - {{ $loadedBatches }} - 1;
-                                                    this.remaining = Math.max(0, Math.round(
-                                                        (batchesLeft * this.avgBatchTime) + (this.avgBatchTime - timeInCurrentBatch)
-                                                    ));
-                                                }
-                                                this.elapsed = Math.round((Date.now() - this.startTime) / 1000);
-                                            }, 100);
-
-                                            setTimeout(() => $wire.loadNextBatch(), 50);
-                                        }
-                                    },
-
-                                    recordBatch() {
-                                        if (this.batchStart) {
-                                            const duration = (Date.now() - this.batchStart) / 1000;
-                                            this.batchTimes.push(duration);
-                                            // Moyenne glissante sur les 5 derniers batches
-                                            const last5 = this.batchTimes.slice(-5);
-                                            this.avgBatchTime = last5.reduce((a, b) => a + b, 0) / last5.length;
-                                        }
-                                    },
-
-                                    formatTime(seconds) {
-                                        if (seconds === null || seconds < 0) return '...';
-                                        if (seconds < 60) return seconds + 's';
-                                        const m = Math.floor(seconds / 60);
-                                        const s = seconds % 60;
-                                        return m + 'min ' + (s > 0 ? s + 's' : '');
+                                x-data="{ triggered: false }"
+                                x-init="
+                                    if (!triggered) {
+                                        triggered = true;
+                                        setTimeout(() => $wire.loadNextBatch(), 50);
                                     }
-                                }"
-                                x-init="init()"
-                                @before-livewire-update.window="recordBatch()"
+                                "
                             >
                                 <div class="flex items-center justify-between mb-2">
                                     <span class="text-sm font-semibold text-blue-700 flex items-center gap-2">
                                         <span class="loading loading-spinner loading-xs text-blue-500"></span>
-                                        Batch {{ $loadedBatches }}/{{ $totalBatches }}
-                                        &nbsp;·&nbsp;
-                                        <span class="font-normal">
-                                            Écoulé : <span x-text="formatTime(elapsed)" class="font-mono font-bold"></span>
-                                        </span>
+                                        Chargement… batch {{ $loadedBatches + 1 }}/{{ $totalBatches }}
                                     </span>
-                                    <span class="flex items-center gap-4 text-xs font-medium text-blue-500">
-                                        <span>
-                                            {{ $accumulatedCount }} / {{ $salesTotal }} produits
-                                        </span>
-                                        <span class="flex items-center gap-1">
-                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                            </svg>
-                                            Reste :
-                                            <span
-                                                x-text="remaining !== null ? formatTime(remaining) : '...'"
-                                                class="font-mono font-bold"
-                                                :class="remaining !== null && remaining < 10 ? 'text-green-600' : 'text-blue-600'"
-                                            ></span>
-                                        </span>
+                                    <span class="text-xs font-medium text-blue-500">
+                                        {{ $accumulatedCount }} / {{ $salesTotal }} produits chargés
                                     </span>
                                 </div>
                                 <progress
@@ -1137,14 +1070,6 @@ new class extends Component {
                                     value="{{ $totalBatches > 0 ? round(($loadedBatches / $totalBatches) * 100) : 0 }}"
                                     max="100">
                                 </progress>
-                                <div class="flex justify-between mt-1">
-                                    <span class="text-xs text-blue-400">
-                                        {{ $totalBatches > 0 ? round(($loadedBatches / $totalBatches) * 100) : 0 }}%
-                                    </span>
-                                    <span class="text-xs text-blue-400" x-show="avgBatchTime > 0">
-                                        ~<span x-text="formatTime(Math.round(avgBatchTime))"></span> / batch
-                                    </span>
-                                </div>
                             </div>
                         @endif
 
@@ -1154,6 +1079,8 @@ new class extends Component {
                                 <div class="flex items-center gap-2">
                                     <span class="text-xs text-gray-400">Par page</span>
                                     <select wire:model.live="perPage" class="select select-sm select-bordered w-20">
+                                        <option value="25">25</option>
+                                        <option value="50">50</option>
                                         <option value="100">100</option>
                                         <option value="200">200</option>
                                         <option value="500">500</option>
