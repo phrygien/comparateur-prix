@@ -66,12 +66,15 @@ new class extends Component {
         return Cache::remember($cacheKey, now()->addHour(), function () use ($groupeCondition, $params) {
             $sql = "
                 SELECT COUNT(*) as total
-                FROM catalog_product_entity AS produit
-                LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
-                INNER JOIN product_int ON product_int.entity_id = produit.entity_id
-                    AND product_int.status IN (0, 1)
-                WHERE 1=1 {$groupeCondition}
-                GROUP BY produit.sku
+                FROM (
+                    SELECT produit.sku
+                    FROM catalog_product_entity AS produit
+                    LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
+                    INNER JOIN product_int ON product_int.entity_id = produit.entity_id
+                        AND product_int.status IN (0, 1)
+                    WHERE 1=1 {$groupeCondition}
+                    GROUP BY produit.sku
+                ) AS subquery
             ";
 
             $result = DB::connection('mysqlMagento')->selectOne($sql, $params);
