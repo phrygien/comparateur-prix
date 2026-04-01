@@ -887,7 +887,7 @@ new class extends Component {
                                     <option value="50">50</option>
                                     <option value="100">100</option>
                                     <option value="200">200</option>
-                                    <option value="0">Tous les donnees</option>
+                                    <option value="{{ $salesTotal }}">Tous les donnees</option>
                                 </select>
                             </div>
 
