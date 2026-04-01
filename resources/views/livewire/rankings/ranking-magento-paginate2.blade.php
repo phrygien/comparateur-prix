@@ -418,7 +418,7 @@ new class extends Component {
 
         // Colonnes de base : A=EAN, B=Groupe, C=Marque, D=Désignation, E=Prix Cosma, F=PGHT, G=Rang Google
         // puis N colonnes sites, puis Prix marché
-        $baseHeaders = ['EAN', 'Groupe', 'Marque', 'Désignation', 'Prix Cosma', 'PGHT', 'Rang Google'];
+        $baseHeaders = ['EAN', 'Groupe', 'Marque', 'Désignation', 'Prix Cosma', 'PGHT', 'Quantite', 'Rang Google'];
 
         $lastColIndex  = count($baseHeaders) + $sites->count();
         $lastColLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($lastColIndex + 1);
@@ -529,7 +529,7 @@ new class extends Component {
         $sheet->getRowDimension($headerRow)->setRowHeight(20);
 
         // ── Data rows ─────────────────────────────────────────────────────────
-        // Colonnes fixes : A=EAN B=Groupe C=Marque D=Désignation E=Prix Cosma F=PGHT G=Rang Google
+        // Colonnes fixes : A=EAN B=Groupe C=Marque D=Désignation E=Prix Cosma F=PGHT G=Quantity H=Rang Google
         $colGoogle = 'H';
 
         foreach ($comparisons as $comparison) {
