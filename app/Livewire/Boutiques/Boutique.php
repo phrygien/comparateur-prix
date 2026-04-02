@@ -273,7 +273,7 @@ class Boutique extends Component
                 LEFT JOIN catalog_product_entity as produit_parent ON parent_child_table.parent_id = produit_parent.entity_id
                 LEFT JOIN product_char as product_parent_char ON product_parent_char.entity_id = produit_parent.entity_id
                 LEFT JOIN product_text as product_parent_text ON product_parent_text.entity_id = produit_parent.entity_id
-                WHERE product_int.status >= 0 $subQuery
+                WHERE product_int.status IN (0, 1) AND produit.sku REGEXP '^[0-9]+$' $subQuery
             ", $params);
 
             return $resultTotal->nb ?? 0;
