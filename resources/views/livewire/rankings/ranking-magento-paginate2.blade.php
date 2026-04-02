@@ -41,12 +41,6 @@ new class extends Component {
     public $percentage_gain_marche = 0;
     public $percentage_perte_marche = 0;
 
-    // ─── Propriétés chargement progressif ────────────────────────────────────
-    public bool $isLoadingAll = false;
-    public int $loadedBatches = 0;
-    public int $totalBatches = 0;
-    public array $accumulatedSales = [];
-
     protected GoogleMerchantService $googleMerchantService;
 
     public function boot(GoogleMerchantService $googleMerchantService): void
@@ -293,37 +287,42 @@ new class extends Component {
 
     public function getComparisonsProperty()
     {
-        $sites = Site::where('country_code', $this->activeCountry)->orderBy('name')->get();
+        $sites   = Site::where('country_code', $this->activeCountry)->orderBy('name')->get();
         $siteIds = $sites->pluck('id')->toArray();
 
         $this->somme_prix_marche_total = 0;
-        $this->somme_gain = 0;
+        $this->somme_gain  = 0;
         $this->somme_perte = 0;
+
+        // ✅ Une seule requête pour tous les EANs de la page
+        $eans = collect($this->sales)->pluck('ean')->filter()->unique()->values()->toArray();
+
+        $allScrapedProducts = !empty($eans) && !empty($siteIds)
+            ? Product::whereIn('ean', $eans)
+                ->whereIn('web_site_id', $siteIds)
+                ->with('website')
+                ->get()
+                ->groupBy('ean')
+                ->map(fn($g) => $g->keyBy('web_site_id'))
+            : collect([]);
 
         $comparisons = [];
 
         foreach ($this->sales as $row) {
-            $scrapedProducts = collect([]);
-
-            if (!empty($row->ean) && !empty($siteIds)) {
-                $scrapedProducts = Product::where('ean', $row->ean)
-                    ->whereIn('web_site_id', $siteIds)
-                    ->with('website')
-                    ->get()
-                    ->keyBy('web_site_id');
-            }
+            // ✅ Lookup direct, zéro requête SQL ici
+            $scrapedProducts = $allScrapedProducts[$row->ean] ?? collect([]);
 
             $comparison = [
-                'row'                => $row,
-                'sites'              => [],
-                'prix_moyen_marche'  => null,
-                'percentage_marche'  => null,
-                'difference_marche'  => null,
+                'row'               => $row,
+                'sites'             => [],
+                'prix_moyen_marche' => null,
+                'percentage_marche' => null,
+                'difference_marche' => null,
             ];
 
             $somme_prix_marche = 0;
-            $nombre_site = 0;
-            $prixCosma = $row->prix_vente_cosma;
+            $nombre_site       = 0;
+            $prixCosma         = $row->prix_vente_cosma;
 
             foreach ($sites as $site) {
                 if (!isset($scrapedProducts[$site->id])) {
@@ -331,12 +330,12 @@ new class extends Component {
                     continue;
                 }
 
-                $scrapedProduct = $scrapedProducts[$site->id];
-                $priceDiff = null;
+                $scrapedProduct  = $scrapedProducts[$site->id];
+                $priceDiff       = null;
                 $pricePercentage = null;
 
                 if ($prixCosma > 0 && $scrapedProduct->prix_ht > 0) {
-                    $priceDiff = $scrapedProduct->prix_ht - $prixCosma;
+                    $priceDiff       = $scrapedProduct->prix_ht - $prixCosma;
                     $pricePercentage = round(($priceDiff / $prixCosma) * 100, 2);
                 }
 
@@ -357,16 +356,13 @@ new class extends Component {
 
             if ($somme_prix_marche > 0 && $prixCosma > 0) {
                 $comparison['prix_moyen_marche'] = $somme_prix_marche / $nombre_site;
-                $priceDiff_marche = $comparison['prix_moyen_marche'] - $prixCosma;
+                $priceDiff_marche                = $comparison['prix_moyen_marche'] - $prixCosma;
                 $comparison['percentage_marche'] = round(($priceDiff_marche / $prixCosma) * 100, 2);
                 $comparison['difference_marche'] = $priceDiff_marche;
 
                 $this->somme_prix_marche_total += $comparison['prix_moyen_marche'];
-                if ($priceDiff_marche > 0) {
-                    $this->somme_gain += $priceDiff_marche;
-                } else {
-                    $this->somme_perte += $priceDiff_marche;
-                }
+                if ($priceDiff_marche > 0) $this->somme_gain  += $priceDiff_marche;
+                else                       $this->somme_perte += $priceDiff_marche;
             }
 
             $comparisons[] = $comparison;
@@ -392,29 +388,16 @@ new class extends Component {
     public function updatedActiveCountry(): void
     {
         $this->currentPage = 1;
-        $this->accumulatedSales = [];
-        $this->isLoadingAll = false;
-        $this->loadedBatches = 0;
-        $this->totalBatches = 0;
     }
 
     public function updatedGroupeFilter(): void
     {
         $this->currentPage = 1;
-        $this->accumulatedSales = [];
-        $this->isLoadingAll = false;
-        $this->loadedBatches = 0;
-        $this->totalBatches = 0;
     }
 
     public function updatedPerPage(): void
     {
         $this->currentPage = 1;
-        // Si on change le perPage manuellement, on sort du mode "tout chargé"
-        $this->accumulatedSales = [];
-        $this->isLoadingAll = false;
-        $this->loadedBatches = 0;
-        $this->totalBatches = 0;
     }
 
     public function setPage(int $page): void
@@ -440,98 +423,14 @@ new class extends Component {
             $this->activeCountry . date('Y-m-d')
         ));
         Cache::forget('google_popularity_v2_' . md5($countryCode . implode(',', $gtins14)));
-
-        // Reset aussi le chargement progressif
-        $this->accumulatedSales = [];
-        $this->isLoadingAll = false;
-        $this->loadedBatches = 0;
-        $this->totalBatches = 0;
-    }
-
-    // ─── Chargement progressif ────────────────────────────────────────────────
-
-    public function loadAllData(): void
-    {
-        $total = $this->salesTotal;
-        $this->totalBatches = (int) ceil($total / 25);
-        $this->loadedBatches = 0;
-        $this->accumulatedSales = [];
-        $this->isLoadingAll = true;
-    }
-
-    public function loadNextBatch(): void
-    {
-        $offset = $this->loadedBatches * 25;
-
-        $groupeCondition = '';
-        $params = [];
-
-        if (!empty($this->groupeFilter)) {
-            $placeholders = implode(',', array_fill(0, count($this->groupeFilter), '?'));
-            $groupeCondition = "AND groupe IN ($placeholders)";
-            $params = $this->groupeFilter;
-        }
-
-        $params[] = 25;      // LIMIT
-        $params[] = $offset; // OFFSET
-
-        DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
-
-        $sql = "
-            SELECT
-                produit.sku AS ean,
-                SUBSTRING_INDEX(product_char.name, ' - ', 1) AS groupe,
-                SUBSTRING_INDEX(SUBSTRING_INDEX(product_char.name, ' - ', 2), ' - ', -1) AS marque,
-                SUBSTRING_INDEX(SUBSTRING_INDEX(product_char.name, ' - ', 3), ' - ', -1) AS designation_produit,
-                CASE
-                    WHEN product_decimal.special_price IS NOT NULL
-                        THEN ROUND(product_decimal.special_price, 2)
-                    ELSE ROUND(product_decimal.price, 2)
-                END AS prix_vente_cosma,
-                ROUND(product_decimal.cost, 2) AS cost,
-                ROUND(product_decimal.prix_achat_ht, 2) AS pght,
-                stock_item.qty as quantity
-            FROM catalog_product_entity AS produit
-            LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
-            LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
-            LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id
-            INNER JOIN product_int ON product_int.entity_id = produit.entity_id
-                AND product_int.status IN (0, 1)
-            WHERE 1=1
-                AND produit.sku REGEXP '^[0-9]+$'
-            {$groupeCondition}
-            GROUP BY produit.sku
-            ORDER BY produit.entity_id DESC
-            LIMIT ? OFFSET ?
-        ";
-
-        $batch = DB::connection('mysqlMagento')->select($sql, $params);
-
-        // Encodage UTF-8
-        foreach ($batch as $result) {
-            foreach (['ean', 'designation_produit', 'marque', 'groupe'] as $field) {
-                if (!isset($result->$field)) continue;
-                if (!mb_check_encoding($result->$field, 'UTF-8')) {
-                    $result->$field = mb_convert_encoding($result->$field, 'UTF-8', 'ISO-8859-1');
-                }
-            }
-        }
-
-        // stdClass → array pour Livewire (les propriétés publiques doivent être sérialisables)
-        $batchArray = array_map(fn($item) => (array) $item, $batch);
-        $this->accumulatedSales = array_merge($this->accumulatedSales, $batchArray);
-        $this->loadedBatches++;
-
-        // Dernier batch ou résultat vide : on arrête
-        if ($this->loadedBatches >= $this->totalBatches || empty($batch)) {
-            $this->isLoadingAll = false;
-        }
     }
 
     // ─── Export XLSX ──────────────────────────────────────────────────────────
 
     public function exportXlsx(): \Symfony\Component\HttpFoundation\BinaryFileResponse
     {
+        set_time_limit(0);
+
         $sites           = $this->sites;
         $comparisons     = $this->comparisons;
         $popularityRanks = $this->popularityRanks;
@@ -830,10 +729,6 @@ new class extends Component {
             'lastPage'                  => $lastPage,
             'currentPage'               => $this->currentPage,
             'perPage'                   => $this->perPage,
-            'isLoadingAll'              => $this->isLoadingAll,
-            'loadedBatches'             => $this->loadedBatches,
-            'totalBatches'              => $this->totalBatches,
-            'accumulatedCount'          => count($this->accumulatedSales),
         ];
     }
 }; ?>
@@ -1006,160 +901,49 @@ new class extends Component {
                                     </span>
                                 </button>
 
-                                <div class="divider divider-horizontal mx-0"></div>
+                            </div>
+                        </div>
 
-                                {{-- Charger tout --}}
-                                @if(!$isLoadingAll && empty($accumulatedSales))
-                                    <button type="button" wire:click="loadAllData"
-                                        wire:loading.attr="disabled"
-                                        wire:loading.class="opacity-60 cursor-not-allowed"
-                                        class="btn btn-sm btn-info gap-2"
-                                        title="Charger toutes les données par batches de 25">
-                                        <span wire:loading.remove wire:target="loadAllData" class="flex items-center gap-2">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
-                                            </svg>
-                                            Charger tout
-                                        </span>
-                                        <span wire:loading wire:target="loadAllData" class="flex items-center gap-2">
-                                            <span class="loading loading-spinner loading-xs"></span>
-                                            Initialisation…
-                                        </span>
-                                    </button>
-                                @elseif(!$isLoadingAll && !empty($accumulatedSales))
-                                    {{-- Tout est chargé : bouton reset --}}
-                                    <button type="button"
-                                        wire:click="$set('accumulatedSales', [])"
-                                        class="btn btn-sm btn-ghost gap-2"
-                                        title="Revenir à la pagination normale">
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                                        </svg>
-                                        Réduire
-                                    </button>
+                        <div class="flex items-center justify-between w-full mt-3">
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs text-gray-400">Par page</span>
+                                <select wire:model.live="perPage" class="select select-sm select-bordered w-20">
+                                    <option value="25">25</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                    <option value="200">200</option>
+                                    <option value="500">500</option>
+                                    <option value="1000">1000</option>
+                                    <option value="{{ $salesTotal }}">Tous</option>
+                                </select>
+                            </div>
+
+                            <p class="mt-0.5 text-sm text-gray-500 text-center">
+                                {{ $salesTotal }} résultat(s) au total · Page {{ $currentPage }}/{{ $lastPage }}
+                                @if(!empty($groupeFilter))
+                                    · Groupe(s) : {{ implode(', ', $groupeFilter) }}
                                 @endif
+                            </p>
 
-                            </div>
-                        </div>
+                            @if($lastPage > 1)
+                                <div class="flex items-center">
+                                    <div class="join">
+                                        <button class="join-item btn btn-sm" wire:click="setPage(1)" @disabled($currentPage === 1)>«</button>
+                                        <button class="join-item btn btn-sm" wire:click="setPage({{ $currentPage - 1 }})" @disabled($currentPage === 1)>‹</button>
 
-                        {{-- Barre de progression chargement progressif --}}
-                        @if($isLoadingAll)
-                        {{-- Déclencheur invisible : wire:key change à chaque batch, recrée le nœud --}}
-                        <div
-                            wire:key="batch-trigger-{{ $loadedBatches }}"
-                            x-data="{ triggered: false }"
-                            x-init="
-                                // Enregistre la durée du batch qui vient de finir
-                                $store.batchLoader.recordBatch({{ $totalBatches - $loadedBatches - 1 }});
+                                        @foreach(range(max(1, $currentPage - 2), min($lastPage, $currentPage + 2)) as $p)
+                                            <button class="join-item btn btn-sm {{ $p === $currentPage ? 'btn-active btn-primary' : '' }}"
+                                                wire:click="setPage({{ $p }})">{{ $p }}</button>
+                                        @endforeach
 
-                                if (!triggered) {
-                                    triggered = true;
-                                    setTimeout(() => $wire.loadNextBatch(), 50);
-                                }
-                            "
-                            class="hidden">
-                        </div>
-
-                        {{-- UI du loader : sans wire:key, donc Alpine ne la recrée pas --}}
-                        <div
-                            class="my-3 p-4 bg-blue-50 border border-blue-200 rounded-lg"
-                            x-data
-                            x-init="$store.batchLoader.start !== undefined && $store.batchLoader.startTime === null && $store.batchLoader.start()"
-                        >
-                            <div class="flex items-center justify-between mb-2">
-                                <span class="text-sm font-semibold text-blue-700 flex items-center gap-2">
-                                    <span class="loading loading-spinner loading-xs text-blue-500"></span>
-                                    Batch {{ $loadedBatches }}/{{ $totalBatches }}
-                                    &nbsp;·&nbsp;
-                                    <span class="font-mono font-normal">
-                                        Écoulé : <span x-text="$store.batchLoader.fmt($store.batchLoader.elapsed)" class="font-bold"></span>
-                                    </span>
-                                </span>
-
-                                <span class="flex items-center gap-4 text-xs font-medium">
-                                    <span class="text-blue-500">
-                                        {{ $accumulatedCount }} / {{ $salesTotal }} produits
-                                    </span>
-                                </span>
-                            </div>
-
-                            <progress
-                                class="progress progress-info w-full"
-                                value="{{ $totalBatches > 0 ? round(($loadedBatches / $totalBatches) * 100) : 0 }}"
-                                max="100">
-                            </progress>
-
-                            <div class="flex justify-between mt-1 text-xs text-blue-400">
-                                <span>{{ $totalBatches > 0 ? round(($loadedBatches / $totalBatches) * 100) : 0 }}%</span>
-                                <span x-show="$store.batchLoader.avgBatchTime > 0">
-                                    ~<span x-text="(function() {
-                                        var s = Math.round($store.batchLoader.avgBatchTime);
-                                        if (s <= 0) return '';
-                                        if (s < 60) return '~' + s + 's/batch';
-                                        return '~' + Math.floor(s / 60) + 'min ' + (s % 60 > 0 ? s % 60 + 's' : '') + '/batch';
-                                    })()"></span>/batch
-                                </span>
-                            </div>
-                        </div>
-                    @else
-                        {{-- Quand c'est terminé, on arrête le timer --}}
-                        <div x-data x-init="$store.batchLoader.stop()" class="hidden"></div>
-                    @endif
-
-                        {{-- Pagination (masquée si tout est chargé en mode accumulé) --}}
-                        @if(empty($accumulatedSales))
-                            <div class="flex items-center justify-between w-full mt-3">
-                                <div class="flex items-center gap-2">
-                                    <span class="text-xs text-gray-400">Par page</span>
-                                    <select wire:model.live="perPage" class="select select-sm select-bordered w-20">
-                                        <option value="25">25</option>
-                                        <option value="50">50</option>
-                                        <option value="100">100</option>
-                                        <option value="200">200</option>
-                                        <option value="500">500</option>
-                                        <option value="1000">1000</option>
-                                        <option value="{{ $salesTotal }}">Tous</option>
-                                    </select>
-                                </div>
-
-                                <p class="mt-0.5 text-sm text-gray-500 text-center">
-                                    {{ $salesTotal }} résultat(s) au total · Page {{ $currentPage }}/{{ $lastPage }}
-                                    @if(!empty($groupeFilter))
-                                        · Groupe(s) : {{ implode(', ', $groupeFilter) }}
-                                    @endif
-                                </p>
-
-                                @if($lastPage > 1)
-                                    <div class="flex items-center">
-                                        <div class="join">
-                                            <button class="join-item btn btn-sm" wire:click="setPage(1)" @disabled($currentPage === 1)>«</button>
-                                            <button class="join-item btn btn-sm" wire:click="setPage({{ $currentPage - 1 }})" @disabled($currentPage === 1)>‹</button>
-
-                                            @foreach(range(max(1, $currentPage - 2), min($lastPage, $currentPage + 2)) as $p)
-                                                <button class="join-item btn btn-sm {{ $p === $currentPage ? 'btn-active btn-primary' : '' }}"
-                                                    wire:click="setPage({{ $p }})">{{ $p }}</button>
-                                            @endforeach
-
-                                            <button class="join-item btn btn-sm" wire:click="setPage({{ $currentPage + 1 }})" @disabled($currentPage === $lastPage)>›</button>
-                                            <button class="join-item btn btn-sm" wire:click="setPage({{ $lastPage }})" @disabled($currentPage === $lastPage)>»</button>
-                                        </div>
+                                        <button class="join-item btn btn-sm" wire:click="setPage({{ $currentPage + 1 }})" @disabled($currentPage === $lastPage)>›</button>
+                                        <button class="join-item btn btn-sm" wire:click="setPage({{ $lastPage }})" @disabled($currentPage === $lastPage)>»</button>
                                     </div>
-                                @else
-                                    <div></div>
-                                @endif
-                            </div>
-                        @else
-                            {{-- Mode tout chargé : juste le compteur --}}
-                            <div class="flex items-center justify-center w-full mt-3">
-                                <p class="text-sm text-gray-500">
-                                    {{ $accumulatedCount }} produits chargés au total
-                                    @if(!empty($groupeFilter))
-                                        · Groupe(s) : {{ implode(', ', $groupeFilter) }}
-                                    @endif
-                                </p>
-                            </div>
-                        @endif
+                                </div>
+                            @else
+                                <div></div>
+                            @endif
+                        </div>
 
                         <br>
 
@@ -1335,64 +1119,3 @@ new class extends Component {
         </x-tabs>
     </div>
 </div>
-<script>
-    document.addEventListener('alpine:init', () => {
-        Alpine.store('batchLoader', {
-            startTime: null,
-            elapsed: 0,
-            remaining: null,
-            avgBatchTime: 0,
-            batchTimes: [],
-            batchStart: null,
-            tickTimer: null,
-
-            start() {
-                this.startTime = Date.now();
-                this.batchStart = Date.now();
-                this.elapsed = 0;
-                this.remaining = null;
-                this.avgBatchTime = 0;
-                this.batchTimes = [];
-
-                if (this.tickTimer) clearInterval(this.tickTimer);
-                this.tickTimer = setInterval(() => {
-                    this.elapsed = Math.floor((Date.now() - this.startTime) / 1000);
-                    if (this.avgBatchTime > 0 && this.batchStart) {
-                        const inBatch = (Date.now() - this.batchStart) / 1000;
-                        const left = Alpine.store('batchLoader')._batchesLeft;
-                        this.remaining = Math.max(1,
-                            Math.round((left * this.avgBatchTime) + (this.avgBatchTime - inBatch))
-                        );
-                    }
-                }, 200);
-            },
-
-            recordBatch(batchesLeft) {
-                this._batchesLeft = batchesLeft;
-                if (this.batchStart) {
-                    const duration = (Date.now() - this.batchStart) / 1000;
-                    this.batchTimes.push(duration);
-                    const last5 = this.batchTimes.slice(-5);
-                    this.avgBatchTime = last5.reduce((a, b) => a + b, 0) / last5.length;
-                }
-                this.batchStart = Date.now();
-            },
-
-            stop() {
-                this.remaining = 0;
-                if (this.tickTimer) {
-                    clearInterval(this.tickTimer);
-                    this.tickTimer = null;
-                }
-            },
-
-            fmt(s) {
-                if (s === null) return '…';
-                if (s < 60) return s + 's';
-                return Math.floor(s / 60) + 'min' + (s % 60 > 0 ? ' ' + (s % 60) + 's' : '');
-            },
-
-            _batchesLeft: 0,
-        });
-    });
-</script>
