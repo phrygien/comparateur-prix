@@ -52,6 +52,8 @@ new class extends Component {
 
     public function getSalesTotalProperty(): int
     {
+        set_time_limit(0);
+
         $groupeCondition = '';
         $params = [];
 
@@ -88,6 +90,8 @@ new class extends Component {
 
     public function getSalesProperty()
     {
+        set_time_limit(0);
+
         // Si des données accumulées existent (en cours ou terminé), on les retourne
         if (!empty($this->accumulatedSales)) {
             return collect($this->accumulatedSales)
@@ -164,6 +168,8 @@ new class extends Component {
 
     public function getPopularityRanksProperty(): array
     {
+        set_time_limit(0);
+
         $sales = $this->sales;
 
         if (empty($sales)) return [];
@@ -287,6 +293,8 @@ new class extends Component {
 
     public function getComparisonsProperty()
     {
+        set_time_limit(0);
+
         $sites   = Site::where('country_code', $this->activeCountry)->orderBy('name')->get();
         $siteIds = $sites->pluck('id')->toArray();
 
