@@ -77,7 +77,7 @@ new class extends Component {
                     FROM catalog_product_entity AS produit
                     LEFT JOIN product_char ON product_char.entity_id = produit.entity_id
                     INNER JOIN product_int ON product_int.entity_id = produit.entity_id
-                        AND product_int.status IN (0, 1, 2)
+                        AND product_int.status IN (0, 1)
                     WHERE 1=1
                         AND produit.sku REGEXP '^[0-9]+$'
                         {$groupeCondition}
@@ -140,7 +140,7 @@ new class extends Component {
                 LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
                 LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id
                 INNER JOIN product_int ON product_int.entity_id = produit.entity_id
-                    AND product_int.status IN (0, 1, 2)
+                    AND product_int.status IN (0, 1)
                 WHERE 1=1
                     AND produit.sku REGEXP '^[0-9]+$'
                 {$groupeCondition}
@@ -302,8 +302,20 @@ new class extends Component {
 
         $comparisons = [];
 
+        // Récupérer tous les EANs en une seule requête au lieu d'une par produit
+        $eans = collect($this->sales)->pluck('ean')->filter()->unique()->toArray();
+
+        $allScrapedProducts = !empty($eans) && !empty($siteIds)
+            ? Product::whereIn('ean', $eans)
+                ->whereIn('web_site_id', $siteIds)
+                ->with('website')
+                ->get()
+                ->groupBy('ean')  // groupé par EAN
+            : collect([]);
+
         foreach ($this->sales as $row) {
-            $scrapedProducts = collect([]);
+            // Plus de requête individuelle ici — on pioche dans la collection déjà chargée
+            $scrapedProducts = $allScrapedProducts->get($row->ean, collect([]))->keyBy('web_site_id');
 
             if (!empty($row->ean) && !empty($siteIds)) {
                 $scrapedProducts = Product::where('ean', $row->ean)
@@ -453,7 +465,7 @@ new class extends Component {
     public function loadAllData(): void
     {
         $total = $this->salesTotal;
-        $this->totalBatches = (int) ceil($total / 100);
+        $this->totalBatches = (int) ceil($total / 25);
         $this->loadedBatches = 0;
         $this->accumulatedSales = [];
         $this->isLoadingAll = true;
@@ -461,7 +473,7 @@ new class extends Component {
 
     public function loadNextBatch(): void
     {
-        $offset = $this->loadedBatches * 100;
+        $offset = $this->loadedBatches * 25;
 
         $groupeCondition = '';
         $params = [];
@@ -472,7 +484,7 @@ new class extends Component {
             $params = $this->groupeFilter;
         }
 
-        $params[] = 100;      // LIMIT
+        $params[] = 25;      // LIMIT
         $params[] = $offset; // OFFSET
 
         DB::connection('mysqlMagento')->getPdo()->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
@@ -496,7 +508,7 @@ new class extends Component {
             LEFT JOIN product_decimal ON product_decimal.entity_id = produit.entity_id
             LEFT JOIN cataloginventory_stock_item AS stock_item ON stock_item.product_id = produit.entity_id
             INNER JOIN product_int ON product_int.entity_id = produit.entity_id
-                AND product_int.status IN (0, 1, 2)
+                AND product_int.status IN (0, 1)
             WHERE 1=1
                 AND produit.sku REGEXP '^[0-9]+$'
             {$groupeCondition}
