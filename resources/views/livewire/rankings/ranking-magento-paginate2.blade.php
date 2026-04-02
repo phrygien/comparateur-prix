@@ -302,20 +302,8 @@ new class extends Component {
 
         $comparisons = [];
 
-        // Récupérer tous les EANs en une seule requête au lieu d'une par produit
-        $eans = collect($this->sales)->pluck('ean')->filter()->unique()->toArray();
-
-        $allScrapedProducts = !empty($eans) && !empty($siteIds)
-            ? Product::whereIn('ean', $eans)
-                ->whereIn('web_site_id', $siteIds)
-                ->with('website')
-                ->get()
-                ->groupBy('ean')  // groupé par EAN
-            : collect([]);
-
         foreach ($this->sales as $row) {
-            // Plus de requête individuelle ici — on pioche dans la collection déjà chargée
-            $scrapedProducts = $allScrapedProducts->get($row->ean, collect([]))->keyBy('web_site_id');
+            $scrapedProducts = collect([]);
 
             if (!empty($row->ean) && !empty($siteIds)) {
                 $scrapedProducts = Product::where('ean', $row->ean)
@@ -1131,6 +1119,7 @@ new class extends Component {
                                         <option value="200">200</option>
                                         <option value="500">500</option>
                                         <option value="1000">1000</option>
+                                        <option value="{{ $salesTotal }}">Tous</option>
                                     </select>
                                 </div>
 
