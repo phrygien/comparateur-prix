@@ -37,7 +37,7 @@ Route::middleware(['check.auth', 'boutique.cache'])->group(function () {
     Volt::route('/ranking-magento', 'rankings.ranking-magento')->name('ranking-magento');
     Volt::route('/ranking-magento-paginate', 'rankings.ranking-magento-paginate')->name('ranking-magento-paginate');
 
-    Volt::route('/ranking-magento-paginate2', 'rankings.ranking-magento-paginate2')->name('ranking-magento-paginate2');
+    Volt::route('/benchmark-magento-paginate', 'rankings.benchmark-magento-paginate')->name('benchmark-magento-paginate');
 
     // Ranking Google
     Volt::route('/ranking-google-paginate', 'rankings.ranking-google-paginate')->name('ranking-google-paginate');
