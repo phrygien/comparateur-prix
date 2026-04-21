@@ -1279,6 +1279,10 @@ new class extends Component {
                                                                     $urlAffichée = $liveEntry['url'] ?? ($siteData['url'] ?? '#');
                                                                 @endphp
                                                                 <div class="flex flex-col gap-0.5 items-end">
+                                                                    @if($isScrapingLive)
+                                                                        {{-- Placeholder animé pendant le scraping --}}
+                                                                        <span class="loading loading-dots loading-xs text-warning"></span>
+                                                                    @endif
                                                                     {{-- Badge LIVE + prix --}}
                                                                     <div class="flex items-center gap-1">
                                                                         @if($isLive)
@@ -1314,12 +1318,7 @@ new class extends Component {
                                                                     @endif
                                                                 </div>
                                                             @else
-                                                                @if($isScrapingLive)
-                                                                    {{-- Placeholder animé pendant le scraping --}}
-                                                                    <span class="loading loading-dots loading-xs text-warning"></span>
-                                                                @else
-                                                                    <span class="text-gray-400 text-xs">N/A</span>
-                                                                @endif
+                                                                <span class="text-gray-400 text-xs">N/A</span>
                                                             @endif
                                                         </td>
                                                     @endforeach
