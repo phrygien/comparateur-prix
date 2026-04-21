@@ -18,6 +18,12 @@ new class extends Component {
     public string $activeCountry = 'FR';
     public array $groupeFilter = [];
 
+    // ─── Live scraping state ──────────────────────────────────────────────────
+    public array $livePrices = [];       // [ean][site_id] => data scraped
+    public bool $isScrapingLive = false;
+    public int $scrapedCount = 0;
+    public int $scrapTotal = 0;
+
     public array $countries = [
         'FR' => 'France',
         'BE' => 'Belgique',
@@ -43,7 +49,6 @@ new class extends Component {
     public $percentage_perte_marche = 0;
 
     protected GoogleMerchantService $googleMerchantService;
-
     protected ApiScraperService $apiScraperService;
 
     public function boot(GoogleMerchantService $googleMerchantService, ApiScraperService $apiScraperService): void
@@ -96,13 +101,11 @@ new class extends Component {
     {
         set_time_limit(0);
 
-        // Si des données accumulées existent (en cours ou terminé), on les retourne
         if (!empty($this->accumulatedSales)) {
             return collect($this->accumulatedSales)
                 ->map(fn($item) => (object) $item);
         }
 
-        // Sinon : pagination normale
         $groupeCondition = '';
         $params = [];
 
@@ -306,7 +309,6 @@ new class extends Component {
         $this->somme_gain  = 0;
         $this->somme_perte = 0;
 
-        // ✅ Une seule requête pour tous les EANs de la page
         $eans = collect($this->sales)->pluck('ean')->filter()->unique()->values()->toArray();
 
         $allScrapedProducts = !empty($eans) && !empty($siteIds)
@@ -321,7 +323,6 @@ new class extends Component {
         $comparisons = [];
 
         foreach ($this->sales as $row) {
-            // ✅ Lookup direct, zéro requête SQL ici
             $scrapedProducts = $allScrapedProducts[$row->ean] ?? collect([]);
 
             $comparison = [
@@ -395,26 +396,128 @@ new class extends Component {
         return Site::where('country_code', $this->activeCountry)->orderBy('name')->get();
     }
 
+    // ─── Live scraping actions ────────────────────────────────────────────────
+
+    /**
+     * Appelé par le JS pour initialiser le scraping et retourner la liste des jobs.
+     * On retourne directement les jobs au frontend via un event JS.
+     */
+    public function startLiveScraping(): void
+    {
+        set_time_limit(0);
+
+        $this->livePrices   = [];
+        $this->scrapedCount = 0;
+        $this->isScrapingLive = true;
+
+        // Construire la liste des jobs à scraper
+        $jobs = [];
+        foreach ($this->comparisons as $comparison) {
+            foreach ($this->sites as $site) {
+                $siteData = $comparison['sites'][$site->id] ?? null;
+                if ($siteData && !empty($siteData['url'])) {
+                    $jobs[] = [
+                        'ean'    => $comparison['row']->ean,
+                        'siteId' => $site->id,
+                        'url'    => $siteData['url'],
+                    ];
+                }
+            }
+        }
+
+        $this->scrapTotal = count($jobs);
+
+        // Envoyer la liste des jobs au JS via un événement navigateur
+        $this->dispatch('live-scraping-jobs', jobs: $jobs);
+    }
+
+    /**
+     * Appelé par le JS pour chaque job (1 produit × 1 site).
+     * Durée potentielle : ~30s → set_time_limit(0) obligatoire.
+     */
+    public function fetchLivePriceForJob(string $ean, int $siteId, string $url): void
+    {
+        set_time_limit(0);
+
+        try {
+            $result = $this->apiScraperService->scrapwebsite($siteId, $url);
+            $items  = $result['result'] ?? [];
+
+            // Priorité 1 : match exact sur l'EAN
+            // Priorité 2 : premier résultat disponible
+            $match = collect($items)->first(fn($item) =>
+                !empty($item['ean']) && $item['ean'] === $ean
+            ) ?? ($items[0] ?? null);
+
+            if ($match) {
+                // Initialiser le tableau imbriqué si besoin
+                if (!isset($this->livePrices[$ean])) {
+                    $this->livePrices[$ean] = [];
+                }
+
+                $this->livePrices[$ean][$siteId] = [
+                    'prix_ht'    => (float) ($match['prix_ht'] ?? 0),
+                    'url'        => $match['url'] ?? $url,
+                    'name'       => $match['name'] ?? null,
+                    'vendor'     => $match['vendor'] ?? null,
+                    'ean_live'   => $match['ean'] ?? null,
+                    'scraped_at' => now()->format('H:i:s'),
+                    'is_live'    => true,
+                ];
+            }
+        } catch (\Exception $e) {
+            Log::warning("Live scrape failed — EAN: {$ean} | Site: {$siteId} | " . $e->getMessage());
+        }
+
+        $this->scrapedCount++;
+
+        // Quand tout est terminé, marquer la fin
+        if ($this->scrapedCount >= $this->scrapTotal) {
+            $this->isScrapingLive = false;
+        }
+    }
+
+    public function stopLiveScraping(): void
+    {
+        $this->isScrapingLive = false;
+    }
+
     // ─── Lifecycle hooks ──────────────────────────────────────────────────────
 
     public function updatedActiveCountry(): void
     {
-        $this->currentPage = 1;
+        $this->currentPage  = 1;
+        $this->livePrices   = [];
+        $this->isScrapingLive = false;
+        $this->scrapedCount = 0;
+        $this->scrapTotal   = 0;
     }
 
     public function updatedGroupeFilter(): void
     {
-        $this->currentPage = 1;
+        $this->currentPage  = 1;
+        $this->livePrices   = [];
+        $this->isScrapingLive = false;
+        $this->scrapedCount = 0;
+        $this->scrapTotal   = 0;
     }
 
     public function updatedPerPage(): void
     {
-        $this->currentPage = 1;
+        $this->currentPage  = 1;
+        $this->livePrices   = [];
+        $this->isScrapingLive = false;
+        $this->scrapedCount = 0;
+        $this->scrapTotal   = 0;
     }
 
     public function setPage(int $page): void
     {
-        $this->currentPage = $page;
+        $this->currentPage  = $page;
+        $this->livePrices   = [];
+        $this->isScrapingLive = false;
+        $this->scrapedCount = 0;
+        $this->scrapTotal   = 0;
     }
 
     // ─── Actions ──────────────────────────────────────────────────────────────
@@ -435,6 +538,11 @@ new class extends Component {
             $this->activeCountry . date('Y-m-d')
         ));
         Cache::forget('google_popularity_v2_' . md5($countryCode . implode(',', $gtins14)));
+
+        $this->livePrices   = [];
+        $this->isScrapingLive = false;
+        $this->scrapedCount = 0;
+        $this->scrapTotal   = 0;
     }
 
     // ─── Export XLSX ──────────────────────────────────────────────────────────
@@ -621,16 +729,27 @@ new class extends Component {
             $colIdx = count($baseHeaders);
             foreach ($sites as $site) {
                 $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIdx + 1) . $row;
-                $siteData  = $comparison['sites'][$site->id] ?? null;
+
+                // Export : priorité aux prix live s'ils existent
+                $liveEntry = $this->livePrices[$r->ean][$site->id] ?? null;
+                $siteData  = $liveEntry
+                    ? array_merge($comparison['sites'][$site->id] ?? [], $liveEntry)
+                    : ($comparison['sites'][$site->id] ?? null);
 
                 if ($siteData) {
-                    $pricePercentage = $siteData['price_percentage'];
+                    $pricePercentage = isset($siteData['prix_ht']) && $r->prix_vente_cosma > 0
+                        ? round((($siteData['prix_ht'] - $r->prix_vente_cosma) / $r->prix_vente_cosma) * 100, 2)
+                        : ($siteData['price_percentage'] ?? null);
+
                     $priceColor = $r->prix_vente_cosma > $siteData['prix_ht'] ? 'FFCC0000' : 'FF1A7A3C';
                     if ($pricePercentage === null) $priceColor = 'FF000000';
 
-                    $prixText = number_format($siteData['prix_ht'], 2, ',', ' ') . ' €';
+                    $prixText = number_format((float)$siteData['prix_ht'], 2, ',', ' ') . ' €';
                     if ($pricePercentage !== null) {
                         $prixText .= ' (' . ($pricePercentage > 0 ? '+' : '') . $pricePercentage . '%)';
+                    }
+                    if ($liveEntry) {
+                        $prixText .= ' [LIVE ' . ($liveEntry['scraped_at'] ?? '') . ']';
                     }
 
                     $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
@@ -638,13 +757,15 @@ new class extends Component {
                     $runPrix->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($priceColor));
                     $runPrix->getFont()->setName('Arial');
 
-                    if (!empty($siteData['ean'])) {
-                        $runEan = $richText->createTextRun("\nEAN : " . $siteData['ean']);
+                    $eanToDisplay = $liveEntry['ean_live'] ?? ($siteData['ean'] ?? null);
+                    if (!empty($eanToDisplay)) {
+                        $runEan = $richText->createTextRun("\nEAN : " . $eanToDisplay);
                         $runEan->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF888888'));
                         $runEan->getFont()->setName('Arial')->setSize(8);
                     }
 
-                    if (!empty($siteData['url'])) {
+                    $urlToLink = $liveEntry['url'] ?? ($siteData['url'] ?? null);
+                    if (!empty($urlToLink)) {
                         $runLien = $richText->createTextRun("\nVoir le produit");
                         $runLien->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF0563C1'));
                         $runLien->getFont()->setUnderline(\PhpOffice\PhpSpreadsheet\Style\Font::UNDERLINE_SINGLE);
@@ -655,8 +776,8 @@ new class extends Component {
                     $sheet->getStyle($cellCoord)->getAlignment()->setWrapText(true);
                     $sheet->getStyle($cellCoord)->getAlignment()->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP);
 
-                    if (!empty($siteData['url'])) {
-                        $sheet->getCell($cellCoord)->getHyperlink()->setUrl($siteData['url']);
+                    if (!empty($urlToLink)) {
+                        $sheet->getCell($cellCoord)->getHyperlink()->setUrl($urlToLink);
                     }
                 } else {
                     $sheet->setCellValue($cellCoord, 'N/A');
@@ -741,6 +862,11 @@ new class extends Component {
             'lastPage'                  => $lastPage,
             'currentPage'               => $this->currentPage,
             'perPage'                   => $this->perPage,
+            // Live scraping
+            'livePrices'                => $this->livePrices,
+            'isScrapingLive'            => $this->isScrapingLive,
+            'scrapedCount'              => $this->scrapedCount,
+            'scrapTotal'                => $this->scrapTotal,
         ];
     }
 }; ?>
@@ -913,6 +1039,85 @@ new class extends Component {
                                     </span>
                                 </button>
 
+                                <div class="divider divider-horizontal mx-0"></div>
+
+                                {{-- ── Prix Live ── --}}
+                                <div class="flex flex-col items-center gap-1"
+                                    x-data="{}"
+                                    @live-scraping-jobs.window="
+                                        const jobs = $event.detail.jobs;
+                                        const BATCH = 3;
+                                        const wireId = $el.closest('[wire\\:id]').getAttribute('wire:id');
+                                        const component = Livewire.find(wireId);
+
+                                        const runBatch = async (batch) => {
+                                            await Promise.all(
+                                                batch.map(job =>
+                                                    component.call('fetchLivePriceForJob', job.ean, job.siteId, job.url)
+                                                )
+                                            );
+                                        };
+
+                                        (async () => {
+                                            for (let i = 0; i < jobs.length; i += BATCH) {
+                                                const batch = jobs.slice(i, i + BATCH);
+                                                await runBatch(batch);
+                                            }
+                                            component.call('stopLiveScraping');
+                                        })();
+                                    ">
+
+                                    <button type="button"
+                                        wire:click="startLiveScraping"
+                                        wire:loading.attr="disabled"
+                                        wire:loading.class="opacity-60 cursor-not-allowed"
+                                        @disabled($isScrapingLive)
+                                        class="btn btn-sm btn-warning gap-2"
+                                        title="Récupérer les prix en temps réel via scraping">
+                                        @if($isScrapingLive)
+                                            <span class="loading loading-spinner loading-xs"></span>
+                                            <span>Scraping… ({{ $scrapedCount }}/{{ $scrapTotal }})</span>
+                                        @else
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                            </svg>
+                                            <span>
+                                                @if($scrapedCount > 0 && !$isScrapingLive)
+                                                    Prix live ✓
+                                                @else
+                                                    Prix live
+                                                @endif
+                                            </span>
+                                        @endif
+                                    </button>
+
+                                    {{-- Barre de progression --}}
+                                    @if($isScrapingLive && $scrapTotal > 0)
+                                        <div class="w-full flex flex-col items-center gap-0.5">
+                                            <progress
+                                                class="progress progress-warning w-32"
+                                                value="{{ $scrapedCount }}"
+                                                max="{{ $scrapTotal }}">
+                                            </progress>
+                                            <span class="text-xs text-gray-400">
+                                                {{ $scrapTotal > 0 ? round(($scrapedCount / $scrapTotal) * 100) : 0 }}%
+                                                — {{ $scrapedCount }}/{{ $scrapTotal }} sites
+                                            </span>
+                                        </div>
+                                    @endif
+
+                                    {{-- Badge résumé après scraping terminé --}}
+                                    @if(!$isScrapingLive && $scrapedCount > 0)
+                                        <span class="badge badge-warning badge-sm gap-1">
+                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                            </svg>
+                                            {{ count(array_keys($livePrices)) }} EAN(s) mis à jour
+                                        </span>
+                                    @endif
+                                </div>
+                                {{-- ── /Prix Live ── --}}
+
                             </div>
                         </div>
 
@@ -1052,34 +1257,69 @@ new class extends Component {
                                                     </td>
 
                                                     @foreach($this->sites as $site)
+                                                        @php
+                                                            // Priorité au prix live s'il existe, sinon prix DB
+                                                            $liveEntry = $livePrices[$row->ean][$site->id] ?? null;
+                                                            $siteData  = $liveEntry
+                                                                ? array_merge($comparison['sites'][$site->id] ?? [], $liveEntry)
+                                                                : ($comparison['sites'][$site->id] ?? null);
+                                                            $isLive    = $liveEntry !== null;
+                                                        @endphp
                                                         <td class="text-right">
-                                                            @if($comparison['sites'][$site->id])
+                                                            @if($siteData)
                                                                 @php
-                                                                    $siteData  = $comparison['sites'][$site->id];
-                                                                    $textClass = '';
-                                                                    if ($siteData['price_percentage'] !== null) {
-                                                                        $textClass = $prixCosma > $siteData['prix_ht'] ? 'text-error' : 'text-success';
-                                                                    }
+                                                                    $prixAffiché = (float) $siteData['prix_ht'];
+                                                                    $prixDiff    = $prixCosma > 0 ? $prixAffiché - $prixCosma : null;
+                                                                    $prixPct     = ($prixCosma > 0 && $prixAffiché > 0)
+                                                                        ? round(($prixDiff / $prixCosma) * 100, 2)
+                                                                        : null;
+                                                                    $textClass   = $prixPct !== null
+                                                                        ? ($prixCosma > $prixAffiché ? 'text-error' : 'text-success')
+                                                                        : '';
+                                                                    $urlAffichée = $liveEntry['url'] ?? ($siteData['url'] ?? '#');
                                                                 @endphp
-                                                                <div class="flex flex-col gap-1 items-end">
-                                                                    <a href="{{ $siteData['url'] }}" target="_blank"
-                                                                        class="link link-primary text-xs font-semibold"
-                                                                        title="{{ $siteData['name'] }}">
-                                                                        {{ number_format($siteData['prix_ht'], 2) }} €
-                                                                    </a>
-                                                                    @if($siteData['price_percentage'] !== null)
+                                                                <div class="flex flex-col gap-0.5 items-end">
+                                                                    {{-- Badge LIVE + prix --}}
+                                                                    <div class="flex items-center gap-1">
+                                                                        @if($isLive)
+                                                                            <span class="badge badge-xs badge-warning font-bold"
+                                                                                title="Prix scrapé à {{ $liveEntry['scraped_at'] }}">
+                                                                                live
+                                                                            </span>
+                                                                        @endif
+                                                                        <a href="{{ $urlAffichée }}" target="_blank"
+                                                                            class="link link-primary text-xs font-semibold {{ $isLive ? 'underline decoration-warning' : '' }}"
+                                                                            title="{{ $siteData['name'] ?? '' }}">
+                                                                            {{ number_format($prixAffiché, 2) }} €
+                                                                        </a>
+                                                                    </div>
+                                                                    {{-- Pourcentage --}}
+                                                                    @if($prixPct !== null)
                                                                         <span class="text-xs {{ $textClass }} font-bold">
-                                                                            {{ $siteData['price_percentage'] > 0 ? '+' : '' }}{{ $siteData['price_percentage'] }}%
+                                                                            {{ $prixPct > 0 ? '+' : '' }}{{ $prixPct }}%
                                                                         </span>
                                                                     @endif
-                                                                    @if($siteData['vendor'])
-                                                                        <span class="text-xs text-gray-500 truncate max-w-[120px]" title="{{ $siteData['vendor'] }}">
+                                                                    {{-- Vendor --}}
+                                                                    @if(!empty($siteData['vendor']))
+                                                                        <span class="text-xs text-gray-500 truncate max-w-[120px]"
+                                                                            title="{{ $siteData['vendor'] }}">
                                                                             {{ Str::limit($siteData['vendor'], 15) }}
+                                                                        </span>
+                                                                    @endif
+                                                                    {{-- Heure du scrape --}}
+                                                                    @if($isLive)
+                                                                        <span class="text-[10px] text-warning/70">
+                                                                            {{ $liveEntry['scraped_at'] }}
                                                                         </span>
                                                                     @endif
                                                                 </div>
                                                             @else
-                                                                <span class="text-gray-400 text-xs">N/A</span>
+                                                                @if($isScrapingLive)
+                                                                    {{-- Placeholder animé pendant le scraping --}}
+                                                                    <span class="loading loading-dots loading-xs text-warning"></span>
+                                                                @else
+                                                                    <span class="text-gray-400 text-xs">N/A</span>
+                                                                @endif
                                                             @endif
                                                         </td>
                                                     @endforeach
