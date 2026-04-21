@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Log;
 use App\Models\Product;
 use App\Models\Site;
 use App\Services\GoogleMerchantService;
+use App\Services\ApiScraperService;
 use Livewire\WithPagination;
 
 new class extends Component {
@@ -43,9 +44,12 @@ new class extends Component {
 
     protected GoogleMerchantService $googleMerchantService;
 
-    public function boot(GoogleMerchantService $googleMerchantService): void
+    protected ApiScraperService $apiScraperService;
+
+    public function boot(GoogleMerchantService $googleMerchantService, ApiScraperService $apiScraperService): void
     {
         $this->googleMerchantService = $googleMerchantService;
+        $this->apiScraperService = $apiScraperService;
     }
 
     // ─── Computed: Total count ────────────────────────────────────────────────

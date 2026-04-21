@@ -7,7 +7,6 @@ use Illuminate\Support\Facades\Log;
 use App\Models\Product;
 use App\Models\Site;
 use App\Services\GoogleMerchantService;
-use App\Services\ApiScraperService;
 use Livewire\WithPagination;
 
 new class extends Component {
