@@ -417,10 +417,9 @@ new class extends Component {
                 $siteData = $comparison['sites'][$site->id] ?? null;
                 if ($siteData && !empty($siteData['url'])) {
                     $jobs[] = [
-                        'ean'      => $comparison['row']->ean,
-                        'siteId'   => $site->id,
-                        'siteName' => $site->name,
-                        'url'      => $siteData['url'],
+                        'ean'    => $comparison['row']->ean,
+                        'siteId' => $site->id,
+                        'url'    => $siteData['url'],
                     ];
                 }
             }
@@ -435,14 +434,10 @@ new class extends Component {
     /**
      * Appelé par le JS pour chaque job (1 produit × 1 site).
      * Durée potentielle : ~30s → set_time_limit(0) obligatoire.
-     * $siteName est passé par le JS pour l'affichage dans les toasts.
      */
-    public function fetchLivePriceForJob(string $ean, int $siteId, string $url, string $siteName = ''): void
+    public function fetchLivePriceForJob(string $ean, int $siteId, string $url): void
     {
         set_time_limit(0);
-
-        $success = false;
-        $prix    = null;
 
         try {
             $result = $this->apiScraperService->scrapwebsite($siteId, $url);
@@ -460,10 +455,8 @@ new class extends Component {
                     $this->livePrices[$ean] = [];
                 }
 
-                $prix = (float) ($match['prix_ht'] ?? 0);
-
                 $this->livePrices[$ean][$siteId] = [
-                    'prix_ht'    => $prix,
+                    'prix_ht'    => (float) ($match['prix_ht'] ?? 0),
                     'url'        => $match['url'] ?? $url,
                     'name'       => $match['name'] ?? null,
                     'vendor'     => $match['vendor'] ?? null,
@@ -471,23 +464,10 @@ new class extends Component {
                     'scraped_at' => now()->format('H:i:s'),
                     'is_live'    => true,
                 ];
-
-                $success = true;
-            } else {
-                // L'API a répondu mais aucun résultat trouvé pour ce produit
-                Log::info("Live scrape — aucun résultat — EAN: {$ean} | Site: {$siteId}");
             }
         } catch (\Exception $e) {
             Log::warning("Live scrape failed — EAN: {$ean} | Site: {$siteId} | " . $e->getMessage());
         }
-
-        // ── Dispatcher le toast vers Alpine ──────────────────────────────────
-        $this->dispatch('scrape-toast', [
-            'success'  => $success,
-            'ean'      => $ean,
-            'siteName' => $siteName ?: "Site #{$siteId}",
-            'prix'     => $success ? number_format($prix, 2, ',', ' ') . ' €' : null,
-        ]);
 
         $this->scrapedCount++;
 
@@ -1073,7 +1053,7 @@ new class extends Component {
                                         const runBatch = async (batch) => {
                                             await Promise.all(
                                                 batch.map(job =>
-                                                    component.call('fetchLivePriceForJob', job.ean, job.siteId, job.url, job.siteName)
+                                                    component.call('fetchLivePriceForJob', job.ean, job.siteId, job.url)
                                                 )
                                             );
                                         };
@@ -1299,6 +1279,10 @@ new class extends Component {
                                                                     $urlAffichée = $liveEntry['url'] ?? ($siteData['url'] ?? '#');
                                                                 @endphp
                                                                 <div class="flex flex-col gap-0.5 items-end">
+                                                                    @if($isScrapingLive)
+                                                                        {{-- Placeholder animé pendant le scraping --}}
+                                                                        <span class="loading loading-dots loading-xs text-warning"></span>
+                                                                    @endif
                                                                     {{-- Badge LIVE + prix --}}
                                                                     <div class="flex items-center gap-1">
                                                                         @if($isLive)
@@ -1334,12 +1318,7 @@ new class extends Component {
                                                                     @endif
                                                                 </div>
                                                             @else
-                                                                @if($isScrapingLive)
-                                                                    {{-- Placeholder animé pendant le scraping --}}
-                                                                    <span class="loading loading-dots loading-xs text-warning"></span>
-                                                                @else
-                                                                    <span class="text-gray-400 text-xs">N/A</span>
-                                                                @endif
+                                                                <span class="text-gray-400 text-xs">N/A</span>
                                                             @endif
                                                         </td>
                                                     @endforeach
@@ -1390,93 +1369,4 @@ new class extends Component {
             @endforeach
         </x-tabs>
     </div>
-
-    {{-- ═══════════════════════════════════════════════════════════════════════
-         Toast notifications — Scraping live (succès / échec)
-         Positionnement fixe en bas à droite, auto-dismiss après 4s
-    ════════════════════════════════════════════════════════════════════════ --}}
-    <div
-        x-data="{
-            toasts: [],
-            MAX_VISIBLE: 6,
-            addToast(data) {
-                const id = Date.now() + Math.random();
-                this.toasts.push({ id, ...data, leaving: false });
-
-                // Auto-dismiss
-                setTimeout(() => this.removeToast(id), data.success ? 4000 : 6000);
-
-                // Limiter le nb de toasts affichés simultanément
-                if (this.toasts.length > this.MAX_VISIBLE) {
-                    const oldest = this.toasts[0];
-                    this.removeToast(oldest.id);
-                }
-            },
-            removeToast(id) {
-                const idx = this.toasts.findIndex(t => t.id === id);
-                if (idx === -1) return;
-                this.toasts[idx].leaving = true;
-                setTimeout(() => {
-                    this.toasts = this.toasts.filter(t => t.id !== id);
-                }, 300);
-            }
-        }"
-        @scrape-toast.window="addToast($event.detail[0] ?? $event.detail)"
-        class="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 items-end pointer-events-none"
-        style="max-width: 340px;">
-
-        <template x-for="toast in toasts" :key="toast.id">
-            <div
-                x-show="!toast.leaving"
-                x-transition:enter="transition ease-out duration-200"
-                x-transition:enter-start="opacity-0 translate-y-2 scale-95"
-                x-transition:enter-end="opacity-100 translate-y-0 scale-100"
-                x-transition:leave="transition ease-in duration-200"
-                x-transition:leave-start="opacity-100 translate-y-0 scale-100"
-                x-transition:leave-end="opacity-0 translate-y-2 scale-95"
-                class="pointer-events-auto w-full rounded-xl shadow-lg border flex items-start gap-3 px-4 py-3 text-sm"
-                :class="toast.success
-                    ? 'bg-white border-emerald-200'
-                    : 'bg-white border-red-200'">
-
-                {{-- Icône --}}
-                <div class="mt-0.5 flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center"
-                    :class="toast.success ? 'bg-emerald-100' : 'bg-red-100'">
-                    <template x-if="toast.success">
-                        <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
-                        </svg>
-                    </template>
-                    <template x-if="!toast.success">
-                        <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
-                        </svg>
-                    </template>
-                </div>
-
-                {{-- Contenu --}}
-                <div class="flex-1 min-w-0">
-                    <p class="font-semibold leading-tight"
-                        :class="toast.success ? 'text-emerald-700' : 'text-red-600'"
-                        x-text="toast.success ? 'Scrape réussi' : 'Scrape échoué'">
-                    </p>
-                    <p class="text-gray-500 text-xs mt-0.5 truncate font-mono" x-text="'EAN : ' + toast.ean"></p>
-                    <p class="text-gray-600 text-xs truncate" x-text="toast.siteName"></p>
-                    <template x-if="toast.success && toast.prix">
-                        <p class="text-emerald-600 text-xs font-bold mt-0.5" x-text="toast.prix"></p>
-                    </template>
-                </div>
-
-                {{-- Bouton fermer --}}
-                <button @click="removeToast(toast.id)"
-                    class="flex-shrink-0 text-gray-300 hover:text-gray-500 transition-colors mt-0.5">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                    </svg>
-                </button>
-            </div>
-        </template>
-    </div>
-    {{-- ── /Toast notifications ── --}}
-
 </div>
