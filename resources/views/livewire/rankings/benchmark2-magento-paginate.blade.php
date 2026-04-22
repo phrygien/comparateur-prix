@@ -1061,119 +1061,14 @@ new class extends Component {
 
                                 <div class="divider divider-horizontal mx-0"></div>
 
-                                {{-- ══════════════════════════════════════════════════
-                                     Prix Live + Bouton Historique
-                                     Tout géré en Alpine : historique stocké en mémoire,
-                                     panneau slide-over, filtre succès/échec, export CSV.
-                                ══════════════════════════════════════════════════ --}}
-                                <div class="flex items-start gap-2"
-                                    x-data="{
-                                        /* ── État scraping ── */
-                                        panelOpen: false,
-                                        filterMode: 'all',   // 'all' | 'success' | 'error'
-                                        searchQuery: '',
+                                {{-- ── Prix Live ─────────────────────────────────
+                                     Le bouton déclenche startLiveScraping() côté Livewire.
+                                     L'orchestration JS, la cloche et l'historique sont dans
+                                     le composant Alpine fixed en bas de page (hors Livewire).
+                                ─────────────────────────────────────────────── --}}
+                                <div class="flex items-start gap-2">
 
-                                        /* ── Historique persistant (session JS) ── */
-                                        history: [],         // { id, success, ean, siteName, prix, finishedAt, sessionId }
-                                        currentSessionId: null,
-
-                                        /* ─────────────────────────────────────── */
-                                        get unreadErrors() {
-                                            return this.history.filter(h => !h.success && h.sessionId === this.currentSessionId).length;
-                                        },
-                                        get unreadSuccess() {
-                                            return this.history.filter(h => h.success && h.sessionId === this.currentSessionId).length;
-                                        },
-                                        get totalUnread() {
-                                            return this.history.filter(h => h.sessionId === this.currentSessionId).length;
-                                        },
-                                        get filteredHistory() {
-                                            return this.history
-                                                .filter(h => {
-                                                    if (this.filterMode === 'success') return h.success;
-                                                    if (this.filterMode === 'error')   return !h.success;
-                                                    return true;
-                                                })
-                                                .filter(h => {
-                                                    if (!this.searchQuery) return true;
-                                                    const q = this.searchQuery.toLowerCase();
-                                                    return h.ean.toLowerCase().includes(q)
-                                                        || h.siteName.toLowerCase().includes(q);
-                                                })
-                                                .slice()
-                                                .reverse(); // plus récent en premier
-                                        },
-
-                                        addEntry(data) {
-                                            this.history.push({
-                                                id:          Date.now() + Math.random(),
-                                                success:     data.success,
-                                                ean:         data.ean,
-                                                siteName:    data.siteName,
-                                                prix:        data.prix ?? null,
-                                                finishedAt:  new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-                                                finishedDate: new Date().toLocaleDateString('fr-FR'),
-                                                sessionId:   this.currentSessionId,
-                                            });
-                                        },
-
-                                        clearHistory() {
-                                            if (confirm('Vider tout l\'historique ?')) {
-                                                this.history = [];
-                                            }
-                                        },
-
-                                        exportCsv() {
-                                            const rows = [['Statut','EAN','Site','Prix','Date','Heure','Session']];
-                                            this.filteredHistory.forEach(h => {
-                                                rows.push([
-                                                    h.success ? 'Succès' : 'Échec',
-                                                    h.ean,
-                                                    h.siteName,
-                                                    h.prix ?? '',
-                                                    h.finishedDate,
-                                                    h.finishedAt,
-                                                    h.sessionId,
-                                                ]);
-                                            });
-                                            const csv = rows.map(r => r.map(v => '\"' + String(v).replace(/\"/g,'\"\"') + '\"').join(',')).join('\n');
-                                            const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-                                            const url  = URL.createObjectURL(blob);
-                                            const a    = document.createElement('a');
-                                            a.href     = url;
-                                            a.download = 'historique_scraping_' + new Date().toISOString().slice(0,10) + '.csv';
-                                            a.click();
-                                            URL.revokeObjectURL(url);
-                                        }
-                                    }"
-                                    @live-scraping-jobs.window="
-                                        const jobs = $event.detail.jobs;
-                                        const BATCH = 3;
-                                        const wireId = $el.closest('[wire\\:id]').getAttribute('wire:id');
-                                        const component = Livewire.find(wireId);
-
-                                        /* Nouvelle session à chaque lancement */
-                                        currentSessionId = 'S' + Date.now();
-
-                                        const runBatch = async (batch) => {
-                                            await Promise.all(
-                                                batch.map(job =>
-                                                    component.call('fetchLivePriceForJob', job.ean, job.siteId, job.url, job.siteName)
-                                                )
-                                            );
-                                        };
-
-                                        (async () => {
-                                            for (let i = 0; i < jobs.length; i += BATCH) {
-                                                const batch = jobs.slice(i, i + BATCH);
-                                                await runBatch(batch);
-                                            }
-                                            component.call('stopLiveScraping');
-                                        })();
-                                    "
-                                    @scrape-toast.window="addEntry($event.detail[0] ?? $event.detail)">
-
-                                    {{-- ── Bouton Prix live ── --}}
+                                    {{-- Bouton Prix live --}}
                                     <div class="flex flex-col items-center gap-1">
                                         <button type="button"
                                             wire:click="startLiveScraping"
@@ -1223,186 +1118,24 @@ new class extends Component {
                                         @endif
                                     </div>
 
-                                    {{-- ── Bouton Notifications / Historique ── --}}
-                                    <div class="relative">
-                                        <button type="button"
-                                            @click="panelOpen = !panelOpen"
-                                            class="btn btn-sm btn-ghost btn-square relative"
-                                            title="Historique des scrapes">
-                                            {{-- Cloche --}}
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                    d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
-                                            </svg>
-                                            {{-- Badge compteur (rouge si erreurs, orange si tout OK) --}}
-                                            <template x-if="totalUnread > 0">
-                                                <span class="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full text-white text-[10px] font-bold flex items-center justify-center px-1"
-                                                    :class="unreadErrors > 0 ? 'bg-red-500' : 'bg-warning'">
-                                                    <span x-text="totalUnread > 99 ? '99+' : totalUnread"></span>
-                                                </span>
-                                            </template>
-                                        </button>
-
-                                        {{-- ── Panneau slide-over ── --}}
-                                        <div x-show="panelOpen"
-                                            @click.away="panelOpen = false"
-                                            x-transition:enter="transition ease-out duration-200"
-                                            x-transition:enter-start="opacity-0 scale-95 translate-y-1"
-                                            x-transition:enter-end="opacity-100 scale-100 translate-y-0"
-                                            x-transition:leave="transition ease-in duration-150"
-                                            x-transition:leave-start="opacity-100 scale-100 translate-y-0"
-                                            x-transition:leave-end="opacity-0 scale-95 translate-y-1"
-                                            class="absolute right-0 top-10 z-[200] w-[420px] bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden"
-                                            style="max-height: 560px;">
-
-                                            {{-- En-tête du panneau --}}
-                                            <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">
-                                                <div class="flex items-center gap-2">
-                                                    <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                            d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
-                                                    </svg>
-                                                    <span class="text-sm font-semibold text-gray-800">Historique des scrapes</span>
-                                                    <span class="badge badge-sm badge-ghost font-mono" x-text="history.length + ' entrées'"></span>
-                                                </div>
-                                                <div class="flex items-center gap-1">
-                                                    {{-- Export CSV --}}
-                                                    <button @click="exportCsv()"
-                                                        class="btn btn-xs btn-ghost gap-1 text-gray-500 hover:text-gray-800"
-                                                        title="Exporter en CSV">
-                                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                                                        </svg>
-                                                        CSV
-                                                    </button>
-                                                    {{-- Vider --}}
-                                                    <button @click="clearHistory()"
-                                                        class="btn btn-xs btn-ghost text-gray-400 hover:text-red-500"
-                                                        title="Vider l'historique">
-                                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                                                        </svg>
-                                                    </button>
-                                                    {{-- Fermer --}}
-                                                    <button @click="panelOpen = false" class="btn btn-xs btn-ghost btn-circle text-gray-400 hover:text-gray-700">
-                                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                                                        </svg>
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                            {{-- KPIs résumé --}}
-                                            <div class="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-100 text-center">
-                                                <div class="py-2 px-3">
-                                                    <div class="text-lg font-bold text-gray-700" x-text="history.length"></div>
-                                                    <div class="text-[10px] text-gray-400 uppercase tracking-wide">Total</div>
-                                                </div>
-                                                <div class="py-2 px-3">
-                                                    <div class="text-lg font-bold text-emerald-600" x-text="history.filter(h => h.success).length"></div>
-                                                    <div class="text-[10px] text-gray-400 uppercase tracking-wide">Succès</div>
-                                                </div>
-                                                <div class="py-2 px-3">
-                                                    <div class="text-lg font-bold text-red-500" x-text="history.filter(h => !h.success).length"></div>
-                                                    <div class="text-[10px] text-gray-400 uppercase tracking-wide">Échecs</div>
-                                                </div>
-                                            </div>
-
-                                            {{-- Filtres + recherche --}}
-                                            <div class="flex items-center gap-2 px-3 py-2 border-b border-gray-100 bg-gray-50/60">
-                                                <div class="join flex-shrink-0">
-                                                    <button class="join-item btn btn-xs"
-                                                        :class="filterMode === 'all' ? 'btn-neutral' : 'btn-ghost'"
-                                                        @click="filterMode = 'all'">Tous</button>
-                                                    <button class="join-item btn btn-xs"
-                                                        :class="filterMode === 'success' ? 'btn-success' : 'btn-ghost'"
-                                                        @click="filterMode = 'success'">
-                                                        ✓ <span x-text="history.filter(h=>h.success).length"></span>
-                                                    </button>
-                                                    <button class="join-item btn btn-xs"
-                                                        :class="filterMode === 'error' ? 'btn-error' : 'btn-ghost'"
-                                                        @click="filterMode = 'error'">
-                                                        ✗ <span x-text="history.filter(h=>!h.success).length"></span>
-                                                    </button>
-                                                </div>
-                                                <input type="text"
-                                                    x-model.debounce.300ms="searchQuery"
-                                                    placeholder="EAN ou site…"
-                                                    class="input input-xs input-bordered flex-1 min-w-0"/>
-                                            </div>
-
-                                            {{-- Liste des entrées --}}
-                                            <div class="overflow-y-auto flex-1 divide-y divide-gray-50">
-
-                                                <template x-if="filteredHistory.length === 0">
-                                                    <div class="flex flex-col items-center justify-center py-12 text-gray-400 gap-2">
-                                                        <svg class="w-8 h-8 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0H4"/>
-                                                        </svg>
-                                                        <span class="text-sm">Aucune entrée</span>
-                                                    </div>
-                                                </template>
-
-                                                <template x-for="entry in filteredHistory" :key="entry.id">
-                                                    <div class="flex items-start gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors">
-
-                                                        {{-- Pastille statut --}}
-                                                        <div class="flex-shrink-0 mt-0.5 w-6 h-6 rounded-full flex items-center justify-center"
-                                                            :class="entry.success ? 'bg-emerald-100' : 'bg-red-100'">
-                                                            <template x-if="entry.success">
-                                                                <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
-                                                                </svg>
-                                                            </template>
-                                                            <template x-if="!entry.success">
-                                                                <svg class="w-3.5 h-3.5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
-                                                                </svg>
-                                                            </template>
-                                                        </div>
-
-                                                        {{-- Infos principales --}}
-                                                        <div class="flex-1 min-w-0">
-                                                            <div class="flex items-center justify-between gap-2">
-                                                                <span class="text-xs font-semibold"
-                                                                    :class="entry.success ? 'text-emerald-700' : 'text-red-600'"
-                                                                    x-text="entry.success ? 'Scrape réussi' : 'Scrape échoué'">
-                                                                </span>
-                                                                <span class="text-[10px] text-gray-400 flex-shrink-0 font-mono"
-                                                                    x-text="entry.finishedDate + ' ' + entry.finishedAt">
-                                                                </span>
-                                                            </div>
-                                                            <div class="flex items-center gap-2 mt-0.5 flex-wrap">
-                                                                <span class="font-mono text-[11px] text-gray-600 bg-gray-100 rounded px-1.5 py-0.5" x-text="entry.ean"></span>
-                                                                <span class="text-xs text-gray-500 truncate max-w-[140px]" x-text="entry.siteName"></span>
-                                                            </div>
-                                                            <template x-if="entry.success && entry.prix">
-                                                                <span class="text-xs font-bold text-emerald-600 mt-0.5 block" x-text="entry.prix"></span>
-                                                            </template>
-                                                        </div>
-
-                                                        {{-- Badge session --}}
-                                                        <span class="flex-shrink-0 text-[9px] font-mono text-gray-300 mt-0.5" x-text="entry.sessionId"></span>
-                                                    </div>
-                                                </template>
-                                            </div>
-
-                                            {{-- Pied du panneau --}}
-                                            <div class="px-4 py-2 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
-                                                <span class="text-[10px] text-gray-400">
-                                                    Historique en mémoire — effacé au rechargement de page
-                                                </span>
-                                                <span class="text-[10px] text-gray-400 font-mono"
-                                                    x-text="filteredHistory.length + ' / ' + history.length + ' affiché(s)'">
-                                                </span>
-                                            </div>
-                                        </div>
-                                        {{-- ── /Panneau ── --}}
-                                    </div>
-                                    {{-- ── /Bouton Notifications ── --}}
+                                    {{-- Bouton cloche — délègue au composant Alpine fixed --}}
+                                    <button type="button"
+                                        onclick="window.dispatchEvent(new CustomEvent('bell-toggle'))"
+                                        class="btn btn-sm btn-ghost btn-square relative"
+                                        title="Historique des scrapes">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                                        </svg>
+                                        {{-- Badge mis à jour par le composant Alpine external via JS --}}
+                                        <span id="bell-badge"
+                                            style="display:none"
+                                            class="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full text-white text-[10px] font-bold flex items-center justify-center px-1">
+                                        </span>
+                                    </button>
 
                                 </div>
-                                {{-- ── /Prix Live + Historique ── --}}
+                                {{-- ── /Prix Live ── --}}
 
                             </div>
                         </div>
@@ -1657,20 +1390,94 @@ new class extends Component {
         </x-tabs>
     </div>
 
-    {{-- ═══════════════════════════════════════════════════════════════════════
-         Toast notifications — Scraping live (affichage visuel uniquement)
-         L'historique complet est dans le panneau cloche ci-dessus.
-         Auto-dismiss après 4s (succès) / 6s (échec).
-    ════════════════════════════════════════════════════════════════════════ --}}
+    {{-- ═══════════════════════════════════════════════════════════════════════════
+         SYSTÈME ALPINE INDÉPENDANT — hors du composant Livewire
+         ─ Orchestre les appels scraping (live-scraping-jobs)
+         ─ Stocke l'historique en mémoire JS (résiste aux re-renders Livewire)
+         ─ Panneau cloche (bell-toggle) fixed en haut à droite
+         ─ Toasts temps réel en bas à droite
+    ════════════════════════════════════════════════════════════════════════════ --}}
     <div
+        id="scraping-system"
         x-data="{
-            toasts: [],
-            MAX_VISIBLE: 5,
+
+            /* ════════════════ ÉTAT ════════════════ */
+            panelOpen:        false,
+            filterMode:       'all',
+            searchQuery:      '',
+            history:          [],
+            toasts:           [],
+            currentSessionId: null,
+            MAX_TOASTS:       5,
+
+            /* ════════════════ COMPUTED ════════════════ */
+
+            get totalInSession() {
+                return this.history.filter(h => h.sessionId === this.currentSessionId).length;
+            },
+            get errorsInSession() {
+                return this.history.filter(h => !h.success && h.sessionId === this.currentSessionId).length;
+            },
+            get badgeCount() {
+                return this.history.length;
+            },
+            get badgeColor() {
+                return this.errorsInSession > 0 ? 'bg-red-500' : 'bg-amber-400';
+            },
+            get filteredHistory() {
+                return this.history
+                    .filter(h => {
+                        if (this.filterMode === 'success') return  h.success;
+                        if (this.filterMode === 'error')   return !h.success;
+                        return true;
+                    })
+                    .filter(h => {
+                        if (!this.searchQuery) return true;
+                        const q = this.searchQuery.toLowerCase();
+                        return h.ean.toLowerCase().includes(q)
+                            || h.siteName.toLowerCase().includes(q);
+                    })
+                    .slice().reverse();
+            },
+
+            /* ════════════════ MÉTHODES ════════════════ */
+
+            /* Ajouter une entrée dans l'historique + badge */
+            addEntry(data) {
+                const now = new Date();
+                this.history.push({
+                    id:           Date.now() + Math.random(),
+                    success:      data.success,
+                    ean:          data.ean          ?? '—',
+                    siteName:     data.siteName     ?? '—',
+                    prix:         data.prix         ?? null,
+                    finishedAt:   now.toLocaleTimeString('fr-FR',  { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                    finishedDate: now.toLocaleDateString('fr-FR'),
+                    sessionId:    this.currentSessionId,
+                });
+                this.updateBadge();
+            },
+
+            /* Badge DOM (hors Alpine, dans Livewire) */
+            updateBadge() {
+                const badge = document.getElementById('bell-badge');
+                if (!badge) return;
+                const n = this.history.length;
+                if (n === 0) {
+                    badge.style.display = 'none';
+                    return;
+                }
+                badge.style.display    = 'flex';
+                badge.textContent      = n > 99 ? '99+' : n;
+                badge.className        = 'absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full text-white text-[10px] font-bold flex items-center justify-center px-1 ' + this.badgeColor;
+            },
+
+            /* Toasts */
             addToast(data) {
                 const id = Date.now() + Math.random();
                 this.toasts.push({ id, ...data, leaving: false });
                 setTimeout(() => this.removeToast(id), data.success ? 4000 : 6000);
-                if (this.toasts.length > this.MAX_VISIBLE) {
+                if (this.toasts.length > this.MAX_TOASTS) {
                     this.removeToast(this.toasts[0].id);
                 }
             },
@@ -1679,62 +1486,283 @@ new class extends Component {
                 if (idx === -1) return;
                 this.toasts[idx].leaving = true;
                 setTimeout(() => { this.toasts = this.toasts.filter(t => t.id !== id); }, 300);
-            }
+            },
+
+            /* Vider l'historique */
+            clearHistory() {
+                if (!confirm('Vider tout l\'historique de scraping ?')) return;
+                this.history = [];
+                this.updateBadge();
+            },
+
+            /* Export CSV */
+            exportCsv() {
+                const rows = [['Statut','EAN','Site','Prix','Date','Heure','Session']];
+                this.filteredHistory.forEach(h => {
+                    rows.push([
+                        h.success ? 'Succès' : 'Échec',
+                        h.ean, h.siteName, h.prix ?? '',
+                        h.finishedDate, h.finishedAt, h.sessionId,
+                    ]);
+                });
+                const csv  = rows.map(r => r.map(v => '\"' + String(v).replace(/\"/g, '\"\"') + '\"').join(',')).join('\n');
+                const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+                const url  = URL.createObjectURL(blob);
+                const a    = document.createElement('a');
+                a.href = url; a.download = 'scraping_' + new Date().toISOString().slice(0,10) + '.csv';
+                a.click(); URL.revokeObjectURL(url);
+            },
         }"
-        @scrape-toast.window="addToast($event.detail[0] ?? $event.detail)"
-        class="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 items-end pointer-events-none"
-        style="max-width: 340px;">
 
-        <template x-for="toast in toasts" :key="toast.id">
-            <div
-                x-show="!toast.leaving"
-                x-transition:enter="transition ease-out duration-200"
-                x-transition:enter-start="opacity-0 translate-y-2 scale-95"
-                x-transition:enter-end="opacity-100 translate-y-0 scale-100"
-                x-transition:leave="transition ease-in duration-200"
-                x-transition:leave-start="opacity-100 translate-y-0 scale-100"
-                x-transition:leave-end="opacity-0 translate-y-2 scale-95"
-                class="pointer-events-auto w-full rounded-xl shadow-lg border flex items-start gap-3 px-4 py-3 text-sm"
-                :class="toast.success ? 'bg-white border-emerald-200' : 'bg-white border-red-200'">
+        {{-- ── Écoute des events window ── --}}
 
-                {{-- Icône --}}
-                <div class="mt-0.5 flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center"
-                    :class="toast.success ? 'bg-emerald-100' : 'bg-red-100'">
-                    <template x-if="toast.success">
-                        <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
-                        </svg>
-                    </template>
-                    <template x-if="!toast.success">
-                        <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
-                        </svg>
-                    </template>
-                </div>
+        {{-- 1. Livewire dispatch les jobs → on orchestre --}}
+        @live-scraping-jobs.window="
+            const jobs   = $event.detail.jobs;
+            const BATCH  = 3;
+            const wEl    = document.querySelector('[wire\\:id]');
+            const comp   = Livewire.find(wEl.getAttribute('wire:id'));
 
-                {{-- Contenu --}}
-                <div class="flex-1 min-w-0">
-                    <p class="font-semibold leading-tight"
-                        :class="toast.success ? 'text-emerald-700' : 'text-red-600'"
-                        x-text="toast.success ? 'Scrape réussi' : 'Scrape échoué'">
-                    </p>
-                    <p class="text-gray-500 text-xs mt-0.5 truncate font-mono" x-text="'EAN : ' + toast.ean"></p>
-                    <p class="text-gray-600 text-xs truncate" x-text="toast.siteName"></p>
-                    <template x-if="toast.success && toast.prix">
-                        <p class="text-emerald-600 text-xs font-bold mt-0.5" x-text="toast.prix"></p>
-                    </template>
-                </div>
+            currentSessionId = 'S' + Date.now();
 
-                {{-- Bouton fermer --}}
-                <button @click="removeToast(toast.id)"
-                    class="flex-shrink-0 text-gray-300 hover:text-gray-500 transition-colors mt-0.5">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            const runBatch = async (batch) => {
+                await Promise.all(
+                    batch.map(job => comp.call('fetchLivePriceForJob', job.ean, job.siteId, job.url, job.siteName))
+                );
+            };
+
+            (async () => {
+                for (let i = 0; i < jobs.length; i += BATCH) {
+                    await runBatch(jobs.slice(i, i + BATCH));
+                }
+                comp.call('stopLiveScraping');
+            })();
+        "
+
+        {{-- 2. Chaque scrape terminé → toast + historique --}}
+        @scrape-toast.window="
+            const d = $event.detail[0] ?? $event.detail;
+            addEntry(d);
+            addToast(d);
+        "
+
+        {{-- 3. Clic sur la cloche (depuis Livewire) → toggle panneau --}}
+        @bell-toggle.window="panelOpen = !panelOpen"
+
+        class="contents">
+
+        {{-- ════════════════ PANNEAU HISTORIQUE (fixed top-right) ════════════════ --}}
+        <div
+            x-show="panelOpen"
+            x-cloak
+            @keydown.escape.window="panelOpen = false"
+            @click.outside="panelOpen = false"
+            x-transition:enter="transition ease-out duration-200"
+            x-transition:enter-start="opacity-0 -translate-y-2 scale-95"
+            x-transition:enter-end="opacity-100 translate-y-0 scale-100"
+            x-transition:leave="transition ease-in duration-150"
+            x-transition:leave-start="opacity-100 translate-y-0 scale-100"
+            x-transition:leave-end="opacity-0 -translate-y-2 scale-95"
+            class="fixed top-16 right-4 z-[9998] w-[440px] bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden"
+            style="max-height: 580px;">
+
+            {{-- En-tête --}}
+            <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50 flex-shrink-0">
+                <div class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
                     </svg>
-                </button>
+                    <span class="text-sm font-semibold text-gray-800">Historique des scrapes</span>
+                    <span class="badge badge-sm badge-ghost font-mono text-gray-500" x-text="history.length + ' entrée(s)'"></span>
+                </div>
+                <div class="flex items-center gap-1">
+                    <button @click="exportCsv()"
+                        class="btn btn-xs btn-ghost gap-1 text-gray-500 hover:text-gray-800" title="Exporter en CSV">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                        </svg>
+                        CSV
+                    </button>
+                    <button @click="clearHistory()"
+                        class="btn btn-xs btn-ghost text-gray-400 hover:text-red-500" title="Vider l'historique">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                        </svg>
+                    </button>
+                    <button @click="panelOpen = false" class="btn btn-xs btn-ghost btn-circle text-gray-400 hover:text-gray-700">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
             </div>
-        </template>
+
+            {{-- KPIs --}}
+            <div class="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-100 flex-shrink-0 text-center">
+                <div class="py-2 px-3">
+                    <div class="text-xl font-bold text-gray-700" x-text="history.length"></div>
+                    <div class="text-[10px] text-gray-400 uppercase tracking-wide">Total</div>
+                </div>
+                <div class="py-2 px-3">
+                    <div class="text-xl font-bold text-emerald-600" x-text="history.filter(h => h.success).length"></div>
+                    <div class="text-[10px] text-gray-400 uppercase tracking-wide">Succès</div>
+                </div>
+                <div class="py-2 px-3">
+                    <div class="text-xl font-bold text-red-500" x-text="history.filter(h => !h.success).length"></div>
+                    <div class="text-[10px] text-gray-400 uppercase tracking-wide">Échecs</div>
+                </div>
+            </div>
+
+            {{-- Filtres + recherche --}}
+            <div class="flex items-center gap-2 px-3 py-2 border-b border-gray-100 bg-gray-50/60 flex-shrink-0">
+                <div class="join flex-shrink-0">
+                    <button class="join-item btn btn-xs"
+                        :class="filterMode === 'all' ? 'btn-neutral' : 'btn-ghost'"
+                        @click="filterMode = 'all'">
+                        Tous <span x-text="history.length" class="ml-1 opacity-60"></span>
+                    </button>
+                    <button class="join-item btn btn-xs"
+                        :class="filterMode === 'success' ? 'btn-success' : 'btn-ghost'"
+                        @click="filterMode = 'success'">
+                        ✓ <span x-text="history.filter(h=>h.success).length"></span>
+                    </button>
+                    <button class="join-item btn btn-xs"
+                        :class="filterMode === 'error' ? 'btn-error' : 'btn-ghost'"
+                        @click="filterMode = 'error'">
+                        ✗ <span x-text="history.filter(h=>!h.success).length"></span>
+                    </button>
+                </div>
+                <input type="text"
+                    x-model.debounce.300ms="searchQuery"
+                    placeholder="Rechercher EAN ou site…"
+                    class="input input-xs input-bordered flex-1 min-w-0"/>
+            </div>
+
+            {{-- Liste --}}
+            <div class="overflow-y-auto flex-1 divide-y divide-gray-50 min-h-0">
+
+                <template x-if="filteredHistory.length === 0">
+                    <div class="flex flex-col items-center justify-center py-14 text-gray-400 gap-3">
+                        <svg class="w-10 h-10 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                        </svg>
+                        <span class="text-sm">Aucune entrée dans l'historique</span>
+                        <span class="text-xs text-gray-300">Lancez un scraping via le bouton "Prix live"</span>
+                    </div>
+                </template>
+
+                <template x-for="entry in filteredHistory" :key="entry.id">
+                    <div class="flex items-start gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors">
+
+                        {{-- Pastille --}}
+                        <div class="flex-shrink-0 mt-0.5 w-6 h-6 rounded-full flex items-center justify-center"
+                            :class="entry.success ? 'bg-emerald-100' : 'bg-red-100'">
+                            <template x-if="entry.success">
+                                <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+                                </svg>
+                            </template>
+                            <template x-if="!entry.success">
+                                <svg class="w-3.5 h-3.5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
+                                </svg>
+                            </template>
+                        </div>
+
+                        {{-- Contenu --}}
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="text-xs font-semibold"
+                                    :class="entry.success ? 'text-emerald-700' : 'text-red-600'"
+                                    x-text="entry.success ? 'Scrape réussi' : 'Scrape échoué'">
+                                </span>
+                                <span class="text-[10px] text-gray-400 font-mono flex-shrink-0"
+                                    x-text="entry.finishedDate + ' ' + entry.finishedAt">
+                                </span>
+                            </div>
+                            <div class="flex items-center gap-2 mt-0.5 flex-wrap">
+                                <span class="font-mono text-[11px] text-gray-600 bg-gray-100 rounded px-1.5 py-0.5" x-text="entry.ean"></span>
+                                <span class="text-xs text-gray-500 truncate max-w-[160px]" x-text="entry.siteName"></span>
+                            </div>
+                            <template x-if="entry.success && entry.prix">
+                                <span class="text-xs font-bold text-emerald-600 mt-0.5 block" x-text="entry.prix"></span>
+                            </template>
+                        </div>
+
+                        {{-- Session ID --}}
+                        <span class="flex-shrink-0 text-[9px] font-mono text-gray-300 mt-1 tabular-nums"
+                            x-text="entry.sessionId ? entry.sessionId.slice(-6) : ''">
+                        </span>
+                    </div>
+                </template>
+            </div>
+
+            {{-- Pied --}}
+            <div class="px-4 py-2 border-t border-gray-100 bg-gray-50 flex items-center justify-between flex-shrink-0">
+                <span class="text-[10px] text-gray-400">Historique en mémoire — effacé au rechargement</span>
+                <span class="text-[10px] text-gray-400 font-mono"
+                    x-text="filteredHistory.length + ' / ' + history.length + ' affiché(s)'">
+                </span>
+            </div>
+        </div>
+        {{-- ── /Panneau ── --}}
+
+        {{-- ════════════════ TOASTS (fixed bottom-right) ════════════════ --}}
+        <div class="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 items-end pointer-events-none"
+            style="max-width: 340px;">
+
+            <template x-for="toast in toasts" :key="toast.id">
+                <div
+                    x-show="!toast.leaving"
+                    x-transition:enter="transition ease-out duration-200"
+                    x-transition:enter-start="opacity-0 translate-y-2 scale-95"
+                    x-transition:enter-end="opacity-100 translate-y-0 scale-100"
+                    x-transition:leave="transition ease-in duration-200"
+                    x-transition:leave-start="opacity-100 translate-y-0 scale-100"
+                    x-transition:leave-end="opacity-0 translate-y-2 scale-95"
+                    class="pointer-events-auto w-full rounded-xl shadow-lg border flex items-start gap-3 px-4 py-3 text-sm"
+                    :class="toast.success ? 'bg-white border-emerald-200' : 'bg-white border-red-200'">
+
+                    <div class="mt-0.5 flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center"
+                        :class="toast.success ? 'bg-emerald-100' : 'bg-red-100'">
+                        <template x-if="toast.success">
+                            <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+                            </svg>
+                        </template>
+                        <template x-if="!toast.success">
+                            <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                        </template>
+                    </div>
+
+                    <div class="flex-1 min-w-0">
+                        <p class="font-semibold leading-tight text-sm"
+                            :class="toast.success ? 'text-emerald-700' : 'text-red-600'"
+                            x-text="toast.success ? 'Scrape réussi' : 'Scrape échoué'">
+                        </p>
+                        <p class="text-gray-500 text-xs mt-0.5 font-mono truncate" x-text="'EAN : ' + toast.ean"></p>
+                        <p class="text-gray-600 text-xs truncate" x-text="toast.siteName"></p>
+                        <template x-if="toast.success && toast.prix">
+                            <p class="text-emerald-600 text-xs font-bold mt-0.5" x-text="toast.prix"></p>
+                        </template>
+                    </div>
+
+                    <button @click="removeToast(toast.id)"
+                        class="flex-shrink-0 text-gray-300 hover:text-gray-500 transition-colors mt-0.5">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+            </template>
+        </div>
+        {{-- ── /Toasts ── --}}
+
     </div>
-    {{-- ── /Toast notifications ── --}}
+    {{-- ══ /SYSTÈME ALPINE INDÉPENDANT ══ --}}
 
 </div>
