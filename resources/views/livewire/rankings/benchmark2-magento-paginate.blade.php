@@ -54,17 +54,6 @@ new class extends Component {
         $this->apiScraperService     = $apiScraperService;
     }
 
-    /**
-     * Après le premier rendu, on déclenche automatiquement le scraping live.
-     * Le JS écoute l'event 'live-scraping-jobs' et orchestre les appels.
-     */
-    public function mount(): void
-    {
-        // Le composant est monté : on lancera le scraping dès que les données
-        // seront disponibles (via l'event JS déclenché par startLiveScraping,
-        // appelé automatiquement depuis le hook Alpine après hydration).
-    }
-
     // ─── Computed: Total count ────────────────────────────────────────────────
 
     public function getSalesTotalProperty(): int
@@ -378,6 +367,33 @@ new class extends Component {
             $this->percentage_perte_marche = ((($this->somme_prix_marche_total + $this->somme_perte) * 100) / $this->somme_prix_marche_total) - 100;
         }
 
+        // ── Déclencher le scraping live dès que les prix DB sont construits ──
+        // Ne relance pas si déjà en cours ou si les résultats live sont déjà là.
+        if (!$this->isScrapingLive && empty($this->livePrices) && empty($this->scrapeErrors)) {
+            $jobs = [];
+            foreach ($comparisons as $comparison) {
+                foreach ($sites as $site) {
+                    $siteData = $comparison['sites'][$site->id] ?? null;
+                    if ($siteData && !empty($siteData['url'])) {
+                        $jobs[] = [
+                            'ean'    => $comparison['row']->ean,
+                            'siteId' => $site->id,
+                            'url'    => $siteData['url'],
+                        ];
+                    }
+                }
+            }
+
+            if (!empty($jobs)) {
+                $this->livePrices     = [];
+                $this->scrapeErrors   = [];
+                $this->scrapedCount   = 0;
+                $this->scrapTotal     = count($jobs);
+                $this->isScrapingLive = true;
+                $this->dispatch('live-scraping-jobs', jobs: $jobs);
+            }
+        }
+
         return collect($comparisons);
     }
 
@@ -391,42 +407,19 @@ new class extends Component {
     // ─── Live scraping actions ────────────────────────────────────────────────
 
     /**
-     * Construit la liste des jobs et la dispatche au JS.
-     * Appelé automatiquement au montage ET manuellement via le bouton "Relancer".
+     * Relance manuellement le scraping live (bouton "Relancer").
+     * Remet les compteurs à zéro — getComparisonsProperty() prendra le relais
+     * au prochain render et re-dispatchera les jobs.
      */
     public function startLiveScraping(): void
     {
-        set_time_limit(0);
-
-        // Reset complet (y compris les erreurs précédentes)
-        $this->livePrices   = [];
-        $this->scrapeErrors = [];
-        $this->scrapedCount = 0;
-        $this->isScrapingLive = true;
-
-        $jobs = [];
-        foreach ($this->comparisons as $comparison) {
-            foreach ($this->sites as $site) {
-                $siteData = $comparison['sites'][$site->id] ?? null;
-                if ($siteData && !empty($siteData['url'])) {
-                    $jobs[] = [
-                        'ean'    => $comparison['row']->ean,
-                        'siteId' => $site->id,
-                        'url'    => $siteData['url'],
-                    ];
-                }
-            }
-        }
-
-        $this->scrapTotal = count($jobs);
-
-        // Si aucun job à scraper, on s'arrête immédiatement
-        if ($this->scrapTotal === 0) {
-            $this->isScrapingLive = false;
-            return;
-        }
-
-        $this->dispatch('live-scraping-jobs', jobs: $jobs);
+        $this->livePrices     = [];
+        $this->scrapeErrors   = [];
+        $this->scrapedCount   = 0;
+        $this->scrapTotal     = 0;
+        $this->isScrapingLive = false;
+        // Le reset de livePrices + scrapeErrors suffit : au prochain render
+        // getComparisonsProperty() détecte empty($livePrices) et re-dispatche.
     }
 
     /**
@@ -884,24 +877,7 @@ new class extends Component {
                         <span class="text-sm font-medium">Chargement des données pour {{ $label }}…</span>
                     </div>
 
-                    {{--
-                        ── Auto-scraping au montage ─────────────────────────────────────────
-                        Alpine lance startLiveScraping() dès que le composant Livewire est
-                        initialisé ET que les données sont prêtes (après le premier rendu).
-                        On utilise $nextTick pour s'assurer que Livewire est hydraté.
-                        L'attribut x-init est sur le conteneur principal du tab pour ne se
-                        déclencher qu'une seule fois par pays actif.
-                    --}}
-                    <div wire:loading.remove wire:target="activeCountry"
-                        x-data="{ autoScrapeDone: false }"
-                        x-init="
-                            $nextTick(() => {
-                                if (!autoScrapeDone && !$wire.isScrapingLive) {
-                                    autoScrapeDone = true;
-                                    $wire.call('startLiveScraping');
-                                }
-                            })
-                        ">
+                    <div wire:loading.remove wire:target="activeCountry">
 
                         @if($comparisonsAvecPrixMarche > 0)
                             <div class="grid grid-cols-4 gap-4 mb-6 mt-6">
