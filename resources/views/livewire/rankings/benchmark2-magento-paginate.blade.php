@@ -1201,8 +1201,8 @@ new class extends Component {
         const pctClass = p !== null ? (cheaper ? 'text-error' : 'text-success') : '';
 
         td.innerHTML = `
+            <span class="badge badge-xs badge-warning font-bold" title="Prix live scrapé à ${scrapedAt}">⚡ live</span>
             <div class="flex flex-col gap-0.5 items-end">
-                <span class="badge badge-xs badge-warning font-bold" title="Prix live scrapé à ${scrapedAt}">⚡ live</span>
                 <div class="flex items-center gap-1">
                     <a href="${url}" target="_blank"
                        class="link link-primary text-xs font-semibold underline decoration-warning"
