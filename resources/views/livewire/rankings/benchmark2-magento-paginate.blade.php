@@ -1206,8 +1206,8 @@ new class extends Component {
 
         td.innerHTML = `
             <div class="flex flex-col gap-0.5 items-end">
+                <span class="badge badge-xs badge-warning font-bold" title="Prix live scrapé à ${scrapedAt}">⚡ live</span>
                 <div class="flex items-center gap-1">
-                    <span class="badge badge-xs badge-warning font-bold" title="Prix live scrapé à ${scrapedAt}">⚡ live</span>
                     <a href="${url}" target="_blank"
                        class="link link-primary text-xs font-semibold underline decoration-warning"
                        title="${name}">${fmt(prix)}</a>
@@ -1321,7 +1321,7 @@ new class extends Component {
 
     async function runScraping() {
         const allTds  = Array.from(document.querySelectorAll('td.price-cell[data-scrape-url]'))
-                             .filter(td => td.dataset.scrapeUrl);
+                             .filter(td => td.dataset.scrapeUrl && td.dataset.scrapeUrl.trim() !== "");
         const total   = allTds.length;
         let   done    = 0;
 
