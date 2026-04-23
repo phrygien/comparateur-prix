@@ -96,7 +96,7 @@ new class extends Component {
 
         if (!empty($this->groupeFilter)) {
             $placeholders    = implode(',', array_fill(0, count($this->groupeFilter), '?'));
-            $groupeCondition = "AND groupe IN ($placeholders)";
+            $groupeCondition = "AND SUBSTRING_INDEX(product_char.name, ' - ', 1) IN ($placeholders)";
             $params          = $this->groupeFilter;
         }
 
@@ -1236,8 +1236,8 @@ new class extends Component {
 
         td.innerHTML = `
             <div class="flex flex-col gap-0.5 items-end">
+                <span class="badge badge-xs badge-error opacity-70" title="Scraping échoué — prix issu de la base de données">DB</span>
                 <div class="flex items-center gap-1">
-                    <span class="badge badge-xs badge-error opacity-70" title="Scraping échoué — prix issu de la base de données">DB</span>
                     <a href="${url}" target="_blank"
                        class="link link-primary text-xs font-semibold"
                        title="${name}">${fmt(prix)}</a>
@@ -1326,7 +1326,17 @@ new class extends Component {
         function updateStatus() {
             if (!statusEl) return;
             const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-            if (done < total) {
+            if(done == 0){
+                const liveCount  = document.querySelectorAll('.badge-warning.font-bold').length;
+                const errorCount = document.querySelectorAll('.badge-error.opacity-70').length;
+                statusEl.innerHTML = `
+                    <div class="flex flex-col items-center gap-1.5">
+                        <button id="btn-relancer" class="btn btn-xs btn-ghost gap-1 text-gray-500 hover:text-warning">
+                            Rechercher les prix en live
+                        </button>
+                    </div>`;
+                document.getElementById('btn-relancer')?.addEventListener('click', runScraping);
+            } else if (done < total && done > 0) {
                 statusEl.innerHTML = `
                     <div class="flex flex-col items-center gap-1">
                         <div class="flex items-center gap-2">
@@ -1394,12 +1404,12 @@ new class extends Component {
         }, 200);
     });
 
-    // Lancement initial
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => waitForTable(runScraping));
-    } else {
-        waitForTable(runScraping);
-    }
+    // // Lancement initial
+    // if (document.readyState === 'loading') {
+    //     document.addEventListener('DOMContentLoaded', () => waitForTable(runScraping));
+    // } else {
+    //     waitForTable(runScraping);
+    // }
 
 })();
 </script>
