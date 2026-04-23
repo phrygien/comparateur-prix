@@ -876,7 +876,7 @@ new class extends Component {
                                 <div class="divider divider-horizontal mx-0"></div>
 
                                 {{-- Export XLSX --}}
-                                <button type="button" wire:click="exportXlsx"
+                                {{-- <button type="button" wire:click="exportXlsx"
                                     wire:loading.attr="disabled" wire:loading.class="opacity-60 cursor-not-allowed"
                                     class="btn btn-sm btn-success gap-2" title="Exporter les données affichées en Excel">
                                     <span wire:loading.remove wire:target="exportXlsx" class="flex items-center gap-2">
@@ -889,6 +889,15 @@ new class extends Component {
                                         <span class="loading loading-spinner loading-xs"></span>
                                         Export en cours…
                                     </span>
+                                </button> --}}
+
+                                {{-- Export XLSX (remplace le wire:click="exportXlsx") --}}
+                                <button type="button" id="btn-export-xlsx"
+                                    class="btn btn-sm btn-success gap-2" title="Exporter les données affichées en Excel (avec prix live)">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                                    </svg>
+                                    Export XLSX
                                 </button>
 
                                 <div class="divider divider-horizontal mx-0"></div>
@@ -1414,6 +1423,103 @@ new class extends Component {
 
     // ajout event pour le bouton relancer
     document.getElementById('btn-relancer')?.addEventListener('click', runScraping);
+
+})();
+</script>
+
+{{-- ═══════════════════════════════════════════════════════════════════════════
+     Export cote JS
+     ─────────────────────────────────────────────────────────────────────────
+     Fonctionnement :
+      1. Prend la table HTML et l'export
+═══════════════════════════════════════════════════════════════════════════ --}}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+(function () {
+    'use strict';
+
+    // ── Lire le texte "propre" d'une cellule DOM ────────────────────────────
+    function readCell(td) {
+        if (!td) return '';
+
+        // Prix live : récupère le prix dans le lien
+        const link = td.querySelector('a.link-primary');
+        const pct  = td.querySelector('.price-pct, [class*="text-error"], [class*="text-success"]');
+
+        // Rang Google
+        const monoSpan = td.querySelector('.font-mono');
+        if (monoSpan) return monoSpan.textContent.trim();
+
+        // N/A
+        const naSpan = td.querySelector('.price-na, .text-gray-400');
+        if (naSpan && !link) return 'N/A';
+
+        // Cellule avec lien (prix)
+        if (link) {
+            let text = link.textContent.trim();
+            if (pct) text += ' (' + pct.textContent.trim() + ')';
+            return text;
+        }
+
+        return td.textContent.trim().replace(/\s+/g, ' ');
+    }
+
+    // ── Export principal ────────────────────────────────────────────────────
+    function exportDomToXlsx() {
+        const table = document.querySelector('table');
+        if (!table) { alert('Aucune table trouvée.'); return; }
+
+        const wb = XLSX.utils.book_new();
+        const rows = [];
+
+        // En-têtes
+        const headerCells = table.querySelectorAll('thead tr:first-child th');
+        const headers = Array.from(headerCells).map(th => th.textContent.trim().replace(/\s+/g, ' '));
+        rows.push(headers);
+
+        // Données
+        table.querySelectorAll('tbody tr').forEach(tr => {
+            const row = Array.from(tr.querySelectorAll('td')).map(td => readCell(td));
+            rows.push(row);
+        });
+
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+
+        // Largeurs auto approximatives
+        const colWidths = headers.map((h, i) => {
+            const maxLen = rows.reduce((max, row) => {
+                const val = row[i] || '';
+                return Math.max(max, val.toString().length);
+            }, h.length);
+            return { wch: Math.min(maxLen + 2, 50) };
+        });
+        ws['!cols'] = colWidths;
+
+        // Figer la première ligne
+        ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+
+        const countryEl = document.querySelector('.tab-active, [aria-selected="true"]');
+        const sheetName = 'Export ' + (countryEl ? countryEl.textContent.trim() : 'Marché');
+        XLSX.utils.book_append_sheet(wb, ws, sheetName.substring(0, 31));
+
+        const now = new Date();
+        const suffix = now.toISOString().replace(/[:.]/g, '-').substring(0, 19);
+        XLSX.writeFile(wb, `export_marche_${suffix}.xlsx`);
+    }
+
+    // ── Bind bouton ─────────────────────────────────────────────────────────
+    function bindExportBtn() {
+        const btn = document.getElementById('btn-export-xlsx');
+        if (btn) {
+            btn.removeEventListener('click', exportDomToXlsx); // évite les doublons
+            btn.addEventListener('click', exportDomToXlsx);
+        }
+    }
+
+    // Lancement initial + re-bind après chaque update Livewire
+    document.addEventListener('DOMContentLoaded', bindExportBtn);
+    document.addEventListener('livewire:morph-updated', bindExportBtn);
+    document.addEventListener('livewire:navigated', bindExportBtn);
 
 })();
 </script>
