@@ -1106,7 +1106,7 @@ new class extends Component {
                                                                 </div>
                                                             </td>
                                                         @else
-                                                            <td class="text-right price-cell-na"
+                                                            <td class="text-right price-na"
                                                                 data-ean="{{ $row->ean }}"
                                                                 data-site-id="{{ $site->id }}"
                                                                 data-prix-cosma="{{ $prixCosma }}"
