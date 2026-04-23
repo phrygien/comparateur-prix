@@ -1290,7 +1290,7 @@ new class extends Component {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
                 },
-                body: JSON.stringify({ ean, site_id: siteId, url }),
+                body: JSON.stringify({ site_id: siteId, url_site: url }),
             });
 
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
