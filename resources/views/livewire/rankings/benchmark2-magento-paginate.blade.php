@@ -895,8 +895,8 @@ new class extends Component {
 
                                 {{-- ── Statut du scraping live (piloté par JS pur) ── --}}
                                 <div id="live-scraping-status" class="flex flex-col items-center gap-1">
-                                   <div class="flex flex-col items-center gap-1.5">
-                                        <button id="btn-relancer" class="btn btn-xs btn-warning gap-1 text-gray-500">
+                                   <div class="flex flex-col items-center gap-2">
+                                        <button id="btn-relancer" class="btn btn-sm btn-warning gap-2 text-white">
                                             ⚡Rechercher les prix en live
                                         </button>
                                     </div>
