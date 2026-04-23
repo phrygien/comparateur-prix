@@ -1164,7 +1164,7 @@ new class extends Component {
      Fonctionnement :
       1. Au chargement de la table, on collecte tous les <td class="price-cell">
          qui ont un data-scrape-url non vide.
-      2. On les scrape par batches de 4 via l'endpoint /api/scrape-price.
+      2. On les scrape par batches de 4 via l'endpoint https://dev.astucom.com:9038/scrap.
       3. Pour chaque résultat, on patch le DOM directement :
          - badge ⚡ live   → scraping réussi
          - badge 🔴 Erreur → scraping échoué, prix DB conservé
@@ -1176,7 +1176,7 @@ new class extends Component {
     'use strict';
 
     const BATCH_SIZE  = 4;
-    const API_ENDPOINT = '/api/scrape-price'; // → ApiScraperController@scrape
+    const API_ENDPOINT = 'https://dev.astucom.com:9038/scrap'; // → ApiScraperController@scrape
 
     // ── Helpers DOM ──────────────────────────────────────────────────────────
 
@@ -1288,7 +1288,7 @@ new class extends Component {
                 method:  'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                    // 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
                 },
                 body: JSON.stringify({ ean, site_id: siteId, url }),
             });
@@ -1309,6 +1309,7 @@ new class extends Component {
             } else {
                 patchCellError(td);
             }
+
         } catch (e) {
             clearLoading(td);
             patchCellError(td);
