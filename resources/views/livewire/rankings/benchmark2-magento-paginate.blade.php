@@ -896,8 +896,8 @@ new class extends Component {
                                 {{-- ── Statut du scraping live (piloté par JS pur) ── --}}
                                 <div id="live-scraping-status" class="flex flex-col items-center gap-1">
                                    <div class="flex flex-col items-center gap-1.5">
-                                        <button id="btn-relancer" class="btn btn-xs btn-ghost gap-1 text-gray-500 hover:text-warning">
-                                            Rechercher les prix en live
+                                        <button id="btn-relancer" class="btn btn-xs btn-warning gap-1 text-gray-500">
+                                            ⚡Rechercher les prix en live
                                         </button>
                                     </div>
                                 </div>
@@ -1412,6 +1412,7 @@ new class extends Component {
     //     waitForTable(runScraping);
     // }
 
+    // ajout event pour le bouton relancer
     document.getElementById('btn-relancer')?.addEventListener('click', runScraping);
 
 })();
