@@ -1396,13 +1396,13 @@ new class extends Component {
     }
 
     // Relancer automatiquement quand Livewire re-render la page (pagination, filtre…)
-    document.addEventListener('livewire:navigated', () => waitForTable(runScraping));
-    document.addEventListener('livewire:morph-updated', () => {
-        // Petit délai pour laisser le DOM se stabiliser après le morph
-        setTimeout(() => {
-            if (document.querySelector('td.price-cell')) runScraping();
-        }, 200);
-    });
+    // document.addEventListener('livewire:navigated', () => waitForTable(runScraping));
+    // document.addEventListener('livewire:morph-updated', () => {
+    //     // Petit délai pour laisser le DOM se stabiliser après le morph
+    //     setTimeout(() => {
+    //         if (document.querySelector('td.price-cell')) runScraping();
+    //     }, 200);
+    // });
 
     // // Lancement initial
     // if (document.readyState === 'loading') {
