@@ -1100,11 +1100,7 @@ new class extends Component {
                                                                 data-ean="{{ $row->ean }}"
                                                                 data-site-id="{{ $site->id }}"
                                                                 data-prix-cosma="{{ $prixCosma }}"
-                                                                data-scrape-url=""
-                                                                data-db-prix=""
-                                                                data-db-url=""
-                                                                data-db-vendor=""
-                                                                data-db-name="">
+                                                            >
                                                                 <span class="text-gray-400 text-xs price-na">N/A</span>
                                                             </td>
                                                         @endif
