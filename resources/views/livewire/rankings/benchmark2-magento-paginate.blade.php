@@ -18,13 +18,6 @@ new class extends Component {
     public string $activeCountry = 'FR';
     public array $groupeFilter = [];
 
-    // ─── Live scraping state ──────────────────────────────────────────────────
-    public array $livePrices  = [];   // [ean][site_id] => scraped data
-    public array $scrapeErrors = [];  // [ean][site_id] => true  (échec confirmé)
-    public bool  $isScrapingLive = false;
-    public int   $scrapedCount   = 0;
-    public int   $scrapTotal     = 0;
-
     public array $countries = [
         'FR' => 'France',
         'BE' => 'Belgique',
@@ -367,33 +360,6 @@ new class extends Component {
             $this->percentage_perte_marche = ((($this->somme_prix_marche_total + $this->somme_perte) * 100) / $this->somme_prix_marche_total) - 100;
         }
 
-        // ── Déclencher le scraping live dès que les prix DB sont construits ──
-        // Ne relance pas si déjà en cours ou si les résultats live sont déjà là.
-        if (!$this->isScrapingLive && empty($this->livePrices) && empty($this->scrapeErrors)) {
-            $jobs = [];
-            foreach ($comparisons as $comparison) {
-                foreach ($sites as $site) {
-                    $siteData = $comparison['sites'][$site->id] ?? null;
-                    if ($siteData && !empty($siteData['url'])) {
-                        $jobs[] = [
-                            'ean'    => $comparison['row']->ean,
-                            'siteId' => $site->id,
-                            'url'    => $siteData['url'],
-                        ];
-                    }
-                }
-            }
-
-            if (!empty($jobs)) {
-                $this->livePrices     = [];
-                $this->scrapeErrors   = [];
-                $this->scrapedCount   = 0;
-                $this->scrapTotal     = count($jobs);
-                $this->isScrapingLive = true;
-                $this->dispatch('live-scraping-jobs', jobs: $jobs);
-            }
-        }
-
         return collect($comparisons);
     }
 
@@ -404,115 +370,11 @@ new class extends Component {
         return Site::where('country_code', $this->activeCountry)->orderBy('name')->get();
     }
 
-    // ─── Live scraping actions ────────────────────────────────────────────────
-
-    /**
-     * Relance manuellement le scraping live (bouton "Relancer").
-     * Remet les compteurs à zéro — getComparisonsProperty() prendra le relais
-     * au prochain render et re-dispatchera les jobs.
-     */
-    public function startLiveScraping(): void
-    {
-        $this->livePrices     = [];
-        $this->scrapeErrors   = [];
-        $this->scrapedCount   = 0;
-        $this->scrapTotal     = 0;
-        $this->isScrapingLive = false;
-        // Le reset de livePrices + scrapeErrors suffit : au prochain render
-        // getComparisonsProperty() détecte empty($livePrices) et re-dispatche.
-    }
-
-    /**
-     * Appelé par le JS pour chaque job individuel.
-     * Enregistre le résultat dans $livePrices (succès) ou $scrapeErrors (échec).
-     */
-    public function fetchLivePriceForJob(string $ean, int $siteId, string $url): void
-    {
-        set_time_limit(0);
-
-        $success = false;
-
-        try {
-            $result = $this->apiScraperService->scrapwebsite($siteId, $url);
-            $items  = $result['result'] ?? [];
-
-            // Priorité 1 : match exact sur l'EAN / Priorité 2 : premier résultat
-            $match = collect($items)->first(fn($item) =>
-                !empty($item['ean']) && $item['ean'] === $ean
-            ) ?? ($items[0] ?? null);
-
-            if ($match && isset($match['prix_ht']) && (float)$match['prix_ht'] > 0) {
-                if (!isset($this->livePrices[$ean])) {
-                    $this->livePrices[$ean] = [];
-                }
-
-                $this->livePrices[$ean][$siteId] = [
-                    'prix_ht'    => (float) $match['prix_ht'],
-                    'url'        => $match['url'] ?? $url,
-                    'name'       => $match['name'] ?? null,
-                    'vendor'     => $match['vendor'] ?? null,
-                    'ean_live'   => $match['ean'] ?? null,
-                    'scraped_at' => now()->format('H:i:s'),
-                    'is_live'    => true,
-                ];
-
-                $success = true;
-            }
-        } catch (\Exception $e) {
-            Log::warning("Live scrape failed — EAN: {$ean} | Site: {$siteId} | " . $e->getMessage());
-        }
-
-        // Enregistrer l'échec si le scraping n'a rien retourné
-        if (!$success) {
-            if (!isset($this->scrapeErrors[$ean])) {
-                $this->scrapeErrors[$ean] = [];
-            }
-            $this->scrapeErrors[$ean][$siteId] = true;
-        }
-
-        $this->scrapedCount++;
-
-        if ($this->scrapedCount >= $this->scrapTotal) {
-            $this->isScrapingLive = false;
-        }
-    }
-
-    public function stopLiveScraping(): void
-    {
-        $this->isScrapingLive = false;
-    }
-
     // ─── Lifecycle hooks ──────────────────────────────────────────────────────
-
-    public function updatedActiveCountry(): void
-    {
-        $this->resetScrapingState();
-    }
-
-    public function updatedGroupeFilter(): void
-    {
-        $this->resetScrapingState();
-    }
-
-    public function updatedPerPage(): void
-    {
-        $this->resetScrapingState();
-    }
 
     public function setPage(int $page): void
     {
         $this->currentPage = $page;
-        $this->resetScrapingState();
-    }
-
-    protected function resetScrapingState(): void
-    {
-        $this->currentPage    = $this->currentPage; // conservé sauf si setPage l'a déjà modifié
-        $this->livePrices     = [];
-        $this->scrapeErrors   = [];
-        $this->isScrapingLive = false;
-        $this->scrapedCount   = 0;
-        $this->scrapTotal     = 0;
     }
 
     // ─── Actions ──────────────────────────────────────────────────────────────
@@ -856,12 +718,7 @@ new class extends Component {
             'lastPage'                  => $lastPage,
             'currentPage'               => $this->currentPage,
             'perPage'                   => $this->perPage,
-            // Live scraping
-            'livePrices'                => $this->livePrices,
-            'scrapeErrors'              => $this->scrapeErrors,
-            'isScrapingLive'            => $this->isScrapingLive,
-            'scrapedCount'              => $this->scrapedCount,
-            'scrapTotal'                => $this->scrapTotal,
+
         ];
     }
 }; ?>
@@ -1036,97 +893,12 @@ new class extends Component {
 
                                 <div class="divider divider-horizontal mx-0"></div>
 
-                                {{-- ── Statut du scraping live ── --}}
-                                <div class="flex flex-col items-center gap-1"
-                                    x-data="{}"
-                                    @live-scraping-jobs.window="
-                                        const jobs = $event.detail.jobs;
-                                        const BATCH = 3;
-                                        const wireId = $el.closest('[wire\\:id]').getAttribute('wire:id');
-                                        const component = Livewire.find(wireId);
-
-                                        const runBatch = async (batch) => {
-                                            await Promise.all(
-                                                batch.map(job =>
-                                                    component.call('fetchLivePriceForJob', job.ean, job.siteId, job.url)
-                                                )
-                                            );
-                                        };
-
-                                        (async () => {
-                                            for (let i = 0; i < jobs.length; i += BATCH) {
-                                                const batch = jobs.slice(i, i + BATCH);
-                                                await runBatch(batch);
-                                            }
-                                            component.call('stopLiveScraping');
-                                        })();
-                                    ">
-
-                                    {{-- Barre de progression pendant le scraping --}}
-                                    @if($isScrapingLive && $scrapTotal > 0)
-                                        <div class="flex flex-col items-center gap-1">
-                                            <div class="flex items-center gap-2">
-                                                <span class="loading loading-spinner loading-xs text-warning"></span>
-                                                <span class="text-xs font-medium text-warning">
-                                                    Scraping en cours… {{ $scrapedCount }}/{{ $scrapTotal }}
-                                                </span>
-                                            </div>
-                                            <progress
-                                                class="progress progress-warning w-40"
-                                                value="{{ $scrapedCount }}"
-                                                max="{{ $scrapTotal }}">
-                                            </progress>
-                                            <span class="text-xs text-gray-400">
-                                                {{ $scrapTotal > 0 ? round(($scrapedCount / $scrapTotal) * 100) : 0 }}%
-                                            </span>
-                                        </div>
-
-                                    {{-- Résumé après scraping terminé + bouton Relancer --}}
-                                    @elseif(!$isScrapingLive && $scrapedCount > 0)
-                                        <div class="flex flex-col items-center gap-1.5">
-                                            {{-- Compteurs succès / erreurs --}}
-                                            @php
-                                                $liveCount  = collect($livePrices)->sum(fn($sites) => count($sites));
-                                                $errorCount = collect($scrapeErrors)->sum(fn($sites) => count($sites));
-                                            @endphp
-                                            <div class="flex items-center gap-2">
-                                                @if($liveCount > 0)
-                                                    <span class="badge badge-warning badge-sm gap-1">
-                                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                                                        </svg>
-                                                        {{ $liveCount }} live
-                                                    </span>
-                                                @endif
-                                                @if($errorCount > 0)
-                                                    <span class="badge badge-error badge-sm gap-1">
-                                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                                                        </svg>
-                                                        {{ $errorCount }} erreur(s)
-                                                    </span>
-                                                @endif
-                                            </div>
-                                            {{-- Bouton Relancer --}}
-                                            <button type="button"
-                                                wire:click="startLiveScraping"
-                                                class="btn btn-xs btn-ghost gap-1 text-gray-500 hover:text-warning"
-                                                title="Relancer le scraping live">
-                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                                                </svg>
-                                                Relancer
-                                            </button>
-                                        </div>
-
-                                    {{-- État initial : le scraping n'a pas encore démarré --}}
-                                    @else
-                                        <div class="flex items-center gap-1.5 text-xs text-gray-400">
-                                            <span class="loading loading-dots loading-xs"></span>
-                                            Initialisation du scraping…
-                                        </div>
-                                    @endif
-
+                                {{-- ── Statut du scraping live (piloté par JS pur) ── --}}
+                                <div id="live-scraping-status" class="flex flex-col items-center gap-1">
+                                    <div class="flex items-center gap-1.5 text-xs text-gray-400">
+                                        <span class="loading loading-dots loading-xs"></span>
+                                        Initialisation…
+                                    </div>
                                 </div>
                                 {{-- ── /Statut scraping ── --}}
 
@@ -1270,106 +1042,72 @@ new class extends Component {
 
                                                     @foreach($this->sites as $site)
                                                         @php
-                                                            $liveEntry = $livePrices[$row->ean][$site->id] ?? null;
-                                                            $hasError  = $scrapeErrors[$row->ean][$site->id] ?? false;
-
-                                                            // Priorité : prix live > prix DB
-                                                            $siteData  = $liveEntry
-                                                                ? array_merge($comparison['sites'][$site->id] ?? [], $liveEntry)
-                                                                : ($comparison['sites'][$site->id] ?? null);
-
-                                                            $isLive    = $liveEntry !== null;
+                                                            $siteData = $comparison['sites'][$site->id] ?? null;
                                                         @endphp
-                                                        <td class="text-right">
-                                                            @if($siteData)
-                                                                @php
-                                                                    $prixAffiché = (float) $siteData['prix_ht'];
-                                                                    $prixDiff    = $prixCosma > 0 ? $prixAffiché - $prixCosma : null;
-                                                                    $prixPct     = ($prixCosma > 0 && $prixAffiché > 0)
-                                                                        ? round(($prixDiff / $prixCosma) * 100, 2)
-                                                                        : null;
-                                                                    $textClass   = $prixPct !== null
-                                                                        ? ($prixCosma > $prixAffiché ? 'text-error' : 'text-success')
-                                                                        : '';
-                                                                    $urlAffichée = $liveEntry['url'] ?? ($siteData['url'] ?? '#');
-                                                                @endphp
+                                                        @if($siteData)
+                                                            @php
+                                                                $prixAffiché = (float) $siteData['prix_ht'];
+                                                                $prixDiff    = $prixCosma > 0 ? $prixAffiché - $prixCosma : null;
+                                                                $prixPct     = ($prixCosma > 0 && $prixAffiché > 0)
+                                                                    ? round(($prixDiff / $prixCosma) * 100, 2)
+                                                                    : null;
+                                                                $colorClass  = $prixPct !== null
+                                                                    ? ($prixCosma > $prixAffiché ? 'text-error' : 'text-success')
+                                                                    : '';
+                                                                $url = $siteData['url'] ?? '#';
+                                                            @endphp
+                                                            {{--
+                                                                data-* : lus par liveScraper.js pour patcher le DOM en live.
+                                                                data-prix-cosma : pour recalculer le % côté JS.
+                                                                data-scrape-url : URL à scraper.
+                                                                data-ean         : EAN du produit.
+                                                                data-site-id     : ID du site.
+                                                            --}}
+                                                            <td class="text-right price-cell"
+                                                                data-ean="{{ $row->ean }}"
+                                                                data-site-id="{{ $site->id }}"
+                                                                data-prix-cosma="{{ $prixCosma }}"
+                                                                data-scrape-url="{{ $url }}"
+                                                                data-db-prix="{{ $prixAffiché }}"
+                                                                data-db-url="{{ $url }}"
+                                                                data-db-vendor="{{ $siteData['vendor'] ?? '' }}"
+                                                                data-db-name="{{ $siteData['name'] ?? '' }}">
+                                                                {{-- Contenu initial : prix DB — le JS le remplacera si live disponible --}}
                                                                 <div class="flex flex-col gap-0.5 items-end">
-
-                                                                    {{-- Indicateur de chargement pendant scraping --}}
-                                                                    @if($isScrapingLive && !$isLive && !$hasError)
-                                                                        <span class="loading loading-dots loading-xs text-warning opacity-60"></span>
-                                                                    @endif
-
-                                                                    {{-- Ligne prix + badge statut --}}
                                                                     <div class="flex items-center gap-1">
-                                                                        @if($isLive)
-                                                                            {{-- ✅ Scraping réussi --}}
-                                                                            <span class="badge badge-xs badge-warning font-bold"
-                                                                                title="Prix scrapé en live à {{ $liveEntry['scraped_at'] }}">
-                                                                                ⚡ live
-                                                                            </span>
-                                                                        @elseif($hasError && $siteData)
-                                                                            {{-- ⚠️ Scraping échoué mais prix DB dispo --}}
-                                                                            <span class="badge badge-xs badge-error opacity-70"
-                                                                                title="Scraping échoué — prix issu de la base de données">
-                                                                                DB
-                                                                            </span>
-                                                                        @elseif(!$isScrapingLive && $scrapedCount > 0 && !$isLive)
-                                                                            {{-- Scraping terminé, pas de live trouvé --}}
-                                                                            <span class="badge badge-xs badge-ghost opacity-60"
-                                                                                title="Prix issu de la base de données">
-                                                                                DB
-                                                                            </span>
-                                                                        @endif
-
-                                                                        <a href="{{ $urlAffichée }}" target="_blank"
-                                                                            class="link link-primary text-xs font-semibold {{ $isLive ? 'underline decoration-warning' : '' }}"
+                                                                        <span class="badge badge-xs badge-ghost opacity-50 badge-db">DB</span>
+                                                                        <a href="{{ $url }}" target="_blank"
+                                                                            class="link link-primary text-xs font-semibold price-link"
                                                                             title="{{ $siteData['name'] ?? '' }}">
                                                                             {{ number_format($prixAffiché, 2) }} €
                                                                         </a>
                                                                     </div>
-
-                                                                    {{-- Pourcentage --}}
                                                                     @if($prixPct !== null)
-                                                                        <span class="text-xs {{ $textClass }} font-bold">
+                                                                        <span class="text-xs {{ $colorClass }} font-bold price-pct">
                                                                             {{ $prixPct > 0 ? '+' : '' }}{{ $prixPct }}%
                                                                         </span>
                                                                     @endif
-
-                                                                    {{-- Vendor --}}
                                                                     @if(!empty($siteData['vendor']))
-                                                                        <span class="text-xs text-gray-500 truncate max-w-[120px]"
+                                                                        <span class="text-xs text-gray-500 truncate max-w-[120px] price-vendor"
                                                                             title="{{ $siteData['vendor'] }}">
                                                                             {{ Str::limit($siteData['vendor'], 15) }}
                                                                         </span>
                                                                     @endif
-
-                                                                    {{-- Heure du scrape live --}}
-                                                                    @if($isLive)
-                                                                        <span class="text-[10px] text-warning/70">
-                                                                            {{ $liveEntry['scraped_at'] }}
-                                                                        </span>
-                                                                    @endif
                                                                 </div>
-
-                                                            @elseif($hasError)
-                                                                {{-- ❌ Scraping échoué ET aucun prix DB --}}
-                                                                <div class="flex flex-col items-end gap-0.5">
-                                                                    <span class="badge badge-xs badge-error"
-                                                                        title="Scraping échoué — aucun prix disponible">
-                                                                        Erreur
-                                                                    </span>
-                                                                    <span class="text-[10px] text-error/60">scrape KO</span>
-                                                                </div>
-
-                                                            @elseif($isScrapingLive)
-                                                                {{-- Placeholder pendant le scraping (pas encore de données) --}}
-                                                                <span class="loading loading-dots loading-xs text-warning"></span>
-
-                                                            @else
-                                                                <span class="text-gray-400 text-xs">N/A</span>
-                                                            @endif
-                                                        </td>
+                                                            </td>
+                                                        @else
+                                                            <td class="text-right price-cell"
+                                                                data-ean="{{ $row->ean }}"
+                                                                data-site-id="{{ $site->id }}"
+                                                                data-prix-cosma="{{ $prixCosma }}"
+                                                                data-scrape-url=""
+                                                                data-db-prix=""
+                                                                data-db-url=""
+                                                                data-db-vendor=""
+                                                                data-db-name="">
+                                                                <span class="text-gray-400 text-xs price-na">N/A</span>
+                                                            </td>
+                                                        @endif
                                                     @endforeach
 
                                                     <td class="text-right text-xs">
@@ -1419,3 +1157,252 @@ new class extends Component {
         </x-tabs>
     </div>
 </div>
+
+{{-- ═══════════════════════════════════════════════════════════════════════════
+     LIVE SCRAPER — JS pur, zéro Livewire
+     ─────────────────────────────────────────────────────────────────────────
+     Fonctionnement :
+      1. Au chargement de la table, on collecte tous les <td class="price-cell">
+         qui ont un data-scrape-url non vide.
+      2. On les scrape par batches de 4 via l'endpoint /api/scrape-price.
+      3. Pour chaque résultat, on patch le DOM directement :
+         - badge ⚡ live   → scraping réussi
+         - badge 🔴 Erreur → scraping échoué, prix DB conservé
+      4. La barre de progression dans #live-scraping-status est mise à jour en JS.
+      5. Un bouton "Relancer" réinitialise et relance le cycle.
+═══════════════════════════════════════════════════════════════════════════ --}}
+<script>
+(function () {
+    'use strict';
+
+    const BATCH_SIZE  = 4;
+    const API_ENDPOINT = '/api/scrape-price'; // → ApiScraperController@scrape
+
+    // ── Helpers DOM ──────────────────────────────────────────────────────────
+
+    function fmt(num) {
+        return parseFloat(num).toLocaleString('fr-FR', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        }) + ' €';
+    }
+
+    function pct(live, cosma) {
+        if (!cosma || !live) return null;
+        return (((live - cosma) / cosma) * 100).toFixed(2);
+    }
+
+    // ── Patch DOM d'une cellule après succès ─────────────────────────────────
+
+    function patchCell(td, data, scrapedAt) {
+        const cosma   = parseFloat(td.dataset.prixCosma) || 0;
+        const prix    = parseFloat(data.prix_ht)         || 0;
+        const url     = data.url     || td.dataset.dbUrl   || '#';
+        const vendor  = data.vendor  || td.dataset.dbVendor || '';
+        const name    = data.name    || td.dataset.dbName   || '';
+        const p       = pct(prix, cosma);
+        const cheaper = cosma > prix;
+        const pctClass = p !== null ? (cheaper ? 'text-error' : 'text-success') : '';
+
+        td.innerHTML = `
+            <div class="flex flex-col gap-0.5 items-end">
+                <div class="flex items-center gap-1">
+                    <span class="badge badge-xs badge-warning font-bold" title="Prix live scrapé à ${scrapedAt}">⚡ live</span>
+                    <a href="${url}" target="_blank"
+                       class="link link-primary text-xs font-semibold underline decoration-warning"
+                       title="${name}">${fmt(prix)}</a>
+                </div>
+                ${p !== null ? `<span class="text-xs ${pctClass} font-bold">${p > 0 ? '+' : ''}${p}%</span>` : ''}
+                ${vendor ? `<span class="text-xs text-gray-500 truncate max-w-[120px]" title="${vendor}">${vendor.substring(0, 15)}</span>` : ''}
+                <span class="text-[10px] text-warning/70">${scrapedAt}</span>
+            </div>`;
+    }
+
+    // ── Marquer une cellule comme erreur (garde le prix DB) ──────────────────
+
+    function patchCellError(td) {
+        const dbPrix  = td.dataset.dbPrix;
+        const cosma   = parseFloat(td.dataset.prixCosma) || 0;
+        const prix    = parseFloat(dbPrix) || 0;
+        const url     = td.dataset.dbUrl   || '#';
+        const vendor  = td.dataset.dbVendor || '';
+        const name    = td.dataset.dbName   || '';
+
+        if (!dbPrix) {
+            // Pas de prix DB non plus → vrai N/A
+            td.innerHTML = `<span class="text-gray-400 text-xs">N/A</span>`;
+            return;
+        }
+
+        const p       = pct(prix, cosma);
+        const cheaper = cosma > prix;
+        const pctClass = p !== null ? (cheaper ? 'text-error' : 'text-success') : '';
+
+        td.innerHTML = `
+            <div class="flex flex-col gap-0.5 items-end">
+                <div class="flex items-center gap-1">
+                    <span class="badge badge-xs badge-error opacity-70" title="Scraping échoué — prix issu de la base de données">DB</span>
+                    <a href="${url}" target="_blank"
+                       class="link link-primary text-xs font-semibold"
+                       title="${name}">${fmt(prix)}</a>
+                </div>
+                ${p !== null ? `<span class="text-xs ${pctClass} font-bold">${p > 0 ? '+' : ''}${p}%</span>` : ''}
+                ${vendor ? `<span class="text-xs text-gray-500 truncate max-w-[120px]">${vendor.substring(0, 15)}</span>` : ''}
+            </div>`;
+    }
+
+    // ── Mettre une cellule en état "en cours de scraping" ────────────────────
+
+    function setLoading(td) {
+        // On garde le prix DB visible en fond avec un loader par-dessus
+        td.style.position = 'relative';
+        const loader = document.createElement('span');
+        loader.className = 'loading loading-dots loading-xs text-warning opacity-60 absolute top-0 right-0';
+        loader.dataset.liveLoader = '1';
+        // Retirer tout loader précédent
+        td.querySelectorAll('[data-live-loader]').forEach(el => el.remove());
+        td.appendChild(loader);
+    }
+
+    function clearLoading(td) {
+        td.querySelectorAll('[data-live-loader]').forEach(el => el.remove());
+        td.style.position = '';
+    }
+
+    // ── Scraper un job individuel ─────────────────────────────────────────────
+
+    async function scrapeJob(td) {
+        const ean    = td.dataset.ean;
+        const siteId = td.dataset.siteId;
+        const url    = td.dataset.scrapeUrl;
+
+        if (!url) {
+            patchCellError(td);
+            return;
+        }
+
+        setLoading(td);
+
+        try {
+            const res = await fetch(API_ENDPOINT, {
+                method:  'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                },
+                body: JSON.stringify({ ean, site_id: siteId, url }),
+            });
+
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+            const json = await res.json();
+            const items = json.result ?? [];
+
+            // Priorité 1 : match EAN exact / Priorité 2 : premier résultat
+            const match = items.find(i => i.ean && i.ean === ean) ?? items[0] ?? null;
+
+            clearLoading(td);
+
+            if (match && parseFloat(match.prix_ht) > 0) {
+                const now = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                patchCell(td, match, now);
+            } else {
+                patchCellError(td);
+            }
+        } catch (e) {
+            clearLoading(td);
+            patchCellError(td);
+            console.warn('[LiveScraper] KO', ean, siteId, e.message);
+        }
+    }
+
+    // ── Lancer le scraping sur tous les TDs ──────────────────────────────────
+
+    async function runScraping() {
+        const allTds  = Array.from(document.querySelectorAll('td.price-cell[data-scrape-url]'))
+                             .filter(td => td.dataset.scrapeUrl);
+        const total   = allTds.length;
+        let   done    = 0;
+
+        const statusEl = document.getElementById('live-scraping-status');
+
+        function updateStatus() {
+            if (!statusEl) return;
+            const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+            if (done < total) {
+                statusEl.innerHTML = `
+                    <div class="flex flex-col items-center gap-1">
+                        <div class="flex items-center gap-2">
+                            <span class="loading loading-spinner loading-xs text-warning"></span>
+                            <span class="text-xs font-medium text-warning">Scraping… ${done}/${total}</span>
+                        </div>
+                        <progress class="progress progress-warning w-40" value="${done}" max="${total}"></progress>
+                        <span class="text-xs text-gray-400">${pct}%</span>
+                    </div>`;
+            } else {
+                const liveCount  = document.querySelectorAll('.badge-warning.font-bold').length;
+                const errorCount = document.querySelectorAll('.badge-error.opacity-70').length;
+                statusEl.innerHTML = `
+                    <div class="flex flex-col items-center gap-1.5">
+                        <div class="flex items-center gap-2">
+                            ${liveCount  > 0 ? `<span class="badge badge-warning badge-sm">⚡ ${liveCount} live</span>` : ''}
+                            ${errorCount > 0 ? `<span class="badge badge-error badge-sm">⚠ ${errorCount} erreur(s)</span>` : ''}
+                        </div>
+                        <button id="btn-relancer" class="btn btn-xs btn-ghost gap-1 text-gray-500 hover:text-warning">
+                            ↺ Relancer
+                        </button>
+                    </div>`;
+                document.getElementById('btn-relancer')?.addEventListener('click', runScraping);
+            }
+        }
+
+        updateStatus();
+
+        if (total === 0) {
+            if (statusEl) statusEl.innerHTML = '<span class="text-xs text-gray-400">Aucun produit à scraper</span>';
+            return;
+        }
+
+        // Traitement par batches
+        for (let i = 0; i < allTds.length; i += BATCH_SIZE) {
+            const batch = allTds.slice(i, i + BATCH_SIZE);
+            await Promise.all(batch.map(td => scrapeJob(td).then(() => { done++; updateStatus(); })));
+        }
+    }
+
+    // ── Point d'entrée : lancer dès que la table est dans le DOM ─────────────
+    // On utilise un MutationObserver pour détecter quand Livewire injecte la
+    // table (après le premier render), puis on démarre.
+
+    function waitForTable(callback) {
+        if (document.querySelector('td.price-cell')) {
+            callback();
+            return;
+        }
+        const obs = new MutationObserver(() => {
+            if (document.querySelector('td.price-cell')) {
+                obs.disconnect();
+                callback();
+            }
+        });
+        obs.observe(document.body, { childList: true, subtree: true });
+    }
+
+    // Relancer automatiquement quand Livewire re-render la page (pagination, filtre…)
+    document.addEventListener('livewire:navigated', () => waitForTable(runScraping));
+    document.addEventListener('livewire:morph-updated', () => {
+        // Petit délai pour laisser le DOM se stabiliser après le morph
+        setTimeout(() => {
+            if (document.querySelector('td.price-cell')) runScraping();
+        }, 200);
+    });
+
+    // Lancement initial
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => waitForTable(runScraping));
+    } else {
+        waitForTable(runScraping);
+    }
+
+})();
+</script>
