@@ -977,7 +977,7 @@ new class extends Component {
                                 <div class="overflow-x-auto overflow-y-auto max-h-[70vh]"
                                     wire:loading.class="opacity-40 pointer-events-none"
                                     wire:target="groupeFilter">
-                                    <table id="marche-table" class="table table-xs table-pin-rows table-pin-cols">
+                                    <table class="table table-xs table-pin-rows table-pin-cols">
                                         <thead>
                                             <tr>
                                                 <th class="text-center" title="Rang de popularité Google Merchant (Best Sellers)">
@@ -1428,268 +1428,98 @@ new class extends Component {
 </script>
 
 {{-- ═══════════════════════════════════════════════════════════════════════════
-     SHEETJS — chargé une seule fois en tête de script
+     Export cote JS
+     ─────────────────────────────────────────────────────────────────────────
+     Fonctionnement :
+      1. Prend la table HTML et l'export
 ═══════════════════════════════════════════════════════════════════════════ --}}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-
-{{-- ═══════════════════════════════════════════════════════════════════════════
-     EXPORT XLSX — JS pur, lit le DOM après scraping live
-     Prix cliquables grâce aux hyperliens SheetJS
-═══════════════════════════════════════════════════════════════════════════ --}}
 <script>
 (function () {
     'use strict';
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
+    // ── Lire le texte "propre" d'une cellule DOM ────────────────────────────
+    function readCell(td) {
+        if (!td) return '';
 
-    /**
-     * Extrait le prix numérique depuis le lien visible dans la cellule.
-     * "12,50 €" → 12.50
-     */
-    function extractPrix(td) {
+        // Prix live : récupère le prix dans le lien
         const link = td.querySelector('a.link-primary');
-        if (!link) return null;
-        return parseFloat(link.textContent.replace(/[^\d,.-]/g, '').replace(',', '.')) || null;
-    }
+        const pct  = td.querySelector('.price-pct, [class*="text-error"], [class*="text-success"]');
 
-    /**
-     * Extrait l'URL depuis le lien <a> dans la cellule (live ou DB).
-     */
-    function extractUrl(td) {
-        const link = td.querySelector('a.link-primary');
-        return link ? (link.getAttribute('href') || null) : null;
-    }
+        // Rang Google
+        const monoSpan = td.querySelector('.font-mono');
+        if (monoSpan) return monoSpan.textContent.trim();
 
-    /**
-     * Extrait le % affiché (ex: "+3,20%" ou "-1,50%").
-     */
-    function extractPct(td) {
-        const spans = td.querySelectorAll('span');
-        for (const span of spans) {
-            const txt = span.textContent.trim();
-            if (txt.includes('%')) return txt;
+        // N/A
+        const naSpan = td.querySelector('.price-na, .text-gray-400');
+        if (naSpan && !link) return 'N/A';
+
+        // Cellule avec lien (prix)
+        if (link) {
+            let text = link.textContent.trim();
+            if (pct) text += ' (' + pct.textContent.trim() + ')';
+            return text;
         }
-        return '';
-    }
 
-    /**
-     * Indique si le prix est "live" (badge ⚡) ou "DB".
-     */
-    function extractSource(td) {
-        return td.querySelector('.badge-warning') ? 'LIVE' : 'DB';
-    }
-
-    /**
-     * Lit le texte brut d'une cellule non-prix.
-     */
-    function readText(td) {
         return td.textContent.trim().replace(/\s+/g, ' ');
     }
 
-    // ── Construction des données ──────────────────────────────────────────────
-
-    /**
-     * Retourne { aoa, links } où :
-     *  - aoa   : tableau AOA (Array Of Arrays) pour SheetJS
-     *  - links : Map<"R{row}C{col}" → url> pour appliquer les hyperliens après
-     */
-    function buildSheetData(table) {
-        const aoa   = [];
-        const links = new Map(); // clé = "R2C5" (1-indexed, ligne 1 = headers)
-
-        // ── En-têtes enrichis ─────────────────────────────────────────────────
-        const thList  = table.querySelectorAll('thead tr:first-child th');
-        const baseHeaders = Array.from(thList).map(th => th.textContent.trim().replace(/\s+/g, ' '));
-
-        // On va construire les headers enrichis lors du premier passage sur les TDs
-        // (on ajoute "Source" et "%" après chaque colonne de prix site)
-        let enrichedHeaders = null;
-
-        // ── Lignes de données ─────────────────────────────────────────────────
-        const trs = table.querySelectorAll('tbody tr');
-
-        trs.forEach((tr, rowIdx) => {
-            const cells   = Array.from(tr.querySelectorAll('td'));
-            const row     = [];
-            const colMap  = []; // pour construire les headers enrichis sur la 1ère ligne
-
-            cells.forEach((td) => {
-                if (td.classList.contains('price-cell')) {
-                    const prix   = extractPrix(td);
-                    const url    = extractUrl(td);
-                    const source = extractSource(td);
-                    const pct    = extractPct(td);
-
-                    // Colonne prix (numérique pour pouvoir trier dans Excel)
-                    const colIdx = row.length; // 0-indexed dans la ligne
-                    row.push(prix !== null ? prix : 'N/A');
-
-                    // Enregistrement du lien pour cette cellule
-                    // +2 : +1 car SheetJS est 1-indexed, +1 pour la ligne de headers
-                    if (url) {
-                        links.set(`R${rowIdx + 2}C${colIdx + 1}`, url);
-                    }
-
-                    row.push(source);
-                    row.push(pct);
-
-                    colMap.push('prix');
-                    colMap.push('source');
-                    colMap.push('pct');
-
-                } else if (td.classList.contains('price-cell-na')) {
-                    row.push('N/A');
-                    row.push('');
-                    row.push('');
-                    colMap.push('prix');
-                    colMap.push('source');
-                    colMap.push('pct');
-
-                } else {
-                    const text = readText(td);
-                    // Détecte les montants "12 345,67 €" → nombre
-                    if (/^\d[\d\s]*[,.]?\d*\s*€/.test(text)) {
-                        const num = parseFloat(text.replace(/[^\d,.-]/g, '').replace(',', '.'));
-                        row.push(isNaN(num) ? text : num);
-                    } else {
-                        row.push(text === '—' ? '' : text);
-                    }
-                    colMap.push('text');
-                }
-            });
-
-            // Construction des headers enrichis lors du 1er passage
-            if (enrichedHeaders === null) {
-                enrichedHeaders = [];
-                let baseIdx = 0;
-                colMap.forEach((type, i) => {
-                    if (type === 'prix') {
-                        const name = baseHeaders[baseIdx] || ('Site ' + (baseIdx + 1));
-                        enrichedHeaders.push(name + ' (Prix)');
-                        baseIdx++;
-                    } else if (type === 'source') {
-                        enrichedHeaders.push(enrichedHeaders[enrichedHeaders.length - 1].replace(' (Prix)', '') + ' (Source)');
-                    } else if (type === 'pct') {
-                        enrichedHeaders.push(enrichedHeaders[enrichedHeaders.length - 2].replace(' (Prix)', '') + ' (%)');
-                    } else {
-                        enrichedHeaders.push(baseHeaders[baseIdx] || ('Col ' + (baseIdx + 1)));
-                        baseIdx++;
-                    }
-                });
-            }
-
-            aoa.push(row);
-        });
-
-        // Ligne 0 = headers
-        aoa.unshift(enrichedHeaders ?? baseHeaders);
-
-        return { aoa, links };
-    }
-
-    // ── Applique les hyperliens sur la feuille SheetJS ────────────────────────
-
-    function applyLinks(ws, links, aoa) {
-        links.forEach((url, key) => {
-            // Clé "R2C5" → ligne 2, col 5 (1-indexed)
-            const match = key.match(/^R(\d+)C(\d+)$/);
-            if (!match) return;
-
-            const r = parseInt(match[1]) - 1; // 0-indexed
-            const c = parseInt(match[2]) - 1;
-
-            // Adresse SheetJS (ex: "E2")
-            const cellAddr = XLSX.utils.encode_cell({ r, c });
-
-            if (!ws[cellAddr]) return;
-
-            // SheetJS : on ajoute la propriété l (link)
-            ws[cellAddr].l = { Target: url, Tooltip: url };
-        });
-    }
-
-    // ── Export principal ──────────────────────────────────────────────────────
-
+    // ── Export principal ────────────────────────────────────────────────────
     function exportDomToXlsx() {
-        const table = document.getElementById('marche-table');
-        if (!table) {
-            alert('Aucune table trouvée. Assurez-vous que des données sont affichées.');
-            return;
-        }
+        const table = document.querySelector('table');
+        if (!table) { alert('Aucune table trouvée.'); return; }
 
-        const btn = document.getElementById('btn-export-xlsx');
-        if (btn) {
-            btn.disabled = true;
-            btn.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Export…';
-        }
+        const wb = XLSX.utils.book_new();
+        const rows = [];
 
-        try {
-            const { aoa, links } = buildSheetData(table);
+        // En-têtes
+        const headerCells = table.querySelectorAll('thead tr:first-child th');
+        const headers = Array.from(headerCells).map(th => th.textContent.trim().replace(/\s+/g, ' '));
+        rows.push(headers);
 
-            const wb = XLSX.utils.book_new();
-            const ws = XLSX.utils.aoa_to_sheet(aoa);
+        // Données
+        table.querySelectorAll('tbody tr').forEach(tr => {
+            const row = Array.from(tr.querySelectorAll('td')).map(td => readCell(td));
+            rows.push(row);
+        });
 
-            // ── Appliquer les hyperliens ──────────────────────────────────────
-            applyLinks(ws, links, aoa);
+        const ws = XLSX.utils.aoa_to_sheet(rows);
 
-            // ── Largeurs de colonnes ──────────────────────────────────────────
-            const numCols = aoa[0]?.length ?? 0;
-            const colWidths = [];
-            for (let c = 0; c < numCols; c++) {
-                let maxLen = 10;
-                for (let r = 0; r < Math.min(aoa.length, 50); r++) {
-                    const val = aoa[r][c];
-                    if (val !== null && val !== undefined) {
-                        maxLen = Math.max(maxLen, String(val).length);
-                    }
-                }
-                colWidths.push({ wch: Math.min(maxLen + 2, 45) });
-            }
-            ws['!cols'] = colWidths;
+        // Largeurs auto approximatives
+        const colWidths = headers.map((h, i) => {
+            const maxLen = rows.reduce((max, row) => {
+                const val = row[i] || '';
+                return Math.max(max, val.toString().length);
+            }, h.length);
+            return { wch: Math.min(maxLen + 2, 50) };
+        });
+        ws['!cols'] = colWidths;
 
-            // ── Figer la première ligne ───────────────────────────────────────
-            ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+        // Figer la première ligne
+        ws['!freeze'] = { xSplit: 0, ySplit: 1 };
 
-            // ── Nom de l'onglet ───────────────────────────────────────────────
-            const activeTab = document.querySelector('[aria-selected="true"], .tab-active');
-            const sheetName = ('Export ' + (activeTab ? activeTab.textContent.trim() : 'Marché')).substring(0, 31);
-            XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        const countryEl = document.querySelector('.tab-active, [aria-selected="true"]');
+        const sheetName = 'Export ' + (countryEl ? countryEl.textContent.trim() : 'Marché');
+        XLSX.utils.book_append_sheet(wb, ws, sheetName.substring(0, 31));
 
-            // ── Nom du fichier ────────────────────────────────────────────────
-            const now    = new Date();
-            const pad    = n => String(n).padStart(2, '0');
-            const suffix = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
-            XLSX.writeFile(wb, `export_marche_${suffix}.xlsx`);
-
-        } catch (err) {
-            console.error('[Export XLSX]', err);
-            alert('Une erreur est survenue lors de l\'export : ' + err.message);
-        } finally {
-            if (btn) {
-                btn.disabled = false;
-                btn.innerHTML = `
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                    </svg>
-                    Export XLSX`;
-            }
-        }
+        const now = new Date();
+        const suffix = now.toISOString().replace(/[:.]/g, '-').substring(0, 19);
+        XLSX.writeFile(wb, `export_marche_${suffix}.xlsx`);
     }
 
-    // ── Bind du bouton (résistant aux re-renders Livewire) ────────────────────
-
+    // ── Bind bouton ─────────────────────────────────────────────────────────
     function bindExportBtn() {
         const btn = document.getElementById('btn-export-xlsx');
-        if (!btn) return;
-        const fresh = btn.cloneNode(true);
-        btn.parentNode.replaceChild(fresh, btn);
-        fresh.addEventListener('click', exportDomToXlsx);
+        if (btn) {
+            btn.removeEventListener('click', exportDomToXlsx); // évite les doublons
+            btn.addEventListener('click', exportDomToXlsx);
+        }
     }
 
+    // Lancement initial + re-bind après chaque update Livewire
     document.addEventListener('DOMContentLoaded', bindExportBtn);
     document.addEventListener('livewire:morph-updated', bindExportBtn);
-    document.addEventListener('livewire:navigated',     bindExportBtn);
+    document.addEventListener('livewire:navigated', bindExportBtn);
 
 })();
 </script>
