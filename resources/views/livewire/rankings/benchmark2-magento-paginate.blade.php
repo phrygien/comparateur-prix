@@ -977,7 +977,7 @@ new class extends Component {
                                 <div class="overflow-x-auto overflow-y-auto max-h-[70vh]"
                                     wire:loading.class="opacity-40 pointer-events-none"
                                     wire:target="groupeFilter">
-                                    <table class="table table-xs table-pin-rows table-pin-cols">
+                                    <table id="marche-table" class="table table-xs table-pin-rows table-pin-cols">
                                         <thead>
                                             <tr>
                                                 <th class="text-center" title="Rang de popularité Google Merchant (Best Sellers)">
@@ -1326,7 +1326,8 @@ new class extends Component {
     // ── Lancer le scraping sur tous les TDs ──────────────────────────────────
 
     async function runScraping() {
-        const allTds  = Array.from(document.querySelectorAll('td.price-cell[data-scrape-url]')).filter(td => {
+        const table  = document.getElementById('marche-table');
+        const allTds  = Array.from(table.querySelectorAll('td.price-cell[data-scrape-url]')).filter(td => {
             const url = td.dataset.scrapeUrl?.trim();
             return url && url !== '' && url !== '#';  // ← exclure les "#"
         });
@@ -1339,8 +1340,8 @@ new class extends Component {
             if (!statusEl) return;
             const pct = total > 0 ? Math.round((done / total) * 100) : 0;
             if(done == 0){
-                const liveCount  = document.querySelectorAll('.badge-warning.font-bold').length;
-                const errorCount = document.querySelectorAll('.badge-error.opacity-70').length;
+                const liveCount  = table.querySelectorAll('.badge-warning.font-bold').length;
+                const errorCount = table.querySelectorAll('.badge-error.opacity-70').length;
                 statusEl.innerHTML = `
                     <div class="flex flex-col items-center gap-1.5">
                         <button id="btn-relancer" class="btn btn-xs btn-ghost gap-1 text-gray-500 hover:text-warning">
@@ -1359,8 +1360,8 @@ new class extends Component {
                         <span class="text-xs text-gray-400">${pct}%</span>
                     </div>`;
             } else {
-                const liveCount  = document.querySelectorAll('.badge-warning.font-bold').length;
-                const errorCount = document.querySelectorAll('.badge-error.opacity-70').length;
+                const liveCount  = table.querySelectorAll('.badge-warning.font-bold').length;
+                const errorCount = table.querySelectorAll('.badge-error.opacity-70').length;
                 statusEl.innerHTML = `
                     <div class="flex flex-col items-center gap-1.5">
                         <div class="flex items-center gap-2">
@@ -1393,19 +1394,19 @@ new class extends Component {
     // On utilise un MutationObserver pour détecter quand Livewire injecte la
     // table (après le premier render), puis on démarre.
 
-    function waitForTable(callback) {
-        if (document.querySelector('td.price-cell')) {
-            callback();
-            return;
-        }
-        const obs = new MutationObserver(() => {
-            if (document.querySelector('td.price-cell')) {
-                obs.disconnect();
-                callback();
-            }
-        });
-        obs.observe(document.body, { childList: true, subtree: true });
-    }
+    // function waitForTable(callback) {
+    //     if (document.querySelector('td.price-cell')) {
+    //         callback();
+    //         return;
+    //     }
+    //     const obs = new MutationObserver(() => {
+    //         if (document.querySelector('td.price-cell')) {
+    //             obs.disconnect();
+    //             callback();
+    //         }
+    //     });
+    //     obs.observe(document.body, { childList: true, subtree: true });
+    // }
 
     // Relancer automatiquement quand Livewire re-render la page (pagination, filtre…)
     // document.addEventListener('livewire:navigated', () => waitForTable(runScraping));
