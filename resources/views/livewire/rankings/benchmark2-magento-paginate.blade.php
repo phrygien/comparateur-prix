@@ -1326,8 +1326,10 @@ new class extends Component {
     // ── Lancer le scraping sur tous les TDs ──────────────────────────────────
 
     async function runScraping() {
-        const allTds  = Array.from(document.querySelectorAll('td.price-cell[data-scrape-url]'))
-                             .filter(td => td.dataset.scrapeUrl && td.dataset.scrapeUrl.trim() !== "");
+        const allTds  = Array.from(document.querySelectorAll('td.price-cell[data-scrape-url]')).filter(td => {
+            const url = td.dataset.scrapeUrl?.trim();
+            return url && url !== '' && url !== '#';  // ← exclure les "#"
+        });
         const total   = allTds.length;
         let   done    = 0;
 
