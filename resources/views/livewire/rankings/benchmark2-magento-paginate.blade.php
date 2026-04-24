@@ -1458,7 +1458,9 @@ new class extends Component {
         if (link) {
             let text = link.textContent.trim();
             if (pct) text += ' (' + pct.textContent.trim() + ')';
-            return text;
+
+            // Objet spécial reconnu plus bas pour poser le lien
+            return { __isLink: true, v: text, url: href };
         }
 
         return td.textContent.trim().replace(/\s+/g, ' ');
