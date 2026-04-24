@@ -977,7 +977,7 @@ new class extends Component {
                                 <div class="overflow-x-auto overflow-y-auto max-h-[70vh]"
                                     wire:loading.class="opacity-40 pointer-events-none"
                                     wire:target="groupeFilter">
-                                    <table class="table table-xs table-pin-rows table-pin-cols">
+                                    <table id="marche-table" class="table table-xs table-pin-rows table-pin-cols">
                                         <thead>
                                             <tr>
                                                 <th class="text-center" title="Rang de popularité Google Merchant (Best Sellers)">
