@@ -1456,6 +1456,7 @@ new class extends Component {
 
         // Cellule avec lien (prix)
         if (link) {
+            const href = link.getAttribute('href');
             let text = link.textContent.trim();
             if (pct) text += ' (' + pct.textContent.trim() + ')';
 
