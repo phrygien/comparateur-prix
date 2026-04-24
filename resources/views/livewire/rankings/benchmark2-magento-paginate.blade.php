@@ -1181,7 +1181,7 @@ new class extends Component {
 (function () {
     'use strict';
 
-    const BATCH_SIZE  = 50;
+    const BATCH_SIZE  = 200;
     const API_ENDPOINT = 'https://dev.astucom.com:9038/scrap'; // → ApiScraperController@scrape
 
     // ── Helpers DOM ──────────────────────────────────────────────────────────
