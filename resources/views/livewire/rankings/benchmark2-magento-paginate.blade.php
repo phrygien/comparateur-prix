@@ -1442,7 +1442,6 @@ new class extends Component {
     function readCell(td) {
         if (!td) return '';
 
-        // Prix live : récupère le prix dans le lien
         const link = td.querySelector('a.link-primary');
         const pct  = td.querySelector('.price-pct, [class*="text-error"], [class*="text-success"]');
 
@@ -1454,7 +1453,7 @@ new class extends Component {
         const naSpan = td.querySelector('.price-na, .text-gray-400');
         if (naSpan && !link) return 'N/A';
 
-        // Cellule avec lien (prix)
+        // Cellule avec lien (prix) → retourne un objet { v, l } pour SheetJS
         if (link) {
             const href = link.getAttribute('href');
             let text = link.textContent.trim();
@@ -1472,7 +1471,7 @@ new class extends Component {
         const table = document.querySelector('table');
         if (!table) { alert('Aucune table trouvée.'); return; }
 
-        const wb = XLSX.utils.book_new();
+        const wb   = XLSX.utils.book_new();
         const rows = [];
 
         // En-têtes
@@ -1480,17 +1479,35 @@ new class extends Component {
         const headers = Array.from(headerCells).map(th => th.textContent.trim().replace(/\s+/g, ' '));
         rows.push(headers);
 
-        // Données
+        // Données (on garde les objets { __isLink } intacts pour l'instant)
         table.querySelectorAll('tbody tr').forEach(tr => {
             const row = Array.from(tr.querySelectorAll('td')).map(td => readCell(td));
             rows.push(row);
         });
 
-        const ws = XLSX.utils.aoa_to_sheet(rows);
+        // On aplatit les valeurs pour aoa_to_sheet (SheetJS n'accepte que des scalaires)
+        const flatRows = rows.map(row =>
+            row.map(cell => (cell && cell.__isLink) ? cell.v : cell)
+        );
+
+        const ws = XLSX.utils.aoa_to_sheet(flatRows);
+
+        // ── Appliquer les hyperliens ────────────────────────────────────────
+        // On reparcourt rows (avec les objets __isLink) pour poser ws[addr].l
+        rows.forEach((row, rIdx) => {
+            row.forEach((cell, cIdx) => {
+                if (cell && cell.__isLink && cell.url) {
+                    const addr = XLSX.utils.encode_cell({ r: rIdx, c: cIdx });
+                    if (ws[addr]) {
+                        ws[addr].l = { Target: cell.url };
+                    }
+                }
+            });
+        });
 
         // Largeurs auto approximatives
         const colWidths = headers.map((h, i) => {
-            const maxLen = rows.reduce((max, row) => {
+            const maxLen = flatRows.reduce((max, row) => {
                 const val = row[i] || '';
                 return Math.max(max, val.toString().length);
             }, h.length);
@@ -1514,12 +1531,11 @@ new class extends Component {
     function bindExportBtn() {
         const btn = document.getElementById('btn-export-xlsx');
         if (btn) {
-            btn.removeEventListener('click', exportDomToXlsx); // évite les doublons
+            btn.removeEventListener('click', exportDomToXlsx);
             btn.addEventListener('click', exportDomToXlsx);
         }
     }
 
-    // Lancement initial + re-bind après chaque update Livewire
     document.addEventListener('DOMContentLoaded', bindExportBtn);
     document.addEventListener('livewire:morph-updated', bindExportBtn);
     document.addEventListener('livewire:navigated', bindExportBtn);
