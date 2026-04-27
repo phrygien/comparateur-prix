@@ -7,7 +7,6 @@ use Illuminate\Support\Facades\Log;
 use App\Models\Product;
 use App\Models\Site;
 use App\Services\GoogleMerchantService;
-use App\Services\ApiScraperService;
 use Livewire\WithPagination;
 
 new class extends Component {
@@ -28,8 +27,12 @@ new class extends Component {
     ];
 
     protected array $countryCodeMap = [
-        'FR' => 'FR', 'BE' => 'BE', 'NL' => 'NL',
-        'DE' => 'DE', 'ES' => 'ES', 'IT' => 'IT',
+        'FR' => 'FR',
+        'BE' => 'BE',
+        'NL' => 'NL',
+        'DE' => 'DE',
+        'ES' => 'ES',
+        'IT' => 'IT',
     ];
 
     public $somme_prix_marche_total = 0;
@@ -39,12 +42,10 @@ new class extends Component {
     public $percentage_perte_marche = 0;
 
     protected GoogleMerchantService $googleMerchantService;
-    protected ApiScraperService $apiScraperService;
 
-    public function boot(GoogleMerchantService $googleMerchantService, ApiScraperService $apiScraperService): void
+    public function boot(GoogleMerchantService $googleMerchantService): void
     {
         $this->googleMerchantService = $googleMerchantService;
-        $this->apiScraperService     = $apiScraperService;
     }
 
     // ─── Computed: Total count ────────────────────────────────────────────────
@@ -57,9 +58,9 @@ new class extends Component {
         $params = [];
 
         if (!empty($this->groupeFilter)) {
-            $placeholders    = implode(',', array_fill(0, count($this->groupeFilter), '?'));
+            $placeholders = implode(',', array_fill(0, count($this->groupeFilter), '?'));
             $groupeCondition = "AND SUBSTRING_INDEX(CAST(product_char.name AS CHAR CHARACTER SET utf8mb4), ' - ', 1) IN ($placeholders)";
-            $params          = $this->groupeFilter;
+            $params = $this->groupeFilter;
         }
 
         $cacheKey = 'top_products_total_' . md5($this->activeCountry . date('Y-m-d') . implode(',', $this->groupeFilter));
@@ -91,18 +92,25 @@ new class extends Component {
     {
         set_time_limit(0);
 
+        // Si des données accumulées existent (en cours ou terminé), on les retourne
+        if (!empty($this->accumulatedSales)) {
+            return collect($this->accumulatedSales)
+                ->map(fn($item) => (object) $item);
+        }
+
+        // Sinon : pagination normale
         $groupeCondition = '';
         $params = [];
 
         if (!empty($this->groupeFilter)) {
-            $placeholders    = implode(',', array_fill(0, count($this->groupeFilter), '?'));
-            $groupeCondition = "AND SUBSTRING_INDEX(product_char.name, ' - ', 1) IN ($placeholders)";
-            $params          = $this->groupeFilter;
+            $placeholders = implode(',', array_fill(0, count($this->groupeFilter), '?'));
+            $groupeCondition = "AND groupe IN ($placeholders)";
+            $params = $this->groupeFilter;
         }
 
-        $offset    = ($this->currentPage - 1) * $this->perPage;
-        $params[]  = $this->perPage;
-        $params[]  = $offset;
+        $offset = ($this->currentPage - 1) * $this->perPage;
+        $params[] = $this->perPage;
+        $params[] = $offset;
 
         $cacheKey = 'top_products_' . md5(
             $this->activeCountry . date('Y-m-d')
@@ -163,18 +171,25 @@ new class extends Component {
         set_time_limit(0);
 
         $sales = $this->sales;
+
         if (empty($sales)) return [];
 
         $eans = collect($sales)
-            ->pluck('ean')->filter()
-            ->map(fn($ean) => mb_check_encoding($ean, 'UTF-8') ? $ean : mb_convert_encoding($ean, 'UTF-8', 'ISO-8859-1'))
-            ->unique()->values()->toArray();
+            ->pluck('ean')
+            ->filter()
+            ->map(fn($ean) => mb_check_encoding($ean, 'UTF-8')
+                ? $ean
+                : mb_convert_encoding($ean, 'UTF-8', 'ISO-8859-1')
+            )
+            ->unique()
+            ->values()
+            ->toArray();
 
         if (empty($eans)) return [];
 
-        $toGtin14    = fn(string $ean): string => str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT);
+        $toGtin14 = fn(string $ean): string => str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT);
         $countryCode = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
-        $gtins14     = array_unique(array_map($toGtin14, $eans));
+        $gtins14 = array_unique(array_map($toGtin14, $eans));
 
         $cacheKey = 'google_popularity_v2_' . md5($countryCode . implode(',', $gtins14));
 
@@ -203,12 +218,12 @@ new class extends Component {
                 $ranksByGtin = [];
 
                 foreach ($response['results'] ?? [] as $row) {
-                    $data        = $row['bestSellersProductClusterView'] ?? [];
+                    $data = $row['bestSellersProductClusterView'] ?? [];
                     $variantGtins = $data['variantGtins'] ?? [];
 
-                    $rank     = isset($data['rank'])         ? (int) $data['rank']         : null;
+                    $rank = isset($data['rank']) ? (int) $data['rank'] : null;
                     $prevRank = isset($data['previousRank']) ? (int) $data['previousRank'] : null;
-                    $delta    = ($rank !== null && $prevRank !== null) ? ($prevRank - $rank) : null;
+                    $delta = ($rank !== null && $prevRank !== null) ? ($prevRank - $rank) : null;
 
                     $rankInfo = [
                         'rank'            => $rank,
@@ -233,6 +248,7 @@ new class extends Component {
                     }
                 }
 
+                Log::info('Google Merchant ranks by GTIN-14', ['ranksByGtin' => $ranksByGtin]);
                 return $ranksByGtin;
 
             } catch (\Exception $e) {
@@ -265,7 +281,10 @@ new class extends Component {
 
             return collect(DB::connection('mysqlMagento')->select($sql, []))
                 ->pluck('groupe')
-                ->map(fn($g) => mb_check_encoding($g, 'UTF-8') ? $g : mb_convert_encoding($g, 'UTF-8', 'ISO-8859-1'))
+                ->map(fn($g) => mb_check_encoding($g, 'UTF-8')
+                    ? $g
+                    : mb_convert_encoding($g, 'UTF-8', 'ISO-8859-1')
+                )
                 ->toArray();
         });
     }
@@ -283,6 +302,7 @@ new class extends Component {
         $this->somme_gain  = 0;
         $this->somme_perte = 0;
 
+        // ✅ Une seule requête pour tous les EANs de la page
         $eans = collect($this->sales)->pluck('ean')->filter()->unique()->values()->toArray();
 
         $allScrapedProducts = !empty($eans) && !empty($siteIds)
@@ -297,6 +317,7 @@ new class extends Component {
         $comparisons = [];
 
         foreach ($this->sales as $row) {
+            // ✅ Lookup direct, zéro requête SQL ici
             $scrapedProducts = $allScrapedProducts[$row->ean] ?? collect([]);
 
             $comparison = [
@@ -372,6 +393,21 @@ new class extends Component {
 
     // ─── Lifecycle hooks ──────────────────────────────────────────────────────
 
+    public function updatedActiveCountry(): void
+    {
+        $this->currentPage = 1;
+    }
+
+    public function updatedGroupeFilter(): void
+    {
+        $this->currentPage = 1;
+    }
+
+    public function updatedPerPage(): void
+    {
+        $this->currentPage = 1;
+    }
+
     public function setPage(int $page): void
     {
         $this->currentPage = $page;
@@ -381,9 +417,9 @@ new class extends Component {
 
     public function clearCache(): void
     {
-        $toGtin14    = fn(string $ean): string => str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT);
+        $toGtin14 = fn(string $ean): string => str_pad(preg_replace('/\D/', '', $ean), 14, '0', STR_PAD_LEFT);
         $countryCode = $this->countryCodeMap[$this->activeCountry] ?? $this->activeCountry;
-        $gtins14     = array_unique(array_map($toGtin14, collect($this->sales)->pluck('ean')->filter()->toArray()));
+        $gtins14 = array_unique(array_map($toGtin14, collect($this->sales)->pluck('ean')->filter()->toArray()));
 
         Cache::forget('top_products_' . md5(
             $this->activeCountry . date('Y-m-d') . implode(',', $this->groupeFilter)
@@ -395,8 +431,6 @@ new class extends Component {
             $this->activeCountry . date('Y-m-d')
         ));
         Cache::forget('google_popularity_v2_' . md5($countryCode . implode(',', $gtins14)));
-
-        $this->resetScrapingState();
     }
 
     // ─── Export XLSX ──────────────────────────────────────────────────────────
@@ -583,44 +617,30 @@ new class extends Component {
             $colIdx = count($baseHeaders);
             foreach ($sites as $site) {
                 $cellCoord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIdx + 1) . $row;
-
-                $liveEntry = $this->livePrices[$r->ean][$site->id] ?? null;
-                $hasError  = $this->scrapeErrors[$r->ean][$site->id] ?? false;
-                $siteData  = $liveEntry
-                    ? array_merge($comparison['sites'][$site->id] ?? [], $liveEntry)
-                    : ($comparison['sites'][$site->id] ?? null);
+                $siteData  = $comparison['sites'][$site->id] ?? null;
 
                 if ($siteData) {
-                    $pricePercentage = isset($siteData['prix_ht']) && $r->prix_vente_cosma > 0
-                        ? round((($siteData['prix_ht'] - $r->prix_vente_cosma) / $r->prix_vente_cosma) * 100, 2)
-                        : ($siteData['price_percentage'] ?? null);
-
+                    $pricePercentage = $siteData['price_percentage'];
                     $priceColor = $r->prix_vente_cosma > $siteData['prix_ht'] ? 'FFCC0000' : 'FF1A7A3C';
                     if ($pricePercentage === null) $priceColor = 'FF000000';
 
-                    $statusLabel = $liveEntry ? '[LIVE ' . ($liveEntry['scraped_at'] ?? '') . ']'
-                                             : ($hasError ? '[ERREUR SCRAPE]' : '[DB]');
-
-                    $prixText  = number_format((float)$siteData['prix_ht'], 2, ',', ' ') . ' €';
+                    $prixText = number_format($siteData['prix_ht'], 2, ',', ' ') . ' €';
                     if ($pricePercentage !== null) {
                         $prixText .= ' (' . ($pricePercentage > 0 ? '+' : '') . $pricePercentage . '%)';
                     }
-                    $prixText .= ' ' . $statusLabel;
 
                     $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
                     $runPrix  = $richText->createTextRun($prixText);
                     $runPrix->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($priceColor));
                     $runPrix->getFont()->setName('Arial');
 
-                    $eanToDisplay = $liveEntry['ean_live'] ?? ($siteData['ean'] ?? null);
-                    if (!empty($eanToDisplay)) {
-                        $runEan = $richText->createTextRun("\nEAN : " . $eanToDisplay);
+                    if (!empty($siteData['ean'])) {
+                        $runEan = $richText->createTextRun("\nEAN : " . $siteData['ean']);
                         $runEan->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF888888'));
                         $runEan->getFont()->setName('Arial')->setSize(8);
                     }
 
-                    $urlToLink = $liveEntry['url'] ?? ($siteData['url'] ?? null);
-                    if (!empty($urlToLink)) {
+                    if (!empty($siteData['url'])) {
                         $runLien = $richText->createTextRun("\nVoir le produit");
                         $runLien->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FF0563C1'));
                         $runLien->getFont()->setUnderline(\PhpOffice\PhpSpreadsheet\Style\Font::UNDERLINE_SINGLE);
@@ -631,13 +651,12 @@ new class extends Component {
                     $sheet->getStyle($cellCoord)->getAlignment()->setWrapText(true);
                     $sheet->getStyle($cellCoord)->getAlignment()->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP);
 
-                    if (!empty($urlToLink)) {
-                        $sheet->getCell($cellCoord)->getHyperlink()->setUrl($urlToLink);
+                    if (!empty($siteData['url'])) {
+                        $sheet->getCell($cellCoord)->getHyperlink()->setUrl($siteData['url']);
                     }
                 } else {
-                    $label = $hasError ? 'Erreur scrape' : 'N/A';
-                    $sheet->setCellValue($cellCoord, $label);
-                    $sheet->getStyle($cellCoord)->getFont()->getColor()->setRGB($hasError ? 'CC0000' : 'AAAAAA');
+                    $sheet->setCellValue($cellCoord, 'N/A');
+                    $sheet->getStyle($cellCoord)->getFont()->getColor()->setRGB('AAAAAA');
                     $sheet->getStyle($cellCoord)->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
                 }
 
@@ -718,7 +737,6 @@ new class extends Component {
             'lastPage'                  => $lastPage,
             'currentPage'               => $this->currentPage,
             'perPage'                   => $this->perPage,
-
         ];
     }
 }; ?>
@@ -876,7 +894,7 @@ new class extends Component {
                                 <div class="divider divider-horizontal mx-0"></div>
 
                                 {{-- Export XLSX --}}
-                                {{-- <button type="button" wire:click="exportXlsx"
+                                <button type="button" wire:click="exportXlsx"
                                     wire:loading.attr="disabled" wire:loading.class="opacity-60 cursor-not-allowed"
                                     class="btn btn-sm btn-success gap-2" title="Exporter les données affichées en Excel">
                                     <span wire:loading.remove wire:target="exportXlsx" class="flex items-center gap-2">
@@ -889,28 +907,7 @@ new class extends Component {
                                         <span class="loading loading-spinner loading-xs"></span>
                                         Export en cours…
                                     </span>
-                                </button> --}}
-
-                                {{-- Export XLSX (remplace le wire:click="exportXlsx") --}}
-                                <button type="button" id="btn-export-xlsx"
-                                    class="btn btn-sm btn-success gap-2" title="Exporter les données affichées en Excel (avec prix live)">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                                    </svg>
-                                    Export XLSX
                                 </button>
-
-                                <div class="divider divider-horizontal mx-0"></div>
-
-                                {{-- ── Statut du scraping live (piloté par JS pur) ── --}}
-                                <div id="live-scraping-status" class="flex flex-col items-center gap-1">
-                                   <div class="flex flex-col items-center gap-2">
-                                        <button id="btn-relancer" class="btn btn-sm btn-warning gap-2 text-white">
-                                            ⚡Rechercher les prix en live
-                                        </button>
-                                    </div>
-                                </div>
-                                {{-- ── /Statut scraping ── --}}
 
                             </div>
                         </div>
@@ -966,7 +963,7 @@ new class extends Component {
                                 <span class="text-sm font-medium">Mise à jour…</span>
                             </div>
 
-                            @if(count($sales) === 0)
+                            @if(count($sales) === 0 && !$isLoadingAll)
                                 <div class="alert alert-info">
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -977,7 +974,7 @@ new class extends Component {
                                 <div class="overflow-x-auto overflow-y-auto max-h-[70vh]"
                                     wire:loading.class="opacity-40 pointer-events-none"
                                     wire:target="groupeFilter">
-                                    <table id="marche-table" class="table table-xs table-pin-rows table-pin-cols">
+                                    <table class="table table-xs table-pin-rows table-pin-cols">
                                         <thead>
                                             <tr>
                                                 <th class="text-center" title="Rang de popularité Google Merchant (Best Sellers)">
@@ -1051,69 +1048,36 @@ new class extends Component {
                                                     </td>
 
                                                     @foreach($this->sites as $site)
-                                                        @php
-                                                            $siteData = $comparison['sites'][$site->id] ?? null;
-                                                        @endphp
-                                                        @if($siteData)
-                                                            @php
-                                                                $prixAffiché = (float) $siteData['prix_ht'];
-                                                                $prixDiff    = $prixCosma > 0 ? $prixAffiché - $prixCosma : null;
-                                                                $prixPct     = ($prixCosma > 0 && $prixAffiché > 0)
-                                                                    ? round(($prixDiff / $prixCosma) * 100, 2)
-                                                                    : null;
-                                                                $colorClass  = $prixPct !== null
-                                                                    ? ($prixCosma > $prixAffiché ? 'text-error' : 'text-success')
-                                                                    : '';
-                                                                $url = $siteData['url'] ?? '#';
-                                                            @endphp
-                                                            {{--
-                                                                data-* : lus par liveScraper.js pour patcher le DOM en live.
-                                                                data-prix-cosma : pour recalculer le % côté JS.
-                                                                data-scrape-url : URL à scraper.
-                                                                data-ean         : EAN du produit.
-                                                                data-site-id     : ID du site.
-                                                            --}}
-                                                            <td class="text-right price-cell"
-                                                                data-ean="{{ $row->ean }}"
-                                                                data-site-id="{{ $site->id }}"
-                                                                data-prix-cosma="{{ $prixCosma }}"
-                                                                data-scrape-url="{{ $url }}"
-                                                                data-db-prix="{{ $prixAffiché }}"
-                                                                data-db-url="{{ $url }}"
-                                                                data-db-vendor="{{ $siteData['vendor'] ?? '' }}"
-                                                                data-db-name="{{ $siteData['name'] ?? '' }}">
-                                                                {{-- Contenu initial : prix DB — le JS le remplacera si live disponible --}}
-                                                                <div class="flex flex-col gap-0.5 items-end">
-                                                                    <div class="flex items-center gap-1">
-                                                                        <span class="badge badge-xs badge-ghost opacity-50 badge-db">DB</span>
-                                                                        <a href="{{ $url }}" target="_blank"
-                                                                            class="link link-primary text-xs font-semibold price-link"
-                                                                            title="{{ $siteData['name'] ?? '' }}">
-                                                                            {{ number_format($prixAffiché, 2) }} €
-                                                                        </a>
-                                                                    </div>
-                                                                    @if($prixPct !== null)
-                                                                        <span class="text-xs {{ $colorClass }} font-bold price-pct">
-                                                                            {{ $prixPct > 0 ? '+' : '' }}{{ $prixPct }}%
+                                                        <td class="text-right">
+                                                            @if($comparison['sites'][$site->id])
+                                                                @php
+                                                                    $siteData  = $comparison['sites'][$site->id];
+                                                                    $textClass = '';
+                                                                    if ($siteData['price_percentage'] !== null) {
+                                                                        $textClass = $prixCosma > $siteData['prix_ht'] ? 'text-error' : 'text-success';
+                                                                    }
+                                                                @endphp
+                                                                <div class="flex flex-col gap-1 items-end">
+                                                                    <a href="{{ $siteData['url'] }}" target="_blank"
+                                                                        class="link link-primary text-xs font-semibold"
+                                                                        title="{{ $siteData['name'] }}">
+                                                                        {{ number_format($siteData['prix_ht'], 2) }} €
+                                                                    </a>
+                                                                    @if($siteData['price_percentage'] !== null)
+                                                                        <span class="text-xs {{ $textClass }} font-bold">
+                                                                            {{ $siteData['price_percentage'] > 0 ? '+' : '' }}{{ $siteData['price_percentage'] }}%
                                                                         </span>
                                                                     @endif
-                                                                    @if(!empty($siteData['vendor']))
-                                                                        <span class="text-xs text-gray-500 truncate max-w-[120px] price-vendor"
-                                                                            title="{{ $siteData['vendor'] }}">
+                                                                    @if($siteData['vendor'])
+                                                                        <span class="text-xs text-gray-500 truncate max-w-[120px]" title="{{ $siteData['vendor'] }}">
                                                                             {{ Str::limit($siteData['vendor'], 15) }}
                                                                         </span>
                                                                     @endif
                                                                 </div>
-                                                            </td>
-                                                        @else
-                                                            <td class="text-right price-na"
-                                                                data-ean="{{ $row->ean }}"
-                                                                data-site-id="{{ $site->id }}"
-                                                                data-prix-cosma="{{ $prixCosma }}"
-                                                            >
-                                                                <span class="text-gray-400 text-xs price-na">N/A</span>
-                                                            </td>
-                                                        @endif
+                                                            @else
+                                                                <span class="text-gray-400 text-xs">N/A</span>
+                                                            @endif
+                                                        </td>
                                                     @endforeach
 
                                                     <td class="text-right text-xs">
@@ -1163,392 +1127,3 @@ new class extends Component {
         </x-tabs>
     </div>
 </div>
-
-{{-- ═══════════════════════════════════════════════════════════════════════════
-     LIVE SCRAPER — JS pur, zéro Livewire
-     ─────────────────────────────────────────────────────────────────────────
-     Fonctionnement :
-      1. Au chargement de la table, on collecte tous les <td class="price-cell">
-         qui ont un data-scrape-url non vide.
-      2. On les scrape par batches de 4 via l'endpoint https://dev.astucom.com:9038/scrap.
-      3. Pour chaque résultat, on patch le DOM directement :
-         - badge ⚡ live   → scraping réussi
-         - badge 🔴 Erreur → scraping échoué, prix DB conservé
-      4. La barre de progression dans #live-scraping-status est mise à jour en JS.
-      5. Un bouton "Relancer" réinitialise et relance le cycle.
-═══════════════════════════════════════════════════════════════════════════ --}}
-<script>
-(function () {
-    'use strict';
-
-    const BATCH_SIZE  = 250;
-    const API_ENDPOINT = 'https://dev.astucom.com:9038/scrap'; // → ApiScraperController@scrape
-
-    // ── Helpers DOM ──────────────────────────────────────────────────────────
-
-    function fmt(num) {
-        return parseFloat(num).toLocaleString('fr-FR', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-        }) + ' €';
-    }
-
-    function pct(live, cosma) {
-        if (!cosma || !live) return null;
-        return (((live - cosma) / cosma) * 100).toFixed(2);
-    }
-
-    // ── Patch DOM d'une cellule après succès ─────────────────────────────────
-
-    function patchCell(td, data, scrapedAt) {
-        const cosma   = parseFloat(td.dataset.prixCosma) || 0;
-        const prix    = parseFloat(data.prix_ht)         || 0;
-        const url     = data.url     || td.dataset.dbUrl   || '#';
-        const vendor  = data.vendor  || td.dataset.dbVendor || '';
-        const name    = data.name    || td.dataset.dbName   || '';
-        const p       = pct(prix, cosma);
-        const cheaper = cosma > prix;
-        const pctClass = p !== null ? (cheaper ? 'text-error' : 'text-success') : '';
-
-        td.innerHTML = `
-            <span class="badge badge-xs badge-warning font-bold" title="Prix live scrapé à ${scrapedAt}">⚡ live</span>
-            <div class="flex flex-col gap-0.5 items-end">
-                <div class="flex items-center gap-1">
-                    <a href="${url}" target="_blank"
-                       class="link link-primary text-xs font-semibold underline decoration-warning"
-                       title="${name}">${fmt(prix)}</a>
-                </div>
-                ${p !== null ? `<span class="text-xs ${pctClass} font-bold">${p > 0 ? '+' : ''}${p}%</span>` : ''}
-                ${vendor ? `<span class="text-xs text-gray-500 truncate max-w-[120px]" title="${vendor}">${vendor.substring(0, 15)}</span>` : ''}
-                <span class="text-[10px] text-warning/70">${scrapedAt}</span>
-            </div>`;
-    }
-
-    // ── Marquer une cellule comme erreur (garde le prix DB) ──────────────────
-
-    function patchCellError(td) {
-        const dbPrix  = td.dataset.dbPrix;
-        const cosma   = parseFloat(td.dataset.prixCosma) || 0;
-        const prix    = parseFloat(dbPrix) || 0;
-        const url     = td.dataset.dbUrl   || '#';
-        const vendor  = td.dataset.dbVendor || '';
-        const name    = td.dataset.dbName   || '';
-
-        if (!dbPrix) {
-            // Pas de prix DB non plus → vrai N/A
-            td.innerHTML = `<span class="text-gray-400 text-xs">N/A</span>`;
-            return;
-        }
-
-        const p       = pct(prix, cosma);
-        const cheaper = cosma > prix;
-        const pctClass = p !== null ? (cheaper ? 'text-error' : 'text-success') : '';
-
-        td.innerHTML = `
-            <div class="flex flex-col gap-0.5 items-end">
-                <span class="badge badge-xs badge-error opacity-70" title="Scraping échoué — prix issu de la base de données">DB</span>
-                <div class="flex items-center gap-1">
-                    <a href="${url}" target="_blank"
-                       class="link link-primary text-xs font-semibold"
-                       title="${name}">${fmt(prix)}</a>
-                </div>
-                ${p !== null ? `<span class="text-xs ${pctClass} font-bold">${p > 0 ? '+' : ''}${p}%</span>` : ''}
-                ${vendor ? `<span class="text-xs text-gray-500 truncate max-w-[120px]">${vendor.substring(0, 15)}</span>` : ''}
-            </div>`;
-    }
-
-    // ── Mettre une cellule en état "en cours de scraping" ────────────────────
-
-    function setLoading(td) {
-        // On garde le prix DB visible en fond avec un loader par-dessus
-        td.style.position = 'relative';
-        const loader = document.createElement('span');
-        loader.className = 'loading loading-dots loading-xs text-warning opacity-60 absolute top-0 right-0';
-        loader.dataset.liveLoader = '1';
-        // Retirer tout loader précédent
-        td.querySelectorAll('[data-live-loader]').forEach(el => el.remove());
-        td.appendChild(loader);
-    }
-
-    function clearLoading(td) {
-        td.querySelectorAll('[data-live-loader]').forEach(el => el.remove());
-        td.style.position = '';
-    }
-
-    // ── Scraper un job individuel ─────────────────────────────────────────────
-
-    async function scrapeJob(td) {
-        const ean    = td.dataset.ean;
-        const siteId = td.dataset.siteId;
-        const url    = td.dataset.scrapeUrl;
-
-        if (!url) {
-            patchCellError(td);
-            return;
-        }
-
-        setLoading(td);
-
-        try {
-            const res = await fetch(API_ENDPOINT, {
-                method:  'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
-                },
-                body: JSON.stringify({ site_id: siteId, url_site: url }),
-            });
-
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-            const json = await res.json();
-            const items = json.result ?? [];
-
-            // Priorité 1 : match EAN exact / Priorité 2 : premier résultat
-            const match = items.find(i => i.ean && i.ean === ean) ?? items[0] ?? null;
-
-            clearLoading(td);
-
-            if (match && parseFloat(match.prix_ht) > 0) {
-                const now = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                patchCell(td, match, now);
-            } else {
-                patchCellError(td);
-            }
-
-        } catch (e) {
-            clearLoading(td);
-            patchCellError(td);
-            console.warn('[LiveScraper] KO', ean, siteId, e.message);
-        }
-    }
-
-    // ── Lancer le scraping sur tous les TDs ──────────────────────────────────
-
-    async function runScraping() {
-        const table  = document.getElementById('marche-table');
-        const allTds  = Array.from(table.querySelectorAll('td.price-cell[data-scrape-url]')).filter(td => {
-            const url = td.dataset.scrapeUrl?.trim();
-            return url && url !== '' && url !== '#';  // ← exclure les "#"
-        });
-        const total   = allTds.length;
-        let   done    = 0;
-
-        const statusEl = document.getElementById('live-scraping-status');
-
-        function updateStatus() {
-            if (!statusEl) return;
-            const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-            if(done == 0){
-                const liveCount  = table.querySelectorAll('.badge-warning.font-bold').length;
-                const errorCount = table.querySelectorAll('.badge-error.opacity-70').length;
-                statusEl.innerHTML = `
-                    <div class="flex flex-col items-center gap-1.5">
-                        <button id="btn-relancer" class="btn btn-xs btn-ghost gap-1 text-gray-500 hover:text-warning">
-                            Rechercher les prix en live
-                        </button>
-                    </div>`;
-                document.getElementById('btn-relancer')?.addEventListener('click', runScraping);
-            } else if (done < total && done > 0) {
-                statusEl.innerHTML = `
-                    <div class="flex flex-col items-center gap-1">
-                        <div class="flex items-center gap-2">
-                            <span class="loading loading-spinner loading-xs text-warning"></span>
-                            <span class="text-xs font-medium text-warning">Scraping… ${done}/${total}</span>
-                        </div>
-                        <progress class="progress progress-warning w-40" value="${done}" max="${total}"></progress>
-                        <span class="text-xs text-gray-400">${pct}%</span>
-                    </div>`;
-            } else {
-                const liveCount  = table.querySelectorAll('.badge-warning.font-bold').length;
-                const errorCount = table.querySelectorAll('.badge-error.opacity-70').length;
-                statusEl.innerHTML = `
-                    <div class="flex flex-col items-center gap-1.5">
-                        <div class="flex items-center gap-2">
-                            ${liveCount  > 0 ? `<span class="badge badge-warning badge-sm">⚡ ${liveCount} live</span>` : ''}
-                            ${errorCount > 0 ? `<span class="badge badge-error badge-sm">⚠ ${errorCount} erreur(s)</span>` : ''}
-                        </div>
-                        <button id="btn-relancer" class="btn btn-xs btn-ghost gap-1 text-gray-500 hover:text-warning">
-                            ↺ Relancer
-                        </button>
-                    </div>`;
-                document.getElementById('btn-relancer')?.addEventListener('click', runScraping);
-            }
-        }
-
-        updateStatus();
-
-        if (total === 0) {
-            if (statusEl) statusEl.innerHTML = '<span class="text-xs text-gray-400">Aucun produit à scraper</span>';
-            return;
-        }
-
-        // Traitement par batches
-        for (let i = 0; i < allTds.length; i += BATCH_SIZE) {
-            const batch = allTds.slice(i, i + BATCH_SIZE);
-            await Promise.all(batch.map(td => scrapeJob(td).then(() => { done++; updateStatus(); })));
-        }
-    }
-
-    // ── Point d'entrée : lancer dès que la table est dans le DOM ─────────────
-    // On utilise un MutationObserver pour détecter quand Livewire injecte la
-    // table (après le premier render), puis on démarre.
-
-    // function waitForTable(callback) {
-    //     if (document.querySelector('td.price-cell')) {
-    //         callback();
-    //         return;
-    //     }
-    //     const obs = new MutationObserver(() => {
-    //         if (document.querySelector('td.price-cell')) {
-    //             obs.disconnect();
-    //             callback();
-    //         }
-    //     });
-    //     obs.observe(document.body, { childList: true, subtree: true });
-    // }
-
-    // Relancer automatiquement quand Livewire re-render la page (pagination, filtre…)
-    // document.addEventListener('livewire:navigated', () => waitForTable(runScraping));
-    // document.addEventListener('livewire:morph-updated', () => {
-    //     // Petit délai pour laisser le DOM se stabiliser après le morph
-    //     setTimeout(() => {
-    //         if (document.querySelector('td.price-cell')) runScraping();
-    //     }, 200);
-    // });
-
-    // // Lancement initial
-    // if (document.readyState === 'loading') {
-    //     document.addEventListener('DOMContentLoaded', () => waitForTable(runScraping));
-    // } else {
-    //     waitForTable(runScraping);
-    // }
-
-    // ajout event pour le bouton relancer
-    document.getElementById('btn-relancer')?.addEventListener('click', runScraping);
-
-})();
-</script>
-
-{{-- ═══════════════════════════════════════════════════════════════════════════
-     Export cote JS
-     ─────────────────────────────────────────────────────────────────────────
-     Fonctionnement :
-      1. Prend la table HTML et l'export
-═══════════════════════════════════════════════════════════════════════════ --}}
-<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-<script>
-(function () {
-    'use strict';
-
-    // ── Lire le texte "propre" d'une cellule DOM ────────────────────────────
-    function readCell(td) {
-        if (!td) return '';
-
-        const link = td.querySelector('a.link-primary');
-        const pct  = td.querySelector('.price-pct, [class*="text-error"], [class*="text-success"]');
-
-        // Rang Google
-        const monoSpan = td.querySelector('.font-mono');
-        if (monoSpan) return monoSpan.textContent.trim();
-
-        // N/A
-        const naSpan = td.querySelector('.price-na, .text-gray-400');
-        if (naSpan && !link) return 'N/A';
-
-        // Cellule avec lien (prix) → retourne un objet { v, l } pour SheetJS
-        if (link) {
-            const href = link.getAttribute('href');
-            let text = link.textContent.trim();
-            if (pct) text += ' (' + pct.textContent.trim() + ')';
-
-            // Objet spécial reconnu plus bas pour poser le lien
-            return { __isLink: true, v: text, url: href };
-        }
-
-        return td.textContent.trim().replace(/\s+/g, ' ');
-    }
-
-    // ── Export principal ────────────────────────────────────────────────────
-    function exportDomToXlsx() {
-        const table = document.querySelector('table');
-        if (!table) { alert('Aucune table trouvée.'); return; }
-
-        const wb   = XLSX.utils.book_new();
-        const rows = [];
-
-        // En-têtes
-        const headerCells = table.querySelectorAll('thead tr:first-child th');
-        const headers = Array.from(headerCells).map(th => th.textContent.trim().replace(/\s+/g, ' '));
-        rows.push(headers);
-
-        // Données (on garde les objets { __isLink } intacts pour l'instant)
-        table.querySelectorAll('tbody tr').forEach(tr => {
-            const row = Array.from(tr.querySelectorAll('td')).map(td => readCell(td));
-            rows.push(row);
-        });
-
-        // On aplatit les valeurs pour aoa_to_sheet (SheetJS n'accepte que des scalaires)
-        const flatRows = rows.map(row =>
-            row.map(cell => (cell && cell.__isLink) ? cell.v : cell)
-        );
-
-        const ws = XLSX.utils.aoa_to_sheet(flatRows);
-
-        // ── Appliquer les hyperliens ────────────────────────────────────────
-        // On reparcourt rows (avec les objets __isLink) pour poser ws[addr].l
-        rows.forEach((row, rIdx) => {
-            row.forEach((cell, cIdx) => {
-                if (cell && cell.__isLink && cell.url) {
-                    const addr = XLSX.utils.encode_cell({ r: rIdx, c: cIdx });
-                    if (ws[addr]) {
-                        ws[addr].l = { Target: cell.url };
-                        ws[addr].s = {
-                            font: {
-                                color: { rgb: '0563C1' },
-                                underline: true,
-                                bold: false,
-                            }
-                        };
-                    }
-                }
-            });
-        });
-
-        // Largeurs auto approximatives
-        const colWidths = headers.map((h, i) => {
-            const maxLen = flatRows.reduce((max, row) => {
-                const val = row[i] || '';
-                return Math.max(max, val.toString().length);
-            }, h.length);
-            return { wch: Math.min(maxLen + 2, 50) };
-        });
-        ws['!cols'] = colWidths;
-
-        // Figer la première ligne
-        ws['!freeze'] = { xSplit: 0, ySplit: 1 };
-
-        const countryEl = document.querySelector('.tab-active, [aria-selected="true"]');
-        const sheetName = 'Export ' + (countryEl ? countryEl.textContent.trim() : 'Marché');
-        XLSX.utils.book_append_sheet(wb, ws, sheetName.substring(0, 31));
-
-        const now = new Date();
-        const suffix = now.toISOString().replace(/[:.]/g, '-').substring(0, 19);
-        XLSX.writeFile(wb, `export_marche_${suffix}.xlsx`);
-    }
-
-    // ── Bind bouton ─────────────────────────────────────────────────────────
-    function bindExportBtn() {
-        const btn = document.getElementById('btn-export-xlsx');
-        if (btn) {
-            btn.removeEventListener('click', exportDomToXlsx);
-            btn.addEventListener('click', exportDomToXlsx);
-        }
-    }
-
-    document.addEventListener('DOMContentLoaded', bindExportBtn);
-    document.addEventListener('livewire:morph-updated', bindExportBtn);
-    document.addEventListener('livewire:navigated', bindExportBtn);
-
-})();
-</script>

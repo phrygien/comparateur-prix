@@ -196,7 +196,7 @@
                                     </a>
                                 </li> --}}
 
-                                @if($user == auth()->user() && $user->email == 'admin@admin.com')
+                                {{-- @if($user == auth()->user() && $user->email == 'admin@admin.com')
 
                                 <li>
                                     <a href="/benchmark2-magento-paginate"
@@ -210,7 +210,7 @@
                                     </a>
                                 </li>
 
-                                @endif
+                                @endif --}}
 
                                 <li>
                                     <a href="/benchmark-magento-paginate"
