@@ -1247,6 +1247,7 @@ new class extends Component {
         td.innerHTML = `
             <div class="flex flex-col gap-0.5 items-end">
                 <span class="badge badge-xs badge-error opacity-70" title="Scraping échoué — prix issu de la base de données">DB</span>
+                <button class="btn-retry btn btn-xs btn-ghost text-warning opacity-60 hover:opacity-100 p-0 min-h-0 h-auto leading-none" title="Réessayer le scraping">↺</button>
                 <div class="flex items-center gap-1">
                     <a href="${url}" target="_blank"
                        class="link link-primary text-xs font-semibold"
@@ -1255,6 +1256,8 @@ new class extends Component {
                 ${p !== null ? `<span class="text-xs ${pctClass} font-bold">${p > 0 ? '+' : ''}${p}%</span>` : ''}
                 ${vendor ? `<span class="text-xs text-gray-500 truncate max-w-[120px]">${vendor.substring(0, 15)}</span>` : ''}
             </div>`;
+
+        td.querySelector('.btn-retry').addEventListener('click', () => scrapeJob(td));
     }
 
     // ── Mettre une cellule en état "en cours de scraping" ────────────────────
